@@ -177,35 +177,82 @@ function view(items: readonly PromotionBannerItem[], savings: readonly Promotion
   });
 }
 
+type GiftCampaign = CartGiftState["campaigns"][number];
+type GiftSelection = CartGiftState["selections"][number];
+
 /**
- * What the next gift slot would hand over, in the shopper's words: the gift products a campaign offers,
- * each named once however many colours or sizes it comes in. Options with no stock are left out while
- * any other is available, so the nudge never advertises a gift nobody could receive. Empty when no
- * option has a readable name, and the title then falls back to the plain "quà".
+ * Gift names in the shopper's words. Two different questions, kept apart because they read differently:
+ *  - what is on OFFER for a slot still to be chosen ("A hoặc B"): only gifts that could really be handed
+ *    over -- in stock, and, where the campaign refuses a second gift of the same product, not a product
+ *    the shopper already picked. Nothing is advertised when no such gift exists;
+ *  - what the shopper CHOSE ("A và B"): the picked gifts, as many of them as they asked for.
+ * Each product is named once however many colours or sizes it comes in. An empty result means "say the
+ * plain word 'quà'" rather than name something that cannot be given.
  */
 const GIFT_NAMES_SHOWN = 2;
 
-function giftNamesText(
-  campaign: CartGiftState["campaigns"][number],
-  labels: CartGiftState["labels"],
-  /** Gifts the shopper already picked from this campaign; they are named instead of the whole offer. */
-  chosenVariantIds: readonly string[] = [],
-): string {
-  const nameByVariant = new Map(labels.map((label) => [label.variantId, label.productName?.trim()]));
-  const inStock = campaign.options.filter((option) => option.readyAvailable > 0);
-  const variantIds = chosenVariantIds.length > 0
-    ? chosenVariantIds
-    : (inStock.length > 0 ? inStock : campaign.options).map((option) => option.variantId);
-  const names = new Set<string>();
-  for (const variantId of variantIds) {
-    const name = nameByVariant.get(variantId);
-    if (name) names.add(name);
+function nameByVariant(labels: CartGiftState["labels"]): ReadonlyMap<string, string | undefined> {
+  return new Map(labels.map((label) => [label.variantId, label.productName?.trim() || undefined]));
+}
+
+/** Product names a slot not yet chosen could still take. */
+function offeredGiftNames(campaign: GiftCampaign, labels: CartGiftState["labels"], chosen: readonly GiftSelection[]): string[] {
+  const names = nameByVariant(labels);
+  const chosenProducts = new Set(chosen.flatMap((row) => {
+    const productId = campaign.options.find((option) => option.variantId === row.variantId)?.productId;
+    return productId === undefined ? [] : [productId];
+  }));
+  const taken = campaign.allowDuplicateGifts === false ? chosenProducts : new Set<string>();
+  const out = new Set<string>();
+  for (const option of campaign.options) {
+    if (!(option.readyAvailable > 0) || taken.has(option.productId)) continue;
+    const name = names.get(option.variantId);
+    if (name) out.add(name);
   }
-  const list = [...names];
-  if (list.length === 0) return "";
-  if (list.length === 1) return list[0]!;
+  return [...out];
+}
+
+/** "A", "A hoặc B", or "A, B hoặc N quà khác": a choice between gifts. */
+function offeredText(list: readonly string[]): string {
+  if (list.length <= 1) return list[0] ?? "";
   if (list.length <= GIFT_NAMES_SHOWN) return list.join(" hoặc ");
-  return `${list.slice(0, GIFT_NAMES_SHOWN).join(", ")} và ${list.length - GIFT_NAMES_SHOWN} quà khác`;
+  return `${list.slice(0, GIFT_NAMES_SHOWN).join(", ")} hoặc ${list.length - GIFT_NAMES_SHOWN} quà khác`;
+}
+
+/** "A và B" (with "×2" for a gift taken twice): everything the shopper picked. */
+function chosenText(labels: CartGiftState["labels"], chosen: readonly GiftSelection[]): string {
+  const names = nameByVariant(labels);
+  const byName = new Map<string, number>();
+  for (const row of chosen) {
+    const name = names.get(row.variantId);
+    if (name) byName.set(name, (byName.get(name) ?? 0) + row.quantity);
+  }
+  const parts = [...byName].map(([name, quantity]) => (quantity > 1 ? `${name} ×${quantity}` : name));
+  if (parts.length <= 1) return parts[0] ?? "";
+  return `${parts.slice(0, -1).join(", ")} và ${parts[parts.length - 1]}`;
+}
+
+/** A campaign whose every gift is out of stock can hand nothing over, so it is neither named nor nudged toward. */
+function giftsAllOut(campaign: GiftCampaign): boolean {
+  return campaign.options.length > 0 && campaign.options.every((option) => !(option.readyAvailable > 0));
+}
+
+/**
+ * The title of a reached gift slot. A fully chosen set is named ("A và B"); a partly chosen one says how many
+ * slots are still open; before any choice the gifts on offer are named, and only when they are real.
+ */
+function earnedGiftTitle(entitled: number, selected: number, campaign: GiftCampaign | undefined, state: CartGiftState, chosen: readonly GiftSelection[]): string {
+  const head = `Nàng nhận được ${entitled} quà tặng`;
+  if (!campaign) return head;
+  if (selected > 0) {
+    const picked = chosenText(state.labels, chosen);
+    if (!picked) return head;
+    return selected >= entitled ? `${head}: ${picked}` : `${head}: đã chọn ${picked}, còn ${entitled - selected} suất chưa chọn`;
+  }
+  const offered = offeredGiftNames(campaign, state.labels, chosen);
+  if (offered.length === 0) return head;
+  // One gift to take is just named; a real choice says so.
+  return offered.length === 1 ? `${head}: ${offered[0]}` : `${head}: chọn từ ${offeredText(offered)}`;
 }
 
 /** `percent` of the way from the last slot to the next, never 0 on a partial step or 100 before it is earned. */
@@ -246,15 +293,12 @@ export function buildCartPromotionView(
     if (entry.entitled > 0) {
       const selected = selectedBy.get(entry.campaignId) ?? 0;
       const unclaimed = Math.max(0, entry.entitled - selected);
-      // A chosen gift is named; before a choice, the gifts on offer are.
-      const earnedNames = campaign
-        ? giftNamesText(campaign, state.labels, state.selections.filter((row) => row.campaignId === entry.campaignId).map((row) => row.variantId))
-        : "";
+      const chosen = state.selections.filter((row) => row.campaignId === entry.campaignId);
       items.push(Object.freeze({
         id: `gift-${entry.campaignId}`,
         state: "achieved",
         kind: "GIFT",
-        title: `Nàng nhận được ${entry.entitled} quà tặng${earnedNames ? `: ${earnedNames}` : ""}`,
+        title: earnedGiftTitle(entry.entitled, selected, campaign, state, chosen),
         progress: null,
         needsGiftChoice: unclaimed > 0,
       }));
@@ -262,8 +306,11 @@ export function buildCartPromotionView(
 
     const shortfall = entry.shortfallToNext;
     if (!shortfall || !campaign) return;
-    // "để nhận quà tặng Váy lụa": naming the gift is what makes the extra purchase worth it.
-    const giftNames = giftNamesText(campaign, state.labels);
+    // Nothing could be handed over (every gift is out of stock), so a nudge to buy more would promise it.
+    if (giftsAllOut(campaign)) return;
+    // "để nhận quà tặng Váy lụa": naming the gift is what makes the extra purchase worth it, but only a gift
+    // the shopper could really take for the NEW slot (not one the campaign refuses as a duplicate).
+    const giftNames = offeredText(offeredGiftNames(campaign, state.labels, state.selections.filter((row) => row.campaignId === entry.campaignId)));
     const reward = `${entry.entitled > 0 ? "thêm " : ""}${giftNames ? `quà tặng ${giftNames}` : "quà"}`;
     if (campaign.trigger === "QUANTITY" && shortfall.quantity && campaign.minimumQuantity) {
       items.push(Object.freeze({

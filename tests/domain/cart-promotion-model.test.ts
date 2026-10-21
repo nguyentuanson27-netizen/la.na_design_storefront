@@ -121,57 +121,93 @@ test("gift slots are celebrated, unclaimed ones ask for a choice, and reached it
   assert.deepEqual(view.savings, [], "gifts are not a money saving");
 });
 
-test("the next gift is named, once per product, preferring what is in stock", () => {
-  const campaign = {
-    ...quantityCampaign,
-    options: [
-      { variantId: "g1", productId: "p1", readyAvailable: 3 },
-      { variantId: "g2", productId: "p1", readyAvailable: 2 },
-      { variantId: "g3", productId: "p2", readyAvailable: 0 },
-    ],
+/** A gift campaign with named gifts: `g1`/`g2` are two colours of one scarf, `g3` a fan. */
+const giftLabels = [
+  { variantId: "g1", productName: "Khăn lụa" },
+  { variantId: "g2", productName: "Khăn lụa" },
+  { variantId: "g3", productName: "Quạt cầm tay" },
+  { variantId: "g4", productName: "Túi" },
+];
+const giftOptions = [
+  { variantId: "g1", productId: "p1", readyAvailable: 3 },
+  { variantId: "g2", productId: "p1", readyAvailable: 2 },
+  { variantId: "g3", productId: "p2", readyAvailable: 1 },
+];
+const choice = (variantId: string, quantity = 1) => ({ campaignId: "gift-a", variantId, campaignRevision: 1, quantity });
+
+/** The reached-gift title and the next-slot title of one campaign, as the banner words them. */
+function giftTitles(o: Readonly<{
+  entitled: number; shortfall?: number | null; selections?: readonly unknown[]; options?: readonly unknown[]; labels?: readonly unknown[]; allowDuplicateGifts?: boolean;
+}>) {
+  const view = buildCartPromotionView({ ...state({
+    campaigns: [{ ...quantityCampaign, allowDuplicateGifts: o.allowDuplicateGifts ?? true, options: o.options ?? giftOptions }],
+    entitlements: [{ campaignId: "gift-a", revision: 1, eligibleQuantity: 3, earned: o.entitled, entitled: o.entitled,
+      shortfallToNext: o.shortfall === null ? null : { quantity: o.shortfall ?? 1, subtotalVnd: null } }],
+    selections: o.selections ?? [],
+  }), labels: o.labels ?? giftLabels } as unknown as CartGiftState);
+  return {
+    earned: view?.items.find((item) => item.state === "achieved")?.title,
+    next: view?.items.find((item) => item.state === "progress")?.title,
   };
-  const labels = [
-    { variantId: "g1", productName: "Khăn lụa" },
-    { variantId: "g2", productName: "Khăn lụa" },
-    { variantId: "g3", productName: "Quạt cầm tay" },
-  ];
-  const titleFor = (entitled: number, extra: Partial<typeof campaign> = {}, names = labels) => {
-    const view = buildCartPromotionView({ ...state({
-      campaigns: [{ ...campaign, ...extra }],
-      entitlements: [{ campaignId: "gift-a", revision: 1, eligibleQuantity: 3, earned: entitled, entitled, shortfallToNext: { quantity: 1, subtotalVnd: null } }],
-    }), labels: names } as unknown as CartGiftState)!;
-    return view.items[view.items.length - 1]!.title;
-  };
-  assert.equal(titleFor(0), "Mua thêm 1 sản phẩm để nhận quà tặng Khăn lụa", "the sold-out gift is not advertised");
-  assert.equal(titleFor(1), "Mua thêm 1 sản phẩm để nhận thêm quà tặng Khăn lụa");
+}
+
+test("the next gift is named, once per product, from what could really be handed over", () => {
+  assert.equal(giftTitles({ entitled: 0 }).next, "Mua thêm 1 sản phẩm để nhận quà tặng Khăn lụa hoặc Quạt cầm tay");
+  assert.equal(giftTitles({ entitled: 1 }).next, "Mua thêm 1 sản phẩm để nhận thêm quà tặng Khăn lụa hoặc Quạt cầm tay");
   assert.equal(
-    titleFor(0, { options: campaign.options.map((option) => ({ ...option, readyAvailable: 1 })) }),
-    "Mua thêm 1 sản phẩm để nhận quà tặng Khăn lụa hoặc Quạt cầm tay",
+    giftTitles({ entitled: 0, options: giftOptions.map((option) => (option.productId === "p2" ? { ...option, readyAvailable: 0 } : option)) }).next,
+    "Mua thêm 1 sản phẩm để nhận quà tặng Khăn lụa",
+    "a sold-out gift is not advertised",
   );
   assert.equal(
-    titleFor(0, { options: [...campaign.options.map((option) => ({ ...option, readyAvailable: 1 })), { variantId: "g4", productId: "p3", readyAvailable: 1 }] }, [...labels, { variantId: "g4", productName: "Túi" }]),
-    "Mua thêm 1 sản phẩm để nhận quà tặng Khăn lụa, Quạt cầm tay và 1 quà khác",
+    giftTitles({ entitled: 0, options: [...giftOptions, { variantId: "g4", productId: "p3", readyAvailable: 1 }] }).next,
+    "Mua thêm 1 sản phẩm để nhận quà tặng Khăn lụa, Quạt cầm tay hoặc 1 quà khác",
   );
-  assert.equal(titleFor(0, {}, []), "Mua thêm 1 sản phẩm để nhận quà", "no readable name keeps the plain wording");
+  assert.equal(giftTitles({ entitled: 0, labels: [] }).next, "Mua thêm 1 sản phẩm để nhận quà", "no readable name keeps the plain wording");
 });
 
-test("an earned gift is named: the chosen one, or the offer before a choice", () => {
-  const campaign = {
-    ...quantityCampaign,
-    options: [
-      { variantId: "g1", productId: "p1", readyAvailable: 3 },
-      { variantId: "g2", productId: "p2", readyAvailable: 2 },
-    ],
-  };
-  const labels = [{ variantId: "g1", productName: "Khăn lụa" }, { variantId: "g2", productName: "Quạt cầm tay" }];
-  const titleWith = (selections: readonly unknown[], names = labels) => buildCartPromotionView({ ...state({
-    campaigns: [campaign],
-    entitlements: [{ campaignId: "gift-a", revision: 1, eligibleQuantity: 4, earned: 1, entitled: 1, shortfallToNext: null }],
-    selections,
-  }), labels: names } as unknown as CartGiftState)!.items[0]!.title;
-  assert.equal(titleWith([]), "Nàng nhận được 1 quà tặng: Khăn lụa hoặc Quạt cầm tay");
-  assert.equal(titleWith([{ campaignId: "gift-a", variantId: "g2", campaignRevision: 1, quantity: 1 }]), "Nàng nhận được 1 quà tặng: Quạt cầm tay");
-  assert.equal(titleWith([], []), "Nàng nhận được 1 quà tặng", "no readable name keeps the plain wording");
+test("(a) when every gift is out of stock nothing is named and no nudge promises one", () => {
+  const out = giftOptions.map((option) => ({ ...option, readyAvailable: 0 }));
+  assert.equal(giftTitles({ entitled: 0, options: out }).next, undefined, "no 'buy more' for a gift nobody can be given");
+  assert.equal(giftTitles({ entitled: 1, options: out }).next, undefined);
+  assert.equal(giftTitles({ entitled: 1, shortfall: null, options: out }).earned, "Nàng nhận được 1 quà tặng", "the slot is still reached, only unnamed");
+});
+
+test("(b) a campaign that refuses duplicate products does not offer the next slot a gift already picked", () => {
+  const picked = [choice("g1")];
+  assert.equal(
+    giftTitles({ entitled: 1, allowDuplicateGifts: false, selections: picked }).next,
+    "Mua thêm 1 sản phẩm để nhận thêm quà tặng Quạt cầm tay",
+    "the scarf is already taken; only the fan could still be the next gift",
+  );
+  assert.equal(
+    giftTitles({ entitled: 1, allowDuplicateGifts: true, selections: picked }).next,
+    "Mua thêm 1 sản phẩm để nhận thêm quà tặng Khăn lụa hoặc Quạt cầm tay",
+    "duplicates allowed: the scarf can be taken again",
+  );
+  assert.equal(
+    giftTitles({ entitled: 1, allowDuplicateGifts: false, selections: [choice("g1"), choice("g3")] }).next,
+    "Mua thêm 1 sản phẩm để nhận thêm quà",
+    "every product already picked: nothing specific is promised",
+  );
+});
+
+test("(c) two slots, two different gifts chosen: they are joined with 'và'", () => {
+  assert.equal(giftTitles({ entitled: 2, selections: [choice("g1"), choice("g3")] }).earned, "Nàng nhận được 2 quà tặng: Khăn lụa và Quạt cầm tay");
+  assert.equal(giftTitles({ entitled: 2, selections: [choice("g1", 2)] }).earned, "Nàng nhận được 2 quà tặng: Khăn lụa ×2", "the same gift twice is one name with a count");
+});
+
+test("(d) two slots, one chosen: the open slot is said out loud", () => {
+  assert.equal(giftTitles({ entitled: 2, selections: [choice("g3")] }).earned, "Nàng nhận được 2 quà tặng: đã chọn Quạt cầm tay, còn 1 suất chưa chọn");
+});
+
+test("an earned gift before any choice offers a choice, or names the only gift", () => {
+  assert.equal(giftTitles({ entitled: 1 }).earned, "Nàng nhận được 1 quà tặng: chọn từ Khăn lụa hoặc Quạt cầm tay");
+  assert.equal(
+    giftTitles({ entitled: 1, options: giftOptions.filter((option) => option.productId === "p1") }).earned,
+    "Nàng nhận được 1 quà tặng: Khăn lụa",
+  );
+  assert.equal(giftTitles({ entitled: 1, labels: [] }).earned, "Nàng nhận được 1 quà tặng", "no readable name keeps the plain wording");
 });
 
 test("a chosen gift reads as done, not as a task", () => {
