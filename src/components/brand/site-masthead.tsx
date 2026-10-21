@@ -1,4 +1,3 @@
-import { ShippingPromotionNoticeView } from "./shipping-promotion-notice";
 import type { SiteHeaderModel, SitePromotionModel } from "@/components/headless/site-chrome-model";
 import { SiteHeader } from "@/components/brand/site-header";
 
@@ -20,7 +19,6 @@ export function SiteMasthead({
     <div className="site-masthead">
       {/* The landmark keeps the short, stable name; the headline is the content it introduces. */}
       <aside aria-label={promotion.label} className="promotion-shell">
-        <ShippingPromotionNoticeView initial={promotion.shipping ?? null} />
         {promotion.headline}
       </aside>
       <SiteHeader model={header} />
