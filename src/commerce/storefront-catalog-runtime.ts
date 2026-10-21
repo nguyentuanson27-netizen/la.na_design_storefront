@@ -236,14 +236,41 @@ export async function listConfiguredCategoryDiscoveryPage({
 
 export async function listConfiguredCategoryDiscoveryFacets({
   categoryKey,
+  discovery,
+  now,
 }: {
   categoryKey: string;
+  discovery: StorefrontDiscoveryQuery;
+  now?: Date;
 }) {
   const shopId = readPancakeShopId();
   const listingKeys = categoryListingKeys(categoryKey as CategoryKey);
-  return createStorefrontCatalogRepository(prisma).listDiscoveryFacets({
+  return createStorefrontCatalogRepository(prisma).listScopedDiscoveryFacets({
     shopId,
-    categoryListingKeys: listingKeys,
+    discovery: {
+      ...discovery,
+      categoryKey,
+      categoryListingKeys: listingKeys,
+    },
+    now,
+  });
+}
+
+/** The size chips and Sale toggle of `/collections/[slug]`, narrowed by its other filters. */
+export async function listConfiguredCollectionDiscoveryFacets({
+  discovery,
+  now,
+}: {
+  discovery: StorefrontDiscoveryQuery;
+  now?: Date;
+}) {
+  const shopId = readPancakeShopId();
+  return createStorefrontCatalogRepository(prisma).listScopedDiscoveryFacets({
+    shopId,
+    discovery,
+    allowCuratedComponents: true,
+    withSale: false,
+    now,
   });
 }
 

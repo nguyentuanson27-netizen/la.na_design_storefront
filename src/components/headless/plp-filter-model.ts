@@ -6,6 +6,7 @@ import {
 export type PlpFilterState = {
   size: string | null;
   color: string | null;
+  availability: "in-stock" | null;
   minPriceVnd: number | null;
   maxPriceVnd: number | null;
   sale: boolean | null;
@@ -16,6 +17,7 @@ export function hasActivePlpFilters(state: PlpFilterState): boolean {
   return (
     state.size !== null ||
     state.color !== null ||
+    state.availability !== null ||
     state.minPriceVnd !== null ||
     state.maxPriceVnd !== null ||
     Boolean(state.sale) ||
@@ -27,6 +29,7 @@ export function countActivePlpFilters(state: PlpFilterState): number {
   let count = 0;
   if (state.size !== null) count += 1;
   if (state.color !== null) count += 1;
+  if (state.availability !== null) count += 1;
   if (state.minPriceVnd !== null || state.maxPriceVnd !== null) count += 1;
   if (state.sale) count += 1;
   if (state.sort !== "default") count += 1;
@@ -41,12 +44,24 @@ export function formatFilterPriceVnd(amount: number): string {
   }).format(amount);
 }
 
+/**
+ * Whether a facet value is the one the URL filters by, ignoring case and padding.
+ *
+ * The URL keeps whatever case it was written in (`?size=Xl`), the SQL filter matches without case,
+ * and the facets offer one canonical spelling (`XL`). One rule decides both what a chip looks like
+ * ("chosen") and what clicking it does (switch off): with two rules a chip could show as chosen
+ * and still need a second click to clear.
+ */
+export function isSameFacetValue(selected: string | null, option: string): boolean {
+  return selected !== null && selected.trim().toLowerCase() === option.trim().toLowerCase();
+}
+
 export function buildToggleSizeHref(
   basePath: string,
   state: PlpFilterState,
   size: string,
 ): string {
-  const nextSize = state.size === size ? null : size;
+  const nextSize = isSameFacetValue(state.size, size) ? null : size;
   return buildCategoryDiscoveryHref(basePath, {
     ...state,
     size: nextSize,
@@ -59,7 +74,7 @@ export function buildToggleColorHref(
   state: PlpFilterState,
   color: string,
 ): string {
-  const nextColor = state.color === color ? null : color;
+  const nextColor = isSameFacetValue(state.color, color) ? null : color;
   return buildCategoryDiscoveryHref(basePath, {
     ...state,
     color: nextColor,
@@ -75,6 +90,17 @@ export function buildToggleSaleHref(
   return buildCategoryDiscoveryHref(basePath, {
     ...state,
     sale: nextSale,
+    page: 1,
+  }, 1);
+}
+
+export function buildToggleAvailabilityHref(
+  basePath: string,
+  state: PlpFilterState,
+): string {
+  return buildCategoryDiscoveryHref(basePath, {
+    ...state,
+    availability: state.availability === null ? "in-stock" : null,
     page: 1,
   }, 1);
 }

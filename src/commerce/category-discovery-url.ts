@@ -63,6 +63,13 @@ function optionalPrice(value: SearchParamValue): number | null {
   return parsed;
 }
 
+function parseAvailability(value: SearchParamValue): "in-stock" | null {
+  const raw = one(value);
+  if (raw === undefined || raw === "") return null;
+  if (raw !== "in-stock") invalid();
+  return raw;
+}
+
 function parseSale(value: SearchParamValue): boolean | null {
   const raw = one(value);
   if (raw === undefined || raw === "") return null;
@@ -146,7 +153,7 @@ export function parseCategoryDiscoverySearchParams(
     query: null,
     color: optionalText(searchParams.color, STOREFRONT_DISCOVERY_LIMITS.option),
     size: optionalText(searchParams.size, STOREFRONT_DISCOVERY_LIMITS.option),
-    availability: null,
+    availability: parseAvailability(searchParams.availability),
     minPriceVnd,
     maxPriceVnd,
     sale: parseSale(searchParams.sale),
@@ -179,6 +186,7 @@ export function buildCategoryDiscoveryHref(
   if (query.maxPriceVnd !== null && query.maxPriceVnd !== undefined) {
     params.set("maxPrice", String(query.maxPriceVnd));
   }
+  if (query.availability) params.set("availability", query.availability);
   if (query.sale) params.set("sale", "true");
   if (query.sort && query.sort !== "default") params.set("sort", query.sort);
   if (targetPage !== 1) params.set("page", String(targetPage));

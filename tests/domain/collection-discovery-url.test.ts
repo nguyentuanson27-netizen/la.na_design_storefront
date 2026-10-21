@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildCollectionDiscoveryHref,
+  isCollectionDefaultSort,
   parseCollectionDiscoverySearchParams,
 } from "../../src/commerce/collection-discovery-url.ts";
 
@@ -157,3 +158,38 @@ test("collection parser and serializer honour collection-specific default sort f
   );
 });
 
+
+test("collection discovery carries the in-stock filter and rejects any other availability", () => {
+  assert.equal(
+    parseCollectionDiscoverySearchParams("city-uniform", { availability: "in-stock" }).availability,
+    "in-stock",
+  );
+  assert.throws(
+    () => parseCollectionDiscoverySearchParams("city-uniform", { availability: "all" }),
+    /invalid/i,
+  );
+
+  assert.equal(
+    buildCollectionDiscoveryHref("city-uniform", {
+      size: "M",
+      availability: "in-stock",
+      sort: "price-asc",
+      page: 2,
+    }),
+    "/collections/city-uniform?size=M&availability=in-stock&sort=price-asc&page=2",
+  );
+  // Omitted availability is the unfiltered URL, as before the filter existed.
+  assert.equal(
+    buildCollectionDiscoveryHref("city-uniform", { size: null, sort: "name-asc", page: 1 }),
+    "/collections/city-uniform",
+  );
+});
+
+test("pinned products lead only under the collection's own default sort", () => {
+  assert.equal(isCollectionDefaultSort("city-uniform", "name-asc"), true);
+  assert.equal(isCollectionDefaultSort("city-uniform", "price-asc"), false);
+  assert.equal(isCollectionDefaultSort("city-uniform", "price-desc"), false);
+  // A collection that defaults to price has that order as its default, so its pins stay.
+  assert.equal(isCollectionDefaultSort("xa-hang-chao-thu", "price-asc"), true);
+  assert.equal(isCollectionDefaultSort("xa-hang-chao-thu", "name-asc"), false);
+});

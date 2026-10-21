@@ -68,8 +68,8 @@ function input(overrides: Partial<CollectionViewModelInput> = {}): CollectionVie
     hasNext: false,
     pageSize: 24,
     selectEventBySlug: new Map<string, TrackingEvent>(),
-    hrefFor: ({ size, sort, page }) =>
-      `/collections/mua-he?size=${size ?? "all"}&sort=${sort}&page=${page}`,
+    hrefFor: ({ size, sort, page, availability }) =>
+      `/collections/mua-he?size=${size ?? "all"}&sort=${sort}&page=${page}&stock=${availability ?? "any"}`,
     ...overrides,
   };
 }
@@ -243,6 +243,45 @@ test("every filter link returns to page one, so a narrower result cannot land pa
   for (const href of [...model.sortOptions, ...model.sizeOptions].map((option) => option.href)) {
     assert.match(href, /page=1/);
   }
+});
+
+test("the in-stock toggle flips on and off, and every other link keeps it", () => {
+  const off = buildCollectionViewModel(input({ sizes: ["M"] }));
+  assert.equal(off.availabilityOption.active, false);
+  assert.match(off.availabilityOption.href, /stock=in-stock/);
+  assert.equal(off.filtered, false);
+
+  const on = buildCollectionViewModel(
+    input({ sizes: ["M"], discovery: { size: null, sort: "price-asc", availability: "in-stock" } }),
+  );
+  assert.equal(on.availabilityOption.active, true);
+  assert.match(on.availabilityOption.href, /stock=any/, "the active toggle links to the unfiltered state");
+  assert.equal(on.filtered, true, "an in-stock filter alone counts as filtered for the empty state");
+  for (const option of [...on.sortOptions, ...on.sizeOptions]) {
+    assert.match(option.href, /stock=in-stock/, "sort and size links keep the in-stock filter");
+  }
+});
+
+test("clearing the size keeps the in-stock filter, while the clear-all link drops both", () => {
+  const model = buildCollectionViewModel(
+    input({
+      sizes: ["M"],
+      discovery: { size: "M", sort: "name-asc", availability: "in-stock" },
+    }),
+  );
+
+  assert.match(model.sizeOptions[0]?.href ?? "", /size=all&.*stock=in-stock/);
+  assert.match(model.clearFilterHref, /size=all&.*stock=any/);
+});
+
+test("a size typed in another case still marks its chip", () => {
+  const model = buildCollectionViewModel(
+    input({ sizes: ["S", "M"], discovery: { size: "m", sort: "name-asc" } }),
+  );
+
+  assert.equal(model.sizeOptions.find((option) => option.value === "M")?.active, true);
+  assert.equal(model.sizeOptions[0]?.active, false);
+  assert.equal(model.filtered, true);
 });
 
 /* ------------------------------------------------------------------ pagination */

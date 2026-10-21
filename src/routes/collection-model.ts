@@ -75,6 +75,12 @@ export type CollectionSizeOption = Readonly<{
   active: boolean;
 }>;
 
+export type CollectionAvailabilityOption = Readonly<{
+  active: boolean;
+  /** Switches the "còn hàng" filter, keeping size and sort. */
+  href: string;
+}>;
+
 export type CollectionViewModel = Readonly<{
   slug: string;
   title: string;
@@ -86,14 +92,20 @@ export type CollectionViewModel = Readonly<{
   totalPages: number;
   previousHref: string | null;
   nextHref: string | null;
+  /** Drops every filter (size and availability), keeping the sort. */
   clearFilterHref: string;
-  /** Whether a size filter is applied, which decides the empty state's wording. */
+  /** Whether any filter is applied, which decides the empty state's wording. */
   filtered: boolean;
   sortOptions: readonly CollectionSortOption[];
   sizeOptions: readonly CollectionSizeOption[];
+  availabilityOption: CollectionAvailabilityOption;
 }>;
 
-export type CollectionDiscoveryState = Readonly<{ size: string | null; sort: string }>;
+export type CollectionDiscoveryState = Readonly<{
+  size: string | null;
+  sort: string;
+  availability?: "in-stock" | null;
+}>;
 
 export type CollectionViewModelInput = Readonly<{
   slug: string;
@@ -122,8 +134,24 @@ export type CollectionViewModelInput = Readonly<{
   pricingRule?: StorefrontPricingRule;
   selectEventBySlug: ReadonlyMap<string, TrackingEvent>;
   /** Supplied by the loader, which owns the route's URL shape. */
-  hrefFor: (state: Readonly<{ size: string | null; sort: string; page: number }>) => string;
+  hrefFor: (
+    state: Readonly<{
+      size: string | null;
+      sort: string;
+      page: number;
+      availability: "in-stock" | null;
+    }>,
+  ) => string;
 }>;
+
+/**
+ * Sizes compare without case: the catalog has carried the same size as `XL` and `Xl`, and a link
+ * typed as `?size=m` should still mark the `M` chip rather than filter silently with none lit.
+ */
+function sameSize(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
 
 /**
  * The grid, with the merchandiser's pinned slugs first.
@@ -201,6 +229,18 @@ export function buildCollectionViewModel(input: CollectionViewModelInput): Colle
     ? { ...input, heroImageUrl: null, heroImageMobileUrl: null }
     : input;
 
+  const { size, sort } = input.discovery;
+  const availability = input.discovery.availability ?? null;
+  const href = (
+    next: Partial<Readonly<{ size: string | null; sort: string; page: number; availability: "in-stock" | null }>>,
+  ) =>
+    input.hrefFor({
+      size: next.size === undefined ? size : next.size,
+      sort: next.sort ?? sort,
+      page: next.page ?? 1,
+      availability: next.availability === undefined ? availability : next.availability,
+    });
+
   return Object.freeze({
     slug: input.slug,
     title: input.title,
@@ -226,21 +266,17 @@ export function buildCollectionViewModel(input: CollectionViewModelInput): Colle
     totalCount: input.totalCount,
     page: input.page,
     totalPages: input.totalPages,
-    previousHref: input.hasPrevious
-      ? input.hrefFor({ size: input.discovery.size, sort: input.discovery.sort, page: input.page - 1 })
-      : null,
-    nextHref: input.hasNext
-      ? input.hrefFor({ size: input.discovery.size, sort: input.discovery.sort, page: input.page + 1 })
-      : null,
-    clearFilterHref: input.hrefFor({ size: null, sort: input.discovery.sort, page: 1 }),
-    filtered: input.discovery.size !== null,
+    previousHref: input.hasPrevious ? href({ page: input.page - 1 }) : null,
+    nextHref: input.hasNext ? href({ page: input.page + 1 }) : null,
+    clearFilterHref: href({ size: null, availability: null }),
+    filtered: size !== null || availability !== null,
     sortOptions: Object.freeze(
       input.sortChoices.map((choice) =>
         Object.freeze({
           value: choice.value,
           label: choice.label,
-          href: input.hrefFor({ size: input.discovery.size, sort: choice.value, page: 1 }),
-          active: input.discovery.sort === choice.value,
+          href: href({ sort: choice.value }),
+          active: sort === choice.value,
         }),
       ),
     ),
@@ -248,17 +284,21 @@ export function buildCollectionViewModel(input: CollectionViewModelInput): Colle
       Object.freeze({
         value: null,
         label: "Tất cả kích cỡ",
-        href: input.hrefFor({ size: null, sort: input.discovery.sort, page: 1 }),
-        active: input.discovery.size === null,
+        href: href({ size: null }),
+        active: size === null,
       }),
-      ...input.sizes.map((size) =>
+      ...input.sizes.map((option) =>
         Object.freeze({
-          value: size,
-          label: size,
-          href: input.hrefFor({ size, sort: input.discovery.sort, page: 1 }),
-          active: input.discovery.size === size,
+          value: option,
+          label: option,
+          href: href({ size: option }),
+          active: sameSize(size, option),
         }),
       ),
     ]),
+    availabilityOption: Object.freeze({
+      active: availability !== null,
+      href: href({ availability: availability === null ? "in-stock" : null }),
+    }),
   });
 }

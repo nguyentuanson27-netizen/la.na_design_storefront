@@ -130,7 +130,7 @@ test("a category card built from a Flash product shows the tag, the countdown an
     subcategories: [],
     discovery: parseCategoryDiscoverySearchParams("set-do", {}),
     products: [{ id: "p-1", slug: "quan-sq5255", name: "QUẦN SQ5255", variants, flashSale }],
-    facets: { colors: [], sizes: [] },
+    facets: { sizes: [] },
     totalCount: 1,
     totalPages: 1,
     page: 1,

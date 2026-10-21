@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildStorefrontDiscoveryHref,
   STOREFRONT_DISCOVERY_LIMITS,
   type StorefrontDiscoveryQuery,
 } from "../../src/commerce/storefront-discovery.ts";
@@ -9,6 +10,7 @@ import type { StorefrontVariantFacts } from "../../src/commerce/storefront-produ
 import {
   buildShopViewModel,
   hasActiveShopDiscovery,
+  resolveSelectedFacet,
   shopCollectionLabel,
   type ShopProduct,
   type ShopViewModelInput,
@@ -95,6 +97,8 @@ test("every narrowing control counts as filtering", () => {
     { minPriceVnd: 100_000 },
     { maxPriceVnd: 500_000 },
     { collection: "ao-so-mi" },
+    // A link can filter by Sale even though /shop has no Sale control.
+    { sale: true },
     { sort: "price-asc" },
   ];
 
@@ -105,6 +109,11 @@ test("every narrowing control counts as filtering", () => {
       `${Object.keys(narrowing)[0]} must count as filtering`,
     );
   }
+});
+
+test("sale=false is not a narrowing filter", () => {
+  assert.equal(hasActiveShopDiscovery(discovery({ sale: false })), false);
+  assert.equal(hasActiveShopDiscovery(discovery({ sale: null })), false);
 });
 
 test("paging alone is not filtering", () => {
@@ -131,6 +140,84 @@ test("collection facets carry both the value the form submits and the label it s
   assert.deepEqual(model.collectionFacets, [{ value: "ao-so-mi", label: "Ao So Mi" }]);
   assert.deepEqual(model.colorFacets, ["Đen"]);
   assert.deepEqual(model.sizeFacets, ["M"]);
+});
+
+test("a size or colour from an older URL is shown in the facet's spelling, not dropped to 'all'", () => {
+  // `/shop?size=Xl` was a real URL when catalog data mixed `XL` and `Xl`. The facets now offer `XL`;
+  // the select must still show it chosen, or the next submit sends `size=""` and drops the filter.
+  const model = buildShopViewModel(
+    input({
+      discovery: discovery({ size: "Xl", color: "đen" }),
+      facets: { collections: [], colors: ["Đen"], sizes: ["M", "XL"] },
+    }),
+  );
+
+  assert.equal(model.selectedSize, "XL");
+  assert.deepEqual(model.sizeFacets, ["M", "XL"]);
+  // Colour compares without case too (`đ` and `Đ` are one letter to the SQL filter).
+  assert.equal(model.selectedColor, "Đen");
+
+  const none = buildShopViewModel(input({ facets: { collections: [], colors: ["Đen"], sizes: ["M"] } }));
+  assert.equal(none.selectedSize, "");
+  assert.equal(none.selectedColor, "");
+});
+
+test("a chosen value no facet carries is kept as an option instead of being cleared", () => {
+  const resolved = resolveSelectedFacet(["S", "M"], "XXL");
+  assert.equal(resolved.value, "XXL");
+  assert.deepEqual(resolved.options, ["S", "M", "XXL"]);
+
+  // Already present: the options are not duplicated.
+  assert.deepEqual(resolveSelectedFacet(["S", "M"], "m").options, ["S", "M"]);
+  assert.equal(resolveSelectedFacet(["S", "M"], " m ").value, "M");
+  assert.deepEqual(resolveSelectedFacet([], null), { value: "", options: [] });
+});
+
+test("a collection in the URL that is no longer published stays selected, marked as unavailable", () => {
+  // `/shop?collection=retired-collection` is a link that was shared while the collection was
+  // published. The facets no longer list it; without a kept option the select shows "Tất cả" and the
+  // next submit (a sort change) sends `collection=""`, silently dropping the filter.
+  const model = buildShopViewModel(
+    input({
+      discovery: discovery({ collection: "retired-collection" }),
+      facets: { collections: ["ao-so-mi"], colors: [], sizes: [] },
+    }),
+  );
+
+  assert.equal(model.selectedCollection, "retired-collection");
+  assert.deepEqual(model.collectionFacets, [
+    { value: "ao-so-mi", label: "Ao So Mi" },
+    { value: "retired-collection", label: "Retired Collection (không còn khả dụng)" },
+  ]);
+
+  // A published collection is not duplicated or relabelled, and none selected stays "all".
+  const published = buildShopViewModel(
+    input({
+      discovery: discovery({ collection: "ao-so-mi" }),
+      facets: { collections: ["ao-so-mi"], colors: [], sizes: [] },
+    }),
+  );
+  assert.equal(published.selectedCollection, "ao-so-mi");
+  assert.deepEqual(published.collectionFacets, [{ value: "ao-so-mi", label: "Ao So Mi" }]);
+
+  const none = buildShopViewModel(
+    input({ facets: { collections: ["ao-so-mi"], colors: [], sizes: [] } }),
+  );
+  assert.equal(none.selectedCollection, "");
+  assert.equal(none.collectionFacets.length, 1);
+});
+
+test("the shop's own links keep Sale when another filter is cleared", () => {
+  const withSale = discovery({ sale: true, size: "M" });
+  assert.equal(
+    buildStorefrontDiscoveryHref({ ...withSale, size: null, page: 1 }),
+    "/shop?sale=true",
+  );
+  assert.equal(
+    buildStorefrontDiscoveryHref({ ...withSale, sale: null, page: 1 }),
+    "/shop?size=M",
+  );
+  assert.equal(buildStorefrontDiscoveryHref({ ...withSale, sort: "price-asc" }), "/shop?size=M&sale=true&sort=price-asc");
 });
 
 /* -------------------------------------------------------------------- pagination */

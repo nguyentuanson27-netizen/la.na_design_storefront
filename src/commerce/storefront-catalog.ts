@@ -144,6 +144,7 @@ type DiscoveryIdRow = { id: string; sortPrice: number | null };
 type DiscoveryCountRow = { count: bigint };
 type DiscoveryTransitionRow = { nextTransitionAt: Date | null };
 type FacetRow = { value: string };
+type ExistsRow = { available: boolean };
 
 function parseJsonStringArray(value: Prisma.JsonValue): readonly string[] {
   return Array.isArray(value)
@@ -1067,12 +1068,17 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
           )
         `
       : Prisma.sql``;
+    // The listing drops a product as soon as any of its variants is a composite component
+    // (`buildBaseProductFilters`), so the facets drop it the same way. Excluding only the component
+    // variant would offer a size that no product in the grid carries.
     const componentExclusion = collectionSlug
       ? Prisma.sql``
       : Prisma.sql`
           AND NOT EXISTS (
-            SELECT 1 FROM "CompositeComponentMirror" ccm
-            WHERE ccm."componentVariantId" = v."id"
+            SELECT 1
+            FROM "CompositeComponentMirror" ccm
+            JOIN "VariantMirror" cv ON ccm."componentVariantId" = cv."id"
+            WHERE cv."productId" = p."id"
           )
         `;
 
@@ -1135,6 +1141,87 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     };
   }
 
+  /**
+   * Facets for a category or collection page that agree with the grid beside them.
+   *
+   * `listDiscoveryFacets` answers "what exists here"; this answers "what can the shopper still pick
+   * given everything else they chose". Each facet leaves out its own filter -- sizes ignore the size
+   * filter, the Sale toggle ignores the sale filter -- so the control that is active stays
+   * available to switch off, while every other control narrows to something that has results.
+   *
+   * It reads the same variant projection and the same predicates as `listDiscoveryPage`, so a size
+   * is offered exactly when the grid would list a product for it: the colour, price, availability
+   * and sale filters all have to hold on that one variant.
+   */
+  async function listScopedDiscoveryFacets({
+    shopId,
+    discovery,
+    allowCuratedComponents = false,
+    withSale = true,
+    now = new Date(),
+  }: {
+    shopId: number;
+    discovery: StorefrontDiscoveryQuery;
+    allowCuratedComponents?: boolean;
+    /** Whether the surface has a Sale toggle; a collection has none, so it skips that read. */
+    withSale?: boolean;
+    now?: Date;
+  }) {
+    const variantStockCte = buildVariantStockCte(now);
+    const scopeFilters = (scope: StorefrontDiscoveryQuery) =>
+      Prisma.join(
+        [
+          ...buildBaseProductFilters(shopId, scope, allowCuratedComponents),
+          ...buildVariantPredicate(scope),
+        ],
+        " AND ",
+      );
+    const sizeScope = scopeFilters({ ...discovery, size: null });
+    const saleScope = scopeFilters({ ...discovery, sale: null });
+
+    const [sizeRows, saleRows] = await Promise.all([
+      client.$queryRaw<FacetRow[]>(Prisma.sql`
+        ${variantStockCte}
+        SELECT DISTINCT BTRIM(vf."size") AS "value"
+        FROM "variant_stock" vf
+        INNER JOIN "ProductMirror" p ON p."id" = vf."productId"
+        LEFT JOIN "ProductContent" pc ON pc."productId" = p."id"
+        WHERE vf."size" IS NOT NULL
+          AND BTRIM(vf."size") <> ''
+          AND ${sizeScope}
+      `),
+      !withSale
+        ? Promise.resolve<ExistsRow[]>([{ available: false }])
+        : client.$queryRaw<ExistsRow[]>(Prisma.sql`
+        ${variantStockCte}
+        SELECT EXISTS (
+          SELECT 1
+          FROM "variant_stock" vf
+          INNER JOIN "ProductMirror" p ON p."id" = vf."productId"
+          LEFT JOIN "ProductContent" pc ON pc."productId" = p."id"
+          WHERE vf."resolvedPrice" < vf."basePrice"
+            AND ${saleScope}
+        ) AS "available"
+      `),
+    ]);
+
+    const sizes = sizeRows.map(({ value }) => value);
+    // A size in the URL that nothing matches under the other filters stays listed, so its chip and
+    // its pill can still be switched off instead of vanishing and leaving an empty grid unexplained.
+    if (
+      discovery.size &&
+      !sizes.some((size) => size.toLowerCase() === discovery.size!.toLowerCase())
+    ) {
+      sizes.push(discovery.size);
+    }
+
+    return {
+      sizes: sortClothingSizes(sizes),
+      /** Absent when the surface has no Sale toggle, so nothing reads a made-up `false`. */
+      saleAvailable: withSale ? saleRows[0]?.available === true : undefined,
+    };
+  }
+
   async function getProductBySlug({ shopId, slug }: { shopId: number; slug: string }) {
     const product = await client.productMirror.findFirst({
       where: {
@@ -1166,6 +1253,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     listProductPage,
     listDiscoveryPage,
     listDiscoveryFacets,
+    listScopedDiscoveryFacets,
     getProductBySlug,
   };
 }

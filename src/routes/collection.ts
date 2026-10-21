@@ -3,10 +3,11 @@ import { connection } from "next/server";
 
 import {
   buildCollectionDiscoveryHref,
+  isCollectionDefaultSort,
   parseCollectionDiscoverySearchParams,
 } from "@/commerce/collection-discovery-url";
 import {
-  listConfiguredStorefrontDiscoveryFacets,
+  listConfiguredCollectionDiscoveryFacets,
   listConfiguredStorefrontDiscoveryPage,
 } from "@/commerce/storefront-catalog-runtime";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
@@ -51,7 +52,7 @@ export async function loadCollectionRoute({
 
   let discovery: ReturnType<typeof parseCollectionDiscoverySearchParams>;
   let catalogPage: Awaited<ReturnType<typeof listConfiguredStorefrontDiscoveryPage>>;
-  let facets: Awaited<ReturnType<typeof listConfiguredStorefrontDiscoveryFacets>>;
+  let facets: Awaited<ReturnType<typeof listConfiguredCollectionDiscoveryFacets>>;
   try {
     const query = await searchParams;
     discovery = parseCollectionDiscoverySearchParams(collection.slug, query);
@@ -63,7 +64,7 @@ export async function loadCollectionRoute({
         allowCuratedComponents: true,
         now: requestNow,
       }),
-      listConfiguredStorefrontDiscoveryFacets({ collectionSlug: collection.slug }),
+      listConfiguredCollectionDiscoveryFacets({ discovery, now: requestNow }),
     ]);
   } catch (error) {
     if (error instanceof RangeError) notFound();
@@ -74,8 +75,13 @@ export async function loadCollectionRoute({
   if (page > Math.max(totalPages, 1)) notFound();
 
   // Ordered once, here, before tracking is built. The impression and select indices must describe
-  // the order the shopper sees, so the same array feeds the tracking and the view model.
-  const ordered = orderByFeaturedSlugs(products, collection.featuredProductSlugs);
+  // the order the shopper sees, so the same array feeds the tracking and the view model. Pins lead
+  // only in the merchandiser's own order: under a sort the shopper picked they would sit above a
+  // list that claims to be ordered by price or name.
+  const ordered = orderByFeaturedSlugs(
+    products,
+    isCollectionDefaultSort(collection.slug, discovery.sort) ? collection.featuredProductSlugs : [],
+  );
   const listTracking = buildProductListTracking({
     products: ordered,
     list: { listId: `collection:${collection.slug}`, listName: collection.title },
@@ -94,7 +100,11 @@ export async function loadCollectionRoute({
       videoPosterUrl: collection.videoPosterUrl,
       products: ordered,
       sizes: facets.sizes,
-      discovery: { size: discovery.size, sort: discovery.sort },
+      discovery: {
+        size: discovery.size,
+        sort: discovery.sort,
+        availability: discovery.availability,
+      },
       sortChoices: SORT_CHOICES,
       totalCount,
       totalPages,
@@ -109,6 +119,7 @@ export async function loadCollectionRoute({
           size: state.size,
           sort: state.sort as typeof discovery.sort,
           page: state.page,
+          availability: state.availability,
         }),
     }),
     refreshAfterMs,

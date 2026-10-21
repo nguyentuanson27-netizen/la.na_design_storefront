@@ -1,7 +1,13 @@
 import Link from "next/link";
 
 import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
-import { ShopActiveFilters, ShopMobileDrawer } from "@/components/brand/shop-controls";
+import {
+  ShopActiveFilters,
+  ShopFilterCheckbox,
+  ShopFilterSelect,
+  ShopMobileDrawer,
+  ShopPriceRange,
+} from "@/components/brand/shop-controls";
 import {
   ListingBreadcrumbs,
   ListingEmptyState,
@@ -36,6 +42,7 @@ function render(data: ShopViewModel) {
   if (discovery.size) activeFilterCount += 1;
   if (discovery.availability === "in-stock") activeFilterCount += 1;
   if (discovery.minPriceVnd !== null || discovery.maxPriceVnd !== null) activeFilterCount += 1;
+  if (discovery.sale) activeFilterCount += 1;
 
   return (
     <ListingShell>
@@ -99,10 +106,13 @@ function render(data: ShopViewModel) {
                 collectionFacets={data.collectionFacets}
                 colorFacets={data.colorFacets}
                 sizeFacets={data.sizeFacets}
+                selectedCollection={data.selectedCollection}
+                selectedSize={data.selectedSize}
+                selectedColor={data.selectedColor}
                 activeFilterCount={activeFilterCount}
               />
 
-              <select
+              <ShopFilterSelect
                 id="shop-sort-select-mobile"
                 name="sort"
                 aria-label="Sắp xếp"
@@ -113,13 +123,15 @@ function render(data: ShopViewModel) {
                 <option value="name-desc">Tên Z–A</option>
                 <option value="price-asc">Giá thấp → cao</option>
                 <option value="price-desc">Giá cao → thấp</option>
-              </select>
+              </ShopFilterSelect>
             </div>
           </div>
         </form>
 
         {/* Desktop keeps the same native GET semantics without rendering mobile duplicate fields. */}
         <form method="get" action="/shop" className="hidden md:block">
+          {/* Sale has no control on /shop, but a link can filter by it: the form must carry it. */}
+          {discovery.sale ? <input type="hidden" name="sale" value="true" /> : null}
           <div className="flex items-center justify-between gap-4">
             <div className="text-xs uppercase tracking-wider text-[#70584B] font-sans">
               <span>{data.totalCount} sản phẩm</span>
@@ -162,7 +174,7 @@ function render(data: ShopViewModel) {
                 >
                   Sắp xếp:
                 </label>
-                <select
+                <ShopFilterSelect
                   id="shop-sort-select-desktop"
                   name="sort"
                   aria-label="Sắp xếp"
@@ -173,7 +185,7 @@ function render(data: ShopViewModel) {
                   <option value="name-desc">Tên Z–A</option>
                   <option value="price-asc">Giá thấp → cao</option>
                   <option value="price-desc">Giá cao → thấp</option>
-                </select>
+                </ShopFilterSelect>
               </div>
             </div>
           </div>
@@ -182,8 +194,7 @@ function render(data: ShopViewModel) {
             <span className="font-semibold uppercase tracking-wider text-[#70584B]">Bộ lọc</span>
 
             <label className="inline-flex items-center gap-1.5 rounded-md border border-[#3B2219]/25 px-3 py-1 font-medium cursor-pointer transition hover:border-[#3B2219] text-[#3B2219]">
-              <input
-                type="checkbox"
+              <ShopFilterCheckbox
                 name="availability"
                 value="in-stock"
                 defaultChecked={discovery.availability === "in-stock"}
@@ -195,10 +206,10 @@ function render(data: ShopViewModel) {
 
             <label className="flex items-center gap-1.5">
               <span className="font-semibold uppercase tracking-wider text-[#70584B]">Bộ sưu tập</span>
-              <select
+              <ShopFilterSelect
                 name="collection"
                 aria-label="Bộ sưu tập"
-                defaultValue={discovery.collection ?? ""}
+                defaultValue={data.selectedCollection}
                 className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
                 <option value="">Tất cả</option>
@@ -207,15 +218,15 @@ function render(data: ShopViewModel) {
                     {col.label}
                   </option>
                 ))}
-              </select>
+              </ShopFilterSelect>
             </label>
 
             <label className="flex items-center gap-1.5">
               <span className="font-semibold uppercase tracking-wider text-[#70584B]">Kích cỡ</span>
-              <select
+              <ShopFilterSelect
                 name="size"
                 aria-label="Kích cỡ"
-                defaultValue={discovery.size ?? ""}
+                defaultValue={data.selectedSize}
                 className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
                 <option value="">Tất cả</option>
@@ -224,15 +235,15 @@ function render(data: ShopViewModel) {
                     {size}
                   </option>
                 ))}
-              </select>
+              </ShopFilterSelect>
             </label>
 
             <label className="flex items-center gap-1.5">
               <span className="font-semibold uppercase tracking-wider text-[#70584B]">Màu</span>
-              <select
+              <ShopFilterSelect
                 name="color"
                 aria-label="Màu"
-                defaultValue={discovery.color ?? ""}
+                defaultValue={data.selectedColor}
                 className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
                 <option value="">Tất cả</option>
@@ -241,33 +252,16 @@ function render(data: ShopViewModel) {
                     {col}
                   </option>
                 ))}
-              </select>
+              </ShopFilterSelect>
             </label>
 
             <div className="flex items-center gap-1.5">
               <span className="font-semibold uppercase tracking-wider text-[#70584B]">Giá:</span>
-              <input
-                type="number"
-                name="minPrice"
-                aria-label="Giá tối thiểu"
-                placeholder="Từ"
-                min={0}
-                max={data.limits.priceVnd}
-                step={1000}
-                defaultValue={discovery.minPriceVnd ?? ""}
-                className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
-              />
-              <span>-</span>
-              <input
-                type="number"
-                name="maxPrice"
-                aria-label="Giá tối đa"
-                placeholder="Đến"
-                min={0}
-                max={data.limits.priceVnd}
-                step={1000}
-                defaultValue={discovery.maxPriceVnd ?? ""}
-                className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
+              <ShopPriceRange
+                limitVnd={data.limits.priceVnd}
+                minPriceVnd={discovery.minPriceVnd}
+                maxPriceVnd={discovery.maxPriceVnd}
+                inputClassName="w-24 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
               />
               <button
                 type="submit"

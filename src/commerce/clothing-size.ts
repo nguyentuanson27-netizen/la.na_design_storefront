@@ -37,6 +37,39 @@ const KNOWN_SIZE_RANKS: Readonly<Record<string, number>> = {
   "free": 200,
 };
 
+const STANDARD_LETTER_SIZES = new Set([
+  "3xs",
+  "xxs",
+  "2xs",
+  "xs",
+  "1xs",
+  "s",
+  "m",
+  "l",
+  "xl",
+  "1xl",
+  "xxl",
+  "2xl",
+  "xxxl",
+  "3xl",
+  "xxxxl",
+  "4xl",
+  "xxxxxl",
+  "5xl",
+  "6xl",
+  "fs",
+  "os",
+]);
+
+export function canonicalizeClothingSize(size: string): string {
+  const trimmed = size.trim();
+  const lower = trimmed.toLowerCase();
+  if (STANDARD_LETTER_SIZES.has(lower)) {
+    return lower.toUpperCase();
+  }
+  return trimmed;
+}
+
 export function compareClothingSizes(a: string, b: string): number {
   const normA = a.trim().toLowerCase();
   const normB = b.trim().toLowerCase();
@@ -66,5 +99,20 @@ export function compareClothingSizes(a: string, b: string): number {
 }
 
 export function sortClothingSizes(sizes: readonly string[]): string[] {
-  return [...sizes].sort(compareClothingSizes);
+  const uniqueBySize = new Map<string, string>();
+  for (const size of sizes) {
+    const trimmed = size.trim();
+    if (!trimmed) continue;
+    const canonical = canonicalizeClothingSize(trimmed);
+    const key = canonical.toLowerCase();
+    if (!uniqueBySize.has(key)) {
+      uniqueBySize.set(key, canonical);
+    } else {
+      const current = uniqueBySize.get(key)!;
+      if (canonical === canonical.toUpperCase() && current !== current.toUpperCase()) {
+        uniqueBySize.set(key, canonical);
+      }
+    }
+  }
+  return [...uniqueBySize.values()].sort(compareClothingSizes);
 }

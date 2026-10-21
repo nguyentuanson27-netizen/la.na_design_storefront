@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { loadCategoryNextPageAction } from "@/commerce/storefront-category-actions";
 import type { ProductCardModel } from "./build-product-card-model";
 import type { PlpFilterState } from "./plp-filter-model";
+import { createPageRequestGuard, settleIfCurrent } from "./plp-page-request-guard";
 
 export type UsePlpInfiniteGridOptions = {
   initialProducts: readonly ProductCardModel[];
@@ -39,6 +40,12 @@ export function usePlpInfiniteGrid({
   const [error, setError] = useState<string | null>(null);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
+  // A page request started for one list must not land on another: changing size, sort or price
+  // while a page is loading would otherwise append the old filter's products to the new grid.
+  const guardRef = useRef(createPageRequestGuard(initialProducts));
+  useEffect(() => {
+    guardRef.current.setList(initialProducts);
+  }, [initialProducts]);
 
   // Sync state if initialProducts change from server (e.g. filter navigation)
   const [prevInitialProducts, setPrevInitialProducts] = useState(initialProducts);
@@ -56,23 +63,33 @@ export function usePlpInfiniteGrid({
   const loadMore = useCallback(async () => {
     if (isLoadingMore || !hasNextPage) return;
 
+    let stale = false;
     setIsLoadingMore(true);
     setError(null);
     setAnnouncement("");
 
     try {
-      const result = await loadCategoryNextPageAction({
-        categoryKey,
-        categoryPath,
-        cursor: cursor,
-        page: cursor ? undefined : currentPage + 1,
-        color: activeFilters.color,
-        size: activeFilters.size,
-        minPriceVnd: activeFilters.minPriceVnd,
-        maxPriceVnd: activeFilters.maxPriceVnd,
-        sale: activeFilters.sale,
-        sort: activeFilters.sort,
-      });
+      const outcome = await settleIfCurrent(guardRef.current, () =>
+        loadCategoryNextPageAction({
+          categoryKey,
+          categoryPath,
+          cursor: cursor,
+          page: cursor ? undefined : currentPage + 1,
+          color: activeFilters.color,
+          size: activeFilters.size,
+          availability: activeFilters.availability,
+          minPriceVnd: activeFilters.minPriceVnd,
+          maxPriceVnd: activeFilters.maxPriceVnd,
+          sale: activeFilters.sale,
+          sort: activeFilters.sort,
+        }),
+      );
+      if (outcome.stale) {
+        // The shopper moved to another filter; the grid was already reset for it.
+        stale = true;
+        return;
+      }
+      const result = outcome.value;
 
       setProducts((prev) => [...prev, ...result.products]);
       setCurrentPage(result.page);
@@ -84,16 +101,12 @@ export function usePlpInfiniteGrid({
       setAnnouncement(
         `Đã tải thêm ${result.products.length} sản phẩm. Tổng cộng ${totalLoaded} trên ${totalCount} sản phẩm.`,
       );
-
-      if (result.currentHref && typeof window !== "undefined") {
-        window.history.replaceState(null, "", result.currentHref);
-      }
     } catch {
       const errorMessage = "Chưa tải thêm được sản phẩm. Nàng thử lại nhé.";
       setError(errorMessage);
       setAnnouncement(errorMessage);
     } finally {
-      setIsLoadingMore(false);
+      if (!stale) setIsLoadingMore(false);
     }
   }, [
     activeFilters,
