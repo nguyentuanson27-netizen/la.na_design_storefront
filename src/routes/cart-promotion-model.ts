@@ -185,12 +185,20 @@ function view(items: readonly PromotionBannerItem[], savings: readonly Promotion
  */
 const GIFT_NAMES_SHOWN = 2;
 
-function giftNamesText(campaign: CartGiftState["campaigns"][number], labels: CartGiftState["labels"]): string {
+function giftNamesText(
+  campaign: CartGiftState["campaigns"][number],
+  labels: CartGiftState["labels"],
+  /** Gifts the shopper already picked from this campaign; they are named instead of the whole offer. */
+  chosenVariantIds: readonly string[] = [],
+): string {
   const nameByVariant = new Map(labels.map((label) => [label.variantId, label.productName?.trim()]));
   const inStock = campaign.options.filter((option) => option.readyAvailable > 0);
+  const variantIds = chosenVariantIds.length > 0
+    ? chosenVariantIds
+    : (inStock.length > 0 ? inStock : campaign.options).map((option) => option.variantId);
   const names = new Set<string>();
-  for (const option of inStock.length > 0 ? inStock : campaign.options) {
-    const name = nameByVariant.get(option.variantId);
+  for (const variantId of variantIds) {
+    const name = nameByVariant.get(variantId);
     if (name) names.add(name);
   }
   const list = [...names];
@@ -238,11 +246,15 @@ export function buildCartPromotionView(
     if (entry.entitled > 0) {
       const selected = selectedBy.get(entry.campaignId) ?? 0;
       const unclaimed = Math.max(0, entry.entitled - selected);
+      // A chosen gift is named; before a choice, the gifts on offer are.
+      const earnedNames = campaign
+        ? giftNamesText(campaign, state.labels, state.selections.filter((row) => row.campaignId === entry.campaignId).map((row) => row.variantId))
+        : "";
       items.push(Object.freeze({
         id: `gift-${entry.campaignId}`,
         state: "achieved",
         kind: "GIFT",
-        title: entry.entitled === 1 ? "Nàng nhận được 1 quà tặng" : `Nàng nhận được ${entry.entitled} quà tặng`,
+        title: `Nàng nhận được ${entry.entitled} quà tặng${earnedNames ? `: ${earnedNames}` : ""}`,
         progress: null,
         needsGiftChoice: unclaimed > 0,
       }));

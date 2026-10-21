@@ -155,6 +155,25 @@ test("the next gift is named, once per product, preferring what is in stock", ()
   assert.equal(titleFor(0, {}, []), "Mua thêm 1 sản phẩm để nhận quà", "no readable name keeps the plain wording");
 });
 
+test("an earned gift is named: the chosen one, or the offer before a choice", () => {
+  const campaign = {
+    ...quantityCampaign,
+    options: [
+      { variantId: "g1", productId: "p1", readyAvailable: 3 },
+      { variantId: "g2", productId: "p2", readyAvailable: 2 },
+    ],
+  };
+  const labels = [{ variantId: "g1", productName: "Khăn lụa" }, { variantId: "g2", productName: "Quạt cầm tay" }];
+  const titleWith = (selections: readonly unknown[], names = labels) => buildCartPromotionView({ ...state({
+    campaigns: [campaign],
+    entitlements: [{ campaignId: "gift-a", revision: 1, eligibleQuantity: 4, earned: 1, entitled: 1, shortfallToNext: null }],
+    selections,
+  }), labels: names } as unknown as CartGiftState)!.items[0]!.title;
+  assert.equal(titleWith([]), "Nàng nhận được 1 quà tặng: Khăn lụa hoặc Quạt cầm tay");
+  assert.equal(titleWith([{ campaignId: "gift-a", variantId: "g2", campaignRevision: 1, quantity: 1 }]), "Nàng nhận được 1 quà tặng: Quạt cầm tay");
+  assert.equal(titleWith([], []), "Nàng nhận được 1 quà tặng", "no readable name keeps the plain wording");
+});
+
 test("a chosen gift reads as done, not as a task", () => {
   const view = buildCartPromotionView(state({
     campaigns: [quantityCampaign],
