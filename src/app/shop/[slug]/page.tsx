@@ -73,7 +73,7 @@ function render(data: ProductRouteData) {
       </h1>
 
       {data.collections.length > 0 ? (
-        <div className="pdp-collection-row -mx-6 mt-3 flex gap-2 overflow-x-auto px-6 sm:mx-0 sm:px-0 lg:mt-4 lg:flex-wrap lg:overflow-visible">
+        <div className="pdp-collection-row -mx-6 mt-3 flex gap-2 overflow-x-auto px-6 lg:mx-0 lg:mt-4 lg:flex-wrap lg:overflow-visible lg:px-0">
           {data.collections.map((collection) => (
             <Link
               key={collection.slug}

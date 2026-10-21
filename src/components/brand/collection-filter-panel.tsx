@@ -25,8 +25,10 @@ export type CollectionFilterPanelProps = {
  * rather than behind a "Bộ lọc" drawer: on a phone the drawer cost two taps and a full-screen sheet
  * to reach four chips. There the size chips and the "còn hàng" toggle share one row that scrolls
  * sideways under an edge fade, bleeding to the screen edges. The chips draw 32px tall, and an
- * invisible `after:` layer inside the row's padding brings each one to a 44px touch target without
- * the block towering over the products; from `md` they shrink to the desktop bar.
+ * invisible `after:` layer reaches each one 6px past its border box on every side, so the touch
+ * target is 44px both ways without the block towering over the products. The row's 14px gap keeps
+ * neighbouring layers from overlapping; from `md` the chips shrink to the desktop bar and
+ * "còn hàng" returns to a row of its own.
  */
 export function CollectionFilterPanel({
   totalCount,
@@ -55,7 +57,7 @@ export function CollectionFilterPanel({
   const sizeFiltered = !(allSizesOption?.active ?? true);
 
   const chipClassName =
-    "relative inline-flex h-8 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border px-2 text-[11px] md:text-xs font-medium uppercase transition after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] md:h-auto md:min-w-7 md:px-2 md:py-1 md:after:hidden";
+    "relative inline-flex h-8 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border px-2 text-[11px] md:text-xs font-medium uppercase transition after:absolute after:-inset-[7px] after:content-[''] md:h-auto md:min-w-7 md:px-2 md:py-1 md:after:hidden";
 
   const toggleClassName = (active: boolean) =>
     `${chipClassName} ${
@@ -64,12 +66,13 @@ export function CollectionFilterPanel({
         : "border-[#3B2219]/20 hover:border-[#3B2219]"
     }`;
 
-  const availabilityLink = (
+  // `hidden` is display:none, so only the placement for the current width is in the accessibility tree.
+  const availabilityLink = (placement: string) => (
     <Link
       href={availabilityOption.href}
       scroll={false}
       aria-current={availabilityOption.active ? "true" : undefined}
-      className={toggleClassName(availabilityOption.active)}
+      className={`${toggleClassName(availabilityOption.active)} ${placement}`}
     >
       Còn hàng
     </Link>
@@ -107,8 +110,9 @@ export function CollectionFilterPanel({
 
       {concreteSizes.length > 0 ? (
         <nav aria-label="Lọc theo kích cỡ" className="-mx-6 mt-1 md:mx-0 md:mt-4">
-          <div className="collection-size-row flex items-center gap-1 overflow-x-auto px-6 py-1.5 text-[#3B2219] md:flex-wrap md:gap-1.5 md:overflow-visible md:px-0 md:py-0">
-            <span className="mr-0.5 shrink-0 text-[11px] font-semibold md:text-xs uppercase tracking-wider text-[#70584B]">
+          <div className="collection-size-row flex items-center gap-3.5 overflow-x-auto px-6 py-1.5 text-[#3B2219] md:flex-wrap md:gap-1.5 md:overflow-visible md:px-0 md:py-0">
+            {/* A phone has no room for the word once the chips are real 44px targets; the nav is named. */}
+            <span className="sr-only shrink-0 text-xs font-semibold uppercase tracking-wider text-[#70584B] md:not-sr-only md:mr-0.5">
               Size:
             </span>
             {/* "All" leads the row and is always there, current when nothing is picked: the way
@@ -134,13 +138,16 @@ export function CollectionFilterPanel({
                 {opt.label}
               </Link>
             ))}
-            <span aria-hidden="true" className="mx-0.5 h-4 w-px shrink-0 bg-[#3B2219]/20" />
-            {availabilityLink}
+            <span aria-hidden="true" className="h-4 w-px shrink-0 bg-[#3B2219]/20 md:hidden" />
+            {availabilityLink("md:hidden")}
           </div>
         </nav>
-      ) : (
-        <div className="mt-2 flex">{availabilityLink}</div>
-      )}
+      ) : null}
+
+      {/* Below `md` it rides in the size row above when there is one; with no sizes, or from `md`, it has this row. */}
+      <div className={`mt-2 md:mt-3 md:flex md:flex-wrap md:items-center md:gap-2 ${concreteSizes.length > 0 ? "hidden" : "flex"}`}>
+        {availabilityLink("")}
+      </div>
 
       {/* Active filter pills; each remove control is a 44px target on a phone like the chips. */}
       {sizeFiltered && activeSizeOption ? (
