@@ -25,6 +25,7 @@ export default defineConfig({
     "collection-breadcrumb.spec.ts",
     "collection-landing.spec.ts",
     "commerce-events.spec.ts",
+    "csp-enforce.spec.ts",
     "discovery.spec.ts",
     "document-title-watch.spec.ts",
     "editorial.spec.ts",
