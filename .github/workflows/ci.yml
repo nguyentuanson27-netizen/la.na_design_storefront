@@ -70,6 +70,12 @@ jobs:
       - name: Install from lockfile without lifecycle scripts
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      # Any known advisory in a production dependency fails the build. Fix it by upgrading or with an
+      # override in pnpm-workspace.yaml; one reviewed as not applicable is recorded there under
+      # auditConfig.ignoreGhsas with its reason.
+      - name: Audit production dependencies
+        run: pnpm audit --prod
+
       - name: Validate Prisma schema
         run: pnpm prisma:validate
 

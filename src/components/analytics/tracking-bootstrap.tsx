@@ -13,13 +13,14 @@ import { readConsentPolicy } from "@/tracking/consent";
  * actual GTM load belongs to the unit that reviews an exact saved container version and opens the
  * Content-Security-Policy for it.
  */
-export function TrackingBootstrap() {
+export function TrackingBootstrap({ nonce }: Readonly<{ nonce?: string }>) {
   const runtime = resolveTrackingRuntime(readTrackingConfig());
   if (!runtime.publishesDataLayer) return null;
 
   return (
     <script
       id="la-tracking-bootstrap"
+      nonce={nonce}
       dangerouslySetInnerHTML={{
         __html: buildTrackingBootstrapScript(runtime, readConsentPolicy()),
       }}

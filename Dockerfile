@@ -12,7 +12,9 @@ WORKDIR /app
 RUN openssl version && corepack enable
 
 FROM base AS deps
-COPY package.json pnpm-lock.yaml ./
+# pnpm-workspace.yaml carries the dependency overrides the lockfile was resolved with; without it a
+# frozen install refuses the lockfile (ERR_PNPM_LOCKFILE_CONFIG_MISMATCH).
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN test "$(pnpm --version)" = "11.4.0" \
   && pnpm install --frozen-lockfile --ignore-scripts
 
@@ -47,7 +49,7 @@ RUN pnpm prisma:generate
 RUN pnpm build
 
 FROM base AS prod-deps
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN test "$(pnpm --version)" = "11.4.0" \
   && pnpm install --prod --frozen-lockfile --ignore-scripts
 
