@@ -85,18 +85,33 @@ test("the browser cannot choose the nonce or the policy rendering reads it from"
 
   const reportOnly = strictScriptPolicyHeaders(incoming, BASE, "report-only", NONCE);
   assert.equal(reportOnly.response?.name, "content-security-policy-report-only");
+  assert.deepEqual(reportOnly.response?.values, [buildStrictScriptPolicy(BASE, NONCE, "report-only")]);
   assert.equal(reportOnly.request.get("content-security-policy"), null);
-  assert.equal(reportOnly.request.get("content-security-policy-report-only"), reportOnly.response?.value);
+  assert.equal(reportOnly.request.get("content-security-policy-report-only"), reportOnly.response?.values[0]);
   assert.equal(reportOnly.request.get(CSP_NONCE_REQUEST_HEADER), NONCE);
 
   const enforce = strictScriptPolicyHeaders(incoming, BASE, "enforce", NONCE);
   assert.equal(enforce.response?.name, "content-security-policy");
-  assert.equal(enforce.request.get("content-security-policy"), enforce.response?.value);
+  assert.equal(enforce.request.get("content-security-policy"), enforce.response?.values[0]);
   assert.equal(enforce.request.get("content-security-policy-report-only"), null);
-  assert.match(enforce.response!.value, new RegExp(`'nonce-${NONCE.replaceAll("+", "\\+")}'`));
+  assert.match(enforce.response!.values[0]!, new RegExp(`'nonce-${NONCE.replaceAll("+", "\\+")}'`));
 
   // The incoming headers object is not modified.
   assert.equal(incoming.get(CSP_NONCE_REQUEST_HEADER), "BBBBBBBBBBBBBBBBBBBBBB==");
+});
+
+test("enforce re-sends the baseline after the strict policy, so Next still finds the nonce first", () => {
+  const { response } = strictScriptPolicyHeaders(new Headers(), BASE, "enforce", NONCE);
+  assert.deepEqual(response?.values, [buildStrictScriptPolicy(BASE, NONCE, "enforce"), BASE]);
+
+  // Next copies the proxy's response header onto the request and reads the first script-src
+  // there (next/dist/server/app-render/get-script-nonce-from-header). Joined the way Headers
+  // joins repeated values, that must still be the nonce-bearing one.
+  const joined = new Headers();
+  for (const value of response!.values) joined.append(response!.name, value);
+  const firstScriptSrc = joined.get(response!.name)!.split(";").map((entry) => entry.trim())
+    .find((entry) => entry.startsWith("script-src"));
+  assert.equal(firstScriptSrc?.split(/\s+/)[1], `'nonce-${NONCE}'`);
 });
 
 test("server components only accept a well-formed nonce", () => {

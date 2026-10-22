@@ -8,8 +8,9 @@
  * that carry the nonce, plus whatever those scripts load, and ignores `'unsafe-inline'` and the
  * host list -- which stay in the directive as the fallback for browsers that predate nonces.
  *
- * Two policies on one response are both enforced, so the baseline's host list still bounds what a
- * trusted script may load; the stricter policy can only take permissions away.
+ * In `enforce` the response carries both policies and both are enforced, so the baseline's host
+ * list still bounds what a trusted script may load; the stricter policy can only take permissions
+ * away.
  *
  * `LA_CSP_STRICT_SCRIPTS` decides what the stricter policy does, at runtime, so a rollout and a
  * rollback are an environment change:
@@ -88,8 +89,18 @@ export function buildStrictScriptPolicy(
 export type StrictScriptPolicyHeaders = Readonly<{
   /** Request headers to forward to rendering: the nonce, and the policy Next reads it from. */
   request: Headers;
-  /** The response header to add, or `null` when the mode is `off`. */
-  response: Readonly<{ name: string; value: string }> | null;
+  /**
+   * The response header to send, one policy per value in this order, or `null` when the mode is
+   * `off`. A proxy's header replaces next.config.mjs's header of the same name, so `enforce` lists
+   * the baseline again: both are enforced, and the baseline's host list keeps bounding where a
+   * script trusted through 'strict-dynamic' may load from.
+   *
+   * The stricter policy comes first. Next copies a proxy's response headers onto the request it
+   * renders and takes the nonce from the first `script-src` there; with the baseline first it finds
+   * none and leaves its own scripts unstamped, which an enforced policy then blocks. Browsers apply
+   * every policy regardless of order.
+   */
+  response: Readonly<{ name: string; values: readonly string[] }> | null;
 }>;
 
 /**
@@ -113,7 +124,7 @@ export function strictScriptPolicyHeaders(
   const name = mode === "enforce" ? ENFORCE_HEADER : REPORT_ONLY_HEADER;
   request.set(name, policy);
   request.set(CSP_NONCE_REQUEST_HEADER, nonce);
-  return { request, response: { name, value: policy } };
+  return { request, response: { name, values: mode === "enforce" ? [policy, basePolicy] : [policy] } };
 }
 
 /** The nonce the proxy issued for this request, or `undefined` when there is none. */

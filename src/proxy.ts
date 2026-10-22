@@ -69,9 +69,12 @@ function applyResponseHeaders(
   scriptPolicy?: StrictScriptPolicyHeaders,
 ): Response {
   applyMetaFirstPartyCookies(request, response);
-  // Appended beside the baseline, never in place of it: both are enforced, so this one can only
-  // narrow what the page may run.
-  if (scriptPolicy?.response) response.headers.append(scriptPolicy.response.name, scriptPolicy.response.value);
+  if (scriptPolicy?.response) {
+    // In the order given: see `StrictScriptPolicyHeaders.response` for why it matters.
+    const { name, values } = scriptPolicy.response;
+    response.headers.delete(name);
+    for (const value of values) response.headers.append(name, value);
+  }
   const exposure = readSearchExposure();
   if (
     shouldNoIndexRequest({
