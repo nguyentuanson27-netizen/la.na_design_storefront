@@ -8,6 +8,7 @@ on:
       - deploy/vps/**
       - package.json
       - pnpm-lock.yaml
+      - pnpm-workspace.yaml
       - prisma/**
       - src/**
       - services/flow-worker/**
@@ -21,6 +22,7 @@ on:
       - deploy/vps/**
       - package.json
       - pnpm-lock.yaml
+      - pnpm-workspace.yaml
       - prisma/**
       - src/**
       - services/flow-worker/**
