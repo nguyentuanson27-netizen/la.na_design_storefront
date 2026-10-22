@@ -2,3 +2,10 @@ allowBuilds:
   '@prisma/engines': set this to true or false
   prisma: set this to true or false
   unrs-resolver: set this to true or false
+
+# Security patch floors for transitive dependencies that upstream pins below the fix.
+# next@16.3.8 pins sharp@0.35.4 (GHSA-wq5f-xc86-pv6w); its postcss pulls source-map-js@1.2.1
+# (GHSA-68fv-2mgg-jv7q). Drop an entry once the parent ships the patched version itself.
+overrides:
+  sharp: 0.35.5
+  source-map-js: 1.2.2
