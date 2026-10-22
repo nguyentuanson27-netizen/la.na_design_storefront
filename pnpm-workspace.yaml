@@ -5,7 +5,9 @@ allowBuilds:
 
 # Security patch floors for transitive dependencies that upstream pins below the fix.
 # next@16.3.8 pins sharp@0.35.4 (GHSA-wq5f-xc86-pv6w); its postcss pulls source-map-js@1.2.1
-# (GHSA-68fv-2mgg-jv7q). Drop an entry once the parent ships the patched version itself.
+# (GHSA-68fv-2mgg-jv7q); prisma@7.10.1's dev tooling pulls fast-uri@3.1.5 through ajv
+# (GHSA-f65p-4m7j-42xc and five siblings). Drop an entry once the parent ships the patched version.
 overrides:
   sharp: 0.35.5
   source-map-js: 1.2.2
+  fast-uri: 3.1.8
