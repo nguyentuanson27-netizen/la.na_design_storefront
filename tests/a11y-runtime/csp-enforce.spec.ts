@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -10,13 +11,18 @@ import { prisma } from "../../src/db/prisma.ts";
 
 /**
  * The per-request script nonce policy (src/security/script-nonce-policy.ts) under
- * LA_CSP_STRICT_SCRIPTS=enforce. The rest of CI runs the default report-only mode, where nothing is
- * blocked, so this is the spec that proves enforcing it leaves every surface working: storefront,
- * sign-in, the 404 rewrite for an unknown product slug, and admin, with the inline analytics
- * snippets configured so their nonces are exercised too.
+ * LA_CSP_STRICT_SCRIPTS=enforce, on a production build (`next build`, then `next start`): how Next
+ * stamps its own scripts differs between dev and production, and the one ordering bug this policy
+ * has had only showed on a production build. The rest of CI runs the default report-only mode,
+ * where nothing is blocked, so this is the spec that proves enforcing it leaves every surface
+ * working: storefront, sign-in, the 404 rewrite for an unknown product slug, and admin.
  *
- * Third-party origins are answered locally with an empty script: their loaders are still requested
- * and checked against the policy, but nothing leaves the runner.
+ * Every inline snippet the site chrome renders is configured, so each one's nonce is exercised:
+ * the tracking bootstrap, Meta, ChatGPT Ads, and Google Tag Manager with the reviewed container
+ * (`reviewed-gtm-version.json`; any other id is never loaded). gtm.js is answered by a stand-in that
+ * does what the reviewed container does -- run its TikTok Base Custom HTML from a created element --
+ * so the chain from the nonced snippet to TikTok's SDK runs under the enforced policy. Every other
+ * third-party origin gets an empty script: still requested and checked, nothing leaves the runner.
  */
 
 const HOST = "127.0.0.1";
@@ -24,6 +30,16 @@ const PORT = 3346;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
+
+const DIST_DIR = ".next-test/csp-enforce";
+const REVIEWED_CONTAINER = "GTM-PRZT92JR";
+// Inlined into the build and its CSP, so they have to reach `next build`, not only `next start`.
+const BUILD_ENV = {
+  NEXT_PUBLIC_FACEBOOK_PIXEL_ID: "123456789012345",
+  NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID: "csp_enforce_pixel",
+  NEXT_PUBLIC_GTM_CONTAINER_ID: REVIEWED_CONTAINER,
+  LA_GTM_CONTAINER_ID: REVIEWED_CONTAINER,
+};
 
 const runId = `${Date.now()}-${process.pid}`;
 const adminEmail = `csp-enforce-${runId}@example.invalid`;
@@ -62,6 +78,31 @@ function cookiesFrom(headers: Headers) {
   });
 }
 
+/** The script body of the reviewed TikTok Base tag, exactly as saved in the committed export. */
+function reviewedTikTokBaseSnippet(): string {
+  const record = JSON.parse(readFileSync(resolve(APP_ROOT, "src/tracking/reviewed-gtm-version.json"), "utf8")) as {
+    containerId: string;
+    exportPath: string;
+  };
+  if (record.containerId !== REVIEWED_CONTAINER) throw new Error("the reviewed GTM container changed; update this spec");
+  const exported = JSON.parse(readFileSync(resolve(APP_ROOT, record.exportPath), "utf8")) as {
+    containerVersion: { tag: Array<{ name: string; parameter: Array<{ key: string; value?: string }> }> };
+  };
+  const tag = exported.containerVersion.tag.find((candidate) => candidate.name === "tiktok ads - pixel");
+  const html = tag?.parameter.find((parameter) => parameter.key === "html")?.value ?? "";
+  const snippet = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
+  if (!snippet) throw new Error("the reviewed TikTok Base tag has no inline script");
+  return snippet;
+}
+
+async function buildProduction(env: NodeJS.ProcessEnv) {
+  const build = spawn(process.execPath, [NEXT_CLI, "build"], { cwd: APP_ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
+  build.stdout?.on("data", captureServerOutput);
+  build.stderr?.on("data", captureServerOutput);
+  const [code] = (await once(build, "exit")) as [number | null];
+  if (code !== 0) throw new Error(`next build exited with ${code}\n${serverOutput}`);
+}
+
 async function waitForServer() {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     if (server?.exitCode !== null && server?.exitCode !== undefined) {
@@ -71,7 +112,7 @@ async function waitForServer() {
       const response = await fetch(`${BASE_URL}/`, { redirect: "manual" });
       if (response.status < 500) return;
     } catch {
-      // Next dev may still be compiling.
+      // The server may still be starting.
     }
     await delay(500);
   }
@@ -91,6 +132,8 @@ async function cleanupDatabase() {
 }
 
 test.beforeAll(async () => {
+  // A production build of the whole app; the default hook timeout is sized for a dev server.
+  test.setTimeout(900_000);
   await cleanupDatabase();
 
   const product = await prisma.productMirror.create({
@@ -111,22 +154,22 @@ test.beforeAll(async () => {
   adminCookies = cookiesFrom(headers);
   await prisma.user.update({ where: { email: adminEmail }, data: { role: "ADMIN" } });
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...BUILD_ENV,
+    NODE_ENV: "production",
+    NEXT_DIST_DIR: DIST_DIR,
+    BETTER_AUTH_URL: BASE_URL,
+    APP_DOMAIN: `${HOST}:${PORT}`,
+    NEXT_TELEMETRY_DISABLED: "1",
+    LA_CSP_STRICT_SCRIPTS: "enforce",
+    LA_TRACKING_MODE: "preview",
+  };
+  await buildProduction(env);
+
+  server = spawn(process.execPath, [NEXT_CLI, "start", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
-    env: {
-      ...process.env,
-      // One dev server per build directory; see admin-bulk-status.spec.ts.
-      NEXT_DIST_DIR: ".next-test/csp-enforce",
-      BETTER_AUTH_URL: BASE_URL,
-      APP_DOMAIN: `${HOST}:${PORT}`,
-      NEXT_TELEMETRY_DISABLED: "1",
-      LA_CSP_STRICT_SCRIPTS: "enforce",
-      // Every inline snippet the site chrome renders, so each one's nonce is exercised.
-      LA_TRACKING_MODE: "preview",
-      LA_GTM_CONTAINER_ID: "GTM-TESTONLY",
-      NEXT_PUBLIC_FACEBOOK_PIXEL_ID: "123456789012345",
-      NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID: "csp_enforce_pixel",
-    },
+    env,
     stdio: ["ignore", "pipe", "pipe"],
   });
   server.stdout?.on("data", captureServerOutput);
@@ -141,8 +184,18 @@ test.afterAll(async () => {
 });
 
 test.beforeEach(async ({ page }) => {
+  // Later routes take precedence: the generic stub first, then the two this spec runs for real.
   await page.route(/^https:\/\//, (route) =>
     route.fulfill({ status: 200, contentType: "application/javascript", body: "/* stub */" }),
+  );
+  await page.route(/googletagmanager\.com\/gtm\.js/, (route) =>
+    route.fulfill({
+      contentType: "application/javascript",
+      body: `(function(){var s=document.createElement('script');s.text=${JSON.stringify(reviewedTikTokBaseSnippet())};document.head.appendChild(s);})();`,
+    }),
+  );
+  await page.route(/analytics\.tiktok\.com\/i18n\/pixel\/events\.js/, (route) =>
+    route.fulfill({ contentType: "application/javascript", body: "window.__ttqEventsJs = (window.__ttqEventsJs || 0) + 1;" }),
   );
   await page.addInitScript(() => {
     const violations: string[] = [];
@@ -178,12 +231,30 @@ for (const path of STOREFRONT_PATHS) {
     const violations = await loadUnderEnforcedPolicy(page, path);
     expect(violations, `${path} CSP violations\n${serverOutput.slice(-2_000)}`).toEqual([]);
 
-    const snippets = await page.evaluate(() => ({
-      dataLayer: Array.isArray((window as unknown as { dataLayer?: unknown }).dataLayer),
-      fbq: typeof (window as unknown as { fbq?: unknown }).fbq,
-      oaiq: typeof (window as unknown as { oaiq?: unknown }).oaiq,
-    }));
-    expect(snippets).toEqual({ dataLayer: true, fbq: "function", oaiq: "function" });
+    // Google Tag Manager: the inline snippet carries the nonce, copies it onto gtm.js, and the
+    // container's Custom HTML (TikTok Base) runs far enough to load TikTok's SDK.
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __ttqEventsJs?: number }).__ttqEventsJs ?? 0)).toBe(1);
+    const snippets = await page.evaluate(() => {
+      const w = window as unknown as { dataLayer?: Array<Record<string, unknown>>; fbq?: unknown; oaiq?: unknown };
+      const gtmSnippet = document.getElementById("google-tag-manager") as HTMLScriptElement | null;
+      const gtmLoader = document.querySelector<HTMLScriptElement>('script[src*="googletagmanager.com/gtm.js"]');
+      return {
+        gtmSnippetNonced: Boolean(gtmSnippet?.nonce),
+        gtmLoader: gtmLoader?.src.replace(/^https:\/\/www\.googletagmanager\.com/, "") ?? null,
+        gtmLoaderNonced: Boolean(gtmLoader?.nonce),
+        gtmStarted: (w.dataLayer ?? []).some((entry) => entry.event === "gtm.js"),
+        fbq: typeof w.fbq,
+        oaiq: typeof w.oaiq,
+      };
+    });
+    expect(snippets).toEqual({
+      gtmSnippetNonced: true,
+      gtmLoader: `/gtm.js?id=${REVIEWED_CONTAINER}`,
+      gtmLoaderNonced: true,
+      gtmStarted: true,
+      fbq: "function",
+      oaiq: "function",
+    });
   });
 }
 
