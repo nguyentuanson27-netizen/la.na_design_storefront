@@ -11,3 +11,8 @@ overrides:
   sharp: 0.35.5
   source-map-js: 1.2.2
   fast-uri: 3.1.8
+
+# Advisories reviewed and accepted as not applicable, each with the reason. CI runs
+# `pnpm audit --prod` and fails on anything not fixed or listed here.
+auditConfig:
+  ignoreGhsas: []
