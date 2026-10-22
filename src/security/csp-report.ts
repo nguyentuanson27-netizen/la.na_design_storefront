@@ -156,7 +156,12 @@ export type CspReportSuppression = Readonly<{
 
 export type CspReportGateDecision = Readonly<{
   log: boolean;
-  /** What the previous window dropped, reported once by the first decision of the next one. */
+  /**
+   * Set on the first report a window drops for this reason, so a saturated window is visible the
+   * moment it happens, even if no report ever arrives after it.
+   */
+  suppressionStarted: keyof CspReportSuppression | null;
+  /** What the previous window dropped in total, reported once by the first decision of the next. */
   suppressedInPreviousWindow: CspReportSuppression | null;
 }>;
 
@@ -164,7 +169,8 @@ export type CspReportGateDecision = Readonly<{
  * Keeps a flood of reports -- a busy page, or anyone posting to the endpoint -- from flooding the
  * log, without letting one sender use up the window: each client gets its own share of it, keyed by
  * the proxy-owned client IP (`null` when there is none). Per process, which is enough to bound
- * volume; the counts are not meant to be exact. Anything dropped is reported, so a quiet log can be
+ * volume; the counts are not meant to be exact. Anything dropped is reported -- the first drop of
+ * each kind in a window at once, the window's totals when the next one opens -- so a quiet log can be
  * told apart from a saturated one.
  */
 export function createCspReportLogGate({
@@ -195,14 +201,14 @@ export function createCspReportLogGate({
     const fromClient = perClient.get(key) ?? 0;
     if (fromClient >= clientLimit) {
       byClient += 1;
-      return { log: false, suppressedInPreviousWindow };
+      return { log: false, suppressionStarted: byClient === 1 ? "byClient" : null, suppressedInPreviousWindow };
     }
     if (logged >= limit) {
       byWindow += 1;
-      return { log: false, suppressedInPreviousWindow };
+      return { log: false, suppressionStarted: byWindow === 1 ? "byWindow" : null, suppressedInPreviousWindow };
     }
     perClient.set(key, fromClient + 1);
     logged += 1;
-    return { log: true, suppressedInPreviousWindow };
+    return { log: true, suppressionStarted: null, suppressedInPreviousWindow };
   };
 }

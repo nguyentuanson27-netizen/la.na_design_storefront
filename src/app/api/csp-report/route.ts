@@ -12,7 +12,8 @@ const admit = createCspReportLogGate();
 /**
  * Where browsers report Content-Security-Policy violations (`report-uri` in the per-request script
  * policy, src/security/script-nonce-policy.ts). Each violation becomes one bounded JSON log line,
- * within a per-client and a per-window budget; what those drop is logged as
+ * within a per-client and a per-window budget. The first report either budget drops in a window
+ * logs `csp.violation_suppression_started` at once, and the window's totals follow as
  * `csp.violation_suppressed`. The response is always an empty 204, so a caller learns nothing.
  */
 export async function POST(request: Request): Promise<Response> {
@@ -44,6 +45,9 @@ export async function POST(request: Request): Promise<Response> {
       const gate = admit(Date.now(), client);
       if (gate.suppressedInPreviousWindow !== null) {
         console.warn(JSON.stringify({ name: "csp.violation_suppressed", ...gate.suppressedInPreviousWindow }));
+      }
+      if (gate.suppressionStarted !== null) {
+        console.warn(JSON.stringify({ name: "csp.violation_suppression_started", reason: gate.suppressionStarted }));
       }
       if (gate.log) console.warn(JSON.stringify({ name: "csp.violation", ...violation }));
     }

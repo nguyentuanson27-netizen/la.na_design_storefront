@@ -85,12 +85,16 @@ test("anything that is not a report yields nothing, and injected text never surv
 test("the log gate admits a bounded number per window and reports what it suppressed", () => {
   const admit = createCspReportLogGate({ limit: 2, clientLimit: 5, windowMs: 1_000 });
 
-  assert.deepEqual(admit(0, "a"), { log: true, suppressedInPreviousWindow: null });
-  assert.deepEqual(admit(10, "b"), { log: true, suppressedInPreviousWindow: null });
-  assert.deepEqual(admit(20, "c"), { log: false, suppressedInPreviousWindow: null });
-  assert.deepEqual(admit(30, "d"), { log: false, suppressedInPreviousWindow: null });
-  assert.deepEqual(admit(1_000, "a"), { log: true, suppressedInPreviousWindow: { byClient: 0, byWindow: 2 } });
-  assert.deepEqual(admit(1_001, "a"), { log: true, suppressedInPreviousWindow: null });
+  assert.deepEqual(admit(0, "a"), { log: true, suppressionStarted: null, suppressedInPreviousWindow: null });
+  assert.deepEqual(admit(10, "b"), { log: true, suppressionStarted: null, suppressedInPreviousWindow: null });
+  assert.deepEqual(admit(20, "c"), { log: false, suppressionStarted: "byWindow", suppressedInPreviousWindow: null });
+  assert.deepEqual(admit(30, "d"), { log: false, suppressionStarted: null, suppressedInPreviousWindow: null });
+  assert.deepEqual(admit(1_000, "a"), {
+    log: true,
+    suppressionStarted: null,
+    suppressedInPreviousWindow: { byClient: 0, byWindow: 2 },
+  });
+  assert.deepEqual(admit(1_001, "a"), { log: true, suppressionStarted: null, suppressedInPreviousWindow: null });
 });
 
 test("one client flooding the endpoint cannot crowd out reports from other clients", () => {
@@ -105,6 +109,31 @@ test("one client flooding the endpoint cannot crowd out reports from other clien
   assert.deepEqual([admit(200, null), admit(201, null), admit(202, null), admit(203, null)].map((d) => d.log), [true, true, true, false]);
 
   assert.deepEqual(admit(1_000, "shopper-1").suppressedInPreviousWindow, { byClient: 48, byWindow: 0 });
+});
+
+test("a sender that stops right after its quota still leaves a suppression record", () => {
+  // Eleven reports from one client, then silence: no later report will ever carry the window's
+  // totals, so the drop itself has to be announced.
+  const admit = createCspReportLogGate({ limit: 60, clientLimit: 10, windowMs: 60_000 });
+  const decisions = Array.from({ length: 11 }, (_, index) => admit(index, "203.0.113.9"));
+
+  assert.equal(decisions.filter((decision) => decision.log).length, 10);
+  assert.deepEqual(decisions.map((decision) => decision.suppressionStarted).filter(Boolean), ["byClient"]);
+  assert.equal(decisions[10]?.suppressionStarted, "byClient");
+});
+
+test("each kind of suppression is announced once per window, not once per dropped report", () => {
+  const admit = createCspReportLogGate({ limit: 3, clientLimit: 2, windowMs: 1_000 });
+  const started = [
+    admit(0, "a"), admit(1, "a"), admit(2, "a"), admit(3, "a"), // client a: 2 logged, then byClient
+    admit(4, "b"), admit(5, "c"), admit(6, "d"), // window full after b: c and d dropped byWindow
+  ].map((decision) => decision.suppressionStarted);
+  assert.deepEqual(started, [null, null, "byClient", null, null, "byWindow", null]);
+
+  // A new window announces again.
+  assert.equal(admit(1_000, "a").suppressionStarted, null);
+  assert.equal(admit(1_001, "a").suppressionStarted, null);
+  assert.equal(admit(1_002, "a").suppressionStarted, "byClient");
 });
 
 test("past the tracked-client bound, new clients share one overflow budget", () => {
