@@ -25,7 +25,7 @@ import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
  * later Purchase effect can therefore distinguish `ready` from `unavailable` even if the one-shot
  * browser load/error event happened before that effect subscribed.
  */
-export function FacebookPixel() {
+export function FacebookPixel({ nonce }: Readonly<{ nonce?: string }>) {
   const config = readMetaPixelConfig();
   if (config === null) return null;
   const advancedMatching = readMetaFirstPartyCookiesEnabled()
@@ -36,7 +36,7 @@ return m?{external_id:m[1]}:{}})()`
 
   return (
     <>
-      <Script id="facebook-pixel" strategy="afterInteractive">
+      <Script id="facebook-pixel" strategy="afterInteractive" nonce={nonce}>
         {`!function(f,b,e,v,n,t,s)
 {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
 n.callMethod.apply(n,arguments):n.queue.push(arguments)};

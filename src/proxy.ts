@@ -9,6 +9,11 @@ import {
   readMetaFirstPartyCookiesEnabled,
 } from "@/integrations/meta/first-party-cookies";
 import { readSearchExposure, shouldNoIndexRequest } from "@/seo/search-exposure";
+import {
+  readStrictScriptPolicyMode,
+  strictScriptPolicyHeaders,
+  type StrictScriptPolicyHeaders,
+} from "@/security/script-nonce-policy";
 
 const SHOP_PRODUCT_PREFIX = "/shop/";
 const EXACT_PRODUCT_PATH = /^\/shop\/[^/]+$/;
@@ -17,6 +22,18 @@ const NO_INDEX_VALUE = "noindex, nofollow";
 const UNRESOLVED_PRODUCT_PATH = "/__unresolved-product";
 
 const META_PIXEL_CONFIGURED = (process.env.LA_BUILD_FACEBOOK_PIXEL_ID ?? "").length > 0;
+/** The baseline policy next.config.mjs sends with every response, inlined at build. */
+const BASE_CONTENT_SECURITY_POLICY = process.env.LA_BUILD_CONTENT_SECURITY_POLICY ?? "";
+
+/**
+ * A fresh script nonce for this page request (src/security/script-nonce-policy.ts). The request
+ * half reaches rendering, where Next stamps the nonce on its own scripts and the site chrome on the
+ * analytics snippets; the response half is the stricter policy the browser receives.
+ */
+function readStrictScriptPolicy(request: NextRequest): StrictScriptPolicyHeaders {
+  const mode = BASE_CONTENT_SECURITY_POLICY.length > 0 ? readStrictScriptPolicyMode() : "off";
+  return strictScriptPolicyHeaders(request.headers, BASE_CONTENT_SECURITY_POLICY, mode);
+}
 
 /**
  * Writes the first-party cookies Meta's events match on: the ad click's `fbclid` as `_fbc`, so a
@@ -46,8 +63,15 @@ function applyMetaFirstPartyCookies(request: NextRequest, response: Response): v
   }
 }
 
-function applyResponseHeaders(request: NextRequest, response: Response): Response {
+function applyResponseHeaders(
+  request: NextRequest,
+  response: Response,
+  scriptPolicy?: StrictScriptPolicyHeaders,
+): Response {
   applyMetaFirstPartyCookies(request, response);
+  // Appended beside the baseline, never in place of it: both are enforced, so this one can only
+  // narrow what the page may run.
+  if (scriptPolicy?.response) response.headers.append(scriptPolicy.response.name, scriptPolicy.response.value);
   const exposure = readSearchExposure();
   if (
     shouldNoIndexRequest({
@@ -62,15 +86,18 @@ function applyResponseHeaders(request: NextRequest, response: Response): Respons
 }
 
 export async function proxy(request: NextRequest) {
+  const scriptPolicy = readStrictScriptPolicy(request);
+  const forward = { request: { headers: scriptPolicy.request } };
+
   if (!EXACT_PRODUCT_PATH.test(request.nextUrl.pathname)) {
-    return applyResponseHeaders(request, NextResponse.next());
+    return applyResponseHeaders(request, NextResponse.next(forward), scriptPolicy);
   }
 
   const slug = request.nextUrl.pathname.slice(SHOP_PRODUCT_PREFIX.length);
   const resolution = await resolveConfiguredStorefrontProductSlug(slug);
 
   if (resolution.kind === "CURRENT") {
-    return applyResponseHeaders(request, NextResponse.next());
+    return applyResponseHeaders(request, NextResponse.next(forward), scriptPolicy);
   }
 
   if (resolution.kind === "HISTORICAL") {
@@ -114,7 +141,7 @@ export async function proxy(request: NextRequest) {
   destination.search = "";
   destination.hash = "";
 
-  return applyResponseHeaders(request, NextResponse.rewrite(destination));
+  return applyResponseHeaders(request, NextResponse.rewrite(destination, forward), scriptPolicy);
 }
 
 export const config = {

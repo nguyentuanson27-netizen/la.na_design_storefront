@@ -287,15 +287,22 @@ test("T8 the site chrome mounts the tracking bootstrap, GTM, and other pixel mou
   );
 
   assert.equal(
-    chrome.match(/<FacebookPixel\s*\/>/g)?.length,
+    chrome.match(/<FacebookPixel nonce=\{model\.scriptNonce\} \/>/g)?.length,
     1,
-    "the direct Meta mount must stay exactly once",
+    "the direct Meta mount must stay exactly once, with the request's script nonce",
   );
   assert.equal(
-    chrome.match(/<ChatGptAdsPixel\s*\/>/g)?.length,
+    chrome.match(/<ChatGptAdsPixel nonce=\{model\.scriptNonce\} \/>/g)?.length,
     1,
-    "the ChatGPT Ads Pixel mount must stay exactly once",
+    "the ChatGPT Ads Pixel mount must stay exactly once, with the request's script nonce",
   );
+  for (const mount of ["TrackingBootstrap", "GoogleTagManager"]) {
+    assert.match(
+      chrome,
+      new RegExp(`<${mount} nonce=\\{model\\.scriptNonce\\} />`),
+      `${mount} renders an inline script and must carry the request's script nonce`,
+    );
+  }
   assert.equal(
     chrome.match(/<ZaloAdsPixel\s*\/>/g)?.length,
     1,

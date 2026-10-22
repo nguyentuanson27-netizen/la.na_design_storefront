@@ -238,6 +238,9 @@ const nextConfig = {
   // id supplied only at runtime would still reach the server component and render a loader script
   // the baked policy then blocks. Declaring it here inlines it either way, including as "".
   env: {
+    // The proxy derives the per-request nonce policy from this exact baseline
+    // (src/security/script-nonce-policy.ts), so the two cannot drift.
+    LA_BUILD_CONTENT_SECURITY_POLICY: contentSecurityPolicy,
     LA_BUILD_FACEBOOK_PIXEL_ID: configuredFacebookPixelId,
     LA_BUILD_OPENAI_ADS_PIXEL_ID: configuredOpenAiAdsPixelId,
     LA_BUILD_ZALO_ADS_PIXEL_ID: configuredZaloAdsPixelId,

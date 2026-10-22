@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { headers } from "next/headers";
 import { connection } from "next/server";
 
 import { ChatGptAdsPixel } from "@/components/analytics/chatgpt-ads-pixel";
@@ -18,6 +19,7 @@ import {
   type SiteChromeContent,
 } from "@/components/headless/site-chrome-model";
 import { TryOnSessionProvider } from "@/components/headless/try-on-session";
+import { readRequestScriptNonce } from "@/security/script-nonce-policy";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildSiteStructuredData, serializeJsonLd } from "@/seo/structured-data";
 
@@ -47,6 +49,11 @@ export type SiteChromeModel = Readonly<{
    * layer takes props and does not reach into `@/commerce/*` (spec 06).
    */
   content: SiteChromeContent;
+  /**
+   * The nonce the proxy issued for this request, for the inline analytics snippets. Next stamps its
+   * own scripts from the request's policy header; these are the scripts it does not write.
+   */
+  scriptNonce: string | undefined;
 }>;
 
 import { readConfiguredCategoryMegaMedia } from "@/commerce/storefront-catalog-runtime";
@@ -68,14 +75,16 @@ const PANCAKE_CHAT_HOSTS = [OFFICIAL_PRODUCTION_STOREFRONT_HOST, LEGACY_TEMPORAR
  */
 export async function loadSiteChrome(): Promise<SiteChromeModel> {
   await connection();
-  const [exposure, megaMedia] = await Promise.all([
+  const [exposure, megaMedia, requestHeaders] = await Promise.all([
     Promise.resolve(readSearchExposure()),
     readConfiguredCategoryMegaMedia(),
+    headers(),
   ]);
 
   return {
     structuredData: [buildSiteStructuredData({ origin: exposure.origin })],
     content: buildSiteChromeContent(megaMedia, process.env),
+    scriptNonce: readRequestScriptNonce(requestHeaders),
   };
 }
 
@@ -96,9 +105,9 @@ export function SiteChrome({
 }: Readonly<{ model: SiteChromeModel; children: ReactNode }>) {
   return (
     <SiteDocument>
-      <TrackingBootstrap />
-      <GoogleTagManager />
-      <ChatGptAdsPixel />
+      <TrackingBootstrap nonce={model.scriptNonce} />
+      <GoogleTagManager nonce={model.scriptNonce} />
+      <ChatGptAdsPixel nonce={model.scriptNonce} />
       {model.structuredData.map((document, index) => (
         <script
           key={index}
@@ -116,7 +125,7 @@ export function SiteChrome({
       </TryOnSessionProvider>
       <SiteChat pancakeHosts={PANCAKE_CHAT_HOSTS} />
       <TrackingPageView />
-      <FacebookPixel />
+      <FacebookPixel nonce={model.scriptNonce} />
       <ZaloAdsPixel />
     </SiteDocument>
   );
