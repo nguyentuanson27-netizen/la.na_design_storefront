@@ -1,3 +1,5 @@
+import { readAuthServerConfig } from "@/auth/config";
+import { readOptionalTrustedClientIp } from "@/commerce/guest-checkout-client-identity";
 import {
   CSP_REPORT_CONTENT_TYPES,
   CSP_REPORT_MAX_BYTES,
@@ -9,8 +11,9 @@ const admit = createCspReportLogGate();
 
 /**
  * Where browsers report Content-Security-Policy violations (`report-uri` in the per-request script
- * policy, src/security/script-nonce-policy.ts). Each violation becomes one bounded JSON log line;
- * the response is always an empty 204, so a caller learns nothing from it.
+ * policy, src/security/script-nonce-policy.ts). Each violation becomes one bounded JSON log line,
+ * within a per-client and a per-window budget; what those drop is logged as
+ * `csp.violation_suppressed`. The response is always an empty 204, so a caller learns nothing.
  */
 export async function POST(request: Request): Promise<Response> {
   const empty = () => new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
@@ -35,10 +38,12 @@ export async function POST(request: Request): Promise<Response> {
       chunks.push(value);
     }
 
+    // The proxy-owned client IP keys each sender's share of the log; it is never logged itself.
+    const client = readOptionalTrustedClientIp(request.headers, readAuthServerConfig());
     for (const violation of parseCspReport(JSON.parse(Buffer.concat(chunks).toString("utf8")))) {
-      const gate = admit(Date.now());
-      if (gate.suppressedInPreviousWindow > 0) {
-        console.warn(JSON.stringify({ name: "csp.violation_suppressed", count: gate.suppressedInPreviousWindow }));
+      const gate = admit(Date.now(), client);
+      if (gate.suppressedInPreviousWindow !== null) {
+        console.warn(JSON.stringify({ name: "csp.violation_suppressed", ...gate.suppressedInPreviousWindow }));
       }
       if (gate.log) console.warn(JSON.stringify({ name: "csp.violation", ...violation }));
     }

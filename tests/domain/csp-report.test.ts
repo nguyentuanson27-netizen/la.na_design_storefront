@@ -83,12 +83,33 @@ test("anything that is not a report yields nothing, and injected text never surv
 });
 
 test("the log gate admits a bounded number per window and reports what it suppressed", () => {
-  const admit = createCspReportLogGate(2, 1_000);
+  const admit = createCspReportLogGate({ limit: 2, clientLimit: 5, windowMs: 1_000 });
 
-  assert.deepEqual(admit(0), { log: true, suppressedInPreviousWindow: 0 });
-  assert.deepEqual(admit(10), { log: true, suppressedInPreviousWindow: 0 });
-  assert.deepEqual(admit(20), { log: false, suppressedInPreviousWindow: 0 });
-  assert.deepEqual(admit(30), { log: false, suppressedInPreviousWindow: 0 });
-  assert.deepEqual(admit(1_000), { log: true, suppressedInPreviousWindow: 2 });
-  assert.deepEqual(admit(1_001), { log: true, suppressedInPreviousWindow: 0 });
+  assert.deepEqual(admit(0, "a"), { log: true, suppressedInPreviousWindow: null });
+  assert.deepEqual(admit(10, "b"), { log: true, suppressedInPreviousWindow: null });
+  assert.deepEqual(admit(20, "c"), { log: false, suppressedInPreviousWindow: null });
+  assert.deepEqual(admit(30, "d"), { log: false, suppressedInPreviousWindow: null });
+  assert.deepEqual(admit(1_000, "a"), { log: true, suppressedInPreviousWindow: { byClient: 0, byWindow: 2 } });
+  assert.deepEqual(admit(1_001, "a"), { log: true, suppressedInPreviousWindow: null });
+});
+
+test("one client flooding the endpoint cannot crowd out reports from other clients", () => {
+  const admit = createCspReportLogGate({ limit: 10, clientLimit: 3, windowMs: 1_000 });
+
+  const flood = Array.from({ length: 50 }, (_, index) => admit(index, "attacker").log);
+  assert.equal(flood.filter(Boolean).length, 3);
+
+  // Real browsers' reports still reach the log in the same window.
+  for (const client of ["shopper-1", "shopper-2", "shopper-3"]) assert.equal(admit(100, client).log, true);
+  // Reports with no trusted client IP share one budget rather than escaping the per-client cap.
+  assert.deepEqual([admit(200, null), admit(201, null), admit(202, null), admit(203, null)].map((d) => d.log), [true, true, true, false]);
+
+  assert.deepEqual(admit(1_000, "shopper-1").suppressedInPreviousWindow, { byClient: 48, byWindow: 0 });
+});
+
+test("past the tracked-client bound, new clients share one overflow budget", () => {
+  const admit = createCspReportLogGate({ limit: 100, clientLimit: 2, windowMs: 1_000, maxTrackedClients: 3 });
+  for (const client of ["a", "b", "c"]) assert.equal(admit(0, client).log, true);
+
+  assert.deepEqual(["d", "e", "f", "g"].map((client) => admit(1, client).log), [true, true, false, false]);
 });

@@ -29,17 +29,38 @@ rebuild.
 ## Rollout
 
 1. Deploy with `report-only`.
-2. Browse the storefront in production with DevTools open, and let real traffic run for a few days.
-   Accept GTM consent paths, open the Pancake chat, add to cart and check out once.
+2. Exercise every surface in production with DevTools open, then let real traffic run for a few
+   days. Each of these must be covered, on a phone-width window as well as desktop:
+   - storefront: home, listings, a product page, cart, checkout through to the success page, order
+     tracking, and an unknown product slug (the 404 rewrite);
+   - accounts: sign-in and `/account`;
+   - admin, signed in as an admin: products (directory and one product), collections, new
+     arrivals, promotions (campaigns, shipping, gift-quantity) and size guides;
+   - the live integrations: accept the GTM consent paths so its tags fire, open the Pancake chat,
+     and land once from a Zalo and a Meta ad link.
+
+   CI already proves the nonce wiring on every pull request: `tests/a11y-runtime/csp-enforce.spec.ts`
+   loads the storefront pages, sign-in, the 404 rewrite and every admin page under `enforce` and
+   fails on any violation. It stubs every third-party script, though, so the real GTM container,
+   Pancake chat and Zalo tracker are only proven here.
 3. Read the reports:
 
    ```bash
-   docker compose logs app --since 72h | grep '"csp.violation"'
+   docker compose logs app --since 72h | grep -E '"csp\.violation(_suppressed)?"'
    ```
 
-   Each line names the directive, the blocked origin (or `inline` / `eval`), the page path and the
-   script that caused it. Lines are capped at 60 a minute per process; `csp.violation_suppressed`
-   says how many were dropped.
+   Each `csp.violation` line names the directive, the blocked origin (or `inline` / `eval`), the page
+   path and the script that caused it. The endpoint is public, so the log is budgeted: 10 lines a
+   minute per client (by the proxy-owned client IP, which is never logged) and 60 a minute per
+   process overall. A `csp.violation_suppressed` line says how many reports the previous window
+   dropped, split into `byClient` (one sender over its share) and `byWindow` (the whole window
+   full).
+
+   **A quiet log is evidence only when nothing was suppressed.** Any `byWindow` count means real
+   reports may have been lost in that window: find out why (a broken page, or a flood from many
+   addresses) and repeat the observation before enforcing. A persistent flood is better stopped at
+   the edge: a request rate limit on `/api/csp-report` in nginx-proxy-manager (`limit_req`) keeps it
+   from reaching the app at all.
 4. Expect noise from browser extensions (`chrome-extension:` sources and similar). A violation whose
    `source` is one of the site's own scripts, GTM, Meta, Zalo, OpenAI or Pancake must be understood
    before enforcing. A GTM Custom HTML tag that injects inline script without the nonce shows up

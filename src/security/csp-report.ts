@@ -17,7 +17,13 @@ export const CSP_REPORT_CONTENT_TYPES = new Set([
 ]);
 /** At most this many violations per window reach the log; the rest are only counted. */
 export const CSP_REPORT_LOG_LIMIT = 60;
+/** At most this many of them from any one client, so one sender cannot use up the window. */
+export const CSP_REPORT_CLIENT_LOG_LIMIT = 10;
 export const CSP_REPORT_WINDOW_MS = 60_000;
+/** Distinct clients tracked per window; beyond it, new clients share one overflow budget. */
+const CSP_REPORT_MAX_TRACKED_CLIENTS = 1_000;
+const UNKNOWN_CLIENT = "unknown";
+const OVERFLOW_CLIENT = "overflow";
 
 const MAX_VALUE_LENGTH = 200;
 const DIRECTIVE_PATTERN = /^[a-z-]{1,40}$/;
@@ -141,31 +147,62 @@ export function parseCspReport(input: unknown): CspViolation[] {
   return [];
 }
 
+export type CspReportSuppression = Readonly<{
+  /** Dropped because their client had used its own budget for the window. */
+  byClient: number;
+  /** Dropped because the window's overall budget was used up. */
+  byWindow: number;
+}>;
+
+export type CspReportGateDecision = Readonly<{
+  log: boolean;
+  /** What the previous window dropped, reported once by the first decision of the next one. */
+  suppressedInPreviousWindow: CspReportSuppression | null;
+}>;
+
 /**
  * Keeps a flood of reports -- a busy page, or anyone posting to the endpoint -- from flooding the
- * log. Per process, which is enough to bound volume; the counts are not meant to be exact.
+ * log, without letting one sender use up the window: each client gets its own share of it, keyed by
+ * the proxy-owned client IP (`null` when there is none). Per process, which is enough to bound
+ * volume; the counts are not meant to be exact. Anything dropped is reported, so a quiet log can be
+ * told apart from a saturated one.
  */
-export function createCspReportLogGate(
+export function createCspReportLogGate({
   limit = CSP_REPORT_LOG_LIMIT,
+  clientLimit = CSP_REPORT_CLIENT_LOG_LIMIT,
   windowMs = CSP_REPORT_WINDOW_MS,
-) {
-  let windowStart = 0;
+  maxTrackedClients = CSP_REPORT_MAX_TRACKED_CLIENTS,
+}: Readonly<{ limit?: number; clientLimit?: number; windowMs?: number; maxTrackedClients?: number }> = {}) {
+  let windowStart = Number.NEGATIVE_INFINITY;
   let logged = 0;
-  let suppressed = 0;
+  let perClient = new Map<string, number>();
+  let byClient = 0;
+  let byWindow = 0;
 
-  return function admit(nowMs: number): Readonly<{ log: boolean; suppressedInPreviousWindow: number }> {
-    let suppressedInPreviousWindow = 0;
+  return function admit(nowMs: number, client: string | null): CspReportGateDecision {
+    let suppressedInPreviousWindow: CspReportSuppression | null = null;
     if (nowMs - windowStart >= windowMs) {
-      suppressedInPreviousWindow = suppressed;
+      if (byClient + byWindow > 0) suppressedInPreviousWindow = { byClient, byWindow };
       windowStart = nowMs;
       logged = 0;
-      suppressed = 0;
+      perClient = new Map();
+      byClient = 0;
+      byWindow = 0;
     }
-    if (logged < limit) {
-      logged += 1;
-      return { log: true, suppressedInPreviousWindow };
+
+    let key = client ?? UNKNOWN_CLIENT;
+    if (!perClient.has(key) && perClient.size >= maxTrackedClients) key = OVERFLOW_CLIENT;
+    const fromClient = perClient.get(key) ?? 0;
+    if (fromClient >= clientLimit) {
+      byClient += 1;
+      return { log: false, suppressedInPreviousWindow };
     }
-    suppressed += 1;
-    return { log: false, suppressedInPreviousWindow };
+    if (logged >= limit) {
+      byWindow += 1;
+      return { log: false, suppressedInPreviousWindow };
+    }
+    perClient.set(key, fromClient + 1);
+    logged += 1;
+    return { log: true, suppressedInPreviousWindow };
   };
 }
