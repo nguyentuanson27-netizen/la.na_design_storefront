@@ -179,7 +179,7 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     const superseded = supersededGiftCampaigns(candidates, stack);
     const active = selections.filter((row) => !superseded.has(row.campaignId));
     const replaced = selections.filter((row) => superseded.has(row.campaignId))
-      .map((row) => ({ ...row, replacedByCampaignId: superseded.get(row.campaignId)! }));
+      .map((row) => ({ ...row, replacedByCampaignIds: superseded.get(row.campaignId)! }));
     return { entitlements, stack, superseded, active, replaced,
       validation: validateGiftSelections({ campaigns: futureCampaigns, entitlements, selection: active }) };
   }
@@ -250,7 +250,7 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
 
   // `selections` are the choices that count for this cart; `replacedSelections` wait at a lower milestone.
   return { quote, campaigns, entitlements, selections: active, replacedSelections: replaced, validation, giftStackDropped: stack.dropped,
-    giftSuperseded: [...superseded].map(([campaignId, byCampaignId]) => ({ campaignId, byCampaignId })),
+    giftSuperseded: [...superseded].map(([campaignId, byCampaignIds]) => ({ campaignId, byCampaignIds })),
     items: cart.items, paidDemand: demand, campaignEntries: lookup.campaigns, productFacts: facts, paidVariants,
     labels: variants.map((v): CartGiftLabel => ({
       variantId: v.id,
@@ -308,7 +308,7 @@ export function createCartGiftSelectionService(client: PrismaClient, store: Cook
       if (!result.ok) return { ok: false, reason: "SELECTION_INVALID" } as const;
       // Taking a gift of the milestone that replaced an earlier choice is the buyer swapping it: the
       // replaced choice goes in the same transaction, so the cart never holds both.
-      const swapped = state.replacedSelections.filter((row) => row.replacedByCampaignId === choice.campaignId);
+      const swapped = state.replacedSelections.filter((row) => row.replacedByCampaignIds.includes(choice.campaignId));
       for (const row of swapped) await removeCartGiftSelection(tx, { cartId, campaignId: row.campaignId, variantId: row.variantId });
       return swapped.length > 0 ? { ok: true, replaced: swapped.reduce((sum, row) => sum + row.quantity, 0) } as const : { ok: true } as const;
     });

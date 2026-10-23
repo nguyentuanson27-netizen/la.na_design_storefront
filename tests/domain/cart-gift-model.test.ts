@@ -293,9 +293,9 @@ test("a gift kept at a replaced lower milestone is listed apart and is not repor
     campaigns: [...(base.campaigns as unknown as object[]), { id: "lower", allowDuplicateGifts: false, options: [{ variantId: "gift", productId: "gift-product", composite: false, readyAvailable: 1 }] }],
     entitlements: [{ campaignId: "campaign", revision: 2, earned: 1, entitled: 1, unfulfillableForStock: 0, shortfallToNext: null }],
     selections: [],
-    replacedSelections: [{ campaignId: "lower", variantId: "gift", quantity: 1, campaignRevision: 1, replacedByCampaignId: "campaign" }],
+    replacedSelections: [{ campaignId: "lower", variantId: "gift", quantity: 1, campaignRevision: 1, replacedByCampaignIds: ["campaign"] }],
     giftStackDropped: [{ campaignId: "lower", reason: "STACK_NOT_PERMITTED", otherCampaignId: "campaign" }],
-    giftSuperseded: [{ campaignId: "lower", byCampaignId: "campaign" }],
+    giftSuperseded: [{ campaignId: "lower", byCampaignIds: ["campaign"] }],
     validation: { ok: true, summaries: [] },
   } as unknown as CartGiftState;
   const model = buildCartGiftPickerModel(fixture);

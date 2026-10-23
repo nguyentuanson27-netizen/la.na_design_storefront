@@ -309,7 +309,7 @@ test("moving up to a higher unstacked milestone keeps the earlier choice aside, 
   assert.ok("state" in state);
   assert.equal(state.state.validation.ok, true, "the lower milestone's gift no longer blocks the cart");
   assert.deepEqual(state.state.selections, [], "nor does it ride the order");
-  assert.deepEqual(state.state.replacedSelections.map((row) => [row.campaignId, row.variantId, row.replacedByCampaignId]), [[campaignId, giftId, higherId]]);
+  assert.deepEqual(state.state.replacedSelections.map((row) => [row.campaignId, row.variantId, row.replacedByCampaignIds]), [[campaignId, giftId, [higherId]]]);
   assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "kept, not silently erased");
   const model = buildCartGiftPickerModel(state.state);
   assert.equal(model.stackConflict, false);
@@ -330,4 +330,26 @@ test("moving up to a higher unstacked milestone keeps the earlier choice aside, 
   assert.ok("state" in state);
   assert.equal(state.state.validation.ok, true);
   assert.deepEqual(state.state.replacedSelections, []);
+});
+test("with two stacking higher milestones, taking a gift from either one swaps out the replaced lower choice in the same write", async () => {
+  const [highA, highB] = [`${PREFIX}high-a`, `${PREFIX}high-b`];
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { awardMode: "ONCE" } });
+  for (const [id, minimumSubtotalVnd] of [[highA, 300_000], [highB, 400_000]] as const) {
+    await prisma.giftQuantityCampaign.create({ data: { id, kind: "GIFT_ITEM", name: id,
+      isEnabled: true, enabledAt: NOW, scopeMode: "GLOBAL_ALL_PAID_LINES", giftTrigger: "ORDER_SUBTOTAL",
+      minimumSubtotalVnd, subtotalScope: "ALL_PAID_LINES", awardMode: "ONCE", allowDuplicateGifts: true,
+      stackingEnabled: true, giftOptions: { create: { variantId: secondId } } } });
+  }
+  for (const [id, peer] of [[highA, highB], [highB, highA]]) {
+    await prisma.giftQuantityCampaign.update({ where: { id }, data: { stackPeers: { create: { peerKind: "GIFT_ITEM", peerCampaignId: peer } } } });
+  }
+  const cart = createAnonymousCartService(prisma);
+  await cart.setItemQuantity({ cartId, variantId: paidId, quantity: 1, now: NOW });
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  await cart.setItemQuantity({ cartId, variantId: paidId, quantity: 4, now: NOW });
+  const state = await service().get(NOW);
+  assert.ok("state" in state);
+  assert.deepEqual(state.state.replacedSelections.map((row) => [row.campaignId, row.replacedByCampaignIds]), [[campaignId, [highA, highB]]]);
+  assert.deepEqual(await service().set({ ...choice(secondId), campaignId: highB }, NOW), { ok: true, replaced: 1 });
+  assert.deepEqual(await prisma.cartGiftSelection.findMany({ where: { cartId }, select: { campaignId: true } }), [{ campaignId: highB }]);
 });
