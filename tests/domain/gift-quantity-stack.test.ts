@@ -13,6 +13,7 @@ import {
   type StackTierParticipant,
   resolveGiftCampaignStacking,
   stackPeersAllow,
+  supersededGiftCampaigns,
 } from "../../src/commerce/gift-quantity-stack.ts";
 import type { QuantityTierConfig } from "../../src/commerce/gift-quantity-tier.ts";
 import { resolvePromotionPricing, type ApplicablePromotionCampaign } from "../../src/commerce/promotion-pricing.ts";
@@ -440,4 +441,20 @@ test("R03-F1: a tier with an invalid configuration is dropped as invalid and nev
   }));
   assert.equal(elsewhere.subtotalVnd, 180_000);
   assert.deepEqual(elsewhere.dropped.map((d) => [d.campaignId, d.reason]), [["Z", "TIER_CONFIG_INVALID"]]);
+});
+
+test("F02: only a campaign outranked by one still running counts as replaced; a tie or a refused pair stays a conflict", () => {
+  const g = (id: string, minimumQuantity?: number, stackingEnabled = false, peers: StackPeer[] = []) => ({ id, stackingEnabled, peers, minimumQuantity });
+  const replaced = (campaigns: ReturnType<typeof g>[]) => [...supersededGiftCampaigns(campaigns, resolveGiftCampaignStacking(campaigns))];
+  // Mua 3 / Mua 5 / Mua 7 ladder at the top milestone: both lower rungs give way to the top one
+  assert.deepEqual(replaced([g("mua-3", 3), g("mua-5", 5), g("mua-7", 7)]), [["mua-3", "mua-7"], ["mua-5", "mua-7"]]);
+  assert.deepEqual(replaced([g("mua-7", 7), g("mua-3", 3)]), [["mua-3", "mua-7"]], "order never matters");
+  // tie: nobody outranks anybody, so nothing is a replacement
+  assert.deepEqual(replaced([g("tie-a", 3), g("tie-b", 3)]), []);
+  // a refused pair with no precedence data is a conflict, not a replacement
+  assert.deepEqual(replaced([g("a", undefined, true, [giftPeer("b")]), g("b", undefined, true, [])]), []);
+  // a stacked pair drops nobody
+  assert.deepEqual(replaced([g("a", 3, true, [giftPeer("b")]), g("b", 5, true, [giftPeer("a")])]), []);
+  // a tied pair that is outranked by a running top rung still gives way to it
+  assert.deepEqual(replaced([g("tie-a", 3), g("tie-b", 3), g("top", 5)]), [["tie-a", "top"], ["tie-b", "top"]]);
 });

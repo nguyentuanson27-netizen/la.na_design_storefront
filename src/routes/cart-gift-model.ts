@@ -10,6 +10,8 @@ export type CartGiftPickerModel = Readonly<{
     products: readonly Readonly<{ productId: string; name: string; imageUrl: string | null; options: readonly Readonly<{ variantId: string; label: string; stock: number }>[] }>[];
   }>[];
   selections: readonly Readonly<{ campaignId: string; variantId: string; campaignRevision: number; quantity: number; label: string; imageUrl?: string | null; problems?: readonly string[] }>[];
+  /** Choices kept at a lower milestone the cart has moved past. Not in the order; taking a new gift replaces them. */
+  replaced?: readonly Readonly<{ campaignId: string; variantId: string; campaignRevision: number; quantity: number; label: string; imageUrl?: string | null }>[];
   repairGroups?: readonly Readonly<{ message: string; selectionKeys: readonly string[] }>[];
   invalid: boolean;
   stackConflict: boolean;
@@ -73,17 +75,23 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
       });
     }
   }
+  const superseded = new Set((state.giftSuperseded ?? []).map((entry) => entry.campaignId));
+  const labelOf = (variantId: string) => {
+    const label = labelByVariant.get(variantId);
+    return label ? `${label.productName} — ${label.optionLabel}` : "Quà đã chọn không còn khả dụng";
+  };
   return {
     invalid: !state.validation.ok,
-    stackConflict: (state.giftStackDropped?.length ?? 0) > 0,
+    // Giving way to a higher milestone is the rule working, not a conflict the buyer must fix.
+    stackConflict: (state.giftStackDropped ?? []).some((entry) => !superseded.has(entry.campaignId)),
+    replaced: (state.replacedSelections ?? []).map((row) => ({ campaignId: row.campaignId, variantId: row.variantId,
+      campaignRevision: row.campaignRevision, quantity: row.quantity, label: labelOf(row.variantId),
+      imageUrl: parseTrustedProductImageUrl(labelByVariant.get(row.variantId)?.imageUrl) })),
     repairGroups,
-    selections: state.selections.map((row) => {
-      const label = labelByVariant.get(row.variantId);
-      return { campaignId: row.campaignId, variantId: row.variantId, campaignRevision: row.campaignRevision, quantity: row.quantity,
-        imageUrl: parseTrustedProductImageUrl(label?.imageUrl),
-        problems: problems.get(selectionKey(row)) ?? [],
-        label: label ? `${label.productName} — ${label.optionLabel}` : "Quà đã chọn không còn khả dụng" };
-    }),
+    selections: state.selections.map((row) => ({ campaignId: row.campaignId, variantId: row.variantId,
+      campaignRevision: row.campaignRevision, quantity: row.quantity,
+      imageUrl: parseTrustedProductImageUrl(labelByVariant.get(row.variantId)?.imageUrl),
+      problems: problems.get(selectionKey(row)) ?? [], label: labelOf(row.variantId) })),
     campaigns: state.entitlements.map((entry) => {
       const selected = state.selections.filter((row) => row.campaignId === entry.campaignId).reduce((sum, row) => sum + row.quantity, 0);
       const campaign = state.campaigns.find((c) => c.id === entry.campaignId)!;

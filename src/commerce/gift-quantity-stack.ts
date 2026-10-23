@@ -584,6 +584,33 @@ export function resolveGiftCampaignStacking(campaigns: readonly GiftStackCandida
   };
 }
 
+/**
+ * The dropped gift campaigns that only gave way to a higher milestone, each with the campaign that
+ * replaced it: one that still runs on this cart, cannot stack with it and outranks it. A choice stored
+ * under such a campaign is not wrong, only replaced while the cart stays at the higher milestone, so it
+ * is shown to the buyer rather than repaired. A genuine conflict (a tie, or nothing left running that
+ * outranks it) is not a replacement and stays a conflict.
+ */
+export function supersededGiftCampaigns(
+  campaigns: readonly GiftStackCandidate[],
+  resolution: GiftStackResolution,
+): ReadonlyMap<string, string> {
+  const byId = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
+  const running = resolution.permitted.flatMap((id) => byId.get(id) ?? []);
+  const superseded = new Map<string, string>();
+  for (const entry of resolution.dropped) {
+    const loser = byId.get(entry.campaignId);
+    if (loser === undefined) continue;
+    const winner = running.find((candidate) =>
+      !(candidate.stackingEnabled && loser.stackingEnabled &&
+        stackPeersAllow(candidate.peers, "GIFT_ITEM", loser.id) &&
+        stackPeersAllow(loser.peers, "GIFT_ITEM", candidate.id)) &&
+      compareGiftPrecedence(candidate, loser) > 0);
+    if (winner !== undefined) superseded.set(loser.id, winner.id);
+  }
+  return superseded;
+}
+
 /** Authoritative stage value, shared by progress and checkout +1 verification (including the top rung). */
 export function orderValueTierInputSubtotal(groups: readonly StackedGroup[], id: string, order: readonly { id: string; priority: number | null }[]): number {
   const mine = order.find((tier) => tier.id === id);

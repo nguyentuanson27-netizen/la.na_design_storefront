@@ -295,3 +295,39 @@ test("earning gift campaigns require mutual stack consent and share the same sto
   assert.ok("state" in state);
   assert.equal(state.state.validation.ok, true);
 });
+test("moving up to a higher unstacked milestone keeps the earlier choice aside, unblocks the cart, and a new gift replaces it", async () => {
+  const higherId = `${PREFIX}higher`;
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { awardMode: "ONCE" } });
+  await prisma.giftQuantityCampaign.create({ data: { id: higherId, kind: "GIFT_ITEM", name: "Higher",
+    isEnabled: true, enabledAt: NOW, scopeMode: "GLOBAL_ALL_PAID_LINES", giftTrigger: "ORDER_SUBTOTAL",
+    minimumSubtotalVnd: 400_000, subtotalScope: "ALL_PAID_LINES", awardMode: "ONCE", allowDuplicateGifts: true,
+    giftOptions: { create: { variantId: secondId } } } });
+  const cart = createAnonymousCartService(prisma);
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  await cart.setItemQuantity({ cartId, variantId: paidId, quantity: 4, now: NOW });
+  let state = await service().get(NOW);
+  assert.ok("state" in state);
+  assert.equal(state.state.validation.ok, true, "the lower milestone's gift no longer blocks the cart");
+  assert.deepEqual(state.state.selections, [], "nor does it ride the order");
+  assert.deepEqual(state.state.replacedSelections.map((row) => [row.campaignId, row.variantId, row.replacedByCampaignId]), [[campaignId, giftId, higherId]]);
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "kept, not silently erased");
+  const model = buildCartGiftPickerModel(state.state);
+  assert.equal(model.stackConflict, false);
+  assert.equal(model.invalid, false);
+  assert.deepEqual(model.replaced?.map((row) => row.variantId), [giftId]);
+  // Back at the lower milestone the kept choice counts again.
+  await cart.setItemQuantity({ cartId, variantId: paidId, quantity: 3, now: NOW });
+  state = await service().get(NOW);
+  assert.ok("state" in state);
+  assert.deepEqual(state.state.selections.map((row) => row.variantId), [giftId]);
+  assert.equal(state.state.validation.ok, true);
+  // Up again, taking the higher milestone's gift swaps the old choice out in the same write.
+  await cart.setItemQuantity({ cartId, variantId: paidId, quantity: 4, now: NOW });
+  assert.equal((await service().set({ ...choice(giftId), campaignId }, NOW)).ok, false, "the replaced milestone cannot take new gifts");
+  assert.deepEqual(await service().set({ ...choice(secondId), campaignId: higherId }, NOW), { ok: true, replaced: 1 });
+  assert.deepEqual(await prisma.cartGiftSelection.findMany({ where: { cartId }, select: { campaignId: true, variantId: true } }), [{ campaignId: higherId, variantId: secondId }]);
+  state = await service().get(NOW);
+  assert.ok("state" in state);
+  assert.equal(state.state.validation.ok, true);
+  assert.deepEqual(state.state.replacedSelections, []);
+});

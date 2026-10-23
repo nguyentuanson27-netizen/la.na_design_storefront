@@ -75,7 +75,8 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   if (draft && draftSaved && !draft.committed) setDraft({ ...draft, committed: true });
   const draftNotice = draft && !draftSaved && !draft.committed ? `Phiên bản ${draft.label} chưa được thêm. Đơn chỉ gồm quà đã lưu.` : null;
   useEffect(() => { onDraftChange?.(draftNotice); }, [draftNotice, onDraftChange]);
-  const present = entitled > 0 || model.selections.length > 0;
+  const replaced = model.replaced ?? [];
+  const present = entitled > 0 || model.selections.length > 0 || replaced.length > 0;
   // UX-05: arriving on `#cart-gifts` (the mini-cart's "Chọn quà") opens the picker and puts focus on it.
   // Opening only reveals the choices; nothing is selected or saved on the buyer's behalf. Focus is asked
   // for through state and applied after the commit that shows the picker, so no effect cleanup can drop it.
@@ -126,6 +127,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
       {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Nàng còn quà chưa chọn. Các chương trình dùng chung lượng quà, nàng chọn từng món để cập nhật nhé." : `Nàng còn có thể chọn ${available} món quà.`}</p> : null}
       {unavailable > 0 ? <p className="mt-2 text-sm">Hiện chưa có lựa chọn phù hợp cho {unavailable} suất quà còn lại.</p> : null}
     </>}
+    {replaced.length > 0 ? <p className="mt-3 text-sm" data-gift-replaced-notice>Đơn của nàng đã lên mốc quà cao hơn nên quà đã chọn ở mốc trước không đi kèm đơn nữa. Nàng chọn quà của mốc mới, quà cũ sẽ được thay; nếu giỏ quay về mốc cũ, quà cũ được áp dụng lại.</p> : null}
     {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Giỏ hàng của nàng đủ điều kiện nhận quà từ nhiều chương trình, nhưng các chương trình này không được dùng cùng lúc nên một số quà chưa được tặng. Nàng điều chỉnh lại giỏ hàng hoặc liên hệ shop để được hỗ trợ nhé.</p> : null}
     <button type="button" className="mt-3 min-h-11 text-left text-sm font-semibold underline underline-offset-4" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
       {expanded ? "Thu gọn quà tặng" : model.invalid ? "Kiểm tra quà đã chọn" : complete ? "Xem quà đã chọn" : available > 0 ? "Chọn quà ngay" : "Xem lựa chọn quà"}
@@ -146,6 +148,14 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
           {row.quantity > 1 ? <button type="button" className="min-h-11 text-sm underline" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, row.quantity - 1, row.label, 1)}>Bỏ 1 chiếc để chọn lại: {row.label}</button> : null}
           <button type="button" className="min-h-11 text-left text-sm underline" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, 0, row.label, row.quantity)}>{row.quantity > 1 ? `Bỏ toàn bộ ${row.quantity} chiếc` : "Bỏ quà để chọn lại"}: {row.label}</button>
         </div>
+      </div>)}
+      {replaced.map((row) => <div className="mt-4 border-t border-black/15 pt-4" key={`replaced-${row.campaignId}-${row.variantId}`} data-gift-replaced={`${row.campaignId}/${row.variantId}`}>
+        <div className="flex items-center gap-3">
+          {row.imageUrl ? <Image src={row.imageUrl} alt="" width={40} height={50} className="h-[50px] w-10 object-cover opacity-60" /> : null}
+          <p className="min-w-0 break-words text-sm">Quà mốc trước: {row.label} · {row.quantity} quà</p>
+        </div>
+        <p className="mt-2 text-xs leading-5">Không đi kèm đơn ở mốc hiện tại. Sẽ được thay khi nàng nhận quà của mốc mới.</p>
+        <button type="button" className="mt-2 min-h-11 text-left text-sm underline" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, 0, row.label, row.quantity)}>Bỏ hẳn quà mốc trước: {row.label}</button>
       </div>)}
       {model.campaigns.filter((c) => c.entitled > 0).map((campaign, index) => <div className="mt-5 border-t border-black/15 pt-4" key={campaign.campaignId}>
         <p className="text-sm font-semibold">Quà tặng theo giỏ hàng {index + 1} · Đã thêm {campaign.selected}/{campaign.entitled}</p>

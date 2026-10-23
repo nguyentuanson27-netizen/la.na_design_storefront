@@ -8,7 +8,7 @@ import { listCartGiftSelections, removeCartGiftSelection, setCartGiftSelection }
 import { readActiveGiftQuantityCampaigns, readScopeProductFacts, type GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
 import { evaluateGiftEntitlements, validateGiftSelections, type GiftCampaignFacts, type GiftSelectionLine } from "./gift-quantity-entitlement.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
-import { resolveGiftCampaignStacking, type StackedGroup } from "./gift-quantity-stack.ts";
+import { resolveGiftCampaignStacking, supersededGiftCampaigns, type StackedGroup } from "./gift-quantity-stack.ts";
 import type { QuantityAddition } from "./gift-quantity-quote.ts";
 import { createStorefrontCartRepository, type StorefrontCartReadClient } from "./storefront-cart-repository.ts";
 
@@ -162,25 +162,35 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     const evaluation = evaluateGiftEntitlements({ campaigns: futureCampaigns, paidGroups: groups.map((group) => ({ ...group, product: productByVariant.get(group.lineKey)! })) });
     if (!evaluation.ok) throw new Error("Invalid gift configuration");
     const earning = new Set(evaluation.entitlements.filter((entry) => entry.entitled > 0).map((entry) => entry.campaignId));
-    const stack = resolveGiftCampaignStacking(entries.filter((entry) => earning.has(entry.campaign.id)).map(({ campaign: c }) => ({
+    const candidates = entries.filter((entry) => earning.has(entry.campaign.id)).map(({ campaign: c }) => ({
       id: c.id,
       stackingEnabled: c.stackingEnabled,
       peers: c.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
       minimumQuantity: c.minimumQuantity,
       minimumSubtotalVnd: c.minimumSubtotalVnd,
       stackPriority: c.stackPriority,
-    })));
+    }));
+    const stack = resolveGiftCampaignStacking(candidates);
     const dropped = new Set(stack.dropped.map((entry) => entry.campaignId));
     const entitlements = evaluation.entitlements.map((entry) => dropped.has(entry.campaignId)
       ? { ...entry, entitled: 0, grantable: 0, unfulfillableForStock: 0, selectableOptions: [], shortfallToNext: null } : entry);
-    return { entitlements, stack, validation: validateGiftSelections({ campaigns: futureCampaigns, entitlements, selection: selections }) };
+    // A choice of a lower milestone that a higher one replaced is kept (not erased), but neither blocks
+    // the cart nor rides the order while the cart stays up there. Back at its own milestone it counts again.
+    const superseded = supersededGiftCampaigns(candidates, stack);
+    const active = selections.filter((row) => !superseded.has(row.campaignId));
+    const replaced = selections.filter((row) => superseded.has(row.campaignId))
+      .map((row) => ({ ...row, replacedByCampaignId: superseded.get(row.campaignId)! }));
+    return { entitlements, stack, superseded, active, replaced,
+      validation: validateGiftSelections({ campaigns: futureCampaigns, entitlements, selection: active }) };
   }
   let currentGifts: ReturnType<typeof evaluateGifts> | undefined;
   const quote = await createStorefrontCartRepository(tx as unknown as StorefrontCartReadClient).getQuote({ shopId, items: cart.items, now, env,
     preservesQuantityGifts: ({ before, after, addition }) => {
       currentGifts ??= evaluateGifts(before);
       const future = evaluateGifts(after, addition);
-      return future.validation.ok && (
+      // A "+1" hint never trades away a gift the buyer already chose for another milestone's slot.
+      const replacedNow = new Set(currentGifts.replaced.map((row) => `${row.campaignId}/${row.variantId}`));
+      return future.validation.ok && future.replaced.every((row) => replacedNow.has(`${row.campaignId}/${row.variantId}`)) && (
         currentGifts.entitlements.every((entry) => {
           const next = future.entitlements.find((row) => row.campaignId === entry.campaignId);
           return next && next.entitled >= entry.entitled && next.grantable >= entry.grantable;
@@ -190,7 +200,7 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     },
   });
   if (!quote.benefits.enabled || !quote.benefits.ok) throw new Error("Quote unavailable");
-  const { entitlements, validation, stack } = currentGifts ?? evaluateGifts(quote.benefits.groups);
+  const { entitlements, validation, stack, active, replaced, superseded } = currentGifts ?? evaluateGifts(quote.benefits.groups);
   const imageByVariantId = new Map<string, string>();
   const imageByProductId = new Map<string, string>();
   for (const v of variants) {
@@ -238,7 +248,9 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     }
   }
 
-  return { quote, campaigns, entitlements, selections, validation, giftStackDropped: stack.dropped,
+  // `selections` are the choices that count for this cart; `replacedSelections` wait at a lower milestone.
+  return { quote, campaigns, entitlements, selections: active, replacedSelections: replaced, validation, giftStackDropped: stack.dropped,
+    giftSuperseded: [...superseded].map(([campaignId, byCampaignId]) => ({ campaignId, byCampaignId })),
     items: cart.items, paidDemand: demand, campaignEntries: lookup.campaigns, productFacts: facts, paidVariants,
     labels: variants.map((v): CartGiftLabel => ({
       variantId: v.id,
@@ -293,7 +305,12 @@ export function createCartGiftSelectionService(client: PrismaClient, store: Cook
       const validation = validateGiftSelections({ campaigns: state.campaigns, entitlements: state.entitlements, selection });
       if (!validation.ok) return { ok: false, reason: "SELECTION_INVALID" } as const;
       const result = await setCartGiftSelection(tx, { cartId, ...choice });
-      return result.ok ? { ok: true } as const : { ok: false, reason: "SELECTION_INVALID" } as const;
+      if (!result.ok) return { ok: false, reason: "SELECTION_INVALID" } as const;
+      // Taking a gift of the milestone that replaced an earlier choice is the buyer swapping it: the
+      // replaced choice goes in the same transaction, so the cart never holds both.
+      const swapped = state.replacedSelections.filter((row) => row.replacedByCampaignId === choice.campaignId);
+      for (const row of swapped) await removeCartGiftSelection(tx, { cartId, campaignId: row.campaignId, variantId: row.variantId });
+      return swapped.length > 0 ? { ok: true, replaced: swapped.reduce((sum, row) => sum + row.quantity, 0) } as const : { ok: true } as const;
     });
   }
   return { get, set };
