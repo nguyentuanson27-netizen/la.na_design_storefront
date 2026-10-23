@@ -17,7 +17,7 @@ let output = "";
 let cartId: string, paidId: string, giftId: string;
 async function cleanup() {
   await prisma.cart.deleteMany({ where: { items: { some: { variant: { product: { pancakeShopId: SHOP } } } } } });
-  await prisma.cartGiftSelection.deleteMany({ where: { campaignId } });
+  await prisma.cartGiftSelection.deleteMany({ where: { campaignId: { startsWith: PREFIX } } });
   await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: PREFIX } } });
   await prisma.promotionCampaign.deleteMany({ where: { id: { startsWith: PREFIX } } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP } });
@@ -109,6 +109,53 @@ test("cart has one functional gift picker above paid products on mobile and desk
   await page.reload();
   await expect(page.getByRole("region", { name: "Quà tặng trong giỏ" })).toHaveCount(1);
   await expect(page.locator('[data-promotion-banner="full"] [data-promotion-kind="GIFT"][data-promotion-state="achieved"]')).toHaveCount(0);
+});
+
+test("moving up to a higher gift milestone sets the earlier gift aside, back down restores it, and taking the new gift swaps it out", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  // Two milestones that do not stack: 200.000đ earns the lower one, 300.000đ the higher one.
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { awardMode: "ONCE", maxGiftsPerOrder: 1 } });
+  const now = new Date();
+  const bag = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: `${PREFIX}bag`, slug: `${PREFIX}bag`, name: "Túi quà",
+    syncedAt: now, variants: { create: { pancakeVariationId: `${PREFIX}bag`, color: "Be", size: "M", syncedAt: now, pancakeRetailPrice: 100_000, pancakeRetailPriceAfterDiscount: 100_000,
+      warehouseStocks: { create: { pancakeWarehouseId: "gq14-wh", quantity: 10, syncedAt: now } } } } }, include: { variants: true } });
+  const higherId = `${PREFIX}higher`;
+  await prisma.giftQuantityCampaign.create({ data: { id: higherId, kind: "GIFT_ITEM", name: "Quà mốc cao", isEnabled: true, enabledAt: now, scopeMode: "GLOBAL_ALL_PAID_LINES",
+    giftTrigger: "ORDER_SUBTOTAL", minimumSubtotalVnd: 300_000, subtotalScope: "ALL_PAID_LINES", awardMode: "ONCE", maxGiftsPerOrder: 1, allowDuplicateGifts: true,
+    giftOptions: { create: { variantId: bag.variants[0].id } } } });
+  const setPaidQuantity = (quantity: number) => prisma.cartItem.updateMany({ where: { cartId, variantId: paidId }, data: { quantity } });
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+
+  await page.goto(`${URL}/cart`);
+  await openPicker(picker);
+  await picker.getByRole("button", { name: "Nhận quà này" }).click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/1");
+
+  await setPaidQuantity(3);
+  await page.reload();
+  await expect(picker.locator("[data-gift-replaced-notice]")).toBeVisible();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/1", { message: "the earlier gift no longer counts towards the order" });
+  await expect(picker.getByText("liên hệ shop", { exact: false })).toHaveCount(0);
+  const toggle = picker.locator("button[aria-controls]");
+  await toggle.click();
+  await expect(picker.locator(`[data-gift-replaced="${campaignId}/${giftId}"]`)).toContainText("Quà mốc trước: Khăn quà");
+  expect((await new AxeBuilder({ page }).include("#cart-gifts").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+
+  // Back at the lower milestone before swapping, the kept choice counts again.
+  await setPaidQuantity(2);
+  await page.reload();
+  await expect(picker.locator("[data-gift-replaced-notice]")).toHaveCount(0);
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/1");
+
+  await setPaidQuantity(3);
+  await page.reload();
+  await toggle.click();
+  await picker.getByRole("button", { name: "Túi quà", exact: true }).click();
+  await picker.getByRole("button", { name: "Nhận quà này" }).click();
+  await expect(picker.getByRole("status")).toContainText("Quà của mốc trước đã được thay bằng món này");
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/1");
+  await expect(picker.locator("[data-gift-replaced]")).toHaveCount(0);
+  await expect.poll(() => prisma.cartGiftSelection.findMany({ where: { cartId }, select: { campaignId: true } })).toEqual([{ campaignId: higherId }]);
 });
 
 test("cart preserves tier achievement and next gift progress when the earned gift CTA is consolidated", async ({ page }) => {
