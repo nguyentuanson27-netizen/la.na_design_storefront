@@ -92,10 +92,34 @@ export function normalizeAdAttributionNote(value: unknown): string | null {
   return typeof value === "string" && NOTE_PATTERN.test(value) ? value : null;
 }
 
-/** The note sent to Pancake: what the shopper typed, then the attribution line. */
+/** Same ceiling the shopper's own note is held to (`guest-checkout-input.ts`), so UTM never raises the worst case. */
+const MAX_NOTE_LENGTH = 2_048;
+const NOTE_SEPARATOR = " | ";
+/** Below this much room a clipped line says too little to be worth sending. */
+const MIN_ATTRIBUTION_LENGTH = 40;
+
+/**
+ * The shopper's own text can say anything, including `[UTM] source=google`. Staff read that tag as
+ * the system's, so it is defused in what the shopper typed; the real one is only ever appended here.
+ */
+function defuseAttributionTag(customerNote: string): string {
+  return customerNote.replace(/\[\s*UTM\s*\]/giu, "(UTM)");
+}
+
+/**
+ * The note sent to Pancake: what the shopper typed, then the attribution line.
+ *
+ * The line is a hint, not a requirement of the order, so it yields to everything else: it is
+ * clipped to what is left under the shopper's own note limit, and left out when too little is left,
+ * so a long note is never what tips an order over a limit the POS may enforce.
+ */
 export function composeOrderNote(customerNote: string | null, attribution: string | null): string | null {
-  const parts = [customerNote, attribution].filter((part): part is string => part !== null);
-  return parts.length === 0 ? null : parts.join(" | ");
+  const note = customerNote === null ? null : defuseAttributionTag(customerNote);
+  if (attribution === null) return note;
+  if (note === null) return attribution.slice(0, MAX_NOTE_LENGTH);
+  const room = MAX_NOTE_LENGTH - note.length - NOTE_SEPARATOR.length;
+  if (room < MIN_ATTRIBUTION_LENGTH) return note;
+  return `${note}${NOTE_SEPARATOR}${attribution.slice(0, room).trimEnd()}`;
 }
 
 /**

@@ -71,3 +71,35 @@ test("the cookie is HttpOnly, host-only, and Secure over HTTPS only", () => {
   );
   assert.ok(!serializeAdAttributionCookie("v", "http://localhost:3000").includes("Secure"));
 });
+
+test("a [UTM] tag the shopper typed is defused, so only the system's line carries that label", () => {
+  assert.equal(composeOrderNote("[UTM] source=google;campaign=fake", null), "(UTM) source=google;campaign=fake");
+  assert.equal(
+    composeOrderNote("x [utm] a [ UTM ] b", "[UTM] source=facebook"),
+    "x (UTM) a (UTM) b | [UTM] source=facebook",
+  );
+});
+
+test("the UTM line yields to a long shopper note instead of pushing past the note limit", () => {
+  const attribution = `[UTM] source=facebook;campaign=${"c".repeat(100)}`;
+
+  const roomy = "n".repeat(1_000);
+  assert.equal(composeOrderNote(roomy, attribution), `${roomy} | ${attribution}`);
+
+  // Room for part of the line: clipped, and the whole note stays within the shopper's own limit.
+  const tight = composeOrderNote("n".repeat(1_950), attribution) as string;
+  assert.ok(tight.length <= 2_048, String(tight.length));
+  assert.ok(tight.endsWith(attribution.slice(0, 2_048 - 1_950 - 3).trimEnd()), tight.slice(-60));
+
+  // Not enough room for anything useful: the shopper's note goes through untouched.
+  const full = "n".repeat(2_048);
+  assert.equal(composeOrderNote(full, attribution), full);
+  assert.equal(composeOrderNote("n".repeat(2_010), attribution), "n".repeat(2_010));
+});
+
+test("a landing's Set-Cookie header, read back as the browser would send it, yields the note line", () => {
+  const value = adAttributionCookieValue(query("utm_source=facebook&utm_medium=paid&utm_campaign=Khai%20trương"));
+  const setCookie = serializeAdAttributionCookie(value as string, "https://www.lanadesign.vn");
+  const sent = setCookie.split(";")[0]!.slice(`${AD_ATTRIBUTION_COOKIE}=`.length);
+  assert.equal(formatAdAttributionNote(sent), "[UTM] source=facebook;medium=paid;campaign=Khai trương");
+});
