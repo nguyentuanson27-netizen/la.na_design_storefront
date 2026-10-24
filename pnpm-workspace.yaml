@@ -5,11 +5,14 @@ allowBuilds:
 
 # Security patch floors for transitive dependencies that upstream pins below the fix.
 # next's postcss pulls source-map-js@1.2.1 (GHSA-68fv-2mgg-jv7q); prisma@7.10.1's dev tooling pulls
-# fast-uri@3.1.5 through ajv (GHSA-f65p-4m7j-42xc and five siblings). Drop an entry once the parent
-# ships the patched version.
+# fast-uri through ajv (GHSA-f65p-4m7j-42xc and five siblings, then GHSA-w74x-v6f9-j3xg,
+# GHSA-wjr9-j795-jxcr, GHSA-xhq7-xmqj-769h and GHSA-333x-w4r6-6crp, fixed in 3.1.9); better-auth
+# 1.6.25 resolves zod@4.4.3 (GHSA-mrhx-c7xc-m3w5, fixed in 4.6.6; it accepts ^4.0.0). Drop an entry
+# once the parent ships the patched version.
 overrides:
   source-map-js: 1.2.2
-  fast-uri: 3.1.8
+  fast-uri: 3.1.9
+  zod: 4.6.6
 
 # Advisories reviewed and accepted as not applicable, each with the reason. CI runs
 # `pnpm audit --prod` and fails on anything not fixed or listed here.
