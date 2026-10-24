@@ -14,7 +14,7 @@ Master spec §14 and the policy authority still say bank transfer is unavailable
 Acceptance has to show, not assume, that:
 
 - Pancake receives the order in the type and status its transfer matching uses. Its "Quản lý giao dịch" documentation says money is matched only to orders waiting for a transfer, by amount and order code, while the partner banks' static QR matches by phone number. `cod: 0` alone does not say which. The create-order payload sets no payment method or status, so if the order does not arrive as waiting for a transfer, the mapping (or the allowed template) has to change.
-- Two orders with different codes each match their own transfer, including with a `{PUBLIC_CODE}` template.
+- Matching uses the order code, not just the amount. Place two orders with the **same total** and different codes, make two transfers of that same amount each carrying its own content, then check each bank transaction ID against the Pancake order it settled: no swap. Two orders with different totals prove nothing, because a matcher that only reads the amount would pass. Repeat for every template the owner intends to use (especially `{PUBLIC_CODE}`), or restrict the allowed templates to what passed.
 
 Keep `BANK_TRANSFER_ENABLED` off until both are shown.
 
