@@ -26,6 +26,13 @@ enum OrderQuoteLineRole {
   GIFT
 }
 
+/// How the buyer pays. Additive with a COD default, so every order written before this existed reads
+/// as COD and an application rollback is not blocked by a column older code never writes.
+enum PaymentMethod {
+  COD
+  BANK_TRANSFER
+}
+
 enum LocalOrderState {
   DRAFT
   VALIDATING
@@ -776,6 +783,7 @@ model OrderMirror {
   communeRef             String?
   addressDetail          String?
   note                   String?
+  paymentMethod          PaymentMethod       @default(COD)
   merchandiseSubtotalVnd BigInt?
   shippingFeeVnd         BigInt?
   // Immutable decision provenance on committed orders; no FK to mutable campaign configuration.

@@ -47,6 +47,7 @@ test("checkout geo validation accepts a province → ward/commune pair and retur
       communeRef: "84_VN10105",
       detail: "12 Đường A",
       note: "giao giờ hành chính",
+      paymentMethod: "COD",
       attribution: null,
     },
   });

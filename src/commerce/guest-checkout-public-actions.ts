@@ -24,6 +24,8 @@ export type GuestCheckoutPublicActionDependencies = {
    * `la_utm` cookie. Never taken from the form: the shopper does not get to write the attribution.
    */
   readAttribution?: () => string | null;
+  /** Whether bank transfer may be chosen right now. Absent means it is off. */
+  isBankTransferEnabled?: () => boolean;
 };
 
 function checkoutInputFromFormData(formData: FormData, attribution: string | null) {
@@ -34,6 +36,7 @@ function checkoutInputFromFormData(formData: FormData, attribution: string | nul
     communeRef: formData.get("communeRef"),
     detail: formData.get("detail"),
     note: formData.get("note"),
+    paymentMethod: formData.get("paymentMethod"),
     ...(attribution === null ? {} : { attribution }),
   };
 }
@@ -48,9 +51,15 @@ function readAttributionSafely(readAttribution: (() => string | null) | undefine
 }
 
 export async function submitGuestCheckoutPublicAction(
-  { cartSession, consumeAttempt, submitCheckout, readAttribution }: GuestCheckoutPublicActionDependencies,
+  { cartSession, consumeAttempt, submitCheckout, readAttribution, isBankTransferEnabled }: GuestCheckoutPublicActionDependencies,
   formData: FormData,
 ): Promise<GuestCheckoutSubmitResult> {
+  // A stale page or a hand-built request can still post BANK_TRANSFER after the owner turned it
+  // off. Refuse it before it takes a rate-limit attempt or touches the cart.
+  if (formData.get("paymentMethod") === "BANK_TRANSFER" && !(isBankTransferEnabled?.() ?? false)) {
+    return { ok: false, status: "RETRYABLE", reason: "INVALID_INPUT" };
+  }
+
   const cartId = cartSession.read();
   if (!cartId) {
     return {

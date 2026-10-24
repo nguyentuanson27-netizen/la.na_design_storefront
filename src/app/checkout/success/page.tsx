@@ -31,8 +31,31 @@ function render(data: CheckoutSuccessViewModel) {
               <strong className="whitespace-nowrap text-lg font-semibold tracking-[0.08em] text-black">
                 {data.orderCode}
               </strong>
-              . {BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.
+              .{" "}
+              {data.bankTransfer
+                ? `${BRAND.identity.name} sẽ xác nhận đơn và giao hàng sau khi nhận được tiền chuyển khoản.`
+                : `${BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.`}
             </p>
+            {data.bankTransfer ? (
+              <section className="mt-6 border border-black/20 p-5" aria-labelledby="bank-transfer-title" data-bank-transfer>
+                <h2 id="bank-transfer-title" className="font-display text-lg">Thông tin chuyển khoản</h2>
+                <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+                  <dt className="text-black/60">Ngân hàng</dt>
+                  <dd className="font-semibold">{data.bankTransfer.bankName}</dd>
+                  <dt className="text-black/60">Số tài khoản</dt>
+                  <dd className="font-semibold tracking-[0.06em]">{data.bankTransfer.accountNumber}</dd>
+                  <dt className="text-black/60">Chủ tài khoản</dt>
+                  <dd className="font-semibold">{data.bankTransfer.accountHolder}</dd>
+                  <dt className="text-black/60">Số tiền</dt>
+                  <dd className="font-semibold">{data.bankTransfer.amountText}</dd>
+                  <dt className="text-black/60">Nội dung</dt>
+                  <dd className="font-semibold tracking-[0.06em]">{data.bankTransfer.content}</dd>
+                </dl>
+                <p className="mt-3 text-sm leading-6 text-black/75">
+                  Nàng chuyển đúng số tiền và nhập đúng nội dung trên để shop đối chiếu đơn nhanh nhất.
+                </p>
+              </section>
+            ) : null}
             <p className="mt-2 text-sm leading-6 text-black/75">
               Nàng có thể tra cứu đơn bất cứ lúc nào bằng mã đơn này và số điện thoại đặt hàng.
             </p>

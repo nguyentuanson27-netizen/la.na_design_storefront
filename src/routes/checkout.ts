@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readBankTransferConfig } from "@/commerce/bank-transfer";
 import { checkoutAttemptKey } from "@/commerce/checkout-attempt-key";
 import { cookies } from "next/headers";
 import { createPromotionUpsellService } from "@/commerce/promotion-upsell";
@@ -26,7 +27,8 @@ import { sealRoute, type RouteHandle, type RoutePixelEvent } from "./core.tsx";
 
 export type CheckoutRouteProps = Readonly<Record<string, never>>;
 
-async function withUpsell(data: CheckoutViewModel): Promise<CheckoutViewModel> {
+async function withCheckoutExtras(base: CheckoutViewModel): Promise<CheckoutViewModel> {
+  const data = { ...base, bankTransferEnabled: readBankTransferConfig() !== null };
   if (data.state !== "ready" || !data.quoteProof) return data;
   const upsell = await createPromotionUpsellService(prisma, await cookies(), { shopId: readPancakeShopId(), secret: readAuthServerConfig().secret }).get(data.quoteProof);
   // Only what the banner shows crosses to the browser (AM-01): no variants, intents or proofs. A null
@@ -63,7 +65,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
     // cannot say truthfully, so a benefit checkout reports neither rather than a number that disagrees
     // with the page. (The purchase itself is reported from the order, money paid only -- GQ22.)
     return sealRoute({
-      data: { ...await withUpsell(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
+      data: { ...await withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
       refreshAfterMs: 60_000,
       trackingEvent: null,
       structuredData: [],
@@ -114,7 +116,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
       : [];
 
   return sealRoute({
-    data: { ...await withUpsell(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
+    data: { ...await withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
     // Checkout prices are re-resolved on every request, so nothing here is promotion-cached; the
     // shared default cadence is what the shell mounts.
     refreshAfterMs: 60_000,

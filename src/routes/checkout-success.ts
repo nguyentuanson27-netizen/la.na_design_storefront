@@ -1,3 +1,4 @@
+import { buildBankTransferInstructions, readBankTransferConfig } from "@/commerce/bank-transfer";
 import { readCanonicalPurchaseSnapshotSafely } from "@/commerce/canonical-purchase-snapshot";
 import { buildHistoricalPreorderPresentation } from "@/commerce/historical-preorder-presentation";
 import { buildMetaPurchasePixelParameters } from "@/commerce/meta-pixel-parameters";
@@ -26,6 +27,10 @@ export async function loadCheckoutSuccessRoute({
         where: { publicCode: orderCode },
         select: {
           state: true,
+          paymentMethod: true,
+          publicCode: true,
+          pancakeOrderId: true,
+          totalVnd: true,
           preorderSnapshot: {
             select: {
               preorderReadyAt: true,
@@ -54,6 +59,7 @@ export async function loadCheckoutSuccessRoute({
     preorderHistory: confirmed
       ? buildHistoricalPreorderPresentation(order?.preorderSnapshot ?? null)
       : null,
+    bankTransfer: confirmed && order ? buildBankTransferInstructions(readBankTransferConfig(), order) : null,
   });
 
   // Vendor-neutral canonical Purchase, built from immutable finalized order facts (T7).

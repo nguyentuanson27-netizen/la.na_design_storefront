@@ -1,3 +1,4 @@
+import type { BankTransferInstructions } from "../commerce/bank-transfer.ts";
 import type { HistoricalPreorderPresentation } from "../commerce/historical-preorder-presentation.ts";
 
 /**
@@ -35,6 +36,8 @@ export type CheckoutSuccessViewModel = Readonly<{
   orderCode: string | null;
   /** Immutable I7 history. Null for ready-only, legacy/no-snapshot, or unconfirmed orders. */
   preorderHistory: HistoricalPreorderPresentation | null;
+  /** Present only for a confirmed bank-transfer order whose instructions can be stated in full. */
+  bankTransfer: BankTransferInstructions | null;
 }>;
 
 export function buildCheckoutSuccessViewModel(
@@ -42,6 +45,7 @@ export function buildCheckoutSuccessViewModel(
     orderCode: string | null;
     confirmed: boolean;
     preorderHistory?: HistoricalPreorderPresentation | null;
+    bankTransfer?: BankTransferInstructions | null;
   }>,
 ): CheckoutSuccessViewModel {
   const confirmed = input.confirmed && input.orderCode !== null;
@@ -49,5 +53,6 @@ export function buildCheckoutSuccessViewModel(
     confirmed,
     orderCode: confirmed ? input.orderCode : null,
     preorderHistory: confirmed ? (input.preorderHistory ?? null) : null,
+    bankTransfer: confirmed ? (input.bankTransfer ?? null) : null,
   });
 }
