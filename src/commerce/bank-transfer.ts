@@ -68,24 +68,23 @@ function isPerOrderTemplate(template: string): boolean {
 /**
  * The text the buyer must put in the transfer, from the owner's template.
  *
- * Returns `null` when it cannot be stated safely: an unknown placeholder, an empty result, or one
- * longer than the 50 characters most banks keep. A cut-off reference is worse than none, because
+ * Returns `null` when it cannot be stated safely: any brace that is not part of a known placeholder
+ * (an unknown or misspelled token, a lowercase one, an unclosed one), an empty result, or one longer
+ * than the 50 characters most banks keep. A cut-off reference is worse than none, because
  * the transfer would arrive looking valid and match nothing.
  */
 export function renderTransferContent(
   template: string,
   facts: Readonly<{ orderId: string; publicCode: string }>,
 ): string | null {
-  let unknown = false;
+  // Whatever is left after the known tokens are removed must be free of braces: replacing only a
+  // subset would let `{order_id}` or a stray `{` reach the buyer as literal text.
+  if (/[{}]/.test(template.replace(/\{(?:ORDER_ID|PUBLIC_CODE)\}/g, ""))) return null;
   const rendered = template
-    .replace(/\{([A-Z_]+)\}/g, (_match, name: string) => {
-      if (name === "ORDER_ID") return facts.orderId;
-      if (name === "PUBLIC_CODE") return facts.publicCode;
-      unknown = true;
-      return "";
-    })
+    .replace(/\{ORDER_ID\}/g, facts.orderId)
+    .replace(/\{PUBLIC_CODE\}/g, facts.publicCode)
     .trim();
-  if (unknown || rendered.length === 0 || rendered.length > MAX_CONTENT_LENGTH) return null;
+  if (rendered.length === 0 || rendered.length > MAX_CONTENT_LENGTH) return null;
   return rendered;
 }
 

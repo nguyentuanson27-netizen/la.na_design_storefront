@@ -48,6 +48,8 @@ test("transfer content renders known placeholders and refuses anything it cannot
   assert.equal(renderTransferContent("{ORDER_ID}", facts), "123456");
   assert.equal(renderTransferContent("LANA {ORDER_ID} {PUBLIC_CODE}", facts), "LANA 123456 LA-ABCD2345");
   assert.equal(renderTransferContent("{BILL_PHONE_NUMBER} {ORDER_ID}", facts), null);
+  assert.equal(renderTransferContent("{ORDER_ID}-{order_id}", facts), null);
+  assert.equal(renderTransferContent("{ORDER_ID} {", facts), null);
   assert.equal(renderTransferContent("   ", facts), null);
   assert.equal(renderTransferContent("x".repeat(51), facts), null);
 });
@@ -75,6 +77,12 @@ test("a content template that cannot identify the order turns the method off", (
   // Unknown placeholder: renders nothing for the buyer.
   assert.equal(withTemplate("{UNKNOWN}"), null);
   assert.equal(withTemplate("{ORDER_ID} {BILL_PHONE_NUMBER}"), null);
+  // Anything brace-shaped that is not a known placeholder must not reach the buyer as literal text.
+  assert.equal(withTemplate("{ORDER_ID}-{order_id}"), null);
+  assert.equal(withTemplate("{ORDER_ID} {DISPLAY_ID123}"), null);
+  assert.equal(withTemplate("{ORDER_ID} {"), null);
+  assert.equal(withTemplate("ORDER_ID} {ORDER_ID}"), null);
+  assert.equal(withTemplate("{{ORDER_ID}}"), null);
   // Static text is the same for every order, so no transfer could be matched to one.
   assert.equal(withTemplate("LANA"), null);
   // Too long once the longest id is substituted, even though a short id would fit.

@@ -11,6 +11,13 @@ Master spec §14 and the policy authority still say bank transfer is unavailable
    - the order is created with `cod = 0` ("Tiền thu hộ") and the `[CHUYỂN KHOẢN - chờ thanh toán]` note;
    - the transfer content Pancake generates (Cài đặt thanh toán → Nội dung chuyển khoản) equals what the confirmation page shows, so Pancake's automatic matching finds the transfer.
 
+Acceptance has to show, not assume, that:
+
+- Pancake receives the order in the type and status its transfer matching uses. Its "Quản lý giao dịch" documentation says money is matched only to orders waiting for a transfer, by amount and order code, while the partner banks' static QR matches by phone number. `cod: 0` alone does not say which. The create-order payload sets no payment method or status, so if the order does not arrive as waiting for a transfer, the mapping (or the allowed template) has to change.
+- Two orders with different codes each match their own transfer, including with a `{PUBLIC_CODE}` template.
+
+Keep `BANK_TRANSFER_ENABLED` off until both are shown.
+
 The second point is open because the OpenAPI document does not define Pancake's `{FULL_ORDER_ID}` / `{DISPLAY_ID}` placeholders. The website renders `BANK_TRANSFER_CONTENT_TEMPLATE` from `{ORDER_ID}` (the id in the create-order response, stored as `pancakeOrderId`) and `{PUBLIC_CODE}`. Set Pancake's template to whatever renders the same text for a test order, then align the environment variable.
 
 Recommendation: use a template with no customer name or phone (for example only the order id). Names lose diacritics, banks truncate content to about 50 characters, and a cut-off reference can match nothing.
