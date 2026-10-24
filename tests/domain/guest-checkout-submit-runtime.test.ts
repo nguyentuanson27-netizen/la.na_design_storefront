@@ -13,6 +13,7 @@ const checkoutInput = {
   communeRef: "commune-0001",
   detail: "12 Đường A",
   note: null,
+  attribution: null,
 };
 
 function createReconciliationDouble(calls: string[]) {
