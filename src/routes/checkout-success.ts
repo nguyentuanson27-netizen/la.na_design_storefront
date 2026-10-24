@@ -59,6 +59,7 @@ export async function loadCheckoutSuccessRoute({
     preorderHistory: confirmed
       ? buildHistoricalPreorderPresentation(order?.preorderSnapshot ?? null)
       : null,
+    paymentMethod: order?.paymentMethod ?? "COD",
     bankTransfer: confirmed && order ? buildBankTransferInstructions(readBankTransferConfig(), order) : null,
   });
 

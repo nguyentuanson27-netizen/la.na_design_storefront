@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildBankTransferInstructions,
+  effectivePaymentMethod,
   parsePaymentMethod,
   readBankTransferConfig,
   renderTransferContent,
@@ -66,4 +67,26 @@ test("instructions are shown only for a bank-transfer order that can be stated i
   assert.equal(buildBankTransferInstructions(config, { ...order, pancakeOrderId: null }), null);
   assert.equal(buildBankTransferInstructions(config, { ...order, totalVnd: null }), null);
   assert.equal(buildBankTransferInstructions(config, { ...order, totalVnd: BigInt(0) }), null);
+});
+
+test("a content template that cannot identify the order turns the method off", () => {
+  const withTemplate = (BANK_TRANSFER_CONTENT_TEMPLATE: string) => readBankTransferConfig({ ...account, BANK_TRANSFER_CONTENT_TEMPLATE });
+
+  // Unknown placeholder: renders nothing for the buyer.
+  assert.equal(withTemplate("{UNKNOWN}"), null);
+  assert.equal(withTemplate("{ORDER_ID} {BILL_PHONE_NUMBER}"), null);
+  // Static text is the same for every order, so no transfer could be matched to one.
+  assert.equal(withTemplate("LANA"), null);
+  // Too long once the longest id is substituted, even though a short id would fit.
+  assert.equal(withTemplate("LANA DESIGN THANH TOAN CHO DON HANG SO {ORDER_ID}"), null);
+  // A per-order placeholder within the limit is accepted.
+  assert.equal(withTemplate("LANA {ORDER_ID}")?.contentTemplate, "LANA {ORDER_ID}");
+  assert.equal(withTemplate("{PUBLIC_CODE}")?.contentTemplate, "{PUBLIC_CODE}");
+});
+
+test("a bank-transfer choice is void once the method is off", () => {
+  assert.equal(effectivePaymentMethod(true, "BANK_TRANSFER"), "BANK_TRANSFER");
+  assert.equal(effectivePaymentMethod(true, "COD"), "COD");
+  assert.equal(effectivePaymentMethod(false, "BANK_TRANSFER"), "COD");
+  assert.equal(effectivePaymentMethod(false, "COD"), "COD");
 });

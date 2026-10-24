@@ -32,7 +32,7 @@ function render(data: CheckoutSuccessViewModel) {
                 {data.orderCode}
               </strong>
               .{" "}
-              {data.bankTransfer
+              {data.paymentMethod === "BANK_TRANSFER"
                 ? `${BRAND.identity.name} sẽ xác nhận đơn và giao hàng sau khi nhận được tiền chuyển khoản.`
                 : `${BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.`}
             </p>
@@ -55,6 +55,10 @@ function render(data: CheckoutSuccessViewModel) {
                   Nàng chuyển đúng số tiền và nhập đúng nội dung trên để shop đối chiếu đơn nhanh nhất.
                 </p>
               </section>
+            ) : data.paymentMethod === "BANK_TRANSFER" ? (
+              <p className="mt-6 border border-black/20 p-5 text-sm leading-6" data-bank-transfer-unavailable>
+                Đây là đơn chuyển khoản. {BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để gửi thông tin chuyển khoản cho nàng.
+              </p>
             ) : null}
             <p className="mt-2 text-sm leading-6 text-black/75">
               Nàng có thể tra cứu đơn bất cứ lúc nào bằng mã đơn này và số điện thoại đặt hàng.

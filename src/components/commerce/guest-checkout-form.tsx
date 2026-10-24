@@ -19,6 +19,7 @@ import {
   loadCheckoutCommunesAction,
   loadCheckoutProvincesAction,
 } from "@/commerce/checkout-geo-actions";
+import { effectivePaymentMethod } from "@/commerce/bank-transfer";
 import type { CheckoutCommune, CheckoutProvince } from "@/commerce/checkout-geo";
 import { checkoutSubmitFeedback } from "@/commerce/checkout-submit-feedback";
 import { submitGuestCheckoutAction } from "@/commerce/guest-checkout-actions";
@@ -181,7 +182,10 @@ export function GuestCheckoutForm({
   const [phone, setPhone] = useState("");
   const [detail, setDetail] = useState("");
   const [note, setNote] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"COD" | "BANK_TRANSFER">("COD");
+  const [chosenPaymentMethod, setPaymentMethod] = useState<"COD" | "BANK_TRANSFER">("COD");
+  // `bankTransferEnabled` can flip to false on a refresh while this state survives; the radios are
+  // gone then, so the button and the hint must follow the prop, not the stale choice.
+  const paymentMethod = effectivePaymentMethod(bankTransferEnabled, chosenPaymentMethod);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [giftPending, setGiftPending] = useState(false);
   const coordinatedBusy = useRef({ gifts: false, quote: false });
