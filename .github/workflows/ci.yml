@@ -110,12 +110,13 @@ jobs:
         run: pnpm build
 
 
-  verify-runtime:
+  verify-runtime-shard-1:
     needs: identity
     # The half that needs a running system: the first half of the database suite, the HTTP smokes
     # that spawn a server, and the production-start checks that need a real build. The database
     # suite grew from 3m40s to 7m by October 2026, so it is split in two by file: this job runs
     # shard 1 and `verify-db-shard-2` runs shard 2 on its own runner and database, side by side.
+    # `verify-runtime` below is the check that stands for both.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -317,7 +318,7 @@ jobs:
 
   verify-db-shard-2:
     needs: identity
-    # The second half of the database suite (see `verify-runtime`). Same setup, nothing else.
+    # The second half of the database suite (see `verify-runtime-shard-1`). Same setup, nothing else.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -372,6 +373,22 @@ jobs:
       - name: Database smoke tests (shard 2/2)
         # `pnpm test:db` with the shard flag, which Node only honours before the file list.
         run: node --env-file-if-exists=.env.test.local --experimental-strip-types --test --test-concurrency=1 --test-shard=2/2 tests/database/*.test.ts
+
+  verify-runtime:
+    # The runtime check as it was named before the database suite was split, so a branch rule that
+    # requires `verify-runtime` keeps covering the whole suite: it passes only when both halves did.
+    needs: [verify-runtime-shard-1, verify-db-shard-2]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require both halves of the runtime verification
+        env:
+          SHARD_1: ${{ needs.verify-runtime-shard-1.result }}
+          SHARD_2: ${{ needs.verify-db-shard-2.result }}
+        run: |
+          echo "verify-runtime-shard-1: $SHARD_1, verify-db-shard-2: $SHARD_2"
+          test "$SHARD_1" = success && test "$SHARD_2" = success
 
   admin-a11y-runtime:
     needs: identity

@@ -214,10 +214,24 @@ export function BrandTryOnDialog({
     if (previous !== null && previous !== tryOn.stepNumber) headingRef.current?.focus();
   }, [open, tryOn.stepNumber]);
 
-  // Runs for Escape, the close button and `dialog.close()` alike.
-  function handleClosed() {
+  // Escape and the close buttons shut the native dialog at once, but its `close` event arrives a task
+  // later. Until then `open` still reads true, so a shopper who reopened in that gap would change
+  // nothing and see no dialog; the coordinator is told as the dialog closes instead.
+  function closing() {
     tryOn.reset();
     onOpenChange(false);
+  }
+
+  function closeDialog() {
+    closing();
+    dialogRef.current?.close();
+  }
+
+  // Runs for Escape, the close buttons and `dialog.close()` alike. A `close` that arrives once the
+  // dialog is open again belongs to the previous opening.
+  function handleClosed() {
+    if (dialogRef.current?.open) return;
+    if (open) closing();
     returnFocusRef.current?.focus({ preventScroll: true });
   }
 
@@ -510,7 +524,7 @@ export function BrandTryOnDialog({
             <button
               type="button"
               className="btn btn--outline mt-4 w-full px-4"
-              onClick={() => dialogRef.current?.close()}
+              onClick={closeDialog}
             >
               Xem tiếp sản phẩm trong lúc chờ
             </button>
@@ -579,6 +593,7 @@ export function BrandTryOnDialog({
       aria-labelledby={titleId}
       tabIndex={-1}
       className="m-0 mt-auto max-h-[92dvh] w-full max-w-none overflow-y-auto rounded-t-2xl border-0 bg-[#FAF7F2] p-0 text-black shadow-2xl backdrop:bg-black/45 sm:m-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-[440px] sm:rounded-lg"
+      onCancel={closing}
       onClose={handleClosed}
       onKeyDown={containFocus}
     >
@@ -595,7 +610,7 @@ export function BrandTryOnDialog({
           <button
             type="button"
             className={`shrink-0 px-2 ${TEXT_BUTTON}`}
-            onClick={() => dialogRef.current?.close()}
+            onClick={closeDialog}
           >
             Đóng
           </button>

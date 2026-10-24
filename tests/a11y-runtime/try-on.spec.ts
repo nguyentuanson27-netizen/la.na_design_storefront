@@ -566,6 +566,40 @@ test("the dialog opens, traps keyboard focus, closes with Escape and returns foc
   expect(unexpectedConsoleErrors(watched)).toEqual([]);
 });
 
+test("reopening before the closed dialog's close event arrives still opens it", async ({ page }) => {
+  // The native dialog shuts at once but fires `close` a task later. A reopen in between used to be
+  // lost: the page still believed the dialog open, and the late `close` then put it away for good.
+  const watched = await watch(page);
+  const dialog = await openTryOn(page);
+  const [element, closeButton, trigger] = await Promise.all([
+    dialog.elementHandle(),
+    dialog.getByRole("button", { name: "Đóng", exact: true }).elementHandle(),
+    triggerOf(page).elementHandle(),
+  ]);
+
+  for (const how of ["close button", "Escape"] as const) {
+    await expect(dialog).toBeVisible();
+    await page.evaluate(
+      async ({ element, closeButton, trigger, how }) => {
+        // `requestClose` is what Escape does: `cancel`, then the dialog shuts.
+        if (how === "close button") closeButton!.click();
+        else (element as HTMLDialogElement & { requestClose(): void }).requestClose();
+        // Let the page finish handling the close, but not as far as the `close` event's task.
+        await new Promise<void>((resolve) => queueMicrotask(resolve));
+        trigger!.click();
+      },
+      { element, closeButton, trigger, how },
+    );
+    // A task after the late `close` event, which must not undo the reopen.
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    await expect(dialog, `reopened right after closing with the ${how}`).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeVisible();
+  }
+
+  expect(watched.pageErrors).toEqual([]);
+  expect(unexpectedConsoleErrors(watched)).toEqual([]);
+});
+
 test("moving between steps moves focus to the new step's heading, and the steps keep what was chosen", async ({
   page,
 }) => {
