@@ -7,6 +7,7 @@ import { expect, test } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 /**
  * GQ19 -- the buyer's checkout for a cart with gifts: gift lines at 0đ, the unclaimed-slot account,
@@ -61,7 +62,7 @@ async function startServer(port: number, verified: boolean) {
   port += Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0);
   baseUrl = `http://${HOST}:${port}`;
   output = "";
-  server = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), "dev", "--hostname", HOST, "--port", String(port)], {
+  server = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(port)], {
     cwd: ROOT,
     env: {
       ...process.env,
@@ -73,7 +74,7 @@ async function startServer(port: number, verified: boolean) {
       LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: verified ? String(SHOP) : "",
       BETTER_AUTH_URL: baseUrl,
       BETTER_AUTH_IP_HEADER: "x-ci-client-ip",
-      NEXT_DIST_DIR: `.next-test/gq19-${port}-${runtimeId}`,
+      ...nextServerEnv(`.next-test/gq19-${port}-${runtimeId}`),
       NEXT_TELEMETRY_DISABLED: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],

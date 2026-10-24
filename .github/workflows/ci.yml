@@ -110,11 +110,13 @@ jobs:
         run: pnpm build
 
 
-  verify-runtime:
+  verify-runtime-shard-1:
     needs: identity
-    # The half that needs a running system: the database suite, the HTTP smokes that spawn a
-    # server, and the production-start checks that need a real build. It is the longer of the two
-    # and therefore the one to shorten next; `pnpm test:db` is 3m40s of it.
+    # The half that needs a running system: the first half of the database suite, the HTTP smokes
+    # that spawn a server, and the production-start checks that need a real build. The database
+    # suite grew from 3m40s to 7m by October 2026, so it is split in two by file: this job runs
+    # shard 1 and `verify-db-shard-2` runs shard 2 on its own runner and database, side by side.
+    # `verify-runtime` below is the check that stands for both.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -169,8 +171,9 @@ jobs:
       - name: Deploy database migrations
         run: pnpm prisma:migrate:deploy
 
-      - name: Database smoke tests
-        run: pnpm test:db
+      - name: Database smoke tests (shard 1/2)
+        # `pnpm test:db` with the shard flag, which Node only honours before the file list.
+        run: node --env-file-if-exists=.env.test.local --experimental-strip-types --test --test-concurrency=1 --test-shard=1/2 tests/database/*.test.ts
 
       - name: Next HTTP security smoke
         run: node --experimental-strip-types scripts/cart-server-action-http-smoke.ts
@@ -313,6 +316,80 @@ jobs:
           '
 
 
+  verify-db-shard-2:
+    needs: identity
+    # The second half of the database suite (see `verify-runtime-shard-1`). Same setup, nothing else.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ${{ needs.identity.outputs.database-name }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ${{ needs.identity.outputs.database-name }}"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ needs.identity.outputs.database-name }}
+      BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_IP_HEADER: x-ci-client-ip
+      APP_DOMAIN: localhost:3000
+      SEARCH_INDEXING_ENABLED: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      # Before `setup-node`, so its `cache: pnpm` can ask pnpm where its store is.
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          pnpm --version
+
+      - name: Install from lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Deploy database migrations
+        run: pnpm prisma:migrate:deploy
+
+      - name: Database smoke tests (shard 2/2)
+        # `pnpm test:db` with the shard flag, which Node only honours before the file list.
+        run: node --env-file-if-exists=.env.test.local --experimental-strip-types --test --test-concurrency=1 --test-shard=2/2 tests/database/*.test.ts
+
+  verify-runtime:
+    # The runtime check as it was named before the database suite was split, so a branch rule that
+    # requires `verify-runtime` keeps covering the whole suite: it passes only when both halves did.
+    needs: [verify-runtime-shard-1, verify-db-shard-2]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require both halves of the runtime verification
+        env:
+          SHARD_1: ${{ needs.verify-runtime-shard-1.result }}
+          SHARD_2: ${{ needs.verify-db-shard-2.result }}
+        run: |
+          echo "verify-runtime-shard-1: $SHARD_1, verify-db-shard-2: $SHARD_2"
+          test "$SHARD_1" = success && test "$SHARD_2" = success
+
   admin-a11y-runtime:
     needs: identity
     # Ubuntu, not macOS. The job was on `macos-14` from the initial import with no recorded reason,
@@ -391,10 +468,27 @@ jobs:
         working-directory: tests/a11y-runtime
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      # The browser only, not `--with-deps`: every library Chromium needs is already on the runner
+      # (apt reports each one "already the newest version"), and the extra fonts and xvfb upgrade it
+      # pulled came from an Azure apt mirror that has taken 10-12 minutes for 20 MB, pushing shards
+      # past the timeout. The browser itself downloads from Playwright's CDN in seconds.
       - name: Install Playwright Chromium
         working-directory: tests/a11y-runtime
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
+
+      # One production build per shard, which every spec serves with `next start` (see
+      # tests/a11y-runtime/next-server-mode.ts) instead of each spec compiling its pages in its own
+      # `next dev`: what shoppers get, several times faster per page, and free of the dev-only
+      # re-navigation and focus flakes seen with next 16.4.x.
+      - name: Build app for browser specs
+        env:
+          NODE_ENV: production
+          NEXT_DIST_DIR: .next-e2e
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: pnpm build
 
       - name: Run admin browser accessibility runtime
         working-directory: tests/a11y-runtime
+        env:
+          LA_E2E_PREBUILT_DIST_DIR: .next-e2e
         run: npx playwright test --config playwright.config.ts --shard=${{ matrix.shard }}/4

@@ -9,6 +9,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { PUBLIC_LEGAL_FACTS } from "../../src/content/public-brand-facts.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 /**
  * The phone's vertical rhythm, and the one legal fact that belongs on every width.
@@ -230,12 +231,12 @@ test.beforeAll(async () => {
   await parkCategoryMedia();
   await seedProduct();
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
       // Next 16 dev permits one server per build directory and guards it with a lock file there.
-      NEXT_DIST_DIR: ".next-test/mobile-storefront-rhythm",
+      ...nextServerEnv(".next-test/mobile-storefront-rhythm"),
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       APP_DOMAIN: `${HOST}:${PORT}`,

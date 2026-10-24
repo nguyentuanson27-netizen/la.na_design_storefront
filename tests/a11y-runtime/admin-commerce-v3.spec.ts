@@ -9,6 +9,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags.ts";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 const HOST = "127.0.0.1";
 const PORT = 3303;
@@ -393,7 +394,7 @@ test.beforeAll(async () => {
   adminCookies = cookiesFrom(headers);
   await prisma.user.update({ where: { email: adminEmail }, data: { role: "ADMIN" } });
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
@@ -401,7 +402,7 @@ test.beforeAll(async () => {
       // file there. Every spec drives this one project, so they share that lock unless
       // each gets its own directory -- and a server that has to be SIGKILLed leaves the
       // lock behind, which makes the next spec's server refuse to start entirely.
-      NEXT_DIST_DIR: ".next-test/admin-commerce-v3",
+      ...nextServerEnv(".next-test/admin-commerce-v3"),
       // Better Auth rejects callbacks whose origin does not match its configured base URL,
       // so it has to follow this spec's own port rather than a value pinned in the workflow.
       BETTER_AUTH_URL: BASE_URL,

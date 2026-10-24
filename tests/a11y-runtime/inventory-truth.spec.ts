@@ -9,6 +9,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch.ts";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 /**
  * F8a + F8b in a real browser: what a shopper actually reads, from the card to checkout.
@@ -237,12 +238,12 @@ test.beforeAll(async () => {
     { size: "M", quantity: 0 },
   ]);
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
       // Next 16 dev permits one server per build directory and guards it with a lock file there.
-      NEXT_DIST_DIR: ".next-test/inventory-truth",
+      ...nextServerEnv(".next-test/inventory-truth"),
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",

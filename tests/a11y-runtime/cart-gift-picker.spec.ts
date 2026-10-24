@@ -6,6 +6,7 @@ import { expect, test, type Locator } from "@playwright/test";
 import { prisma } from "../../src/db/prisma.ts";
 import { readCartGiftState } from "../../src/commerce/cart-gift-selection.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const URL = "http://127.0.0.1:3348";
@@ -24,10 +25,10 @@ async function cleanup() {
 }
 async function startCartServer(port: number, verified = false): Promise<ChildProcess> {
   const base = `http://127.0.0.1:${port}`;
-  const child = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), "dev", "--hostname", "127.0.0.1", "--port", String(port)], {
+  const child = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), NEXT_SERVER_COMMAND, "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: ROOT, env: { ...process.env, PANCAKE_SHOP_ID: String(SHOP), LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true", LA_TRACKING_MODE: "preview", LA_GTM_CONTAINER_ID: "GTM-GQ14TEST", BETTER_AUTH_URL: base,
       LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: verified ? String(SHOP) : "",
-      NEXT_DIST_DIR: verified ? ".next-test/gq14-verified" : ".next-test/gq14", NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"],
+      ...nextServerEnv(verified ? ".next-test/gq14-verified" : ".next-test/gq14"), NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout?.on("data", (chunk) => { output = (output + chunk).slice(-12000); });
   child.stderr?.on("data", (chunk) => { output = (output + chunk).slice(-12000); });

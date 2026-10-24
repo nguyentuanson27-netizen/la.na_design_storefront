@@ -8,6 +8,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 /**
  * The storefront's listing surfaces are one system.
@@ -216,13 +217,13 @@ test.beforeAll(async () => {
     },
   });
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
       // Next 16 dev permits one server per build directory and guards it with a lock file there.
       // Every spec drives this one project, so they share that lock unless each gets its own.
-      NEXT_DIST_DIR: ".next-test/listing-consistency",
+      ...nextServerEnv(".next-test/listing-consistency"),
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       APP_DOMAIN: `${HOST}:${PORT}`,

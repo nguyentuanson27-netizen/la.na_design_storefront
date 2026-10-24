@@ -14,6 +14,7 @@ import { expect, test, type Page, type Request } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 const HOST = "127.0.0.1";
 const PORT = 3344;
@@ -277,11 +278,11 @@ test.beforeAll(async () => {
     medium.id,
   );
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
-      NEXT_DIST_DIR: ".next-test/pdp-flash-countdown",
+      ...nextServerEnv(".next-test/pdp-flash-countdown"),
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       LA_SHIPPING_FEE_VND: "30000", // Keep the amount collision covered by this fixture.

@@ -12,6 +12,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { OPTIMIZED_IMAGE_ROUTE } from "./image-routes";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 /**
  * Virtual try-on on the PDP (docs/specs/storefront-virtual-try-on.md §16 Browser).
@@ -80,11 +81,11 @@ function captureOutput(chunk: Buffer) {
 
 async function startServer({ port, enabled, distDir }: { port: number; enabled: boolean; distDir: string }) {
   const baseUrl = `http://${HOST}:${port}`;
-  const server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(port)], {
+  const server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(port)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
-      NEXT_DIST_DIR: distDir,
+      ...nextServerEnv(distDir),
       NEXT_TELEMETRY_DISABLED: "1",
       NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${FETCH_FIXTURE}`].filter(Boolean).join(" "),
       APP_DOMAIN: `${HOST}:${port}`,
@@ -560,6 +561,40 @@ test("the dialog opens, traps keyboard focus, closes with Escape and returns foc
   await closeButton.click();
   await expect(dialog).toBeHidden();
   await expect(triggerOf(page)).toBeFocused();
+
+  expect(watched.pageErrors).toEqual([]);
+  expect(unexpectedConsoleErrors(watched)).toEqual([]);
+});
+
+test("reopening before the closed dialog's close event arrives still opens it", async ({ page }) => {
+  // The native dialog shuts at once but fires `close` a task later. A reopen in between used to be
+  // lost: the page still believed the dialog open, and the late `close` then put it away for good.
+  const watched = await watch(page);
+  const dialog = await openTryOn(page);
+  const [element, closeButton, trigger] = await Promise.all([
+    dialog.elementHandle(),
+    dialog.getByRole("button", { name: "Đóng", exact: true }).elementHandle(),
+    triggerOf(page).elementHandle(),
+  ]);
+
+  for (const how of ["close button", "Escape"] as const) {
+    await expect(dialog).toBeVisible();
+    await page.evaluate(
+      async ({ element, closeButton, trigger, how }) => {
+        // `requestClose` is what Escape does: `cancel`, then the dialog shuts.
+        if (how === "close button") closeButton!.click();
+        else (element as HTMLDialogElement & { requestClose(): void }).requestClose();
+        // Let the page finish handling the close, but not as far as the `close` event's task.
+        await new Promise<void>((resolve) => queueMicrotask(resolve));
+        trigger!.click();
+      },
+      { element, closeButton, trigger, how },
+    );
+    // A task after the late `close` event, which must not undo the reopen.
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    await expect(dialog, `reopened right after closing with the ${how}`).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeVisible();
+  }
 
   expect(watched.pageErrors).toEqual([]);
   expect(unexpectedConsoleErrors(watched)).toEqual([]);
