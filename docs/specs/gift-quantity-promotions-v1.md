@@ -126,6 +126,7 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 - **Đề xuất:** Admin phải giải quyết trùng độ ưu tiên trong tập chương trình cùng tác động lên một đơn giá trước publish; runtime gặp cấu hình mâu thuẫn phải fail-closed và phát cảnh báo, tuyệt đối không chọn ngẫu nhiên.
 - Gift evaluation chạy **sau toàn bộ bước giảm giá**, để điều kiện `ORDER_SUBTOTAL` không tạo vòng lặp với quà.
 - Khi nhiều gift campaign được phép cùng chạy, số suất và giới hạn tính **theo từng campaign**, quà của campaign này không dùng để đạt điều kiện campaign khác; tồn kho vật lý cần cộng gộp tất cả nhu cầu.
+- **Lên mốc quà cao hơn (không cộng dồn, chỉ áp dụng mốc cao nhất):** quà khách đã chọn ở mốc thấp hơn **không bị xóa khi giỏ thay đổi** (giữ FR-06) nhưng cũng không còn là lỗi chặn giỏ/checkout: khi đó nó được hiển thị riêng là "quà mốc trước", không tính vào đơn và không chặn việc chọn quà mốc mới. Khi khách chủ động nhận quà của mốc mới, hoặc xác nhận đặt hàng (quote đã chứng minh) mà không kèm quà mốc trước, quà mốc trước được thay/bỏ trong cùng transaction. Nếu giỏ quay về mốc cũ trước khi khách đổi, quà cũ tự có hiệu lực lại. Chỉ áp dụng khi có một campaign đang chạy vượt ưu tiên campaign bị loại; xung đột thật (trùng ưu tiên, không ai thắng) vẫn báo như cũ. Gợi ý "+1" không được đẩy khách qua mốc làm thay quà đã chọn.
 
 ### FR-09. Ngữ nghĩa `FIXED_PRICE` legacy
 

@@ -454,6 +454,37 @@ test("EX-21: when a tier's runtime price becomes invalid the whole tier is dropp
 
 // -- GQ18: idempotency and the state gate -----------------------------------------------------------------
 
+test("a gift kept at a lower milestone the cart moved past is not ordered, is swapped out on the confirmed DRAFT, and a retry keeps the same DRAFT", async () => {
+  await seed({ gift: false });
+  for (const [suffix, minimumQuantity] of [["low", 2], ["high", 3]] as const) {
+    await prisma.giftQuantityCampaign.create({
+      data: {
+        id: `${P}-${suffix}`, kind: "GIFT_ITEM", name: `GQ17 ${suffix}`, startsAt: PAST, endsAt: FUTURE, isEnabled: true, enabledAt: PAST,
+        scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["vayDam"], giftTrigger: "QUANTITY", minimumQuantity,
+        maxGiftsPerOrder: 1, allowDuplicateGifts: true, giftOptions: { create: [{ variantId: giftItem.variantId }] },
+      },
+    });
+  }
+  // Chosen while the cart sat at the lower milestone; the cart (3 units) now reaches the higher one.
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-low`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  const resolution = await render();
+  assert.equal(resolution.kind, "BENEFIT");
+  if (resolution.kind !== "BENEFIT") return;
+  assert.deepEqual(resolution.gifts, [], "the replaced choice never rides the order");
+  assert.deepEqual(resolution.replacedGifts, [{ campaignId: `${P}-low`, variantId: giftItem.variantId }]);
+  assert.deepEqual(resolution.facts.entitlements.map((entry) => [entry.campaignId, entry.entitled, entry.selected]), [[`${P}-high`, 1, 0]]);
+  const proof = issueBenefitQuoteProof({ quote: resolution.facts, cartId, secret })!;
+  const acknowledgement = issueNonclaimAcknowledgement({ quote: resolution.facts, cartId, secret, now: NOW })!;
+  const first = await create(snapshotService({ proof, acknowledgement }));
+  assert.ok(first.ok);
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0, "confirmed without it, so it is swapped out");
+  const second = await create(snapshotService({ proof, acknowledgement }));
+  assert.ok(first.ok && second.ok);
+  if (!first.ok || !second.ok) return;
+  assert.equal(second.order.publicCode, first.order.publicCode);
+  assert.equal(await orderCount(), 1);
+});
+
 test("a DRAFT retry with the same proof is idempotent: one order, one set of quote rows, same public code", async () => {
   await seed({ gift: false });
   const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;

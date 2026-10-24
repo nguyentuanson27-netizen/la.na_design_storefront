@@ -23,6 +23,7 @@ import {
 import { resolveBenefitCheckoutQuote, toOrderQuoteSnapshotInput } from "./benefit-checkout-quote.ts";
 import { summarizeBenefitQuote, type BenefitQuoteSummary } from "./benefit-quote-summary.ts";
 import { clearOrderQuoteSnapshot, replaceOrderQuoteSnapshot, validateOrderQuoteSnapshot } from "./order-quote-snapshot.ts";
+import { removeCartGiftSelection } from "./cart-gift-selection-repository.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import { projectBenefitQuoteForVendor } from "./pancake-gift-projection.ts";
 import type { PromotionCampaignKind, PromotionPricingResult } from "./promotion-pricing.ts";
@@ -741,6 +742,10 @@ export function createGuestCheckoutSnapshotService(
           if (benefitQuoteWrite === null || !validateOrderQuoteSnapshot(benefitQuoteWrite).ok) {
             return { ok: false, reason: "MONEY_UNSUPPORTED" };
           }
+          // The buyer has just confirmed a proven quote without the gift of a lower milestone their cart
+          // moved past, so that kept choice is swapped out here. Left stored, it would make every retry
+          // read as a changed basket and retire this DRAFT.
+          for (const row of resolution.replacedGifts) await removeCartGiftSelection(tx, { cartId, ...row });
           for (const row of resolution.paid) {
             const line = lines.find((candidate) => candidate.variantId === row.variantId);
             const pricing = pricingByVariantId.get(row.variantId);

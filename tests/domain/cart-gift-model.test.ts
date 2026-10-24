@@ -285,3 +285,24 @@ test("gift option order depends only on the options, not on the order the campai
   assert.deepEqual(modelFor([...variants].reverse()), expected);
   assert.deepEqual(modelFor([variants[3], variants[6], variants[1], variants[0], variants[5], variants[2], variants[4]]), expected);
 });
+
+test("a gift kept at a replaced lower milestone is listed apart and is not reported as a stack conflict", () => {
+  const base = state();
+  const fixture = {
+    ...base,
+    campaigns: [...(base.campaigns as unknown as object[]), { id: "lower", allowDuplicateGifts: false, options: [{ variantId: "gift", productId: "gift-product", composite: false, readyAvailable: 1 }] }],
+    entitlements: [{ campaignId: "campaign", revision: 2, earned: 1, entitled: 1, unfulfillableForStock: 0, shortfallToNext: null }],
+    selections: [],
+    replacedSelections: [{ campaignId: "lower", variantId: "gift", quantity: 1, campaignRevision: 1, replacedByCampaignIds: ["campaign"] }],
+    giftStackDropped: [{ campaignId: "lower", reason: "STACK_NOT_PERMITTED", otherCampaignId: "campaign" }],
+    giftSuperseded: [{ campaignId: "lower", byCampaignIds: ["campaign"] }],
+    validation: { ok: true, summaries: [] },
+  } as unknown as CartGiftState;
+  const model = buildCartGiftPickerModel(fixture);
+  assert.equal(model.invalid, false);
+  assert.equal(model.stackConflict, false);
+  assert.deepEqual(model.selections, []);
+  assert.deepEqual(model.replaced?.map((row) => [row.campaignId, row.variantId, row.label]), [["lower", "gift", "Khăn — Trắng / M"]]);
+  const conflict = buildCartGiftPickerModel({ ...fixture, giftSuperseded: [] } as unknown as CartGiftState);
+  assert.equal(conflict.stackConflict, true, "a drop with no running winner is still a conflict the buyer is told about");
+});

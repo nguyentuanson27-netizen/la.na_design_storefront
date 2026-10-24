@@ -69,6 +69,8 @@ export type BenefitCheckoutResolution =
       giftImages: ReadonlyMap<string, string | null>;
       /** Display only: the admin-given name of each quantity-tier campaign, by campaign id. Never part of the proof. */
       campaignNames: ReadonlyMap<string, string>;
+      /** Stored choices of a lower milestone this quote's higher one replaced. Not in the order; never part of the proof. */
+      replacedGifts: readonly Readonly<{ campaignId: string; variantId: string }>[];
     }>;
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -243,6 +245,7 @@ export async function resolveBenefitCheckoutQuote({
     giftLabels,
     giftImages,
     campaignNames: benefits.campaignNames,
+    replacedGifts: state.replacedSelections.map(({ campaignId, variantId }) => ({ campaignId, variantId })),
   };
 }
 
