@@ -10,6 +10,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { seedFeedbackMirror } from "./feedback-mirror-fixture";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 /**
  * Positive browser acceptance for the homepage editorial refresh
@@ -320,12 +321,12 @@ test.beforeAll(async () => {
 
   installFixtureConfig();
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
       // Own build directory: Next 16 dev locks one server per directory (see the other specs).
-      NEXT_DIST_DIR: ".next-test/homepage-refresh-acceptance",
+      ...nextServerEnv(".next-test/homepage-refresh-acceptance"),
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",

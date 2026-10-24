@@ -21,6 +21,7 @@ import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags.ts";
 import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch.ts";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 const HOST = "127.0.0.1";
 const PORT = 3322;
@@ -135,12 +136,12 @@ test.beforeAll(async () => {
   expect(adminCookies.length).toBeGreaterThan(0);
   await prisma.user.update({ where: { email: adminEmail }, data: { role: "ADMIN" } });
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     // The feature gate is left at its default, OFF: that is the state this unit ships in.
     env: {
       ...process.env,
-      NEXT_DIST_DIR: ".next-test/admin-gift-quantity",
+      ...nextServerEnv(".next-test/admin-gift-quantity"),
       BETTER_AUTH_URL: BASE_URL,
       APP_DOMAIN: `${HOST}:${PORT}`,
       NEXT_TELEMETRY_DISABLED: "1",

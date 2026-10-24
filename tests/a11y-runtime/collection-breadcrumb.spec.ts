@@ -8,6 +8,7 @@ import { expect, test } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 const HOST = "127.0.0.1";
 const PORT = 3308;
@@ -68,7 +69,7 @@ test.beforeAll(async () => {
     },
   });
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
@@ -76,7 +77,7 @@ test.beforeAll(async () => {
       // file there. Every spec drives this one project, so they share that lock unless
       // each gets its own directory -- and a server that has to be SIGKILLed leaves the
       // lock behind, which makes the next spec's server refuse to start entirely.
-      NEXT_DIST_DIR: ".next-test/collection-breadcrumb",
+      ...nextServerEnv(".next-test/collection-breadcrumb"),
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       APP_DOMAIN: `${HOST}:${PORT}`,

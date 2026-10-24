@@ -23,6 +23,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { auth } from "../../src/auth/server.ts";
 import { OFFICIAL_PRODUCTION_STOREFRONT_HOST } from "../../src/commerce/storefront-origin.ts";
 import { prisma } from "../../src/db/prisma.ts";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 const HOST = "127.0.0.1";
 const PORT = 3337;
@@ -193,11 +194,11 @@ test.beforeAll(async () => {
   expect(sessionCookies.length).toBeGreaterThan(0);
   await prisma.user.update({ where: { email: adminEmail }, data: { role: "ADMIN" } });
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
-      NEXT_DIST_DIR: ".next-test/pancake-chat-isolation",
+      ...nextServerEnv(".next-test/pancake-chat-isolation"),
       BETTER_AUTH_URL: BASE_URL,
       APP_DOMAIN: `${HOST}:${PORT}`,
       NEXT_TELEMETRY_DISABLED: "1",

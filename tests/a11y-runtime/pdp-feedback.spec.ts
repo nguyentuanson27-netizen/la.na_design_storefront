@@ -11,6 +11,7 @@ import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { seedFeedbackMirror } from "./feedback-mirror-fixture";
 import { OPTIMIZED_IMAGE_ROUTE } from "./image-routes";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 /**
  * Product page conversion surfaces (owner amendment 2026-10-08, homepage-editorial-refresh §7.6):
@@ -161,11 +162,11 @@ test.beforeAll(async () => {
   await tagFeedback(products.own.code, [OWN_PADDED], `ANH-FEEDBACK-${products.own.code} `);
   await tagFeedback("FBDUP3", [SHARED_ONLY]);
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
-      NEXT_DIST_DIR: ".next-test/pdp-feedback",
+      ...nextServerEnv(".next-test/pdp-feedback"),
       APP_DOMAIN: `${HOST}:${PORT}`,
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,

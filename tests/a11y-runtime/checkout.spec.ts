@@ -9,6 +9,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 const HOST = "127.0.0.1";
 const PORT = 3307;
@@ -127,13 +128,13 @@ async function startServer({
     .filter((value): value is string => Boolean(value))
     .join(" ");
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
       // Next 16 dev permits one server per build directory and guards it with a lock file
       // there. Retired and replaced whenever a stop had to SIGKILL: see `serverGeneration`.
-      NEXT_DIST_DIR: `.next-test/checkout-${serverGeneration}`,
+      ...nextServerEnv(`.next-test/checkout-${serverGeneration}`),
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",
       NODE_OPTIONS: nodeOptions,

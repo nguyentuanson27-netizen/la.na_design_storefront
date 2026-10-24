@@ -12,6 +12,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { OPTIMIZED_IMAGE_ROUTE } from "./image-routes";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 /**
  * Virtual try-on on the PDP (docs/specs/storefront-virtual-try-on.md §16 Browser).
@@ -80,11 +81,11 @@ function captureOutput(chunk: Buffer) {
 
 async function startServer({ port, enabled, distDir }: { port: number; enabled: boolean; distDir: string }) {
   const baseUrl = `http://${HOST}:${port}`;
-  const server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(port)], {
+  const server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(port)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
-      NEXT_DIST_DIR: distDir,
+      ...nextServerEnv(distDir),
       NEXT_TELEMETRY_DISABLED: "1",
       NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${FETCH_FIXTURE}`].filter(Boolean).join(" "),
       APP_DOMAIN: `${HOST}:${port}`,

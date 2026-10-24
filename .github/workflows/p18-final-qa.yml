@@ -70,9 +70,11 @@ jobs:
         working-directory: tests/a11y-runtime
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      # The browser only: the runner already has Chromium's libraries, and `--with-deps` fetched
+      # extra fonts from an apt mirror that has taken 10+ minutes (see ci.yml).
       - name: Install Playwright Chromium
         working-directory: tests/a11y-runtime
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Build production application
         env:

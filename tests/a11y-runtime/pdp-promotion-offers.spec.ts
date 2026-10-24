@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { expect, test } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 /**
  * The product page names the gift / quantity-tier campaigns covering it under the price, by the
@@ -108,11 +109,11 @@ test.beforeAll(async () => {
   await giftCampaign(`${P}-sold-out-gift`, soldOutGiftName, soldOutGift.variantId, 2);
   await giftCampaign(`${P}-gift`, giftName, gift.variantId, 3);
 
-  server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
+  server = spawn(process.execPath, [NEXT_CLI, NEXT_SERVER_COMMAND, "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
-      NEXT_DIST_DIR: ".next-test/pdp-promotion-offers",
+      ...nextServerEnv(".next-test/pdp-promotion-offers"),
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",
