@@ -186,6 +186,10 @@ export function GuestCheckoutForm({
   // `bankTransferEnabled` can flip to false on a refresh while this state survives; the radios are
   // gone then, so the button and the hint must follow the prop, not the stale choice.
   const paymentMethod = effectivePaymentMethod(bankTransferEnabled, chosenPaymentMethod);
+  // Masking is not enough: a choice kept while the method is off would come back on its own when
+  // a later refresh turns it on again. Clear it the moment the two disagree (set during render, the
+  // documented way to reset state from a prop).
+  if (paymentMethod !== chosenPaymentMethod) setPaymentMethod(paymentMethod);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [giftPending, setGiftPending] = useState(false);
   const coordinatedBusy = useRef({ gifts: false, quote: false });

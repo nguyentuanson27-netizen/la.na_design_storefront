@@ -6,7 +6,7 @@ Master spec §14 and the policy authority still say bank transfer is unavailable
 
 ## Gates before enabling
 
-1. **Owner policy.** The owner re-approves bank transfer as a website payment method. Then update master spec §14, `FULFILLMENT.payment` (`src/brand/fulfillment.config.ts`) and the `/policies` and `/shipping` payment sections in the same change that sets the flag.
+1. **Owner policy.** The owner re-approves bank transfer as a website payment method. Then update master spec §14, `FULFILLMENT.payment` (`src/brand/fulfillment.config.ts`) and the `/policies` and `/shipping` payment sections in the same change that sets the flag. Other copy still speaks of COD only and belongs in the same change: the lookup-order line in `src/content/public-brand-facts.ts` (pinned by `tests/domain/public-brand-content.test.ts`) and the in-form confirmation message in `src/commerce/checkout-submit-feedback.ts`. The `/track-order` header already says "đơn hàng".
 2. **Live Pancake acceptance.** Place one real bank-transfer order and confirm in Pancake that:
    - the order is created with `cod = 0` ("Tiền thu hộ") and the `[CHUYỂN KHOẢN - chờ thanh toán]` note;
    - the transfer content Pancake generates (Cài đặt thanh toán → Nội dung chuyển khoản) equals what the confirmation page shows, so Pancake's automatic matching finds the transfer.

@@ -23,7 +23,7 @@ function render(data: TrackOrderViewModel) {
             Nhập mã đơn và số điện thoại đã dùng khi đặt hàng.
           </p>
           <p className="mt-4 text-sm leading-6 text-black/75">
-            Kết quả chỉ hiển thị trạng thái xử lý cơ bản của đơn COD. {BRAND.identity.name} không hiển thị địa chỉ, ghi chú hoặc thông tin nội bộ của hệ thống bán hàng tại đây.
+            Kết quả chỉ hiển thị trạng thái xử lý cơ bản của đơn hàng. {BRAND.identity.name} không hiển thị địa chỉ, ghi chú hoặc thông tin nội bộ của hệ thống bán hàng tại đây.
           </p>
         </div>
 

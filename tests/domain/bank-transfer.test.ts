@@ -92,6 +92,18 @@ test("a content template that cannot identify the order turns the method off", (
   assert.equal(withTemplate("{PUBLIC_CODE}")?.contentTemplate, "{PUBLIC_CODE}");
 });
 
+test("a bank-transfer choice does not come back when the method is switched on again", () => {
+  // The form keeps `chosen` in state across refreshes and clears it whenever the effective choice
+  // differs from it; replaying that rule over on, off, on must end on COD, not on the old choice.
+  let chosen: "COD" | "BANK_TRANSFER" = "BANK_TRANSFER";
+  for (const enabled of [true, false, true]) {
+    const effective = effectivePaymentMethod(enabled, chosen);
+    if (effective !== chosen) chosen = effective;
+  }
+  assert.equal(chosen, "COD");
+  assert.equal(effectivePaymentMethod(true, chosen), "COD");
+});
+
 test("a bank-transfer choice is void once the method is off", () => {
   assert.equal(effectivePaymentMethod(true, "BANK_TRANSFER"), "BANK_TRANSFER");
   assert.equal(effectivePaymentMethod(true, "COD"), "COD");
