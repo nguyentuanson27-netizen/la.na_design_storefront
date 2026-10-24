@@ -39,6 +39,7 @@ export function BrandGuestCheckoutForm(
     totalsSlot?: ReactNode;
     preorderSlot?: ReactNode;
     desktopPreorderSlot?: ReactNode;
+    bankTransferEnabled?: boolean;
   }>,
 ) {
   return <GuestCheckoutForm {...props} />;

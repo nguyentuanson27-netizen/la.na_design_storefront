@@ -30,6 +30,7 @@ test("guest checkout accepts only the approved COD contact and two-level address
       communeRef: "84_VN10105",
       detail: "12 Đường A, căn hộ 3B",
       note: "Gọi trước khi giao",
+      paymentMethod: "COD",
       attribution: null,
     },
   });
@@ -55,6 +56,7 @@ test("guest checkout normalizes a blank optional note to null", () => {
         communeRef: "84_VN10105",
         detail: "12 Đường A",
         note: null,
+        paymentMethod: "COD",
         attribution: null,
       },
     },
@@ -121,4 +123,26 @@ test("guest checkout keeps an attribution line only if it is exactly what the co
     const result = parseGuestCheckoutInput({ ...valid, attribution });
     assert.equal(result.ok && result.value.attribution, null, String(attribution));
   }
+});
+
+test("guest checkout accepts only the two known payment methods", () => {
+  const valid = {
+    name: "Nguyễn Văn A",
+    phone: "0901234567",
+    provinceRef: "84_VN101",
+    communeRef: "84_VN10105",
+    detail: "12 Đường A",
+  };
+  const method = (paymentMethod: unknown) => {
+    const result = parseGuestCheckoutInput({ ...valid, paymentMethod });
+    return result.ok ? result.value.paymentMethod : result.reason;
+  };
+
+  assert.equal(method(undefined), "COD");
+  assert.equal(method(""), "COD");
+  assert.equal(method("COD"), "COD");
+  assert.equal(method("BANK_TRANSFER"), "BANK_TRANSFER");
+  assert.equal(method("cod"), "INVALID_INPUT");
+  assert.equal(method("MOMO"), "INVALID_INPUT");
+  assert.equal(method(1), "INVALID_INPUT");
 });

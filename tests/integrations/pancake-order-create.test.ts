@@ -297,3 +297,22 @@ test("gateway resolves two-level province and ward names from the geo endpoints,
   await assert.rejects(gateway.resolveTwoLevelAddressNames("84_VN129", "84_VN00000"));
   await assert.rejects(gateway.resolveTwoLevelAddressNames("84_VN999", "84_VN12951"));
 });
+
+test("create-order mapper sends cod 0 only for a bank-transfer order", () => {
+  const base = {
+    shopId: 920_007,
+    guestName: "Nguyễn Văn A",
+    guestPhone: "0901234567",
+    provinceRef: "province-01",
+    districtRef: "district-001",
+    communeRef: "commune-0001",
+    addressDetail: "12 Đường A",
+    note: null,
+    shippingFeeVnd: 30_000,
+    lines: [{ pancakeVariationId: "variation-001", quantity: 1, unitPriceVnd: 500_000 }],
+  };
+
+  assert.equal(buildPancakeCreateOrderRequest({ ...base, paymentMethod: "BANK_TRANSFER" }).cod, 0);
+  assert.equal("cod" in buildPancakeCreateOrderRequest({ ...base, paymentMethod: "COD" }), false);
+  assert.equal("cod" in buildPancakeCreateOrderRequest(base), false);
+});

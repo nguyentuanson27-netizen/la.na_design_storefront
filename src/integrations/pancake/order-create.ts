@@ -31,6 +31,11 @@ export type PancakeCreateOrderInput = {
   note: string | null;
   shippingFeeVnd: number;
   lines: readonly PancakeCreateOrderLineInput[];
+  /**
+   * `BANK_TRANSFER` asks the carrier to collect nothing: the buyer pays by transfer, which the shop
+   * confirms in Pancake. Absent or `COD` sends no `cod`, exactly as before.
+   */
+  paymentMethod?: "COD" | "BANK_TRANSFER";
 };
 
 type PancakeShippingContact = {
@@ -72,6 +77,8 @@ export type PancakeCreateOrderRequest = {
   is_free_shipping: boolean;
   received_at_shop: false;
   shipping_address: PancakeShippingAddress;
+  /** Pancake's "Tiền thu hộ": the amount the carrier collects. Sent only for a bank-transfer order. */
+  cod?: number;
   items: Array<{
     variation_id: string;
     quantity: number;
@@ -192,6 +199,7 @@ export function buildPancakeCreateOrderRequest(
             district_id: districtRef,
             commune_id: communeRef,
           },
+    ...(input.paymentMethod === "BANK_TRANSFER" ? { cod: 0 } : {}),
     items,
     ...(note === undefined ? {} : { note }),
   };

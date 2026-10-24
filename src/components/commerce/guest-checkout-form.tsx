@@ -19,6 +19,7 @@ import {
   loadCheckoutCommunesAction,
   loadCheckoutProvincesAction,
 } from "@/commerce/checkout-geo-actions";
+import { effectivePaymentMethod } from "@/commerce/payment-method";
 import type { CheckoutCommune, CheckoutProvince } from "@/commerce/checkout-geo";
 import { checkoutSubmitFeedback } from "@/commerce/checkout-submit-feedback";
 import { submitGuestCheckoutAction } from "@/commerce/guest-checkout-actions";
@@ -144,6 +145,7 @@ export function GuestCheckoutForm({
   totalsSlot,
   preorderSlot,
   desktopPreorderSlot,
+  bankTransferEnabled = false,
 }: Readonly<{
   quoteProof: string | null;
   /** The total of the quote on screen; only used to say "old → new" after a price change. */
@@ -161,6 +163,8 @@ export function GuestCheckoutForm({
   totalsSlot?: ReactNode;
   preorderSlot?: ReactNode;
   desktopPreorderSlot?: ReactNode;
+  /** Offer bank transfer beside COD. The server refuses the method too when it is off. */
+  bankTransferEnabled?: boolean;
 }>) {
   const [submitState, submitAction, isSubmitting] = useActionState(
     submitGuestCheckoutAction,
@@ -178,6 +182,14 @@ export function GuestCheckoutForm({
   const [phone, setPhone] = useState("");
   const [detail, setDetail] = useState("");
   const [note, setNote] = useState("");
+  const [chosenPaymentMethod, setPaymentMethod] = useState<"COD" | "BANK_TRANSFER">("COD");
+  // `bankTransferEnabled` can flip to false on a refresh while this state survives; the radios are
+  // gone then, so the button and the hint must follow the prop, not the stale choice.
+  const paymentMethod = effectivePaymentMethod(bankTransferEnabled, chosenPaymentMethod);
+  // Masking is not enough: a choice kept while the method is off would come back on its own when
+  // a later refresh turns it on again. Clear it the moment the two disagree (set during render, the
+  // documented way to reset state from a prop).
+  if (paymentMethod !== chosenPaymentMethod) setPaymentMethod(paymentMethod);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [giftPending, setGiftPending] = useState(false);
   const coordinatedBusy = useRef({ gifts: false, quote: false });
@@ -691,6 +703,25 @@ export function GuestCheckoutForm({
       {totalsSlot ? <div className="checkout-totals lg:hidden">{totalsSlot}</div> : null}
       {preorderSlot ? <div className="checkout-preorder lg:hidden">{preorderSlot}</div> : null}
 
+      {bankTransferEnabled ? (
+        <fieldset className="space-y-2" disabled={isSubmitting || lockSubmission}>
+          <legend className="text-sm font-semibold">Phương thức thanh toán</legend>
+          <label className="flex min-h-11 items-center gap-3 border border-black/20 px-4 text-sm">
+            <input type="radio" name="paymentMethod" value="COD" checked={paymentMethod === "COD"} onChange={() => setPaymentMethod("COD")} />
+            Thanh toán khi nhận hàng (COD)
+          </label>
+          <label className="flex min-h-11 items-center gap-3 border border-black/20 px-4 text-sm">
+            <input type="radio" name="paymentMethod" value="BANK_TRANSFER" checked={paymentMethod === "BANK_TRANSFER"} onChange={() => setPaymentMethod("BANK_TRANSFER")} />
+            Chuyển khoản ngân hàng
+          </label>
+          {paymentMethod === "BANK_TRANSFER" ? (
+            <p className="text-sm leading-6 text-black/75" data-bank-transfer-hint>
+              Thông tin chuyển khoản hiện ở trang xác nhận sau khi nàng đặt hàng. Đơn được giao sau khi shop nhận đủ tiền.
+            </p>
+          ) : null}
+        </fieldset>
+      ) : null}
+
       {feedback ? (
         <div
           aria-live={feedback.tone === "success" ? "polite" : "assertive"}
@@ -736,7 +767,7 @@ export function GuestCheckoutForm({
         ref={submitButton}
         type="submit"
       >
-        {isSubmitting ? "Đang đặt hàng…" : "Đặt hàng COD"}
+        {isSubmitting ? "Đang đặt hàng…" : paymentMethod === "BANK_TRANSFER" ? "Đặt hàng và chuyển khoản" : "Đặt hàng COD"}
       </button>
 
       {/* Room for the bottom bar, so it never sits over the last of the page. */}

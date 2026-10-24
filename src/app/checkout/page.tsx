@@ -16,6 +16,7 @@ import { buildCheckoutMetadata } from "@/routes/metadata/checkout";
 
 // No breadcrumb or eyebrow: checkout keeps the buyer on the form, not on the way out.
 function render(data: CheckoutViewModel) {
+  const bankTransferEnabled = data.bankTransferEnabled === true;
   if (data.state === "empty") {
     return (
       <PageShell>
@@ -160,7 +161,7 @@ function render(data: CheckoutViewModel) {
 
   return (
     <PageShell>
-      <PageHeader title="Thanh toán" meta="Thanh toán khi nhận hàng" />
+      <PageHeader title="Thanh toán" meta={bankTransferEnabled ? "Thanh toán khi nhận hàng hoặc chuyển khoản" : "Thanh toán khi nhận hàng"} />
 
       {/* The form owns one interactive gift area and the responsive order/receiving layout. */}
       <PromotionBanner className="mt-8" view={data.promotions} />
@@ -190,6 +191,7 @@ function render(data: CheckoutViewModel) {
           totalsSlot={totalsContent}
           preorderSlot={preorderNoticeFor("mobile")}
           desktopPreorderSlot={preorderNoticeFor("desktop")}
+          bankTransferEnabled={bankTransferEnabled}
         />
 
 

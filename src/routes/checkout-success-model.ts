@@ -1,3 +1,4 @@
+import type { BankTransferInstructions, PaymentMethod } from "../commerce/bank-transfer.ts";
 import type { HistoricalPreorderPresentation } from "../commerce/historical-preorder-presentation.ts";
 
 /**
@@ -35,6 +36,13 @@ export type CheckoutSuccessViewModel = Readonly<{
   orderCode: string | null;
   /** Immutable I7 history. Null for ready-only, legacy/no-snapshot, or unconfirmed orders. */
   preorderHistory: HistoricalPreorderPresentation | null;
+  /**
+   * How the order was placed, whatever the settings say today. Never inferred from `bankTransfer`:
+   * an order paid by transfer stays one after the account or flag changes.
+   */
+  paymentMethod: PaymentMethod;
+  /** Present only for a confirmed bank-transfer order whose instructions can be stated in full now. */
+  bankTransfer: BankTransferInstructions | null;
 }>;
 
 export function buildCheckoutSuccessViewModel(
@@ -42,6 +50,8 @@ export function buildCheckoutSuccessViewModel(
     orderCode: string | null;
     confirmed: boolean;
     preorderHistory?: HistoricalPreorderPresentation | null;
+    bankTransfer?: BankTransferInstructions | null;
+    paymentMethod?: PaymentMethod;
   }>,
 ): CheckoutSuccessViewModel {
   const confirmed = input.confirmed && input.orderCode !== null;
@@ -49,5 +59,7 @@ export function buildCheckoutSuccessViewModel(
     confirmed,
     orderCode: confirmed ? input.orderCode : null,
     preorderHistory: confirmed ? (input.preorderHistory ?? null) : null,
+    paymentMethod: confirmed ? (input.paymentMethod ?? "COD") : "COD",
+    bankTransfer: confirmed ? (input.bankTransfer ?? null) : null,
   });
 }
