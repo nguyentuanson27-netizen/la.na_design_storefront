@@ -10,7 +10,8 @@
  * loses focus moves, while the same specs pass every time against a production build.
  *
  * A spec that changes a `NEXT_PUBLIC_*` value per server cannot share one build (those are inlined
- * at build time) and keeps its own dev server or build.
+ * at build time) and keeps its own dev server or build; so does one that rewrites source before
+ * starting its server (homepage-refresh-acceptance installs a fixture homepage config).
  */
 const prebuiltDistDir = process.env.LA_E2E_PREBUILT_DIST_DIR?.trim() || null;
 
