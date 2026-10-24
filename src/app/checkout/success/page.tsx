@@ -51,6 +51,20 @@ function render(data: CheckoutSuccessViewModel) {
                   <dt className="text-black/60">Nội dung</dt>
                   <dd className="font-semibold tracking-[0.06em]">{data.bankTransfer.content}</dd>
                 </dl>
+                {data.bankTransfer.qr ? (
+                  <figure className="mt-4">
+                    <svg
+                      role="img"
+                      aria-label="Mã QR chuyển khoản"
+                      viewBox={`-4 -4 ${data.bankTransfer.qr.size + 8} ${data.bankTransfer.qr.size + 8}`}
+                      className="h-48 w-48 bg-white"
+                      shapeRendering="crispEdges"
+                    >
+                      <path d={data.bankTransfer.qr.path} fill="#000" />
+                    </svg>
+                    <figcaption className="mt-2 text-xs text-black/60">Quét bằng ứng dụng ngân hàng để điền sẵn số tiền và nội dung.</figcaption>
+                  </figure>
+                ) : null}
                 <p className="mt-3 text-sm leading-6 text-black/75">
                   Nàng chuyển đúng số tiền và nhập đúng nội dung trên để shop đối chiếu đơn nhanh nhất.
                 </p>

@@ -7,15 +7,20 @@
  * account number is how a disabled method starts being usable again by accident.
  */
 
-export type PaymentMethod = "COD" | "BANK_TRANSFER";
+import { effectivePaymentMethod, parsePaymentMethod, type PaymentMethod } from "./payment-method.ts";
+import { buildQrImage, buildVietQrPayload, type QrImage } from "./vietqr.ts";
 
 export type BankTransferConfig = Readonly<{
   bankName: string;
   accountNumber: string;
   accountHolder: string;
+  /** The bank's six-digit NAPAS BIN; without it the confirmation page shows no QR. */
+  bankBin: string | null;
   /** Placeholders: `{ORDER_ID}` (the POS order id) and `{PUBLIC_CODE}` (the code the buyer sees). */
   contentTemplate: string;
 }>;
+
+export { effectivePaymentMethod, parsePaymentMethod, type PaymentMethod };
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -23,20 +28,6 @@ const DEFAULT_CONTENT_TEMPLATE = "{ORDER_ID}";
 const MAX_CONTENT_LENGTH = 50;
 /** The longest values the placeholders can take: a safe-integer POS order id and a `LA-` code. */
 const WORST_CASE_FACTS = Object.freeze({ orderId: "9".repeat(16), publicCode: "LA-ZZZZZZZZ" });
-
-export function parsePaymentMethod(value: unknown): PaymentMethod | null {
-  if (value === undefined || value === null || value === "" || value === "COD") return "COD";
-  return value === "BANK_TRANSFER" ? "BANK_TRANSFER" : null;
-}
-
-/**
- * What the form should treat as the buyer's choice. A choice made while the method was on is void
- * once it is off: the radios are gone from the page, so the form posts nothing and the server reads
- * COD, and the button must say the same.
- */
-export function effectivePaymentMethod(enabled: boolean, chosen: PaymentMethod): PaymentMethod {
-  return enabled ? chosen : "COD";
-}
 
 /**
  * The configured account, or `null` when bank transfer is off.
@@ -52,12 +43,15 @@ export function readBankTransferConfig(env: Environment = process.env): BankTran
   const accountHolder = env.BANK_TRANSFER_ACCOUNT_HOLDER?.trim();
   if (!bankName || !accountNumber || !accountHolder) return null;
   if (!/^[0-9]{6,19}$/.test(accountNumber)) return null;
+  // A bad BIN only costs the QR: the account, amount and content are still shown as text.
+  const rawBin = env.BANK_TRANSFER_BANK_BIN?.trim();
+  const bankBin = rawBin && /^[0-9]{6}$/.test(rawBin) ? rawBin : null;
   const contentTemplate = env.BANK_TRANSFER_CONTENT_TEMPLATE?.trim() || DEFAULT_CONTENT_TEMPLATE;
   // The template is part of the account. One that cannot be rendered, can overflow the bank's limit,
   // or is the same text for every order would take transfers the shop cannot match to an order, so
   // it turns the method off here, at the gate in front of every order, not after one is placed.
   if (!isPerOrderTemplate(contentTemplate)) return null;
-  return Object.freeze({ bankName, accountNumber, accountHolder, contentTemplate });
+  return Object.freeze({ bankName, accountNumber, accountHolder, bankBin, contentTemplate });
 }
 
 function isPerOrderTemplate(template: string): boolean {
@@ -95,6 +89,8 @@ export type BankTransferInstructions = Readonly<{
   amountVnd: number;
   amountText: string;
   content: string;
+  /** A scannable VietQR for exactly this account, amount and content, or null when one cannot be made. */
+  qr: QrImage | null;
 }>;
 
 const currency = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
@@ -125,6 +121,10 @@ export function buildBankTransferInstructions(
     publicCode: order.publicCode,
   });
   if (content === null) return null;
+  const payload =
+    config.bankBin === null
+      ? null
+      : buildVietQrPayload({ bankBin: config.bankBin, accountNumber: config.accountNumber, amountVnd, content });
   return Object.freeze({
     bankName: config.bankName,
     accountNumber: config.accountNumber,
@@ -132,5 +132,6 @@ export function buildBankTransferInstructions(
     amountVnd,
     amountText: currency.format(amountVnd),
     content,
+    qr: payload === null ? null : buildQrImage(payload),
   });
 }

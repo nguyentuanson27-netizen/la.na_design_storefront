@@ -19,7 +19,7 @@ import {
   loadCheckoutCommunesAction,
   loadCheckoutProvincesAction,
 } from "@/commerce/checkout-geo-actions";
-import { effectivePaymentMethod } from "@/commerce/bank-transfer";
+import { effectivePaymentMethod } from "@/commerce/payment-method";
 import type { CheckoutCommune, CheckoutProvince } from "@/commerce/checkout-geo";
 import { checkoutSubmitFeedback } from "@/commerce/checkout-submit-feedback";
 import { submitGuestCheckoutAction } from "@/commerce/guest-checkout-actions";

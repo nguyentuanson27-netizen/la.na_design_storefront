@@ -31,6 +31,7 @@ test("a configured account is trimmed and defaults the content to the order id",
     bankName: "MBBank",
     accountNumber: "123456789",
     accountHolder: "NGUYEN VAN A",
+    bankBin: null,
     contentTemplate: "{ORDER_ID}",
   });
 });
@@ -109,4 +110,25 @@ test("a bank-transfer choice is void once the method is off", () => {
   assert.equal(effectivePaymentMethod(true, "COD"), "COD");
   assert.equal(effectivePaymentMethod(false, "BANK_TRANSFER"), "COD");
   assert.equal(effectivePaymentMethod(false, "COD"), "COD");
+});
+
+test("the confirmation carries a QR only when the bank BIN is configured and the content fits", () => {
+  const order = { paymentMethod: "BANK_TRANSFER" as const, publicCode: "LA-ABCD2345", pancakeOrderId: "987", totalVnd: BigInt(530_000) };
+
+  assert.equal(buildBankTransferInstructions(readBankTransferConfig(account), order)?.qr, null);
+
+  const withBin = readBankTransferConfig({ ...account, BANK_TRANSFER_BANK_BIN: "970422" });
+  assert.equal(withBin?.bankBin, "970422");
+  assert.ok((buildBankTransferInstructions(withBin, order)?.qr?.size ?? 0) >= 21);
+
+  // A malformed BIN costs the QR, not the method.
+  const badBin = readBankTransferConfig({ ...account, BANK_TRANSFER_BANK_BIN: "MB" });
+  assert.equal(badBin?.bankBin, null);
+  assert.equal(buildBankTransferInstructions(badBin, order)?.qr, null);
+
+  // Content too long for the QR purpose field still shows as text without a QR.
+  const long = readBankTransferConfig({ ...account, BANK_TRANSFER_BANK_BIN: "970422", BANK_TRANSFER_CONTENT_TEMPLATE: "LANA DESIGN DON {PUBLIC_CODE}" });
+  const instructions = buildBankTransferInstructions(long, order);
+  assert.equal(instructions?.content, "LANA DESIGN DON LA-ABCD2345");
+  assert.equal(instructions?.qr, null);
 });

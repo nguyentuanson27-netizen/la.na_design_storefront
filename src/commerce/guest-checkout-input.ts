@@ -1,5 +1,5 @@
 import { normalizeAdAttributionNote } from "./ad-attribution.ts";
-import { parsePaymentMethod, type PaymentMethod } from "./bank-transfer.ts";
+import { parsePaymentMethod, type PaymentMethod } from "./payment-method.ts";
 import { normalizeVietnamPhone } from "./vietnam-phone.ts";
 
 const MAX_GUEST_CHECKOUT_TEXT_LENGTH = 2_048;

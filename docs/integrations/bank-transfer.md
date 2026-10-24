@@ -16,7 +16,10 @@ Acceptance has to show, not assume, that:
 - Pancake receives the order in the type and status its transfer matching uses. Its "Quản lý giao dịch" documentation says money is matched only to orders waiting for a transfer, by amount and order code, while the partner banks' static QR matches by phone number. `cod: 0` alone does not say which. The create-order payload sets no payment method or status, so if the order does not arrive as waiting for a transfer, the mapping (or the allowed template) has to change.
 - Matching uses the order code, not just the amount. Place two orders with the **same total** and different codes, make two transfers of that same amount each carrying its own content, then check each bank transaction ID against the Pancake order it settled: no swap. Two orders with different totals prove nothing, because a matcher that only reads the amount would pass. Repeat for every template the owner intends to use (especially `{PUBLIC_CODE}`), or restrict the allowed templates to what passed.
 
-Keep `BANK_TRANSFER_ENABLED` off until both are shown.
+- The QR scans in the receiving bank's own app and pre-fills the right account, amount and content. The payload is checked to be well formed, with a valid checksum, and to decode back from the rendered image, but no bank app has been tried.
+- A transfer to the account shown on the website reaches Pancake. Pancake's "Đối tác" bank link describes syncing credits "theo tài khoản QR (không bao gồm tài khoản chính)", that is for QR accounts and not the main account. If the account number the website shows is the main account, Pancake may never see the money. In that case the website has to show the account Pancake issues its own QR for, or the shop reconciles by hand.
+
+Keep `BANK_TRANSFER_ENABLED` off until all of these are shown.
 
 The second point is open because the OpenAPI document does not define Pancake's `{FULL_ORDER_ID}` / `{DISPLAY_ID}` placeholders. The website renders `BANK_TRANSFER_CONTENT_TEMPLATE` from `{ORDER_ID}` (the id in the create-order response, stored as `pancakeOrderId`) and `{PUBLIC_CODE}`. Set Pancake's template to whatever renders the same text for a test order, then align the environment variable.
 
@@ -30,6 +33,7 @@ Recommendation: use a template with no customer name or phone (for example only 
 | `BANK_TRANSFER_BANK_NAME` | Shown to the buyer. |
 | `BANK_TRANSFER_ACCOUNT_NUMBER` | 6–19 digits. |
 | `BANK_TRANSFER_ACCOUNT_HOLDER` | Shown to the buyer. |
+| `BANK_TRANSFER_BANK_BIN` | Optional six-digit NAPAS BIN of the receiving bank (MB Bank is `970422`). Turns on the VietQR; a malformed value only drops the QR. |
 | `BANK_TRANSFER_CONTENT_TEMPLATE` | Optional; defaults to `{ORDER_ID}`; at most 50 characters rendered. |
 
 A half-configured account counts as off. No account detail is stored in the repository.
@@ -39,11 +43,10 @@ A half-configured account counts as off. No account detail is stored in the repo
 1. Checkout shows a payment-method choice only when the loader reports the method as enabled. The server refuses `BANK_TRANSFER` itself when it is off, before spending a rate-limit attempt.
 2. The snapshot stores `OrderMirror.paymentMethod` (`COD` by default).
 3. The Pancake create-order request for a transfer order adds `cod: 0` and a note marker. COD requests are unchanged.
-4. The confirmation page shows the bank, account, holder, the frozen order total and the transfer content, only when all of them can be stated in full.
+4. The confirmation page shows the bank, account, holder, the frozen order total and the transfer content, only when all of them can be stated in full. With `BANK_TRANSFER_BANK_BIN` set and a content of at most 25 plain characters, it also shows a VietQR for exactly that account, amount and content. The payload is built on the server (`src/commerce/vietqr.ts`, NAPAS 247 transfer to account) and drawn as inline SVG: nothing is sent to a QR service and no extra image origin is needed.
 5. The shop confirms the order in Pancake once the transfer is matched. Pancake's own QR and auto-confirm settings are unaffected.
 
 ## Not in this change
 
-- A VietQR image on the confirmation page (needs a CSP `img-src` entry or a local QR encoder).
 - Reading Pancake's payment state back to show "đã thanh toán" on order tracking.
 - Reminders or automatic cancellation for unpaid transfer orders.
