@@ -30,6 +30,7 @@ test("guest checkout accepts only the approved COD contact and two-level address
       communeRef: "84_VN10105",
       detail: "12 Đường A, căn hộ 3B",
       note: "Gọi trước khi giao",
+      attribution: null,
     },
   });
 });
@@ -54,6 +55,7 @@ test("guest checkout normalizes a blank optional note to null", () => {
         communeRef: "84_VN10105",
         detail: "12 Đường A",
         note: null,
+        attribution: null,
       },
     },
   );
@@ -97,5 +99,26 @@ test("guest checkout names a wrong phone number separately so the buyer is told 
       ok: false,
       reason: "INVALID_PHONE",
     }, phone);
+  }
+});
+
+test("guest checkout keeps an attribution line only if it is exactly what the cookie reader writes", () => {
+  const valid = {
+    name: "Nguyễn Văn A",
+    phone: "0901234567",
+    provinceRef: "84_VN101",
+    communeRef: "84_VN10105",
+    detail: "12 Đường A",
+    note: "Gọi trước khi giao",
+  };
+
+  const accepted = parseGuestCheckoutInput({ ...valid, attribution: "[UTM] source=facebook;medium=paid" });
+  assert.equal(accepted.ok && accepted.value.attribution, "[UTM] source=facebook;medium=paid");
+  // Kept apart from the shopper's own note, which is what the length limit is measured on.
+  assert.equal(accepted.ok && accepted.value.note, "Gọi trước khi giao");
+
+  for (const attribution of ["source=facebook", "[ORDER:LA-1]", "[UTM] source=a\nb", "[UTM] ", 7, {}]) {
+    const result = parseGuestCheckoutInput({ ...valid, attribution });
+    assert.equal(result.ok && result.value.attribution, null, String(attribution));
   }
 });

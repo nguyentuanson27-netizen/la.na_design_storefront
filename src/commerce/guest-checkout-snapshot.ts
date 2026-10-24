@@ -7,6 +7,7 @@ import {
   compositeSubSetAuthorityComponentSelection,
   resolveCompositeSubSetAuthorityFromRows,
 } from "./composite-subset-authority.ts";
+import { composeOrderNote } from "./ad-attribution.ts";
 import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
 import { shippingQuoteAudit } from "./shipping-campaign-repository.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
@@ -903,7 +904,7 @@ export function createGuestCheckoutSnapshotService(
           districtRef: parsedCheckout.value.districtRef,
           communeRef: parsedCheckout.value.communeRef,
           addressDetail: parsedCheckout.value.detail,
-          note: parsedCheckout.value.note,
+          note: composeOrderNote(parsedCheckout.value.note, parsedCheckout.value.attribution),
           merchandiseSubtotalVnd: BigInt(merchandiseSubtotalVnd),
           shippingFeeVnd: BigInt(shippingFeeVnd),
           totalVnd: BigInt(totalVnd),

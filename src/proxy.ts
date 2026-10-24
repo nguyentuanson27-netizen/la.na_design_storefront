@@ -2,9 +2,11 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { resolveConfiguredStorefrontProductSlug } from "@/commerce/storefront-catalog-runtime";
 import { readStorefrontOrigin } from "@/commerce/storefront-origin";
+import { adAttributionCookieValue, serializeAdAttributionCookie } from "@/commerce/ad-attribution";
 import {
   META_CLICK_ID_COOKIE,
   META_VISITOR_ID_COOKIE,
+  isMetaCookieNavigation,
   metaFirstPartySetCookies,
   readMetaFirstPartyCookiesEnabled,
 } from "@/integrations/meta/first-party-cookies";
@@ -63,12 +65,33 @@ function applyMetaFirstPartyCookies(request: NextRequest, response: Response): v
   }
 }
 
+/**
+ * Remembers the UTM parameters of an ad landing in `la_utm`, so checkout can put them in the order
+ * note (src/commerce/ad-attribution.ts). Last touch wins; a page load without UTM leaves the cookie
+ * alone. Same page loads as the Meta cookies, but independent of the pixel and its switch.
+ */
+function applyAdAttributionCookie(request: NextRequest, response: Response): void {
+  try {
+    if (!isMetaCookieNavigation({
+      method: request.method,
+      pathname: request.nextUrl.pathname,
+      headers: request.headers,
+    })) return;
+    const value = adAttributionCookieValue(request.nextUrl.searchParams);
+    if (value === null) return;
+    response.headers.append("Set-Cookie", serializeAdAttributionCookie(value, readStorefrontOrigin()));
+  } catch {
+    // Attribution never costs a shopper the page.
+  }
+}
+
 function applyResponseHeaders(
   request: NextRequest,
   response: Response,
   scriptPolicy?: StrictScriptPolicyHeaders,
 ): Response {
   applyMetaFirstPartyCookies(request, response);
+  applyAdAttributionCookie(request, response);
   if (scriptPolicy?.response) {
     // In the order given: see `StrictScriptPolicyHeaders.response` for why it matters.
     const { name, values } = scriptPolicy.response;

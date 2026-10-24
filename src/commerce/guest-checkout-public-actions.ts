@@ -19,9 +19,14 @@ export type GuestCheckoutPublicActionDependencies = {
   cartSession: GuestCheckoutCartSession;
   consumeAttempt: ConsumeAttempt;
   submitCheckout: SubmitCheckout;
+  /**
+   * The `[UTM] …` note line for an order that came from an ad, read server-side from the shopper's
+   * `la_utm` cookie. Never taken from the form: the shopper does not get to write the attribution.
+   */
+  readAttribution?: () => string | null;
 };
 
-function checkoutInputFromFormData(formData: FormData) {
+function checkoutInputFromFormData(formData: FormData, attribution: string | null) {
   return {
     name: formData.get("name"),
     phone: formData.get("phone"),
@@ -29,11 +34,21 @@ function checkoutInputFromFormData(formData: FormData) {
     communeRef: formData.get("communeRef"),
     detail: formData.get("detail"),
     note: formData.get("note"),
+    ...(attribution === null ? {} : { attribution }),
   };
 }
 
+/** Attribution is a courtesy to the people working the order; it never costs the shopper their checkout. */
+function readAttributionSafely(readAttribution: (() => string | null) | undefined): string | null {
+  try {
+    return readAttribution?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function submitGuestCheckoutPublicAction(
-  { cartSession, consumeAttempt, submitCheckout }: GuestCheckoutPublicActionDependencies,
+  { cartSession, consumeAttempt, submitCheckout, readAttribution }: GuestCheckoutPublicActionDependencies,
   formData: FormData,
 ): Promise<GuestCheckoutSubmitResult> {
   const cartId = cartSession.read();
@@ -66,7 +81,7 @@ export async function submitGuestCheckoutPublicAction(
 
   const result = await submitCheckout({
     cartId,
-    checkoutInput: checkoutInputFromFormData(formData),
+    checkoutInput: checkoutInputFromFormData(formData, readAttributionSafely(readAttribution)),
     // Forwarded exactly as received. This is the one browser-supplied checkout field that is
     // allowed to matter, and it matters only by failing to verify — it is authenticated against the
     // server-read cart before it can say anything, and it never carries a price into the server.
