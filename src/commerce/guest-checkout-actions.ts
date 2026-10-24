@@ -8,6 +8,7 @@ import { readAuthServerConfig } from "../auth/config.ts";
 import { readStorefrontOrigin } from "./storefront-origin.ts";
 import { META_VISITOR_ID_COOKIE, readMetaExternalId } from "../integrations/meta/first-party-cookies.ts";
 import { prisma } from "../db/prisma.ts";
+import { AD_ATTRIBUTION_COOKIE, formatAdAttributionNote } from "./ad-attribution.ts";
 import { createAnonymousCartCookieSession } from "./anonymous-cart-cookie.ts";
 import {
   deriveGuestCheckoutClientKey,
@@ -43,6 +44,7 @@ async function createGuestCheckoutActionDependencies(metaContext: MetaPurchaseRe
       }
       return rateLimiter.consume({ cartId, now });
     },
+    readAttribution: () => formatAdAttributionNote(cookieStore.get(AD_ATTRIBUTION_COOKIE)?.value),
     submitCheckout: (input: Parameters<typeof submitGuestCheckoutByCart>[0]) => submitGuestCheckoutByCart({ ...input, metaContext }),
   };
 }

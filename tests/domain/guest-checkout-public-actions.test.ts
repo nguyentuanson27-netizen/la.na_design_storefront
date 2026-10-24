@@ -221,3 +221,26 @@ test("rate-limit storage failure fails closed before checkout submission", async
   });
   assert.equal(submitCalls, 0);
 });
+
+test("an ad visitor's UTM line comes from the server-side cookie reader, never from the form", async () => {
+  const submitted: Array<{ checkoutInput: unknown }> = [];
+  const dependencies = (readAttribution?: () => string | null) => ({
+    cartSession: { read: () => "server-cart-id", clear: () => undefined },
+    consumeAttempt: allowAttempt,
+    submitCheckout: async (input: { checkoutInput: unknown }) => {
+      submitted.push(input);
+      return { ok: true as const, status: "CONFIRMED" as const, orderCode: "LA-001" };
+    },
+    ...(readAttribution ? { readAttribution } : {}),
+  });
+
+  const forged = makeFormData();
+  forged.set("attribution", "[UTM] source=forged");
+  await submitGuestCheckoutPublicAction(dependencies(() => "[UTM] source=facebook"), forged);
+  await submitGuestCheckoutPublicAction(dependencies(() => null), makeFormData());
+  await submitGuestCheckoutPublicAction(dependencies(() => { throw new Error("cookie store unavailable"); }), makeFormData());
+  await submitGuestCheckoutPublicAction(dependencies(), forged);
+
+  const attributions = submitted.map((input) => (input.checkoutInput as { attribution?: string }).attribution);
+  assert.deepEqual(attributions, ["[UTM] source=facebook", undefined, undefined, undefined]);
+});

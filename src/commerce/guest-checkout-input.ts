@@ -1,3 +1,4 @@
+import { normalizeAdAttributionNote } from "./ad-attribution.ts";
 import { normalizeVietnamPhone } from "./vietnam-phone.ts";
 
 const MAX_GUEST_CHECKOUT_TEXT_LENGTH = 2_048;
@@ -15,6 +16,12 @@ type GuestCheckoutValue = {
   communeRef: string;
   detail: string;
   note: string | null;
+  /**
+   * The `[UTM] …` line for an order that came from an ad (see `ad-attribution.ts`). Never typed by
+   * the shopper: the public action fills it from the `la_utm` cookie, and it is kept apart from
+   * `note` so re-parsing a validated input cannot push the shopper's own note over its length limit.
+   */
+  attribution: string | null;
 };
 
 type GuestCheckoutInputResult =
@@ -76,6 +83,7 @@ export function parseGuestCheckoutInput(input: unknown): GuestCheckoutInputResul
       communeRef,
       detail,
       note: note.value,
+      attribution: normalizeAdAttributionNote(input.attribution),
     },
   };
 }
