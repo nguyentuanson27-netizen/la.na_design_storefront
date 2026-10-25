@@ -40,10 +40,11 @@
 | Q31C cụ thể hóa bởi Q32A | **Giữ quyền lợi voucher trong 10 phút** bằng hold thật, sau hạn phải re-quote. Không bảo đảm giá gốc/tồn kho |
 | Q33B | Trừ lượt lúc **website chấp nhận đơn**, không cần đợi POS xác nhận; mốc này không được đồng nhất với bất kỳ DRAFT nào |
 | Ảnh Grab + YES | Picker 2 nhóm, item disabled có lý do/“Đặt thêm Xđ…”, sticky footer “Áp dụng • N ưu đãi” |
+| Owner — TG-09 (xác nhận 25/10/2026) | Khi tổng tiền thanh toán bằng nhau, ưu tiên tổ hợp giữ quà cho khách; nếu quyền lợi quà bằng nhau, ưu tiên ít voucher hơn rồi stable ID |
 
 **Ưu tiên:** Q15/Q20 thay luật cũ “chỉ 1 voucher cả đơn” ở Q02; Q32A quy định phạm vi áp dụng cho Q31C. “Luôn stack với Flash Sale/tier” nghĩa là **áp voucher sau kết quả từ engine hiện có**, không tự ý thay luật xung đột giữa các legacy campaign và tier.
 
-**Hai diễn giải bổ sung CHƯA phải quyết định owner:** (i) voucher giảm tiền hàng được tính là một khuyến mãi khác khi xét stackingEnabled của shipping campaign cũ — giữ đúng khả năng từ chối cộng dồn của campaign (TG-10); (ii) nếu hai tổ hợp có cùng tổng tiền, ưu tiên giữ quà đã đạt trước khi ưu tiên ít voucher hơn (TG-09). Đưa ra làm **đề xuất mặc định để review**, không được triển khai/activate logic chưa được owner chấp thuận.
+**Hai quyết định owner còn mở:** TG-05 — xử lý hold 10 phút khi thu hồi voucher khẩn cấp; TG-10 — voucher giảm tiền hàng có được tính là `hasOtherPromotions` khi xét `stackingEnabled` của shipping campaign cũ hay không. Các phương án hiện ghi trong spec chỉ là **đề xuất chờ owner duyệt**; **TG-09 đã được owner phê duyệt** sau review.
 
 ## 2. Phạm vi MVP
 
@@ -116,7 +117,7 @@ Cho product P đang thuộc đúng shop của campaign, dùng **cùng cấp Prod
 
 - Candidates: **NONE** + các voucher hợp lệ trong từng nhóm. PRIVATE/CODE chỉ được xét sau khi khách nhập hoặc link đã được xác thực. Một nhóm chỉ có tối đa một voucher chọn.
 - Với **cùng cart snapshot, đồng hồ, category membership và price authority**, server tính các cặp candidate (MERCHANDISE/NONE, SHIPPING_FREE/NONE), recheck gift/shipping và khả năng cấp quota/budget **cho các candidate MỚI**; sau đó chọn **totalPayableVnd nhỏ nhất**, bao gồm candidate NONE/NONE. Nếu checkout đã có **hold hợp lệ thuộc chính attempt và quote không đổi**, **không** đòi campaign còn ACTIVE, revision mới bằng revision đã khóa, hay quota **trống** sau khi trừ hold của chính khách: dùng contract hold §5.1. Không dùng hold của attempt khác.
-- **Đề xuất tie-break chờ owner phê duyệt (TG-09):** khi total bằng nhau, ưu tiên tổ hợp **giữ được số quà đã chọn và suất quà đủ điều kiện nhiều hơn** (không gán quà thành tiền); tiếp theo ít voucher phải tiêu hao hơn; cuối cùng stable ID. Không tự chọn voucher saving 0. Quy tắc này không được coi là Q18/Q20 đã chốt, vì owner mới chỉ yêu cầu tối ưu **tiền thanh toán** và có quyền chọn voucher để giữ quà.
+- **Tie-break đã được owner phê duyệt (TG-09):** khi total bằng nhau, ưu tiên tổ hợp **giữ được quà khách đã chọn trước đó**; nếu như nhau, ưu tiên **nhiều suất quà hợp lệ hơn** (không gán quà thành tiền); tiếp theo ít voucher phải tiêu hao hơn, cuối cùng stable ID. Không tự chọn voucher saving 0. **Chỉ** áp dụng tie-break sau bước tối thiểu hóa tổng tiền, không chọn phương án đắt hơn chỉ để giữ quà; tiếp tục tôn trọng manual selection hợp lệ.
 - Nếu user manual lock một nhóm, giữ nếu hợp lệ và tối ưu nhóm còn lại; nhập mã ẩn hợp lệ được coi là manual lock. Khi manual mất hiệu lực, auto chọn lại nhóm đó và **thông báo rõ**.
 - Khi người mua chỉnh cart/gift, non-held price facts, shipping policy, hoặc hết hold, phải recompute; nếu tổng tiền/entitlement thay đổi, client chỉ được đặt khi đã nhận được **quote/proof mới** và xem/chấp thuận tiền mới. **Riêng sửa/disable voucher ở Admin hoặc voucher hết hạn tự nhiên không tự buộc thay điều khoản voucher của cùng hold còn hợp lệ**; dùng §5.1. Không dùng revision mới của campaign làm điều kiện loại một self-held quote.
 
@@ -134,7 +135,7 @@ Cho product P đang thuộc đúng shop của campaign, dùng **cùng cấp Prod
 
 **EX-06 — Shipping campaign không cho stack:** giỏ P=100.000đ, campaign freeship đang có hiệu lực với stackingEnabled=false → không dùng voucher total 100.000đ. Thử voucher MERCHANDISE giảm 10.000đ (và không có voucher SHIPPING_FREE hợp lệ) khiến shipping campaign rơi, fee trở lại 30.000đ → total 120.000đ. **Auto phải chọn NONE (100.000đ)**; nếu khách manual chọn giảm 10K thì hiển thị phí ship mới, total tăng 20K và yêu cầu xác nhận tường minh. Với stackingEnabled=true, không được rơi freeship chỉ vì voucher. Đây là cách diễn giải đề xuất TG-10, chưa phải quyết định owner đã ký.
 
-**EX-07 — Cùng tổng tiền nhưng khác quyền lợi quà:** P=620.000đ, base ship 30K, shipping-voucher min 600K, gift min 600K. Giảm hàng 40K → P_after=580K, fee=30K, total 610K, mất quà. Giảm hàng 10K + SHIPPING_FREE → P_after=610K, fee=0, total **cũng 610K**, giữ quà. Đề xuất tie-break TG-09 chọn phương án **giữ quà**, trừ khi khách manual chọn khác.
+**EX-07 — Cùng tổng tiền nhưng khác quyền lợi quà:** P=620.000đ, base ship 30K, shipping-voucher min 600K, gift min 600K. Giảm hàng 40K → P_after=580K, fee=30K, total 610K, mất quà. Giảm hàng 10K + SHIPPING_FREE → P_after=610K, fee=0, total **cũng 610K**, giữ quà. Theo tie-break **TG-09 đã chốt**, tự chọn phương án **giữ quà**, trừ khi khách chủ động chọn voucher khác.
 
 **EX-08 — Self-held quota trong natural expiry:** voucher quota=1; khách hold lúc T0 với discount 50K, campaign hết hạn tự nhiên ở T+3 phút, khách submit không đổi cart/quote tại T+5 phút: phải honor **hold riêng còn hạn**, không đòi ACTIVE hay quota free=1. Submit lúc T+10 phút hoặc sau phải từ chối hold hết hạn và re-quote.
 
@@ -300,7 +301,7 @@ Voucher vận chuyển                          Chọn 1
 | AC-33 | Quote không đổi: reload/2 tab, quota free=0 nhưng self hold còn | Reuse cùng hold/expiry, không double-count quota/budget, không rolling TTL |
 | AC-34 | Cart/quote đổi khi hold đang giữ; swap hai nhóm | Không dùng proof/hold cũ cho cart mới; reacquire đúng quota/budget, fail phải báo giá lại |
 | AC-35 | Gift đang chọn, auto/manual voucher làm mất quà, khách confirm/cancel | Preview không sửa saved gift; cancel giữ nguyên; confirm cập nhật choice và revalidate/reproof atomically |
-| AC-36 | EX-07: hai tổ hợp total=610K nhưng khác số quà giữ được | **Đề xuất TG-09 chờ owner duyệt:** chọn tổ hợp giữ quà, không định giá quà thành VND |
+| AC-36 | EX-07: hai tổ hợp total=610K nhưng khác số quà giữ được | **TG-09 đã chốt:** chọn tổ hợp giữ quà; nếu như nhau thì chọn ít voucher hơn; không định giá quà thành VND |
 | AC-37 | ALL_SHOP + exclude; TARGETED category OR include AND NOT exclude; category cha/con | Membership động và đúng shop, không dùng GLOBAL_ALL_PAID_LINES theo cách phá Gift & Quantity |
 | AC-38 | Local accepted marker rồi cart đổi/POS reprice/retry | Voucher/quote/fee/vendor projection immutable; chỉ reject/reconcile, không sửa DRAFT đã accepted |
 | AC-39 | Tier ORDER_SUBTOTAL đạt trước voucher nhưng P_after xuống dưới mốc | Tier không bị chạy lại; gift ORDER_SUBTOTAL theo P_after vẫn giảm suất đúng |
@@ -344,7 +345,7 @@ pnpm build
 - **Ask owner first:** migration/high-impact API, đổi mốc website accepted order, emergency revoke hold, chính sách khác với decisions §1, bật chiến dịch có ngân sách thật.
 - **Never:** tin tiền/browser, bỏ quote proof, bỏ POS acceptance/readback, chạm đơn committed lịch sử, ghi secret, silently thay quà/giá, coi specs là production enabled.
 
-**Definition of Done:** Spec reviewed và các phương án chính sách TG-05/TG-09/TG-10 được owner chấp thuận; technical gates được giải quyết; AC có tests thực sự, **pnpm test (gồm tests/integrations)** + typecheck/lint/DB/browser và Pancake staging evidence; security/reconciliation/migration/rollback đủ trước ship. Không claim test pass trong spec-only PR.
+**Definition of Done:** Spec reviewed, **TG-09 đã được owner phê duyệt**, và các quyết định còn mở TG-05/TG-10 được owner chấp thuận; technical gates được giải quyết; AC có tests thực sự, **pnpm test (gồm tests/integrations)** + typecheck/lint/DB/browser và Pancake staging evidence; security/reconciliation/migration/rollback đủ trước ship. Không claim test pass trong spec-only PR.
 
 ## 12. Technical gates trước implementation PR
 
@@ -358,10 +359,10 @@ pnpm build
 | TG-06 Existing stack/quote | Gift, shipping campaign, immutable OrderQuoteSnapshot và quote proof đang có contracts riêng | Chỉ ra thứ tự/tính lại entitlement và shipping, new voucher ledger, signed proof versioning, backward compat tests |
 | TG-07 UI reference | Hai ảnh Grab chỉ ở conversation, không phải asset repo | Review wireframe §7 và mobile/desktop accessibility acceptance; không phụ thuộc file ảnh chưa có |
 | TG-08 Capacity/measurement | Candidate combos + hold có khả năng tăng tải checkout, funnel chỉ Mức 0 | Chốt bounded reads/quoting, benchmark P95, rate-limit hold, metrics không PII và không sink mới |
-| TG-09 Owner tie-break | Q18/Q20 chỉ chốt minimize tổng tiền; **chưa chốt** chọn giữ quà khi tổng bằng nhau | Xin owner duyệt **ưu tiên giữ existing gift entitlements khi total bằng nhau**, rồi ít voucher; hoặc owner chọn chính sách khác và cập nhật EX-07/AC-36 |
+| TG-09 Owner tie-break — **ĐÃ CHỐT** | Owner xác nhận sau review PR #212 ngày 25/10/2026: **có**, ưu tiên giữ quà khi tổng tiền bằng nhau | Decision closed: giữ quà đã chọn → nhiều suất quà hợp lệ hơn → ít voucher hơn → stable ID; AC-36 vẫn cần test ở implementation |
 | TG-10 Owner shipping stacking | Q03/Q04/Q06 không quyết định việc voucher MERCHANDISE có làm hasOtherPromotions=true cho campaign shipping cũ hay không | Xin owner duyệt đề xuất **giữ stackingEnabled hiện tại, OR với voucher MERCHANDISE thực giảm**; nếu owner không duyệt, cập nhật §4.1/EX-06/AC-29/30 trước implementation |
 
-**Gate thất bại:** dừng build phần pricing/submit liên quan, không ship một hệ thống voucher báo giá mà vendor không thể cam kết; đề xuất giải pháp/tối giản scope để owner xét. **TG-05 (emergency), TG-09 (tie-break), TG-10 (shipping stacking) là owner approval gates**, không tự gắn nhãn “đã chốt” từ review hoặc từ code.
+**Gate thất bại:** dừng build phần pricing/submit liên quan, không ship một hệ thống voucher báo giá mà vendor không thể cam kết; đề xuất giải pháp/tối giản scope để owner xét. **TG-05 (emergency) và TG-10 (shipping stacking) vẫn là owner approval gates**; **TG-09 đã được owner duyệt**, nhưng vẫn cần kiểm thử AC-36.
 
 ## 13. Related specs / source links
 
@@ -374,4 +375,4 @@ pnpm build
 - [Mobile Commerce UX](storefront-mobile-commerce-ux.md)
 - [ADR 0016 — Gift Quantity](../decisions/0016-gift-quantity-promotions-v1-decisions.md)
 
-**Owner YES là phê duyệt intent**, chưa phải chấp thuận schema/technical choices, **các đề xuất TG-05/TG-09/TG-10** hay chứng minh POS. PR này đưa spec vào repository để review **trước plan và implementation**. Bản sửa sau self-review và external review chỉ thêm contract/test/owner gates trong tài liệu, không thay chính sách sản phẩm đã trả lời ở interview.
+**Owner YES là phê duyệt intent, và owner đã chốt thêm TG-09 (ưu tiên giữ quà khi tổng tiền bằng nhau).** Chưa có chấp thuận schema/technical choices, **TG-05/TG-10** hay chứng minh POS. PR này đưa spec vào repository để review **trước plan và implementation**. Bản sửa sau self-review và external review chỉ thêm contract/test/owner gates trong tài liệu, không thay chính sách sản phẩm đã trả lời ở interview.
