@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef } from "react";
 
 import { formatFlashClock } from "@/components/headless/product-urgency";
 import { useElapsedMs } from "@/components/headless/use-elapsed-ms";
@@ -10,19 +11,36 @@ import { useElapsedMs } from "@/components/headless/use-elapsed-ms";
  *
  * Both facts are decided on the server by the PDP's own rules (`buildCartLineUrgency`); this only
  * ticks the clock the way the PDP does, from the duration the server measured, so a wrong browser
- * clock cannot move the deadline. When the clock runs out before the cart is re-read it says so,
- * because the price on screen is the Flash price and will not survive the next read.
+ * clock cannot move the deadline.
+ *
+ * When the clock runs out, the price beside it is a Flash price that no longer holds, so the cart is
+ * re-read once for that answer: `onExpired` (the drawer re-fetches its own view), or a route refresh
+ * where the cart is server-rendered (`/cart`). Until the new answer arrives the line says the sale
+ * has ended. A re-read that still reports a running sale brings a new duration, and with it one more
+ * chance to re-read; a re-read that reports none ends it.
  */
 export function CartLineUrgency({
   flashRemainingMs,
   lowStockText,
+  onExpired,
   className = "",
-}: Readonly<{ flashRemainingMs?: number; lowStockText?: string; className?: string }>) {
+}: Readonly<{ flashRemainingMs?: number; lowStockText?: string; onExpired?: () => void; className?: string }>) {
+  const router = useRouter();
   // One snapshot per server answer: a re-read restarts the elapsed count from the new duration.
   const snapshot = useMemo(() => (flashRemainingMs === undefined ? null : { flashRemainingMs }), [flashRemainingMs]);
   const elapsedMs = useElapsedMs(snapshot);
-  if (flashRemainingMs === undefined && lowStockText === undefined) return null;
   const clock = flashRemainingMs === undefined ? null : formatFlashClock(flashRemainingMs - elapsedMs);
+  const expired = snapshot !== null && clock === null;
+  // At most one re-read per server answer, however many renders the ended clock goes through.
+  const reReadFor = useRef<object | null>(null);
+  useEffect(() => {
+    if (!expired || reReadFor.current === snapshot) return;
+    reReadFor.current = snapshot;
+    if (onExpired) onExpired();
+    else router.refresh();
+  }, [expired, snapshot, onExpired, router]);
+
+  if (flashRemainingMs === undefined && lowStockText === undefined) return null;
 
   return (
     <div className={`space-y-0.5 ${className}`}>

@@ -18,11 +18,12 @@ import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contra
  * a form and an order number for nothing.
  */
 async function readCartMerchandiseBenefits(now: Date) {
-  if (!isGiftQuantityPromotionsEnabled()) return { lines: await getCurrentStorefrontCartLines(now) };
+  if (!isGiftQuantityPromotionsEnabled()) return readCartLinesWithUrgency(now);
   const result = await createCartGiftSelectionService(prisma, await cookies(), { shopId: readPancakeShopId() }).get(now);
   if ("state" in result) {
     return {
       lines: result.state.quote.lines,
+      ...(result.state.quote.lineUrgency ? { lineUrgency: result.state.quote.lineUrgency } : {}),
       giftState: result.state,
       benefitCheckoutOpen: readLineLevelPricingVerifiedShopIds().includes(readPancakeShopId()),
     };
@@ -31,26 +32,10 @@ async function readCartMerchandiseBenefits(now: Date) {
 }
 
 /**
- * The cart the drawer and the cart page render: lines, benefits, shipping, and each line's Flash Sale
- * countdown and "Còn x". The urgency read is presentation only, so a failure drops it and nothing else.
+ * Shipping is read for every non-empty cart, including when gift/quantity promotions are disabled.
+ * Each line's Flash Sale countdown and "Còn x" (`lineUrgency`) rides along from the same resolution.
  */
 export async function getCurrentStorefrontCartBenefits(now = new Date()) {
-  const cart = await readCartBenefitsWithShipping(now);
-  if (cart.lines.length === 0) return cart;
-  try {
-    const lineUrgency = await createStorefrontCartRepository(prisma).getLineUrgency({
-      shopId: readPancakeShopId(),
-      items: cart.lines.map((line) => ({ variantId: line.variantId, quantity: line.quantity })),
-      now,
-    });
-    return { ...cart, lineUrgency };
-  } catch {
-    return cart;
-  }
-}
-
-/** Shipping is read for every non-empty cart, including when gift/quantity promotions are disabled. */
-async function readCartBenefitsWithShipping(now: Date) {
   const cart = await readCartMerchandiseBenefits(now);
   if (cart.lines.length === 0 || ("benefitsUnavailable" in cart && cart.benefitsUnavailable)) return cart;
   const state = "giftState" in cart ? cart.giftState : undefined;
@@ -67,6 +52,13 @@ async function readCartBenefitsWithShipping(now: Date) {
     // Unknown shipping is not "no campaign": hide totals and close checkout instead of guessing a fee.
     return { ...cart, benefitsUnavailable: true };
   }
+}
+
+/** The cart lines with their countdown / "Còn x", both from one resolution of the current cart. */
+async function readCartLinesWithUrgency(now: Date) {
+  const cart = await getCurrentAnonymousCart(now);
+  if (!cart || cart.items.length === 0) return { lines: [] as Awaited<ReturnType<typeof getCurrentStorefrontCartLines>> };
+  return createStorefrontCartRepository(prisma).getLinesWithUrgency({ shopId: readPancakeShopId(), items: cart.items, now });
 }
 
 export async function getCurrentStorefrontCartLines(now: Date = new Date()) {

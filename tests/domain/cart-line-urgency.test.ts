@@ -132,10 +132,27 @@ test("without an urgency read the cart view is exactly as before", () => {
   assert.equal("lowStockText" in (line ?? {}), false);
 });
 
-test("drawer and cart page render the line urgency; the runtime reads it fail-safe", () => {
+test("drawer and cart page render the line urgency from the same resolution as the lines", () => {
   for (const file of ["src/components/brand/cart-drawer.tsx", "src/app/cart/page.tsx"]) {
     assert.match(readFileSync(path.join(REPO_ROOT, file), "utf8"), /<CartLineUrgency [^>]*flashRemainingMs=\{line\.flashRemainingMs\} lowStockText=\{line\.lowStockText\}/, file);
   }
+  // No second read: the repository derives urgency inside `resolveCart`, lazily and fail-safe, and the
+  // runtime takes it from the quote / lines result instead of resolving the cart again.
+  const repository = readFileSync(path.join(REPO_ROOT, "src/commerce/storefront-cart-repository.ts"), "utf8");
+  assert.match(repository, /const lineUrgency = \(\) => lineUrgencyFrom\(safeItems, cartProducts, campaignsByVariantId, now\)/);
+  assert.match(repository, /return buildCartLineUrgency\([\s\S]*?\} catch \{\s*return Object\.freeze\(\{\}\);/);
+  assert.doesNotMatch(repository, /getLineUrgency/);
   const runtime = readFileSync(path.join(REPO_ROOT, "src/commerce/storefront-cart-runtime.ts"), "utf8");
-  assert.match(runtime, /getLineUrgency\([\s\S]*?\} catch \{\s*return cart;/);
+  assert.match(runtime, /lineUrgency: result\.state\.quote\.lineUrgency/);
+  assert.match(runtime, /getLinesWithUrgency\(/);
+  assert.doesNotMatch(runtime, /getLineUrgency/);
+});
+
+test("an ended countdown re-reads the cart once: the drawer its own view, /cart its route", () => {
+  const urgency = readFileSync(path.join(REPO_ROOT, "src/components/brand/cart-line-urgency.tsx"), "utf8");
+  assert.match(urgency, /if \(!expired \|\| reReadFor\.current === snapshot\) return;/);
+  assert.match(urgency, /if \(onExpired\) onExpired\(\);\s*else router\.refresh\(\);/);
+  const drawer = readFileSync(path.join(REPO_ROOT, "src/components/brand/cart-drawer.tsx"), "utf8");
+  assert.match(drawer, /onExpired=\{reloadForExpiry\}/);
+  assert.match(drawer, /if \(expiryReloadRef\.current\) return;/);
 });

@@ -42,6 +42,7 @@ const variantIds: string[] = [];
 async function cleanup() {
   await prisma.cart.deleteMany({ where: { items: { some: { variant: { product: { pancakeShopId: SHOP_ID } } } } } });
   await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: PREFIX } } });
+  await prisma.$executeRawUnsafe(`DELETE FROM "PromotionCampaign" WHERE "id" LIKE '${PREFIX}%'`);
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 }
 
@@ -207,4 +208,32 @@ test("the mobile sticky order bar carries the short trust line while the order b
   // One line: the bar does not grow into a second block.
   const box = await bar.locator("[data-mobile-sticky-footnote]").boundingBox();
   expect(box?.height ?? 0).toBeLessThan(24);
+});
+
+test("a Flash Sale that ends while the drawer is open re-reads the cart, without closing it", async ({ page }) => {
+  const now = new Date();
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign" ("id","kind","name","discountType","fixedPriceVnd","startsAt","endsAt","isEnabled","enabledAt","createdAt","updatedAt")
+     VALUES ($1,'FLASH_SALE'::"PromotionCampaignKind",'Flash ngắn','FIXED_PRICE'::"PromotionDiscountType",300000,$2,$3,true,$4,$4,$4)`,
+    `${PREFIX}flash`, new Date(now.getTime() - 60_000), new Date(now.getTime() + 12_000), now,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionTarget" ("id","campaignId","variantId","createdAt") VALUES ($1,$2,$3,$4)`,
+    `${PREFIX}flash-target`, `${PREFIX}flash`, variantIds[0]!, now,
+  );
+  try {
+    await page.goto(`${BASE_URL}/shop`);
+    const drawer = await openDrawer(page);
+    const line = drawer.locator("li").filter({ hasText: "Váy thử 1" });
+    await expect(line.locator("[data-cart-flash]")).toContainText("FLASH SALE");
+    await expect(line).toContainText("300.000");
+
+    // The drawer stays open across the deadline: the ended clock re-reads the view by itself.
+    await expect(line.locator("[data-cart-flash]")).toHaveCount(0, { timeout: 30_000 });
+    await expect(line).toContainText("500.000");
+    await expect(line).not.toContainText("300.000");
+    await expect(drawer).toBeVisible();
+  } finally {
+    await prisma.$executeRawUnsafe(`DELETE FROM "PromotionCampaign" WHERE "id" = $1`, `${PREFIX}flash`);
+  }
 });

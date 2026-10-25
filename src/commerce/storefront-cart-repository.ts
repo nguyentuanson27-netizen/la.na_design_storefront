@@ -304,7 +304,27 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
       }
       return true;
     }
-    return { lines, products, cartProducts, campaignsByVariantId, canAddQuantity };
+    // Lazy: only the cart surfaces ask for it; checkout and order paths never pay for it.
+    const lineUrgency = () => lineUrgencyFrom(safeItems, cartProducts, campaignsByVariantId, now);
+    return { lines, products, lineUrgency, canAddQuantity };
+  }
+
+  /**
+   * Each line's Flash Sale countdown and "Còn x", from the very reads, campaigns and instant the lines
+   * were just priced from: a countdown can never sit beside a price another snapshot decided, and no
+   * second read is spent on it. Presentation only, so a failure here yields nothing rather than an error.
+   */
+  function lineUrgencyFrom(
+    items: readonly CartItemIdentity[],
+    cartProducts: Parameters<typeof buildCartLineUrgency>[0]["products"],
+    campaignsByVariantId: Parameters<typeof buildCartLineUrgency>[0]["campaignsByVariantId"],
+    now: Date,
+  ): CartLineUrgency {
+    try {
+      return buildCartLineUrgency({ items, products: cartProducts, campaignsByVariantId, now });
+    } catch {
+      return Object.freeze({});
+    }
   }
 
   async function getLines({
@@ -320,11 +340,8 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
     return resolved === null ? [] : resolved.lines;
   }
 
-  /**
-   * Each line's Flash Sale countdown and "Còn x", from the same reads and the same instant the lines
-   * are priced from. Presentation only: nothing here is a price, and no line shape changes.
-   */
-  async function getLineUrgency({
+  /** `getLines` plus each line's countdown and "Còn x" from the same resolution, for the cart surfaces. */
+  async function getLinesWithUrgency({
     shopId,
     items,
     now = new Date(),
@@ -332,10 +349,9 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
     shopId: number;
     items: readonly CartItemIdentity[];
     now?: Date;
-  }): Promise<CartLineUrgency> {
+  }): Promise<{ lines: Awaited<ReturnType<typeof getLines>>; lineUrgency?: CartLineUrgency }> {
     const resolved = await resolveCart({ shopId, items, now });
-    if (resolved === null) return Object.freeze({});
-    return buildCartLineUrgency({ items, products: resolved.cartProducts, campaignsByVariantId: resolved.campaignsByVariantId, now });
+    return resolved === null ? { lines: [] } : { lines: resolved.lines, lineUrgency: resolved.lineUrgency() };
   }
 
   /**
@@ -370,7 +386,7 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
     preservesQuantityGifts?: QuantityGiftGuard;
   }) {
     if (!isGiftQuantityPromotionsEnabled(env)) {
-      return { lines: await getLines({ shopId, items, now }), benefits: { enabled: false as const } };
+      return { ...(await getLinesWithUrgency({ shopId, items, now })), benefits: { enabled: false as const } };
     }
 
     // The raw items are validated BEFORE anything is resolved or filtered: a duplicate variant, a
@@ -431,7 +447,7 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
             : null,
       });
     }
-    if (!consistent) return { lines: resolved.lines, benefits: { enabled: true as const, ok: false as const, reason: "INPUT_INVALID" as const } };
+    if (!consistent) return { lines: resolved.lines, lineUrgency: resolved.lineUrgency(), benefits: { enabled: true as const, ok: false as const, reason: "INPUT_INVALID" as const } };
 
     const benefits = await resolveGiftQuantityQuote({
       lines: quoteLines,
@@ -442,8 +458,8 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
       canAddQuantity: resolved.canAddQuantity,
       preservesQuantityGifts,
     });
-    return { lines: resolved.lines, benefits };
+    return { lines: resolved.lines, lineUrgency: resolved.lineUrgency(), benefits };
   }
 
-  return { getLines, getLineUrgency, getQuote };
+  return { getLines, getLinesWithUrgency, getQuote };
 }

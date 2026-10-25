@@ -87,6 +87,17 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
   );
   const dismiss = useCallback(() => leave("close"), [leave]);
 
+  // A Flash Sale that ends while the drawer is open leaves its price stale: re-read the view once,
+  // even when several lines end on the same tick.
+  const expiryReloadRef = useRef(false);
+  const reloadForExpiry = useCallback(() => {
+    if (expiryReloadRef.current) return;
+    expiryReloadRef.current = true;
+    void loadCart().finally(() => {
+      expiryReloadRef.current = false;
+    });
+  }, [loadCart]);
+
   // Focus management: save active element on open, focus close button, restore focus on close
   useEffect(() => {
     if (isOpen) {
@@ -292,7 +303,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                                 Giá sau ưu đãi: {line.paidSegments.join(" + ")}
                               </p>
                             ) : null}
-                            <CartLineUrgency className="mt-1" flashRemainingMs={line.flashRemainingMs} lowStockText={line.lowStockText} />
+                            <CartLineUrgency className="mt-1" flashRemainingMs={line.flashRemainingMs} lowStockText={line.lowStockText} onExpired={reloadForExpiry} />
                             {!line.available ? (
                               <p className="mt-1 text-[0.7rem] font-medium text-amber-800">
                                 {line.availabilityLabel}
