@@ -1,3 +1,4 @@
+import { categoryByPath } from "./category-taxonomy.ts";
 import { normalizeVoucherCode } from "./voucher-rule-validation.ts";
 
 /**
@@ -21,8 +22,15 @@ export const VOUCHER_INTENT_MAX_AGE_SECONDS = 24 * 60 * 60;
 const MAX_RAW_CODE_LENGTH = 64;
 const MAX_TARGET_LENGTH = 512;
 
-/** Pages a link may land on. Everything else ignores the parameter (and keeps it out of our redirects). */
-const LANDING_PATHS: readonly RegExp[] = [/^\/$/, /^\/shop$/, /^\/shop\/[^/]+$/, /^\/cart$/, /^\/sale$/, /^\/new-arrivals$/, /^\/vay-dam$/, /^\/ao-dai(?:\/[^/]+)?$/, /^\/set-do(?:\/[^/]+)?$/, /^\/phu-kien$/];
+/**
+ * Pages a link may land on. Everything else ignores the parameter (and keeps it out of our redirects). Category pages are
+ * recognised through the taxonomy rather than listed here, so no brand route is spelled in this file.
+ */
+const LANDING_PATHS: readonly RegExp[] = [/^\/$/, /^\/shop$/, /^\/shop\/[^/]+$/, /^\/cart$/, /^\/sale$/, /^\/new-arrivals$/];
+
+function isLandingPath(pathname: string): boolean {
+  return LANDING_PATHS.some((pattern) => pattern.test(pathname)) || categoryByPath(pathname) !== null;
+}
 
 export const VOUCHER_REDIRECT_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   "Referrer-Policy": "no-referrer",
@@ -40,7 +48,7 @@ export function isSafeLandingTarget(target: unknown): target is string {
     return false;
   }
   if (url.origin !== "https://storefront.invalid" || url.searchParams.has(VOUCHER_LINK_PARAM)) return false;
-  return LANDING_PATHS.some((pattern) => pattern.test(url.pathname));
+  return isLandingPath(url.pathname);
 }
 
 export type VoucherLinkRedirect = Readonly<{
@@ -56,7 +64,7 @@ export type VoucherLinkRedirect = Readonly<{
  */
 export function planVoucherLinkRedirect(input: Readonly<{ method: string; pathname: string; search: string }>): VoucherLinkRedirect | null {
   if (input.method !== "GET" && input.method !== "HEAD") return null;
-  if (!LANDING_PATHS.some((pattern) => pattern.test(input.pathname))) return null;
+  if (!isLandingPath(input.pathname)) return null;
   const params = new URLSearchParams(input.search);
   const values = params.getAll(VOUCHER_LINK_PARAM);
   if (values.length === 0) return null;

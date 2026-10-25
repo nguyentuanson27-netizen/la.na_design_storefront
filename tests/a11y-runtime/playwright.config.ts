@@ -60,6 +60,7 @@ export default defineConfig({
     "tracking.spec.ts",
     "try-on.spec.ts",
     "variant-deep-link.spec.ts",
+    "voucher-picker.spec.ts",
     "zalo-ads-pixel.spec.ts",
   ],
   use: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { launchOptions: {

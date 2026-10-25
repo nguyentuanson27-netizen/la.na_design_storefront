@@ -1,6 +1,6 @@
 # ADR 0018: Voucher v1 — durable website-accepted state, immutable quote and exactly-once consume
 
-- **Status:** Proposed — design input for gates **H1-D** (accepted-order / POS design) and **H2** (migration authorization). It is **not** an approval to write a migration, call Pancake, or enable anything.
+- **Status:** **Accepted** — the owner approved gates **H1-D** (accepted-order / POS design) and **H2** (additive voucher schema, accepted marker, immutable quote, cart selection storage, rollback) on 2026-10-25 ("duyệt H1-D, H2 theo ADR 0018"). It is **not** an approval to call Pancake, to grant holds, or to enable anything; H1-V, H3-D/H3-V, H4 and H5 remain open.
 - **Date:** 2026-10-25
 - **Task:** V00 of [`tasks/storefront-voucher-v1-plan.md`](../../tasks/storefront-voucher-v1-plan.md).
 - **Governs:** [`docs/specs/storefront-voucher-v1.md`](../specs/storefront-voucher-v1.md) §3.2, §5.1–§5.3, TG-01, TG-03, TG-04.
@@ -80,3 +80,14 @@ Voucher intent (AUTO / manual id / explicit NONE / validated PRIVATE code, per g
 - [ ] Step 2 precedes step 3 against the real submit service: `reserveOrderCapacity` runs before the POS call today; confirm where `beginSubmitting` sits relative to the accepted marker when V13 is scoped (this ADR changes no runtime file).
 - [ ] The failure table has no missing row for the current submit service.
 - [ ] Rollback: dropping the new tables and triggers leaves old code and historical orders untouched.
+
+## Implementation notes (V04, migration `20261025100000_voucher_v1_additive`)
+
+Where the migration made a choice this ADR left open:
+
+- **Marker shape:** a separate insert-only `OrderAcceptance` table, as recommended (D-1). Its insert trigger additionally requires the order to already have an `OrderQuoteSnapshot` whose `quoteDigest` equals the marker's, so "accepted" always names the immutable quote it froze.
+- **Immutability (D-2):** one trigger function guards `OrderMirror` money columns (`merchandiseSubtotalVnd`, `shippingFeeVnd`, `totalVnd`, the shipping provenance columns), `OrderLineSnapshot` and the four quote tables, for INSERT/UPDATE/DELETE once an `OrderAcceptance` row exists, whatever the order state. State, Pancake identifiers and sync fields stay writable. Historical orders have no marker and are untouched (tested).
+- **Ledger:** `VoucherCampaign.redeemed*/reserved*` with CHECKs for the committed floor; `VoucherHold` with an absolute-TTL CHECK, a partial unique index for one live hold per attempt and kind, and a guard that consumes only before expiry by the database clock; `VoucherRedemption` append-only with a one-way refund.
+- **Selection (D-5):** `CartVoucherSelection`, one row per cart, `ON DELETE CASCADE`, voucher ids deliberately not foreign keys.
+- **Campaign rows are complete at rest.** The CHECKs require a fully valid configuration even for an inactive draft (as `ShippingPromotionCampaign` does); the Admin form validates before saving, so an unfinished form is not persisted.
+- **Rollback:** the `DROP` list at the top of the migration; safe only while no accepted order references the tables.

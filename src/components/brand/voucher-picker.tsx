@@ -2,11 +2,7 @@
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 
-import {
-  applyStorefrontVoucherCode,
-  commitStorefrontVoucherDraft,
-  previewStorefrontVoucherDraft,
-} from "@/commerce/voucher-selection-actions";
+import { useVoucherPickerActions } from "@/components/headless/use-voucher-picker";
 import type { VoucherPickerGroup, VoucherPickerModel } from "@/routes/voucher-picker-model";
 import { VoucherCard } from "./voucher-card";
 
@@ -42,6 +38,7 @@ const CODE_ERROR: Readonly<Record<string, string>> = {
 const GENERIC_ERROR = "Chưa cập nhật được ưu đãi. Nàng thử lại sau giây lát nhé.";
 
 export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initial: VoucherPickerModel; prefillCode?: string | null }>) {
+  const { previewDraft, commitDraft, applyCode } = useVoucherPickerActions();
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
@@ -80,7 +77,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
     setConfirming(false);
     setError(null);
     startTransition(async () => {
-      const result = await previewStorefrontVoucherDraft(next);
+      const result = await previewDraft(next);
       if (result.ok) {
         setModel(result.picker);
         setMessage(`Tổng thanh toán dự kiến ${result.picker.summary.totalText}`);
@@ -91,7 +88,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
   const submitCode = () => {
     setError(null);
     startTransition(async () => {
-      const result = await applyStorefrontVoucherCode({ code });
+      const result = await applyCode({ code });
       if (result.ok && result.picker) {
         setSaved(result.picker);
         setModel(result.picker);
@@ -110,7 +107,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
     }
     setError(null);
     startTransition(async () => {
-      const result = await commitStorefrontVoucherDraft(draft);
+      const result = await commitDraft(draft);
       if (result.ok && result.picker) {
         setSaved(result.picker);
         setModel(result.picker);

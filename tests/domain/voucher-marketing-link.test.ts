@@ -50,7 +50,7 @@ test("only GET and HEAD to landing pages are touched; everything else passes thr
   for (const path of ["/admin/promotions/vouchers", "/api/auth/x", "/checkout", "/voucher-link", "/shop/a/b", "/policies/returns", "/_next/static/x"]) {
     assert.equal(plan(path, "?voucher=KOL50"), null, path);
   }
-  for (const path of ["/", "/shop", "/cart", "/shop/vay-dam-hoa", "/ao-dai/ao-dai-tet", "/sale"]) assert.notEqual(plan(path, "?voucher=KOL50"), null, path);
+  for (const path of ["/", "/shop", "/cart", "/shop/vay-dam-hoa", "/ao-dai/tet", "/sale"]) assert.notEqual(plan(path, "?voucher=KOL50"), null, path);
 });
 
 test("the landing target is never an open redirect", () => {
