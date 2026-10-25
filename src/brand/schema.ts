@@ -234,7 +234,7 @@ export type FulfillmentConfig = Readonly<{
    * No account detail belongs here. Bank transfer is off, and a stored account number is how a
    * disabled method starts being usable again by accident.
    */
-  payment: Readonly<{ codNote: string; inspectionNote: string; bankTransferUnavailableNote: string }>;
+  payment: Readonly<{ codNote: string; inspectionNote: string; inspectionShortNote: string; bankTransferUnavailableNote: string }>;
   /** Post-sale support commitments that are neither a delivery nor a return term. */
   support: Readonly<{ complaintResponseNote: string }>;
   returnLogistics: Readonly<{

@@ -20,14 +20,16 @@ const read = (file: string) => readFileSync(path.join(REPO_ROOT, file), "utf8");
 
 test("the order trust line is derived from the approved payment and returns policy", () => {
   assert.equal(FULFILLMENT.payment.inspectionNote, "Được kiểm tra hàng trước khi thanh toán.");
+  assert.equal(FULFILLMENT.payment.codNote, "Thanh toán khi nhận hàng (COD).");
+  assert.equal(FULFILLMENT.payment.inspectionShortNote, "Được kiểm hàng");
   assert.deepEqual(ORDER_TRUST_FACTS, [
-    "Thanh toán khi nhận hàng",
-    "Được kiểm tra hàng trước khi thanh toán",
-    `Đổi trả trong ${FULFILLMENT.returns.windowDays} ngày`,
+    "COD",
+    "Được kiểm hàng",
+    `Đổi trả ${FULFILLMENT.returns.windowDays} ngày`,
   ]);
   assert.equal(FULFILLMENT.returns.windowDays, 15);
-  // The sticky bar's one-line form says the same three facts.
-  assert.equal(ORDER_TRUST_SHORT, "COD · Kiểm tra hàng trước khi thanh toán · Đổi trả 15 ngày");
+  // The sticky bar's one-line form is the same three facts.
+  assert.equal(ORDER_TRUST_SHORT, "COD · Được kiểm hàng · Đổi trả 15 ngày");
 });
 
 test("the mobile sticky order bar carries the short trust line on the cart page and checkout", () => {
@@ -45,6 +47,8 @@ test("the trust line sits under every order button: drawer, cart page and checko
   const line = read("src/components/brand/order-trust-line.tsx");
   assert.match(line, /ORDER_TRUST_FACTS\.map/);
   assert.doesNotMatch(line, /ngày|kiểm tra|COD/);
+  // One row: each fact stays whole, the row only breaks between facts.
+  assert.match(line, /whitespace-nowrap/);
 });
 
 test("the drawer has one primary action; the cart page is a quiet link, not a second button", () => {
@@ -54,13 +58,17 @@ test("the drawer has one primary action; the cart page is a quiet link, not a se
   assert.match(drawer, /href="\/cart"[\s\S]{0,80}leave\("cart"\)[\s\S]{0,200}Xem chi tiết giỏ hàng/);
 });
 
-test("the next-milestone nudge follows the lines and is said to be optional", () => {
+test("the next milestone sits in the drawer's fixed footer; reached promotions follow the lines", () => {
   const drawer = read("src/components/brand/cart-drawer.tsx");
-  assert.ok(drawer.indexOf("<PromotionBanner") > drawer.indexOf("cart.lines.map"), "banner renders after the lines");
-  // "Đặt hàng được ngay" only while checkout is actually offered.
-  assert.match(drawer, /progressNote=\{cart\.canCheckout \? PROMOTION_PROGRESS_NOTE : undefined\}/);
-  assert.match(read("src/app/cart/page.tsx"), /progressNote=\{data\.canCheckout \? PROMOTION_PROGRESS_NOTE : undefined\}/);
-  assert.match(read("src/components/brand/promotion-banner.tsx"), /Không bắt buộc/);
+  assert.ok(drawer.indexOf("<PromotionBanner") > drawer.indexOf("cart.lines.map"), "reached promotions render after the lines");
+  // The scrolling body never lists the "mua thêm" milestone; the footer carries exactly one.
+  assert.match(drawer, /items: cart\.promotions\.items\.filter\(\(item\) => item\.state !== "progress"\)/);
+  assert.ok(drawer.indexOf("<PromotionProgressLine") > drawer.indexOf("{/* Footer */}"), "milestone renders in the footer");
+  assert.match(drawer, /firstPromotionProgress\(cart\.promotions\)/);
+  // Owner decision (25/10/2026): no "Không bắt buộc" note anywhere.
+  for (const file of ["src/components/brand/promotion-banner.tsx", "src/components/brand/cart-drawer.tsx", "src/app/cart/page.tsx"]) {
+    assert.doesNotMatch(read(file), /Không bắt buộc|progressNote/, file);
+  }
 });
 
 test("every way out of the drawer is reported with where it led", () => {
@@ -78,7 +86,7 @@ test("every way out of the drawer is reported with where it led", () => {
     assert.match(drawer, new RegExp(`leave\\("${exit}"\\)`), exit);
   }
   // Exposure is observed on the milestone line itself and reset on every opening.
-  assert.match(drawer, /progressRef=\{observeNudge\}/);
+  assert.match(drawer, /lineRef=\{observeNudge\}/);
   assert.match(drawer, /nudgeSeenRef\.current = false;/);
   // Escape, the backdrop and the close button are all the same "close" exit.
   assert.equal(drawer.match(/\{dismiss\}|dismiss\(\);/g)?.length, 3);

@@ -20,22 +20,17 @@ export type PromotionBannerProps = Readonly<{
   giftHref?: string;
   /** The drawer closes itself when the shopper follows `giftHref`. */
   onNavigate?: () => void;
-  /**
-   * Said once under the list whenever a "mua thêm" milestone is showing, beside an order button, so a
-   * nudge toward the next gift or tier never reads as a condition for ordering the basket as it is.
-   */
-  progressNote?: string;
-  /** Attached to the first "mua thêm" milestone line, so a surface can tell when it is actually on screen. */
-  progressRef?: (node: HTMLLIElement | null) => void;
   className?: string;
 }>;
 
-/** The `progressNote` the cart surfaces pass: the next milestone is an option, never a gate. */
-export const PROMOTION_PROGRESS_NOTE = "Không bắt buộc — nàng vẫn đặt hàng được ngay.";
+/** The first milestone the basket has not reached, or `null`: the one "mua thêm" line a compact surface shows. */
+export function firstPromotionProgress(view: PromotionBannerView | null | undefined): PromotionBannerItem | null {
+  return view?.items.find((item) => item.state === "progress") ?? null;
+}
 
 /** Whether the banner is nudging toward a milestone the basket has not reached. */
 export function hasPromotionProgress(view: PromotionBannerView | null | undefined): boolean {
-  return Boolean(view?.items.some((item) => item.state === "progress"));
+  return firstPromotionProgress(view) !== null;
 }
 
 function Tick() {
@@ -61,11 +56,10 @@ function Item({
   item,
   giftHref,
   onNavigate,
-  itemRef,
-}: Readonly<{ item: PromotionBannerItem; giftHref?: string; onNavigate?: () => void; itemRef?: (node: HTMLLIElement | null) => void }>) {
+}: Readonly<{ item: PromotionBannerItem; giftHref?: string; onNavigate?: () => void }>) {
   const achieved = item.state === "achieved";
   return (
-    <li data-promotion-state={item.state} data-promotion-kind={item.kind} ref={itemRef}>
+    <li data-promotion-state={item.state} data-promotion-kind={item.kind}>
       <div className="flex items-center gap-2">
         {achieved ? <Tick /> : <Gift />}
         <p className={`min-w-0 flex-1 text-[0.8rem] leading-5 ${achieved ? "text-[#24472D]" : "text-[#3B2219]"}`}>{item.title}</p>
@@ -99,9 +93,8 @@ function Item({
   );
 }
 
-export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, progressNote, progressRef, className = "" }: PromotionBannerProps) {
+export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, className = "" }: PromotionBannerProps) {
   if (!view || view.items.length === 0) return null;
-  const firstProgressId = view.items.find((item) => item.state === "progress")?.id;
   return (
     <section
       aria-label="Ưu đãi của nàng"
@@ -111,21 +104,45 @@ export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, 
     >
       <ul className="space-y-2.5">
         {view.items.map((item) => (
-          <Item
-            giftHref={giftHref}
-            item={item}
-            itemRef={item.id === firstProgressId ? progressRef : undefined}
-            key={item.id}
-            onNavigate={onNavigate}
-          />
+          <Item giftHref={giftHref} item={item} key={item.id} onNavigate={onNavigate} />
         ))}
       </ul>
-      {progressNote && hasPromotionProgress(view) ? (
-        <p className="ml-6 mt-2 text-[0.72rem] leading-5 text-[#70584B]" data-promotion-progress-note>
-          {progressNote}
-        </p>
-      ) : null}
     </section>
+  );
+}
+
+/**
+ * One "mua thêm" milestone, compact enough for the cart drawer's fixed footer: the drawer body scrolls,
+ * so a milestone listed after the lines is out of sight for any basket longer than a phone screen.
+ * At most two lines of text and the hairline bar; every word still comes from the view model.
+ */
+export function PromotionProgressLine({
+  item,
+  lineRef,
+}: Readonly<{ item: PromotionBannerItem; lineRef?: (node: HTMLDivElement | null) => void }>) {
+  return (
+    <div data-promotion-kind={item.kind} data-promotion-state={item.state} ref={lineRef}>
+      <div className="flex items-start gap-2">
+        <Gift />
+        <p className="line-clamp-2 min-w-0 flex-1 text-[0.78rem] leading-5 text-[#3B2219]">{item.title}</p>
+      </div>
+      {item.progress ? (
+        <div
+          aria-label={item.title}
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={item.progress.percent}
+          aria-valuetext={item.progress.label}
+          className="ml-6 mt-1 h-[3px] overflow-hidden rounded-full bg-[#3B2219]/10"
+          role="progressbar"
+        >
+          <div
+            className="h-full rounded-full bg-[#3B2219]/70 transition-[width] duration-500 motion-reduce:transition-none"
+            style={{ width: `${item.progress.percent}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

@@ -10,10 +10,9 @@ import { prisma } from "../../src/db/prisma.ts";
 
 /**
  * Cart → checkout, in a real browser with a pixel configured:
- *  - CartDrawerExit says whether the "mua thêm" nudge was actually on screen, not merely present: the
- *    banner follows the lines in the drawer's scrolling body, so a long basket can be ordered unseen;
- *  - "Không bắt buộc — nàng vẫn đặt hàng được ngay" is never said beside a basket that cannot be ordered;
- *  - the mobile sticky order bar carries the short trust line while the order button is off screen.
+ *  - the "mua thêm" milestone sits in the drawer's fixed footer, on screen however long the basket,
+ *    and CartDrawerExit reports it available and seen (or neither, when nothing is left to reach);
+ *  - the trust line under the order button and in the mobile sticky order bar is one line.
  *
  * Always its own `next dev`, like facebook-pixel.spec.ts: the pixel id is inlined at build time and
  * the shared CI build has none.
@@ -148,53 +147,55 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("ordering before the nudge scrolls into view reports it available but unseen", async ({ page }) => {
+test("the next milestone stays in view in the fixed footer, however long the basket", async ({ page }) => {
   await page.goto(`${BASE_URL}/shop`);
   const drawer = await openDrawer(page);
+  // Seven lines overflow the drawer body; the milestone is in the footer, so it is on screen anyway.
   const nudge = drawer.locator('[data-promotion-state="progress"]');
   await expect(nudge).toHaveCount(1);
-  await expect(nudge).not.toBeInViewport();
+  await expect(nudge).toBeInViewport({ ratio: 0.5 });
+  await expect(nudge).toContainText("Mua thêm 1 sản phẩm");
+  await expect(drawer.getByText("Không bắt buộc")).toHaveCount(0);
 
   await drawer.getByRole("link", { name: "Tiến hành đặt hàng", exact: true }).click();
   await expect(page).toHaveURL(/\/checkout$/);
   // A client navigation: the recorded pixel calls survive it.
   expect(await drawerExits(page)).toEqual([
-    { exit_to: "checkout", gift_nudge_available: true, gift_nudge_seen: false, can_checkout: true },
+    { exit_to: "checkout", gift_nudge_available: true, gift_nudge_seen: true, can_checkout: true },
   ]);
 });
 
-test("a nudge scrolled into view is seen; reopening starts unseen again", async ({ page }) => {
-  await page.goto(`${BASE_URL}/shop`);
-  let drawer = await openDrawer(page);
-  const nudge = drawer.locator('[data-promotion-state="progress"]');
-  await nudge.scrollIntoViewIfNeeded();
-  await expect(nudge).toBeInViewport({ ratio: 0.5 });
-  await expect(drawer.getByText("Không bắt buộc — nàng vẫn đặt hàng được ngay.")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(drawer).toHaveCount(0);
-
-  drawer = await openDrawer(page);
-  await drawer.getByRole("button", { name: "Đóng giỏ hàng" }).click();
-  await expect(drawer).toHaveCount(0);
-
-  await expect.poll(() => drawerExits(page)).toEqual([
-    { exit_to: "close", gift_nudge_available: true, gift_nudge_seen: true, can_checkout: true },
-    { exit_to: "close", gift_nudge_available: true, gift_nudge_seen: false, can_checkout: true },
-  ]);
+test("a basket with no milestone left reports no nudge, on every way out", async ({ page }) => {
+  // Seven reach the gift and the campaign gives one: nothing is left to nudge toward.
+  await prisma.giftQuantityCampaign.update({ where: { id: `${PREFIX}gift` }, data: { minimumQuantity: LINES } });
+  try {
+    await page.goto(`${BASE_URL}/shop`);
+    let drawer = await openDrawer(page);
+    await expect(drawer.locator('[data-promotion-state="progress"]')).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(drawer).toHaveCount(0);
+    drawer = await openDrawer(page);
+    await drawer.getByRole("button", { name: "Đóng giỏ hàng" }).click();
+    await expect(drawer).toHaveCount(0);
+    await expect.poll(() => drawerExits(page)).toEqual([
+      { exit_to: "close", gift_nudge_available: false, gift_nudge_seen: false, can_checkout: true },
+      { exit_to: "close", gift_nudge_available: false, gift_nudge_seen: false, can_checkout: true },
+    ]);
+  } finally {
+    await prisma.giftQuantityCampaign.update({ where: { id: `${PREFIX}gift` }, data: { minimumQuantity: LINES + 1 } });
+  }
 });
 
-test("a basket that cannot be ordered is never told it can order right away", async ({ page }) => {
-  // One line asks for more than there is: checkout closes, the milestone may still show.
-  await prisma.cartItem.update({ where: { cartId_variantId: { cartId, variantId: variantIds[0]! } }, data: { quantity: 11 } });
+test("the drawer's trust line under the order button is a single line", async ({ page }) => {
   await page.goto(`${BASE_URL}/shop`);
-  await page.getByRole("button", { name: /^Giỏ hàng/ }).filter({ visible: true }).first().click();
-  const drawer = page.getByRole("dialog", { name: "Giỏ hàng" });
-  await expect(drawer.getByRole("link", { name: "Tiến hành đặt hàng", exact: true })).toHaveCount(0);
-  await expect(drawer.locator("[data-promotion-progress-note]")).toHaveCount(0);
-
-  await page.goto(`${BASE_URL}/cart`);
-  await expect(page.getByRole("link", { name: "Tiến hành đặt hàng", exact: true })).toHaveCount(0);
-  await expect(page.locator("[data-promotion-progress-note]")).toHaveCount(0);
+  const drawer = await openDrawer(page);
+  const trust = drawer.locator("[data-order-trust]");
+  await expect(trust).toBeVisible();
+  await expect(trust).toContainText("COD");
+  await expect(trust).toContainText("Được kiểm hàng");
+  await expect(trust).toContainText("Đổi trả 15 ngày");
+  const box = await trust.boundingBox();
+  expect(box?.height ?? 0).toBeLessThan(24);
 });
 
 test("the mobile sticky order bar carries the short trust line while the order button is off screen", async ({ page }) => {

@@ -11,9 +11,10 @@ import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { OrderTrustLine } from "@/components/brand/order-trust-line";
 import {
+  firstPromotionProgress,
   hasPromotionProgress,
-  PROMOTION_PROGRESS_NOTE,
   PromotionBanner,
+  PromotionProgressLine,
   PromotionSavings,
 } from "@/components/brand/promotion-banner";
 import { trackFacebookPixelCustomEvent } from "@/components/analytics/facebook-pixel-client";
@@ -45,11 +46,11 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
   const wasOpenRef = useRef(false);
 
   // Whether the "mua thêm" milestone has actually been at least half on screen during this opening.
-  // The drawer body scrolls and the banner follows the lines, so having one is not seeing it. The
-  // viewport is the root: an element clipped by the scrolling body does not intersect it.
+  // It sits in the fixed footer, so it normally is; the observer keeps `seen` honest anyway (a screen
+  // too short for the footer, the drawer closed before it painted). The viewport is the root.
   const nudgeSeenRef = useRef(false);
   const nudgeObserverRef = useRef<IntersectionObserver | null>(null);
-  const observeNudge = useCallback((node: HTMLLIElement | null) => {
+  const observeNudge = useCallback((node: HTMLElement | null) => {
     nudgeObserverRef.current?.disconnect();
     nudgeObserverRef.current = null;
     if (node === null || typeof IntersectionObserver === "undefined") return;
@@ -136,6 +137,9 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
   }, [handleKeyDown]);
 
   if (!isOpen) return null;
+
+  // The one "mua thêm" milestone the fixed footer carries.
+  const footerProgress = cart ? firstPromotionProgress(cart.promotions) : null;
 
   return createPortal(
     <div className="fixed inset-0 z-50 overflow-hidden" role="region" aria-label="Giỏ hàng">
@@ -340,17 +344,15 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                     );
                   })}
                 </ul>
-                {/* After the lines, not above them: the shopper first confirms what they added, and the
-                    way to the next gift reads as an option on the way to the order button. */}
+                {/* What the basket has already reached, after the lines. The next milestone ("mua thêm")
+                    is not listed here: it sits in the fixed footer, where no basket is long enough to
+                    scroll it out of sight. */}
                 <PromotionBanner
                   className="mt-5"
                   giftHref="/cart#cart-gifts"
                   onNavigate={() => leave("gift")}
-                  // "Đặt hàng được ngay" is a promise only while checkout is actually offered.
-                  progressNote={cart.canCheckout ? PROMOTION_PROGRESS_NOTE : undefined}
-                  progressRef={observeNudge}
                   variant="compact"
-                  view={cart.promotions}
+                  view={cart.promotions ? { ...cart.promotions, items: cart.promotions.items.filter((item) => item.state !== "progress") } : undefined}
                 />
               </>
             ) : null}
@@ -358,7 +360,12 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
 
           {/* Footer */}
           {cart && !cart.isEmpty ? (
-            <div className="border-t border-[#3B2219]/10 bg-[#FAF7F2] p-6 space-y-4">
+            <div className="space-y-3 border-t border-[#3B2219]/10 bg-[#FAF7F2] px-6 pb-4 pt-4">
+              {footerProgress ? (
+                <div className="border-b border-[#3B2219]/10 pb-3">
+                  <PromotionProgressLine item={footerProgress} lineRef={observeNudge} />
+                </div>
+              ) : null}
               {cart.summary ? (
                 <OrderSummary summary={cart.summary} variant="compact" />
               ) : (
@@ -378,7 +385,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                 </>
               )}
 
-              <div className="space-y-3 pt-2">
+              <div className="space-y-1.5 pt-1">
                 {cart.canCheckout ? (
                   <>
                     <Link
@@ -403,7 +410,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                 <Link
                   href="/cart"
                   onClick={() => leave("cart")}
-                  className="mx-auto flex min-h-11 w-fit items-center text-xs text-[#70584B] underline underline-offset-4 hover:text-[#2A1810]"
+                  className="mx-auto flex min-h-8 w-fit items-center text-xs text-[#70584B] underline underline-offset-4 hover:text-[#2A1810]"
                 >
                   Xem chi tiết giỏ hàng
                 </Link>

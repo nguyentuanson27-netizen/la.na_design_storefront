@@ -11,7 +11,7 @@ import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { OrderTrustLine } from "@/components/brand/order-trust-line";
-import { PROMOTION_PROGRESS_NOTE, PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
+import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { loadCartRoute, type CartRouteProps } from "@/routes/cart";
 import type { CartLineView, CartViewModel } from "@/routes/cart-model";
@@ -101,8 +101,7 @@ function render(data: CartViewModel) {
             </dl>
           ) : null}
           {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
-          {/* "Đặt hàng được ngay" is a promise only while checkout is actually offered. */}
-          <PromotionBanner className="mb-5" progressNote={data.canCheckout ? PROMOTION_PROGRESS_NOTE : undefined} view={promotions} />
+          <PromotionBanner className="mb-5" view={promotions} />
           <div className="divide-y divide-black/15">
             {data.lines.map((line, index) => (
               <article
