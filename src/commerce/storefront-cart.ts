@@ -158,6 +158,18 @@ export function isCommerceEligibleVariant(
 
 const emptyMedia: StorefrontProductMedia = { primary: null, gallery: [] };
 
+/** A cart product's capacity facts: its stored selling policy, or the approved missing-row default. */
+export function cartProductCapacity(
+  product: Pick<StorefrontCartProduct, "sellingPolicy" | "isComposite">,
+): StorefrontProductCapacity {
+  return {
+    sellingMode: product.sellingPolicy?.sellingMode ?? STANDARD_STANDALONE_CAPACITY.sellingMode,
+    negativeStockLimit:
+      product.sellingPolicy?.negativeStockLimit ?? STANDARD_STANDALONE_CAPACITY.negativeStockLimit,
+    isComposite: product.isComposite ?? false,
+  };
+}
+
 /**
  * Resolves the current cart lines for a set of requested items.
  *
@@ -196,12 +208,7 @@ export function buildStorefrontCartLines({
     // judged every product by `STANDARD`'s floor of 0, so an `OVERSELL` variant the owner had
     // allowed down to −20 was refused here while the PDP (since I4) offered it: the display and the
     // cart disagreeing about one product, which is the drift this series exists to remove.
-    const productCapacity: StorefrontProductCapacity = {
-      sellingMode: product.sellingPolicy?.sellingMode ?? STANDARD_STANDALONE_CAPACITY.sellingMode,
-      negativeStockLimit:
-        product.sellingPolicy?.negativeStockLimit ?? STANDARD_STANDALONE_CAPACITY.negativeStockLimit,
-      isComposite: product.isComposite ?? false,
-    };
+    const productCapacity = cartProductCapacity(product);
 
     const currentVariants = product.variants.filter((variant) =>
       isCommerceEligibleVariant(product, variant),

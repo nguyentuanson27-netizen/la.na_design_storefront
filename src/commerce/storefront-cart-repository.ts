@@ -9,6 +9,7 @@ import type { PromotionPricingResult } from "./promotion-pricing.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
+import { buildCartLineUrgency, type CartLineUrgency } from "./storefront-cart-urgency.ts";
 import {
   deriveCompositeCapacitySnapshot,
   deriveCompositeSellableStock,
@@ -303,7 +304,29 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
       }
       return true;
     }
-    return { lines, products, canAddQuantity };
+    // Lazy: `getLines` (checkout context, order submission) never builds it. `getQuote` and
+    // `getLinesWithUrgency` always do, so the gift-selection quote path pays for it too: pure CPU over
+    // the cart's own products, ~0.4 ms for 20 products x 8 variants all on Flash Sale, no extra query.
+    const lineUrgency = () => lineUrgencyFrom(safeItems, cartProducts, campaignsByVariantId, now);
+    return { lines, products, lineUrgency, canAddQuantity };
+  }
+
+  /**
+   * Each line's Flash Sale countdown and "Còn x", from the very reads, campaigns and instant the lines
+   * were just priced from: a countdown can never sit beside a price another snapshot decided, and no
+   * second read is spent on it. Presentation only, so a failure here yields nothing rather than an error.
+   */
+  function lineUrgencyFrom(
+    items: readonly CartItemIdentity[],
+    cartProducts: Parameters<typeof buildCartLineUrgency>[0]["products"],
+    campaignsByVariantId: Parameters<typeof buildCartLineUrgency>[0]["campaignsByVariantId"],
+    now: Date,
+  ): CartLineUrgency {
+    try {
+      return buildCartLineUrgency({ items, products: cartProducts, campaignsByVariantId, now });
+    } catch {
+      return Object.freeze({});
+    }
   }
 
   async function getLines({
@@ -317,6 +340,20 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
   }) {
     const resolved = await resolveCart({ shopId, items, now });
     return resolved === null ? [] : resolved.lines;
+  }
+
+  /** `getLines` plus each line's countdown and "Còn x" from the same resolution, for the cart surfaces. */
+  async function getLinesWithUrgency({
+    shopId,
+    items,
+    now = new Date(),
+  }: {
+    shopId: number;
+    items: readonly CartItemIdentity[];
+    now?: Date;
+  }): Promise<{ lines: Awaited<ReturnType<typeof getLines>>; lineUrgency?: CartLineUrgency }> {
+    const resolved = await resolveCart({ shopId, items, now });
+    return resolved === null ? { lines: [] } : { lines: resolved.lines, lineUrgency: resolved.lineUrgency() };
   }
 
   /**
@@ -351,7 +388,7 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
     preservesQuantityGifts?: QuantityGiftGuard;
   }) {
     if (!isGiftQuantityPromotionsEnabled(env)) {
-      return { lines: await getLines({ shopId, items, now }), benefits: { enabled: false as const } };
+      return { ...(await getLinesWithUrgency({ shopId, items, now })), benefits: { enabled: false as const } };
     }
 
     // The raw items are validated BEFORE anything is resolved or filtered: a duplicate variant, a
@@ -412,7 +449,7 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
             : null,
       });
     }
-    if (!consistent) return { lines: resolved.lines, benefits: { enabled: true as const, ok: false as const, reason: "INPUT_INVALID" as const } };
+    if (!consistent) return { lines: resolved.lines, lineUrgency: resolved.lineUrgency(), benefits: { enabled: true as const, ok: false as const, reason: "INPUT_INVALID" as const } };
 
     const benefits = await resolveGiftQuantityQuote({
       lines: quoteLines,
@@ -423,8 +460,8 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
       canAddQuantity: resolved.canAddQuantity,
       preservesQuantityGifts,
     });
-    return { lines: resolved.lines, benefits };
+    return { lines: resolved.lines, lineUrgency: resolved.lineUrgency(), benefits };
   }
 
-  return { getLines, getQuote };
+  return { getLines, getLinesWithUrgency, getQuote };
 }

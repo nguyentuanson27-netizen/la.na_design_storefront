@@ -23,6 +23,16 @@ export type PromotionBannerProps = Readonly<{
   className?: string;
 }>;
 
+/** The first milestone the basket has not reached, or `null`: the one "mua thêm" line a compact surface shows. */
+export function firstPromotionProgress(view: PromotionBannerView | null | undefined): PromotionBannerItem | null {
+  return view?.items.find((item) => item.state === "progress") ?? null;
+}
+
+/** Whether the banner is nudging toward a milestone the basket has not reached. */
+export function hasPromotionProgress(view: PromotionBannerView | null | undefined): boolean {
+  return firstPromotionProgress(view) !== null;
+}
+
 function Tick() {
   return (
     <span aria-hidden="true" className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#2F5D3A] text-white">
@@ -98,6 +108,41 @@ export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, 
         ))}
       </ul>
     </section>
+  );
+}
+
+/**
+ * One "mua thêm" milestone, compact enough for the cart drawer's fixed footer: the drawer body scrolls,
+ * so a milestone listed after the lines is out of sight for any basket longer than a phone screen.
+ * At most two lines of text and the hairline bar; every word still comes from the view model.
+ */
+export function PromotionProgressLine({
+  item,
+  lineRef,
+}: Readonly<{ item: PromotionBannerItem; lineRef?: (node: HTMLDivElement | null) => void }>) {
+  return (
+    <div data-promotion-kind={item.kind} data-promotion-state={item.state} ref={lineRef}>
+      <div className="flex items-start gap-2">
+        <Gift />
+        <p className="line-clamp-2 min-w-0 flex-1 text-[0.78rem] leading-5 text-[#3B2219]">{item.title}</p>
+      </div>
+      {item.progress ? (
+        <div
+          aria-label={item.title}
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={item.progress.percent}
+          aria-valuetext={item.progress.label}
+          className="ml-6 mt-1 h-[3px] overflow-hidden rounded-full bg-[#3B2219]/10"
+          role="progressbar"
+        >
+          <div
+            className="h-full rounded-full bg-[#3B2219]/70 transition-[width] duration-500 motion-reduce:transition-none"
+            style={{ width: `${item.progress.percent}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

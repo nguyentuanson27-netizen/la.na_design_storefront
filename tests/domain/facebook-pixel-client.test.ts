@@ -97,3 +97,41 @@ test("an already-finished no-op pixel script cannot retain or later revive its a
 
   assert.equal(accepted, 1);
 });
+
+test("a custom UX event queued before the snippet runs is sent with trackCustom, in order", async (t) => {
+  const previousPixelId = process.env.LA_BUILD_FACEBOOK_PIXEL_ID;
+  process.env.LA_BUILD_FACEBOOK_PIXEL_ID = PIXEL_ID;
+  t.after(() => {
+    if (previousPixelId === undefined) delete process.env.LA_BUILD_FACEBOOK_PIXEL_ID;
+    else process.env.LA_BUILD_FACEBOOK_PIXEL_ID = previousPixelId;
+  });
+
+  const host: { fbq?: (...args: unknown[]) => void } = {};
+  const restoreWindow = replaceGlobal("window", host);
+  const restoreDocument = replaceGlobal("document", { querySelector: () => null });
+  t.after(() => {
+    restoreDocument();
+    restoreWindow();
+  });
+
+  // A module instance of its own: the queue is module state, and the test above leaves a pixel behind.
+  const specifier = "../../src/components/analytics/facebook-pixel-client.ts";
+  const { trackFacebookPixelCustomEvent, trackFacebookPixelEvent } = (await import(
+    `${specifier}?custom-event`
+  )) as typeof import("../../src/components/analytics/facebook-pixel-client.ts");
+
+  trackFacebookPixelCustomEvent("CartDrawerExit", { exit_to: "close", gift_nudge: true, can_checkout: true });
+
+  const calls: unknown[][] = [];
+  host.fbq = (...args: unknown[]) => {
+    calls.push(args);
+  };
+  trackFacebookPixelEvent("PageView");
+
+  assert.deepEqual(calls, [
+    ["trackCustom", "CartDrawerExit", { exit_to: "close", gift_nudge: true, can_checkout: true }],
+    ["track", "PageView", undefined],
+  ]);
+  // Let the appearance poll notice fbq and stop itself.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+});

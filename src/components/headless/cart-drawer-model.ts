@@ -13,6 +13,33 @@ export function checkoutBlockedMessages(
   return messages.length > 0 ? messages : ["Nàng xem lại giỏ hàng trước khi đặt hàng nhé."];
 }
 
+/** Meta custom event name for how a shopper left a non-empty drawer. */
+export const CART_DRAWER_EXIT_EVENT = "CartDrawerExit";
+
+/** Where the shopper went from the drawer: the order button, the cart page, a product, a gift choice, or nowhere. */
+export type CartDrawerExit = "checkout" | "cart" | "product" | "gift" | "close";
+
+/**
+ * The parameters of one {@link CART_DRAWER_EXIT_EVENT}, read against `exit_to`:
+ *  - `gift_nudge_available`: the basket had a "mua thêm" milestone in the drawer at all;
+ *  - `gift_nudge_seen`: that milestone was actually at least half on screen during this opening. The
+ *    banner follows the lines in a scrolling body, so with a long basket a shopper can order without
+ *    ever reaching it; only `seen` says who was exposed to the nudge;
+ *  - `can_checkout`: separates a blocked basket from a choice.
+ */
+export function cartDrawerExitParameters(
+  exit: CartDrawerExit,
+  facts: Readonly<{ giftNudgeAvailable: boolean; giftNudgeSeen: boolean; canCheckout: boolean }>,
+): Readonly<{ exit_to: CartDrawerExit; gift_nudge_available: boolean; gift_nudge_seen: boolean; can_checkout: boolean }> {
+  return Object.freeze({
+    exit_to: exit,
+    gift_nudge_available: facts.giftNudgeAvailable,
+    // Seen implies available: a stale observation from a nudge that has since gone says nothing.
+    gift_nudge_seen: facts.giftNudgeAvailable && facts.giftNudgeSeen,
+    can_checkout: facts.canCheckout,
+  });
+}
+
 export type CartDrawerFocusable = {
   first: HTMLElement | null;
   last: HTMLElement | null;
