@@ -79,7 +79,48 @@ test("the pixel gets hashed identifiers merged into what init already carried", 
   // Never the plain values.
   assert.ok(!JSON.stringify(calls).includes("0912345678"));
   assert.ok(!JSON.stringify(calls).includes("Bình"));
-  assert.deepEqual(holder.laMetaPixelUserData, userData);
+  // The base init data is never rewritten; every update starts from it.
+  assert.deepEqual(holder.laMetaPixelUserData, { external_id: VISITOR_ID });
+});
+
+test("a later shopper never inherits an earlier shopper's identifiers", async (t) => {
+  const { applyMetaAdvancedMatching } = await loadModule(t);
+  const calls: unknown[][] = [];
+  const holder = {
+    fbq: (...args: unknown[]) => void calls.push(args),
+    laMetaPixelUserData: { external_id: VISITOR_ID } as Record<string, string>,
+  };
+  t.after(replaceWindow(holder));
+
+  await applyMetaAdvancedMatching({ name: "Trần Bình", phone: "0912345678" });
+  // Valid phone, but a name with no letters: only `ph` can be sent for this shopper.
+  await applyMetaAdvancedMatching({ name: "1234", phone: "0987654321" });
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1]![2], { external_id: VISITOR_ID, ph: sha256("84987654321") });
+});
+
+test("the checkout waits for the pixel update, but never longer than the bound", async (t) => {
+  const { applyMetaAdvancedMatchingWithin } = await loadModule(t);
+  const calls: unknown[][] = [];
+  t.after(replaceWindow({ fbq: (...args: unknown[]) => void calls.push(args) }));
+
+  // Fast path: the update has reached the pixel by the time the wait resolves.
+  await applyMetaAdvancedMatchingWithin({ name: "Trần Bình", phone: "0912345678" });
+  assert.equal(calls.length, 1);
+
+  // Slow path: a hash that never finishes cannot hold the order past the bound.
+  const subtle = globalThis.crypto.subtle;
+  const original = Object.getOwnPropertyDescriptor(subtle, "digest");
+  Object.defineProperty(subtle, "digest", { configurable: true, value: () => new Promise(() => {}) });
+  t.after(() => {
+    if (original) Object.defineProperty(subtle, "digest", original);
+    else Reflect.deleteProperty(subtle, "digest");
+  });
+  const startedAt = Date.now();
+  await applyMetaAdvancedMatchingWithin({ name: "Trần Bình", phone: "0912345678" }, 50);
+  assert.ok(Date.now() - startedAt < 1_000);
+  assert.equal(calls.length, 1);
 });
 
 test("a missing pixel or nothing matchable is a silent no-op", async (t) => {

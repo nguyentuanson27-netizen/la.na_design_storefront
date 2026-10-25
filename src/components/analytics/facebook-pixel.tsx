@@ -21,8 +21,9 @@ import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
  * the proxy has not expired it yet) must not keep sending it. The chrome renders per request
  * (`loadSiteChrome` awaits `connection()`), so this reads the runtime value, not the build's.
  *
- * What `init` was given stays on `window.laMetaPixelUserData`, so a later manual advanced matching
- * update (checkout) can repeat `init` with it plus the new identifiers rather than replacing it.
+ * What `init` was given stays on `window.laMetaPixelUserData` and is never rewritten, so a later
+ * manual advanced matching update (checkout) can repeat `init` with that base plus only the new
+ * shopper's identifiers.
  *
  * The external script's lifecycle is also persisted on the element itself before insertion. A
  * later Purchase effect can therefore distinguish `ready` from `unavailable` even if the one-shot

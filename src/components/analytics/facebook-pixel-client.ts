@@ -279,8 +279,10 @@ export function trackFacebookPixelEvent(
  *
  * Meta applies them by a repeat `init` for the same pixel, which fires no event of its own. The
  * snippet leaves what it initialised with on `window.laMetaPixelUserData` (`external_id`, when the
- * first-party cookies are on), and a repeat `init` replaces rather than merges, so that is merged
- * back in here instead of being silently dropped. Callers pass values already hashed.
+ * first-party cookies are on) and that is the only thing carried into every update: each call is
+ * that base plus exactly the keys of the checkout it is for. Nothing from an earlier checkout in
+ * the same page session is kept, so a later shopper with no usable name never inherits a previous
+ * shopper's `fn`/`ln`. Callers pass values already hashed.
  *
  * Unlike an event this is not queued while `fbq` is missing: the shopper typed these seconds ago,
  * so a pixel the page never loaded is not coming back for them.
@@ -292,14 +294,12 @@ export function updateFacebookPixelUserData(userData: Readonly<Record<string, st
   const fbq = readFbq();
   if (fbq === null) return;
 
-  const holder = window as { laMetaPixelUserData?: Record<string, string> };
-  const merged = { ...holder.laMetaPixelUserData, ...userData };
-  holder.laMetaPixelUserData = merged;
+  const base = (window as { laMetaPixelUserData?: Record<string, string> }).laMetaPixelUserData;
   try {
     (fbq as unknown as (method: "init", pixelId: string, userData: Record<string, string>) => void)(
       "init",
       PIXEL_ID,
-      merged,
+      { ...base, ...userData },
     );
   } catch {
     // A tracking failure is never worth interrupting a shopper for.

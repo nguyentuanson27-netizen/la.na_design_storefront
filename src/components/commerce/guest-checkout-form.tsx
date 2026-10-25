@@ -31,7 +31,7 @@ import { reminderSubmitDecision } from "@/components/headless/checkout-gift-remi
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 import { CheckoutUpsell } from "./checkout-upsell";
 import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
-import { applyMetaAdvancedMatching } from "@/components/analytics/meta-advanced-matching";
+import { applyMetaAdvancedMatchingWithin } from "@/components/analytics/meta-advanced-matching";
 import type { CheckoutUpsellBanner } from "@/routes/checkout-model";
 
 const EMPTY_GIFT_PICKER: CartGiftPickerModel = { campaigns: [], selections: [], invalid: false, stackConflict: false };
@@ -406,10 +406,12 @@ export function GuestCheckoutForm({
     setSubmittedTotalVnd(totalVnd);
     const formData = new FormData(event.currentTarget);
     if (benefit?.needsAcknowledgement && reminder.current.current === "seen") formData.set("nonclaimAcknowledged", "yes");
-    // Best effort and off the order's path: the pixel hears who this is before the confirmed order's
-    // browser events fire, and a hash or pixel failure never touches the submit.
-    void applyMetaAdvancedMatching({ name, phone });
-    startTransition(() => submitAction(formData));
+    // The pixel hears who this is before the order goes, so the confirmation page's browser events
+    // carry it. The wait is bounded and never rejects: analytics cannot hold or fail a checkout.
+    // `submissionBusy` is already set, so the buyer cannot submit twice meanwhile.
+    void applyMetaAdvancedMatchingWithin({ name, phone }).then(() => {
+      startTransition(() => submitAction(formData));
+    });
   }
   useEffect(() => {
     if (!isSubmitting && !isRefreshingQuote && !waitingForNewRender) submissionBusy.current = false;

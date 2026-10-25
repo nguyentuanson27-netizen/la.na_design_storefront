@@ -30,16 +30,19 @@ async function sha256Hex(value: string): Promise<string> {
 export async function buildMetaAdvancedMatching(
   input: Readonly<{ name: string; phone: string }>,
 ): Promise<MetaAdvancedMatching> {
-  const matching: { ph?: string; fn?: string; ln?: string } = {};
-
   const phone = normalizeVietnamesePhone(input.phone);
-  if (phone !== null && isMetaPhone(phone)) matching.ph = await sha256Hex(phone);
-
   const name = splitVietnameseName(input.name);
-  if (name !== null) {
-    if (hasMetaNameLetter(name.fn)) matching.fn = await sha256Hex(normalizeMetaIdentifier(name.fn));
-    if (hasMetaNameLetter(name.ln)) matching.ln = await sha256Hex(normalizeMetaIdentifier(name.ln));
-  }
+
+  const [ph, fn, ln] = await Promise.all([
+    phone !== null && isMetaPhone(phone) ? sha256Hex(phone) : undefined,
+    name !== null && hasMetaNameLetter(name.fn) ? sha256Hex(normalizeMetaIdentifier(name.fn)) : undefined,
+    name !== null && hasMetaNameLetter(name.ln) ? sha256Hex(normalizeMetaIdentifier(name.ln)) : undefined,
+  ]);
+
+  const matching: { ph?: string; fn?: string; ln?: string } = {};
+  if (ph !== undefined) matching.ph = ph;
+  if (fn !== undefined) matching.fn = fn;
+  if (ln !== undefined) matching.ln = ln;
   return matching;
 }
 
@@ -59,4 +62,26 @@ export async function applyMetaAdvancedMatching(
   } catch {
     // See above: tracking failures stay invisible to the shopper.
   }
+}
+
+/** Longest checkout waits for the pixel to hear the shopper; a hash takes microseconds. */
+export const META_ADVANCED_MATCHING_MAX_WAIT_MS = 300;
+
+/**
+ * `applyMetaAdvancedMatching`, but resolves no later than `maxWaitMs`, so a caller can order "pixel
+ * hears the shopper" before "order submitted" without letting analytics hold a checkout. Never
+ * rejects. A hash that finishes after the wait still updates the pixel; it just may land after the
+ * first browser event of the next page.
+ */
+export function applyMetaAdvancedMatchingWithin(
+  input: Readonly<{ name: string; phone: string }>,
+  maxWaitMs: number = META_ADVANCED_MATCHING_MAX_WAIT_MS,
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, maxWaitMs);
+    void applyMetaAdvancedMatching(input).then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
