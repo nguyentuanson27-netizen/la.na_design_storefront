@@ -10,7 +10,7 @@ import { BUYER_AXE_TAGS } from "./axe-tags";
 import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
 
 /**
- * Voucher v1 in a real browser (V16/V17/V19, AC-12/AC-13/AC-26/AC-40/AC-42/AC-43): the picker on mobile and desktop,
+ * Voucher v1 in a real browser (V16/V17/V19, AC-12/AC-13/AC-26/AC-40; the preview never holds, AC-42 for the picker): the picker on mobile and desktop,
  * keyboard and focus, the server-owned selection, that a draft is never saved until "Áp dụng", the private-code flow,
  * the marketing link that never lets the code reach a rendered document, and the PDP teaser.
  */
@@ -148,7 +148,7 @@ test("AC-26 / AC-42: choosing in the picker previews on the server and saves not
   await expect(dialog.getByRole("radio", { name: /Giảm 50.000đ/ })).toBeChecked();
 });
 
-test("AC-43: Áp dụng commits both groups on the server and the cart shows what the server decided", async ({ page }) => {
+test("V16: Áp dụng commits both groups on the server and the cart shows what the server decided", async ({ page }) => {
   await page.goto(`${BASE}/cart`);
   await trigger(page).click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });

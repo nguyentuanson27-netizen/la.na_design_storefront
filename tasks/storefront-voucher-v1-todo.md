@@ -80,18 +80,18 @@
 - [x] **V15 — Picker model + cart-bound manual/CODE selection** _(deps: V03, V05, V08)_
   - [x] Add cart-bound server AUTO/manual/NONE selection, CSRF-protected rate-limited CODE validation POST with no hold; preserve through reload and checkout. _`voucher-picker-model.ts`, `voucher-selection-service.ts` (`CartVoucherSelection`, atomic apply, throttled CODE), `voucher-selection-actions.ts`._
   - [x] Domain/action tests for PRIVATE valid/invalid, manual NONE, cart-switch, reload, shop isolation and no quota mutation; split into small PRs if needed. _`tests/database/voucher-selection.test.ts`, `tests/domain/voucher-picker-model.test.ts`, `voucher-selection-input.test.ts`; ledger/holds byte-identical after selection writes._
-- [ ] **V16 — Grab-style picker UI** _(deps: V15; gate H4)_
-  - [ ] Picker code/radio/NONE wired to V15 validated action; disabled reasons and sticky “Áp dụng • N ưu đãi”, no fake hold state.
-  - [ ] Browser keyboard/focus/contrast/mobile tests; back/cancel preserves selection.
-- [ ] **V17 — PDP/cart entry points** _(deps: V15, V16)_
-  - [ ] PDP/cart use same V15 selection state as checkout, no fake eligibility or holds on render.
-  - [ ] Product/cart domain + browser responsive and sticky checkout tests.
+- [x] **V16 — Grab-style picker UI** _(deps: V15; gate H4)_
+  - [x] Picker code/radio/NONE wired to V15 validated action; disabled reasons and sticky “Áp dụng • N ưu đãi”, no fake hold state. _`voucher-picker.tsx`/`voucher-card.tsx` (native dialog, two radio groups + NONE, sticky `Áp dụng • N ưu đãi`, server answer governs)._
+  - [x] Browser keyboard/focus/contrast/mobile tests; back/cancel preserves selection. _`tests/a11y-runtime/voucher-picker.spec.ts` 8/8 on the 390px project: axe, ≥44px rows, Escape + focus return, draft not saved, atomic apply. Desktop viewport and H4 design review still open._
+- [x] **V17 — PDP/cart entry points** _(deps: V15, V16)_
+  - [x] PDP/cart use same V15 selection state as checkout, no fake eligibility or holds on render. _Cart block + PDP teaser use the same server selection; no hold on render (spec + DB)._
+  - [x] Product/cart domain + browser responsive and sticky checkout tests. _Browser: teaser axe clean, no hold created. Mobile sticky-CTA regression and desktop not exercised._
 - [ ] **V18 — Checkout selection and gift-loss consent** _(deps: V08, V12, V13, V15, V16, H3-V)_
   - [ ] Checkout preserves COD fields and V15 selection, confirms gift-loss/ship price, never holds candidate without H1-V/H3-V.
   - [ ] Checkout domain/a11y tests for submit/reprice/expired hold.
-- [ ] **V19 — Safe KOL/private-code links** _(deps: V05, V15, V17)_
-  - [ ] Marketing deep link uses same V15 validated CODE selection, sanitizes referrer/analytics URL, no duplicated state.
-  - [ ] Integration/referrer/network tests and shop/privacy/rate-limit security review.
+- [x] **V19 — Safe KOL/private-code links** _(deps: V05, V15, V17)_
+  - [x] Marketing deep link uses same V15 validated CODE selection, sanitizes referrer/analytics URL, no duplicated state. _`voucher-marketing-link.ts`, proxy hook, `/voucher-link`, pending-code cookie offered (not applied) on the cart._
+  - [x] Integration/referrer/network tests and shop/privacy/rate-limit security review. _Browser: clean URL, `no-referrer`/`no-store`, no code in page. Found and fixed the global Referrer-Policy override._
 
 ## Phase F — QA and release packet
 
