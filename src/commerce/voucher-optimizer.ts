@@ -31,7 +31,7 @@ export type GiftOutcome = Readonly<{
   retainedSelectedSlots: number;
 }>;
 
-export type CombinationFailureReason = "NO_BENEFIT" | "BELOW_MINIMUM" | "INVALID";
+export type CombinationFailureReason = "NO_BENEFIT" | "BELOW_MINIMUM" | "EXHAUSTED" | "INVALID";
 
 export type CombinationOutcome =
   | Readonly<{
@@ -59,8 +59,12 @@ export type EvaluatorContext = Readonly<{
   campaignShippingFeeVnd: (hasOtherPromotions: boolean) => number;
   /** In-scope paid subtotal of a shipping voucher after the chosen merchandise voucher. */
   shippingScopeSubtotalAfterVnd: (shippingId: string, merchandiseId: string | null) => number;
-  /** Gift entitlement and the survival of saved choices at a paid total (gifts follow the voucher, Q05). */
-  giftOutcome: (paidAfterVnd: number) => GiftOutcome;
+  /**
+   * Gift entitlement and the survival of saved choices after the merchandise voucher (gifts follow the voucher,
+   * Q05). Gets the chosen voucher too, because a gift threshold can be scoped and only the allocation knows
+   * which lines the discount landed on; a plain total is enough when it is not.
+   */
+  giftOutcome: (paidAfterVnd: number, merchandiseId: string | null) => GiftOutcome;
 }>;
 
 /** Builds the per-cell evaluator: merchandise first, then the shipping campaign per candidate, then shipping. */
@@ -95,7 +99,7 @@ export function createCombinationEvaluator(context: EvaluatorContext): Combinati
       shippingDiscountVnd,
       shippingFeeVnd,
       totalPayableVnd: paidAfterVnd + shippingFeeVnd,
-      gifts: context.giftOutcome(paidAfterVnd),
+      gifts: context.giftOutcome(paidAfterVnd, merchandise?.id ?? null),
       voucherCount: (merchandise === null ? 0 : 1) + (shipping === null ? 0 : 1),
     };
   };
