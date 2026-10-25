@@ -9,6 +9,7 @@ import type { PromotionPricingResult } from "./promotion-pricing.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
+import { buildCartLineUrgency, type CartLineUrgency } from "./storefront-cart-urgency.ts";
 import {
   deriveCompositeCapacitySnapshot,
   deriveCompositeSellableStock,
@@ -303,7 +304,7 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
       }
       return true;
     }
-    return { lines, products, canAddQuantity };
+    return { lines, products, cartProducts, campaignsByVariantId, canAddQuantity };
   }
 
   async function getLines({
@@ -317,6 +318,24 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
   }) {
     const resolved = await resolveCart({ shopId, items, now });
     return resolved === null ? [] : resolved.lines;
+  }
+
+  /**
+   * Each line's Flash Sale countdown and "Còn x", from the same reads and the same instant the lines
+   * are priced from. Presentation only: nothing here is a price, and no line shape changes.
+   */
+  async function getLineUrgency({
+    shopId,
+    items,
+    now = new Date(),
+  }: {
+    shopId: number;
+    items: readonly CartItemIdentity[];
+    now?: Date;
+  }): Promise<CartLineUrgency> {
+    const resolved = await resolveCart({ shopId, items, now });
+    if (resolved === null) return Object.freeze({});
+    return buildCartLineUrgency({ items, products: resolved.cartProducts, campaignsByVariantId: resolved.campaignsByVariantId, now });
   }
 
   /**
@@ -426,5 +445,5 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
     return { lines: resolved.lines, benefits };
   }
 
-  return { getLines, getQuote };
+  return { getLines, getLineUrgency, getQuote };
 }

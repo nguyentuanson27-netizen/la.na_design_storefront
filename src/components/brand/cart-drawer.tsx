@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
+import { CartLineUrgency } from "@/components/brand/cart-line-urgency";
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { OrderTrustLine } from "@/components/brand/order-trust-line";
@@ -259,6 +260,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                                 Giá sau ưu đãi: {line.paidSegments.join(" + ")}
                               </p>
                             ) : null}
+                            <CartLineUrgency className="mt-1" flashRemainingMs={line.flashRemainingMs} lowStockText={line.lowStockText} />
                             {!line.available ? (
                               <p className="mt-1 text-[0.7rem] font-medium text-amber-800">
                                 {line.availabilityLabel}

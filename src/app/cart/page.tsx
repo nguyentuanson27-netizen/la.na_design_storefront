@@ -5,6 +5,7 @@ import { BRAND } from "@/brand";
 import { BrandCartLineControls } from "@/components/brand/cart-line-controls";
 import { BrandCartGiftPicker } from "@/components/brand/cart-gift-picker";
 import { CartLineJumpLink } from "@/components/brand/cart-line-jump-link";
+import { CartLineUrgency } from "@/components/brand/cart-line-urgency";
 import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { LinePrice } from "@/components/brand/line-price";
@@ -158,6 +159,7 @@ function render(data: CartViewModel) {
                     />
                   </p>
                   {line.paidSegments ? <p className="mt-1 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
+                  <CartLineUrgency className="mt-1.5" flashRemainingMs={line.flashRemainingMs} lowStockText={line.lowStockText} />
                   {line.available ? null : (
                     <p className="mt-1.5 text-xs font-semibold uppercase tracking-[0.12em]" data-line-problem="">
                       {`Cần xử lý: ${line.availabilityLabel}`}

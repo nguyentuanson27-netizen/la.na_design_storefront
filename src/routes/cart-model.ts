@@ -5,6 +5,7 @@ import {
 } from "../commerce/preorder-fulfillment-presentation.ts";
 import { hasQuantityTierSegment } from "../commerce/benefit-tier-segment.ts";
 import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
+import type { CartLineUrgency, CartLineUrgencyFacts } from "../commerce/storefront-cart-urgency.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
 import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
 import { buildCartGiftPickerModel, type CartGiftPickerModel } from "./cart-gift-model.ts";
@@ -65,6 +66,13 @@ export type CartLineView = Readonly<{
   paidSegments?: readonly string[];
   /** What this line costs in total (benefit-tier prices included); absent when it is not bought. */
   lineTotalText?: string;
+  /**
+   * Server-relative time left on the Flash Sale that prices this line, for its countdown. Present only
+   * on a buyable line the Flash Sale actually discounts (a struck price on screen), as on the PDP.
+   */
+  flashRemainingMs?: number;
+  /** "Còn x" for this variant, under the PDP's rule; absent when stock is not low or the claim is not true. */
+  lowStockText?: string;
 }>;
 
 export type CartViewModel = Readonly<{
@@ -105,6 +113,21 @@ export type CartViewModel = Readonly<{
    */
   savings?: Readonly<{ originalTotalText: string; savingText: string }>;
 }>;
+
+/** A line's countdown and "Còn x", said only for a line being bought, and a countdown only beside a struck price. */
+function lineUrgencyEntry(
+  line: StorefrontCartLine,
+  facts: CartLineUrgencyFacts | undefined,
+): { flashRemainingMs?: number; lowStockText?: string } {
+  if (!facts || !line.available) return {};
+  const discounted = line.price !== null && line.basePrice !== undefined && line.price < line.basePrice;
+  return {
+    ...(facts.flashRemainingMs !== undefined && discounted ? { flashRemainingMs: facts.flashRemainingMs } : {}),
+    ...(facts.lowStock !== undefined
+      ? { lowStockText: line.size ? `Size ${line.size} chỉ còn ${facts.lowStock} sản phẩm` : cartStockLimitText(facts.lowStock) }
+      : {}),
+  };
+}
 
 /** What a shopper is told when a quantity outruns stock and the count that would sell is known. */
 export function cartStockLimitText(maxQuantity: number): string {
@@ -287,6 +310,8 @@ export function buildCartViewModel(
      * see). Without it the model builds no `summary`.
      */
     shippingPolicy?: GuestShippingPolicy; shippingQuote?: ShippingQuote;
+    /** Each line's Flash Sale countdown and "Còn x", read on the server; absent where it was not read. */
+    lineUrgency?: CartLineUrgency;
   }>,
 ): CartViewModel {
   const subtotal = cartAvailableSubtotal(input.lines);
@@ -332,6 +357,7 @@ export function buildCartViewModel(
           ...(paidBenefits && paidBenefits.groups.some((group) => group.lineKey === line.variantId && group.unitPriceVnd !== line.price)
             ? { paidSegments: paidBenefits.groups.filter((group) => group.lineKey === line.variantId).map((group) => `${group.quantity} × ${currency.format(group.unitPriceVnd)}`) } : {}),
           ...lineTotalEntry(line, paidBenefits?.groups),
+          ...lineUrgencyEntry(line, input.lineUrgency?.[line.variantId]),
         }),
       ),
     ),
