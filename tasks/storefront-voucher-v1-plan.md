@@ -130,7 +130,7 @@ V20 -> V21 runbook/rollback -> H5 launch approval -> /ship separately
 ### V06 — Admin writes, lifecycle and committed budget floor
 **Intent:** Draft/publish/schedule/disable/copy with RBAC and revision, and cap edit serialized against held+consumed VND/uses.
 **Deps:** V04, V05. **Size:** M (3–4 files).
-**Likely files:** src/commerce/voucher-admin-service.ts (new), voucher-admin-input.ts (new), tests/database/voucher-admin-operations.test.ts (new), tests/database/voucher-admin-cap-race.test.ts (new).
+**Likely files:** src/commerce/voucher-admin-service.ts (new), voucher-admin-input.ts (new), tests/database/voucher-admin-operations.test.ts (new), tests/database/voucher-admin-cap-edit.test.ts (new).
 **Acceptance:** [ ] Admin RBAC/shop/lifecycle validation; [ ] cap edit rejects under used+live-held floor with shared DB lock/transaction on fixture holds; [ ] disable stops new grants but honors existing. **Real Admin-edit × checkout-hold race is V11, not completed by V06 fixture tests.**
 **Verify:** focused Admin validation/cap-edit transaction fixture tests AC-21/41/44/47; AC-45 real checkout/Admin concurrency proof waits for V11.
 
