@@ -729,6 +729,7 @@ model Cart {
   user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
   items     CartItem[]
   giftSelections CartGiftSelection[]
+  voucherSelection CartVoucherSelection?
 
   @@index([userId])
   @@index([expiresAt])
@@ -790,6 +791,9 @@ model OrderMirror {
   capacityReservations   VariantCapacityReservation[]
   preorderSnapshot       OrderPreorderSnapshot?
   quoteSnapshot          OrderQuoteSnapshot?
+  voucherAcceptance      OrderAcceptance?
+  voucherRedemptions     VoucherRedemption[]
+  voucherHolds           VoucherHold[]
 
   @@index([userId, createdAt])
   @@index([sourceCartId])
@@ -1223,4 +1227,169 @@ model ShippingPromotionCampaign {
   updatedAt         DateTime  @updatedAt @db.Timestamptz(3)
 
   @@index([pancakeShopId, isEnabled, priority, id])
+}
+
+// ---------------------------------------------------------------------------
+// Voucher v1 (SPEC-VOUCHER-001, ADR 0018). Owner-approved gates H1-D and H2 on
+// 2026-10-25. Purely additive: nothing here is read or written until the
+// LA_VOUCHER_ENABLED gate is on, and no campaign exists until an Admin creates
+// and activates one. Historical orders have no acceptance or redemption row.
+// ---------------------------------------------------------------------------
+
+enum VoucherKind {
+  MERCHANDISE
+  SHIPPING_FREE
+}
+
+enum VoucherIssuance {
+  AUTO
+  CODE
+}
+
+enum VoucherVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum VoucherDiscountType {
+  FIXED_AMOUNT_VND
+  PERCENTAGE
+}
+
+enum VoucherScopeMode {
+  ALL_SHOP
+  TARGETED
+}
+
+enum VoucherHoldState {
+  HELD
+  CONSUMED
+  RELEASED
+  EXPIRED
+}
+
+enum VoucherSelectionMode {
+  AUTO
+  MANUAL
+}
+
+/// One voucher campaign. The ledger counters are the quota/budget authority: the CHECK constraints in the
+/// migration keep `redeemed + reserved` within the caps in the database itself, so even a direct SQL cap
+/// edit below the committed floor is refused (spec §3.1 TG-05 A). Lifecycle status is derived, never stored.
+model VoucherCampaign {
+  id                     String               @id @default(cuid())
+  pancakeShopId          Int
+  name                   String
+  kind                   VoucherKind
+  issuance               VoucherIssuance
+  visibility             VoucherVisibility
+  /// Canonical code (`[A-Z0-9_-]{3,32}`), present exactly when `issuance` is CODE. Unique per shop.
+  code                   String?
+  discountType           VoucherDiscountType?
+  fixedAmountVnd         BigInt?
+  percent                Int?
+  maxDiscountVnd         BigInt?
+  minEligibleSubtotalVnd BigInt?
+  scopeMode              VoucherScopeMode
+  categoryKeys           String[]             @default([])
+  includeProductIds      String[]             @default([])
+  excludeProductIds      String[]             @default([])
+  isEnabled              Boolean              @default(false)
+  enabledAt              DateTime?            @db.Timestamptz(3)
+  disabledAt             DateTime?            @db.Timestamptz(3)
+  startsAt               DateTime?            @db.Timestamptz(3)
+  endsAt                 DateTime?            @db.Timestamptz(3)
+  revision               Int                  @default(1)
+  /// Total redemptions across all shoppers; NULL is unlimited.
+  maxUses                Int?
+  maxBudgetVnd           BigInt?
+  redeemedUses           Int                  @default(0)
+  redeemedVnd            BigInt               @default(0)
+  reservedUses           Int                  @default(0)
+  reservedVnd            BigInt               @default(0)
+  createdAt              DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime             @updatedAt @db.Timestamptz(3)
+  holds                  VoucherHold[]
+  redemptions            VoucherRedemption[]
+
+  @@unique([pancakeShopId, code])
+  @@index([pancakeShopId, isEnabled, kind, issuance, visibility])
+}
+
+/// A 10-minute entitlement for one voucher of one checkout attempt (spec §5.1). `expiresAt` is exactly
+/// `createdAt + 10 minutes` (CHECK), so the TTL cannot roll. `attemptKey` is an HMAC of the cart id, never
+/// the cart id itself. At most one live (`HELD`) hold per attempt and kind (partial unique index).
+model VoucherHold {
+  id               String             @id @default(cuid())
+  campaignId       String
+  campaignRevision Int
+  pancakeShopId    Int
+  kind             VoucherKind
+  attemptKey       String
+  quoteDigest      String
+  paidRevision     BigInt
+  /// The VND of budget this hold reserves (merchandise: D; shipping: the fee waived).
+  heldDiscountVnd  BigInt
+  state            VoucherHoldState   @default(HELD)
+  createdAt        DateTime           @default(now()) @db.Timestamptz(3)
+  expiresAt        DateTime           @db.Timestamptz(3)
+  consumedAt       DateTime?          @db.Timestamptz(3)
+  releasedAt       DateTime?          @db.Timestamptz(3)
+  orderId          String?
+  campaign         VoucherCampaign    @relation(fields: [campaignId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  order            OrderMirror?       @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  redemption       VoucherRedemption?
+
+  @@index([campaignId, state, expiresAt])
+  @@index([attemptKey, kind, state])
+}
+
+/// One consumed voucher of one accepted order (spec §5.2). Insert-only apart from the one-way refund
+/// columns; identity and amount are frozen by trigger.
+model VoucherRedemption {
+  id                String          @id @default(cuid())
+  campaignId        String
+  campaignRevision  Int
+  kind              VoucherKind
+  orderId           String
+  holdId            String          @unique
+  amountVnd         BigInt
+  websiteAcceptedAt DateTime        @db.Timestamptz(3)
+  refundedAt        DateTime?       @db.Timestamptz(3)
+  refundReason      String?
+  /// Trusted-source evidence for a refund (status mapping, admin audit id); never a guess.
+  refundEvidence    String?
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  campaign          VoucherCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  order             OrderMirror     @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  hold              VoucherHold     @relation(fields: [holdId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([orderId, kind])
+  @@index([campaignId, refundedAt])
+}
+
+/// The durable "website accepted this order" marker (ADR 0018 D-1). Insert-only: no UPDATE or DELETE path.
+/// Once it exists, the order's money and its quote rows are frozen by trigger (D-2).
+model OrderAcceptance {
+  id          String      @id @default(cuid())
+  orderId     String      @unique
+  quoteDigest String
+  acceptedAt  DateTime    @db.Timestamptz(3)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  order       OrderMirror @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+/// Cart-bound voucher intent (ADR 0018 D-5): which voucher the shopper locked per group, or an explicit NONE
+/// (`MANUAL` with a NULL id). Intent only: no money, no hold. The voucher ids are not foreign keys on purpose;
+/// a stale id is revalidated and dropped with a notice by the optimizer.
+model CartVoucherSelection {
+  cartId               String               @id
+  merchandiseMode      VoucherSelectionMode @default(AUTO)
+  merchandiseVoucherId String?
+  shippingMode         VoucherSelectionMode @default(AUTO)
+  shippingVoucherId    String?
+  expiresAt            DateTime             @db.Timestamptz(3)
+  createdAt            DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime             @updatedAt @db.Timestamptz(3)
+  cart                 Cart                 @relation(fields: [cartId], references: [id], onDelete: Cascade)
 }
