@@ -33,73 +33,62 @@ Must preserve: Flash Sale + quantity-tier pricing; D-12 ladder *last in existing
 
 **Do not infer** that previous Pancake gift/tier acceptance automatically proves voucher fixed-total allocation with every variation/quantity. Do not use OrderMirror INSERT DRAFT as website-accepted marker. Avoid reusing GQ GLOBAL_ALL_PAID_LINES where voucher ALL_SHOP+exclude is legal.
 
-## 3. Human/evidence gates (stop before dependent build)
+## 3. Human/evidence gates — design before build, verification after build
 
-| Gate | Required proof / decision | Blocked work |
+| Gate | Timing / proof | Blocks |
 | --- | --- | --- |
-| H0 — PLAN | Owner reviews and explicitly approves this plan/checkboxes. TG-05 A/TG-09/TG-10 B/TG-11 A are **already decided**, not open questions | **All /build** |
-| H1 — MONEY/POS (TG-01/02/04/06) | Reviewed local acceptance transition (immutable quote & once-only consume), deterministic VND allocation + same-variation price segments, trustworthy POS REJECTED/CANCELED/UNKNOWN mapping. Live sandbox write/probe needs **separate explicit operator approval** | V09, V13, V14, enabling order path |
-| H2 — MIGRATION/AUTH | Separate owner approval for additive VoucherCampaign/Hold/Redemption schema and any high-impact order acceptance state/API. Migration/rollback/concurrency review; don't reuse blanket spec approval | V04 and all DB writes |
-| H3 — QUOTE/HOLD (TG-03/05/11/12) | Source/tests prove fixed pre-voucher D-12 tier, signed hold-bound quote, GET/prefetch is read-only, POST idempotency, 10-minute absolute TTL, cap edits serialized | V11–V14 and checkout CTA |
-| H4 — UX (TG-07) | Owner/reviewer signs off representative Grab-style mobile/desktop picker semantics, loss-of-gift confirmation, readable disabled reasons, a11y evidence | V16–V18 sign-off |
-| H5 — SHIP (TG-08 + DoD) | Full suite, DB races, sandbox readback, browser a11y, security/PII, observability, feature-OFF parity, backout path, explicit launch go/no-go | Production enablement |
+| H0 — PLAN | Owner explicitly approves this plan. TG-05 A/TG-09/TG-10 B/TG-11 A already decided in merged spec | All implementation /build |
+| H1-D — Accepted-order / POS design | **After V00, before V09:** review durable ACCEPTED marker vs mutable DRAFT, capacity/stock reservation ordering, immutable quote, exact VND allocation across repeated variations/gifts, cancellation provenance and offline feasibility fixtures. Sandbox probes require separate operator authorization | V09 adapter implementation (V00 investigation remains possible) |
+| H1-V — POS exact-money verification | **After V09, before V12:** real canProjectExactMoney(completeQuote) implementation, deterministic rejection tests, operator-authorized Pancake sandbox write/readback with exact amount and status evidence. If permission/evidence unavailable, remain OFF with no submit-capable holds | V12 real holds and V13/V14 order path, feature enablement |
+| H2 — MIGRATION/AUTH | **After V00, before V04:** separate approval of voucher tables **plus durable website-accepted marker/immutable quote persistence** (and cart selection storage if DB-backed), migration and rollback | V04 and dependent DB writes |
+| H3-D — HOLD DESIGN | **After V00 + V10, before V11:** review lock ordering, 10-minute TTL, self-held expiry precedence, GET read-only/POST CSRF-idempotency, proof binding and POS-feasibility order. Design sign-off, not runtime test claim | V11 design implementation |
+| H3-V — HOLD VERIFICATION | **After V11 + V12, before V13/checkout exposure:** DB+browser evidence for quota/budget/admin cap races, natural expiry/T+10, prefetch/GET no mutation, buyer POST idempotency, signed hold proof and infeasible candidate no-hold | V13, buyer-visible V18 integration and activation |
+| H4 — UX | Review Grab-style picker, gift-loss confirmation, mobile/desktop a11y; working UI evidence before final V16–V18 UX sign-off | UI sign-off, not mock/component authoring |
+| H5 — SHIP | **After V20 and V21:** full CI, DB/browser/approved POS, observability, security, rollback dossier and owner go/no-go | Production enablement only, not V21 preparation |
 
-**No production writes or deploy in this plan.** Stop a dependent slice when its gate lacks evidence; don't weaken amount/proof/ship correctness to obtain a green build.
+**No circular gates:** H1-D/H3-D precede their implementation; H1-V/H3-V are produced by V09/V12 and gate downstream checkout; H5 follows V21. A sandbox probe is never authorized merely by approving this plan.
+
+**Candidate feasibility invariant (AC-20/TG-02):** V03 defines a typed feasibility-filter interface; V08 exposes a preview-only injection seam (no trusted hold/submit capability). V09 implements canProjectExactMoney(completeQuote) for the actual Pancake paid segments/quantity, gift offset and shipping. **Before V12 issues either submit-capable proof or hold**, the server uses this verified predicate for each voucher combination; AUTO excludes infeasible combinations, manual lock receives an explicit unavailable/reconfirm response. **No quota/budget hold and no POS write** for infeasible money. The client never becomes the pricing authority.
+
+**No production writes or deploy in this plan.** Without an evidence gate, dependent functionality stays OFF even if source/tests can still be prepared.
 
 ## 4. Dependency graph and incremental slices
 
 ~~~text
-Merged PR #212 + owner product decisions
-    |
-    V00 architecture / POS-readback design --------> H1/H2 approval
-    |                                                   |
-    +-- V01 scope/rule validation -> V02 money -----+    |
-    |                                               V03 optimize
-    |                                                   |
-    +---------------> V04 additive DB + flag --------> V05 campaign reads
-                         |                                |
-                         +------------------------------> V06 admin writes -> V07 admin UI
-                                                          |
-                        V02 + V03 + V05 ----------------> V08 quote composition
-                                                          |
-                                 H1 --> V09 POS adapter <--+
-                                          |
-                                 V08 --> V10 proof/snapshot
-                                          |
-                                 V04 + V10 --> V11 hold ledger
-                                                    |
-                                                V12 POST hold
-                                                    |
-                                 V09 + V12 --> V13 website accepted order
-                                                    |
-                                                V14 cancel/reconcile
-                                V05 + V08 --> V15 picker model
-                                                   |
-                                                V16 picker UI
-                                               /            \
-                                           V17 PDP/cart   V18 checkout
-                                              \          /
-                                            V19 marketing link
-                                                   |
-                            V07 + V13 + V14 + V16–V19 --> V20 convergence QA
-                                                         |
-                                                     V21 release/rollback pack
+Spec PR #212 + H0 -> V00 (accepted state, POS, DB, selection design)
+V00 -> H1-D -> V09 adapter (also needs V02/V08) -> H1-V
+V00 -> H2 -> V04 voucher + accepted-marker persistence
+V00 -> V01 -> V02 money -> V03 optimizer / POS feasibility seam
+V04 + V01 -> V05 candidates -> V06 Admin edits -> V07 Admin UI
+V02 + V03 + V05 -> V08 canonical preview quote
+V04 + V08 -> V10 signed proof/snapshot -> H3-D
+V04 + V05 + V06 + V10 + H3-D -> V11 atomic hold / real admin race
+V09 + H1-V + V10 + V11 -> V12 feasible POST hold -> H3-V
+V04 + V09 + V11 + V12 + H1-V + H3-V -> V13 accepted order -> V14 cancel
+V03 + V05 + V08 -> V15 picker model + cart-bound selection/CODE POST
+V15 -> V16 picker -> V17 PDP/cart (also V15)
+V08 + V12 + V13 + V15 + V16 + H3-V -> V18 checkout UI
+V05 + V15 + V17 -> V19 safe marketing link
+V07 + V09 + V13 + V14 + V16 + V17 + V18 + V19 -> V20 QA
+V20 -> V21 runbook/rollback -> H5 launch approval -> /ship separately
 ~~~
 
-**Slices / potential implementation PRs:** (A) V00–V03 pure/evidence, (B) V04–V07 schema/admin behind OFF, (C) V08–V10 quote+POS proof behind OFF, (D) V11–V14 transactional checkout, (E) V15–V19 UX/marketing, (F) V20–V21 QA/ship. Split these further when ownership/risk demands. Each PR must carry its direct tests; never leave an independently mergeable money-affecting path unguarded.
+**Invariant ordering:** H1-V is produced after V09 and consumed by V12; H3-V is produced after V12 and consumed by V13/V18; H5 is produced after V21. V06 tests Admin cap edits against fixture holds; only V11 tests live V06 service racing with real voucher grants (AC-45). V12 never grants a voucher that V09 cannot project exactly.
 
-**Reviewability:** ADR 0005 controls effective changed-line scope; <=300 lines preferred, 301–500 usually fine for one concern, >800 generally split. Likely file counts below are **estimates**, not arbitrary hard gates.
+**Slices / potential implementation PRs:** (A) V00–V03 architecture/pure, (B) V04–V07 schema/Admin behind OFF, (C) V08–V10 preview+vendor proof behind OFF, (D) V11–V14 transactional checkout, (E) V15–V19 UI/selection/marketing, (F) V20–V21 QA/runbook. Split V15 selection service and picker model into separate small PRs when needed. Keep direct tests with each code slice, never merge a money-affecting active path before its gates.
+
+**Reviewability:** ADR 0005 recommends <=300 effective changed lines, 301–500 for one concern usually okay and >800 split. File counts below are estimates, not permission for unrelated refactors.
 
 ## 5. Task cards (all NOT STARTED)
 
 ### Phase A — high-risk gates and pure logic
 
 ### V00 — Lock architecture and vendor/cancellation evidence plan
-**Intent:** Review accepted-marker vs DRAFT, atomic hold→consume, immutable quote, POS exact discount projection and authoritative cancel statuses; document rollback and test boundaries before migration.
-**Deps:** none. **Size:** S/M (2 files). **Gate:** H0/H1 for later tasks.
+**Intent:** Define durable website ACCEPTED state (distinct from mutable DRAFT and Pancake CONFIRMED), quote immutability, capacity-reservation→voucher-consume transaction, POS exact-money fixtures, trusted cancellation and cart-bound selection storage before schema approval.
+**Deps:** none (H0 authorizes /build). **Size:** S/M (2 files). **Produces:** H1-D, H2 proposal and H3-D architecture input.
 **Likely files:** docs/decisions/<new-voucher-architecture-adr>.md (new); docs/integrations/pancake-voucher-acceptance.md (new).
-**Acceptance:** [ ] ADR diagrams state transitions and backfill/version compatibility; [ ] vendor fixtures list discount/quantity/gift+paid segments and readback; [ ] status unknown/reject/cancel mapping and operator-approval boundary are explicit.
-**Verify:** ADR reviewer + product owner review; offline sample math & readback test design; **no live POS probe** until separately authorized.
+**Acceptance:** [ ] State/transaction design puts successful stock reservation before local accepted+consume and guarantees stock failure ⇒ no accepted marker, no consumed voucher, no POS write; [ ] specify accepted-marker and immutable-quote DB constraints/backward compatibility for V04; [ ] offline POS exact allocation/status fixtures, cart selection storage, rollback and operator probe authorization boundary.
+**Verify:** architecture/H1-D reviewer + owner H2 review of state machine/transaction failure cases and offline money fixtures. No live POS probe until separately authorized; H1-V evidence comes from V09.
 
 ### V01 — Scope, issuance and campaign validation
 **Intent:** Pure rules for ALL_SHOP+exclude and TARGETED=(category OR include) AND NOT exclude; public/code-only behavior and threshold/config bounds.
@@ -116,20 +105,20 @@ Merged PR #212 + owner product decisions
 **Verify:** focused money domain tests and existing order-subtotal-tier regression tests.
 
 ### V03 — Combined optimizer, gift loss, shipping stacking
-**Intent:** Evaluate NONE/MERCHANDISE/SHIPPING_FREE combinations using same pre-voucher snapshot; recompute existing shipping campaign per merchandise candidate and gift eligibility after discount.
+**Intent:** Evaluate voucher/NONE combinations on a single pre-voucher snapshot, recompute gift/shipping, honor manual locks and accept a typed POS-feasibility predicate so an impossible-to-project voucher never wins AUTO.
 **Deps:** V02. **Size:** M (3–4 files).
 **Likely files:** src/commerce/voucher-optimizer.ts (new), voucher-shipping.ts (new), tests/domain/voucher-optimizer.test.ts (new), voucher-shipping.test.ts (new).
-**Acceptance:** [ ] EX-01 picks 600K not 610K; [ ] EX-06 auto NONE when non-stack freeship would make payable 120K; [ ] TG-09 tie preserves gift and valid manual NONE/locks survive.
+**Acceptance:** [ ] EX-01 chooses 600K, EX-06 chooses NONE when non-stack shipping raises total, TG-09 gift-preserving tie; [ ] injected infeasible candidate excluded from AUTO and manual choice reported as unavailable (real adapter V09); [ ] manual NONE remains pinned.
 **Verify:** focused domain tests, existing tests/domain/shipping-campaign.test.ts if present; verify AC-01..04/08..10/29/30/36.
 
 ### Phase B — additive storage and Admin
 
 ### V04 — Additive Voucher persistence and OFF flag
-**Intent:** New shop-scoped campaign/hold/redemption tables, indexes/checks, revision fields, TTL/ledger constraints; default-OFF independent of existing promotion gates.
+**Intent:** Add shop-scoped VoucherCampaign/Hold/Redemption **and V00/H2-approved durable website-accepted marker + immutable accepted quote protection**; cart-bound selection persistence when DB-backed; feature default OFF and historical order compatibility.
 **Deps:** V00, H2. **Size:** M (4–5 files).
-**Likely files:** prisma/schema.prisma, prisma/migrations/<new-voucher-additive>/migration.sql (new), src/commerce/voucher-gate.ts (new), tests/database/voucher-schema.test.ts (new), tests/domain/voucher-gate.test.ts (new).
-**Acceptance:** [ ] migration additive/no legacy rewrite; [ ] unique order/kind redemption and campaign/code per shop; [ ] OFF does not block settling holds already granted or legacy pricing.
-**Verify:** pnpm prisma:validate; pnpm prisma:generate; focused DB/schema and flag tests, rollback/compatibility review. **Do not apply migration without owner H2.**
+**Likely files:** prisma/schema.prisma, prisma/migrations/<new-voucher-additive>/migration.sql (new), src/commerce/voucher-gate.ts (new), tests/database/voucher-schema.test.ts (new), tests/domain/voucher-gate.test.ts (new). Split accepted-marker migration into an H2-approved focused sub-PR if needed, **before V13**, never leave storage responsibility to V13.
+**Acceptance:** [ ] additive accepted marker (column/state/record chosen by V00) and DB-enforced immutable accepted quote; [ ] unique redemption/holds and scoped campaign/code constraints; [ ] DRAFT remains mutable, historical orders safe, flag OFF still settles previously held vouchers.
+**Verify:** pnpm prisma:validate; pnpm prisma:generate; tests for DRAFT-vs-ACCEPTED immutability, migration compatibility/rollback and flag OFF; **do not apply migration without owner H2**.
 
 ### V05 — Shop-scoped candidate and quota read model
 **Intent:** Bounded active PUBLIC lookup and explicit PRIVATE/CODE validation; dynamic scope and time/revision, no secret code exposure, idempotent reads only.
@@ -142,8 +131,8 @@ Merged PR #212 + owner product decisions
 **Intent:** Draft/publish/schedule/disable/copy with RBAC and revision, and cap edit serialized against held+consumed VND/uses.
 **Deps:** V04, V05. **Size:** M (3–4 files).
 **Likely files:** src/commerce/voucher-admin-service.ts (new), voucher-admin-input.ts (new), tests/database/voucher-admin-operations.test.ts (new), tests/database/voucher-admin-cap-race.test.ts (new).
-**Acceptance:** [ ] server role/shop guard and publish validation; [ ] cannot lower maxUses/maxBudget below used-not-refunded+valid holds, incl concurrent checkout; [ ] disable/emergency OFF prevents NEW grants but does not revoke 10-min holds.
-**Verify:** focused DB race tests AC-21/41/44/45/47 + existing admin baseline.
+**Acceptance:** [ ] Admin RBAC/shop/lifecycle validation; [ ] cap edit rejects under used+live-held floor with shared DB lock/transaction on fixture holds; [ ] disable stops new grants but honors existing. **Real Admin-edit × checkout-hold race is V11, not completed by V06 fixture tests.**
+**Verify:** focused Admin validation/cap-edit transaction fixture tests AC-21/41/44/47; AC-45 real checkout/Admin concurrency proof waits for V11.
 
 ### V07 — Admin voucher campaign UI
 **Intent:** Minimal campaign form/list/status/cap usage and validation feedback under existing Admin promotion area.
@@ -155,17 +144,17 @@ Merged PR #212 + owner product decisions
 ### Phase C — authoritative quote, proof, POS
 
 ### V08 — Integrate voucher into canonical benefit checkout quote
-**Intent:** Resolve pre-voucher stack once, apply optimized scoped discount, recompute gift and shipping (TG-10 B); preserve legacy and flag-OFF behavior.
+**Intent:** Produce canonical pre-voucher→voucher→gift/shipping quote plus typed POS feasibility injection; until V09/H1-V, only **read-only preview behind OFF**, never submit-capable voucher proof.
 **Deps:** V02, V03, V05. **Size:** M (3–4 files).
 **Likely files:** src/commerce/voucher-quote.ts (new), src/commerce/benefit-checkout-quote.ts, tests/domain/voucher-quote.test.ts (new), tests/database/voucher-order-subtotal-checkout.test.ts (new).
-**Acceptance:** [ ] quote pricing follows TG-11 A; [ ] selected gift-loss gets warning/needs confirmation, not silent deletion; [ ] shipping stacking checked for EACH combination and totals identical across quote/summary.
+**Acceptance:** [ ] TG-11 A tier-first, gift consent and per-combination shipping/total parity; [ ] fail-closed feasibility seam for later V09 adapter, no submit-capable quote when the adapter is absent/unverified.
 **Verify:** focused tests AC-05/08/09/22/28/39/46, existing benefit quote/domain regression, flag-OFF parity.
 
 ### V09 — POS line-level voucher adapter and acceptance gate
-**Intent:** Deterministically allocate money into vendor paid lines, preserve gift projection D-08 1.000đ offset and readback hash without a second price authority.
-**Deps:** V02, V08, H1. **Size:** M (3–4 files).
+**Intent:** Implement deterministic canProjectExactMoney(completeQuote) for real Pancake quantity/line/variation/gift/shipping facts and return a typed fail-closed result; this is the sole vendor representation used for quote authorization.
+**Deps:** V02, V08, H1-D. **Size:** M (3–4 files). **Produces H1-V** after tests and operator-authorized readback.
 **Likely files:** src/commerce/pancake-voucher-projection.ts (new), src/commerce/pancake-order-submit.ts, tests/domain/pancake-voucher-projection.test.ts (new), tests/integrations/pancake-voucher-contract.test.ts (new).
-**Acceptance:** [ ] exact D and gift offset even on repeated variations/split segments; [ ] infeasible representation fails closed with typed error; [ ] separate operator-authorized sandbox evidence for API-level exact totals before enabling.
+**Acceptance:** [ ] exact VND distribution for repeated variations, quantities, shipping and gift 1.000đ projection; [ ] impossible vendor allocation returns infeasible and no eligible hold; [ ] operator-approved Pancake sandbox write/readback or H1-V remains blocked.
 **Verify:** domain/integration fixtures, existing pancake-gift-projection tests; operator-controlled sandbox probe/readback (not in CI; explicit authorization required).
 
 ### V10 — Quote proof, immutable snapshot and versioning
@@ -178,68 +167,68 @@ Merged PR #212 + owner product decisions
 ### Phase D — holds, website acceptance and reconciliation
 
 ### V11 — Atomic 10-minute holds with quota and budget
-**Intent:** Transactional issue/reuse/swap/expire/release for up to two groups, with deterministic lock order and non-rolling 10-minute TTL.
-**Deps:** V04, V05, V10. **Size:** M (3 files).
+**Intent:** Implement atomic two-group 10-minute holds and consistent budget/usage lock order with V06 Admin edit; real V06×V11 concurrency tested here, not prematurely in V06.
+**Deps:** V04, V05, V06, V10, H3-D. **Size:** M (3 files). H3-V is produced after V12, not a prerequisite.
 **Likely files:** src/commerce/voucher-hold-repository.ts (new), voucher-hold-service.ts (new), tests/database/voucher-hold-races.test.ts (new).
-**Acceptance:** [ ] quota=1 concurrent holds never oversubscribe; [ ] self-held quota=0 still honors same cart/proof through natural expiry; [ ] reload/swap/expiry exactly T+10 and cap edit races safe.
-**Verify:** DB concurrency tests AC-14..16/31..34/44..45/47, transaction failure injection and ledger audit.
+**Acceptance:** [ ] quota=1 never oversubscribed; self-held natural expiry/quota=0 honored until absolute T+10, no rolling renew; [ ] concurrent V06 Admin edit plus V11 grant never breaches cap/invalidates existing hold.
+**Verify:** real DB/Admin-grant race tests AC-14..16/31..34/44..45/47, injected transaction failures and ledger consistency.
 
 ### V12 — Explicit buyer-initiated POST hold, read-only GET/prefetch
-**Intent:** Separate preview render from side-effecting checkout hold in server action/POST; bind proof to granted hold, no extra forced checkout step.
-**Deps:** V10, V11. **Size:** M (3–4 files).
+**Intent:** Accept buyer-initiated POST only; **V09 exact-money predicate must pass BEFORE issuing hold or submit-capable quote proof**. GET/prefetch remain read-only, client cannot assert money.
+**Deps:** V09, V10, V11, H1-V. **Size:** M (3–4 files). Produces H3-V after browser/DB proof, not blocked by H3-V.
 **Likely files:** src/commerce/voucher-checkout-actions.ts (new), voucher-public-actions.ts (new), src/routes/checkout.ts, tests/integrations/voucher-checkout-hold.test.ts (new).
-**Acceptance:** [ ] GET/RSC/prefetch/refresh never mutate holds; [ ] POST with CSRF/cart/attempt and idempotency grants/reuses once; [ ] first checkout click or submit may grant while quote change requires explicit reconfirmation.
-**Verify:** focused integration tests and production-mode browser/network trace of prefetch vs POST AC-42/43; don't claim test passed without runtime.
+**Acceptance:** [ ] GET/RSC/prefetch/reload cannot hold or renew TTL; [ ] POST CSRF/idempotency grants only when verified V09 feasibility succeeds; [ ] impossible quantity/line allocation ⇒ no hold/budget/proof/POS write, AUTO recomputes, manual needs explicit reconfirm; [ ] retry returns same hold, quote changes reconfirm.
+**Verify:** domain/DB/integration test infeasible vendor candidate→zero reservation and no submit proof (AC-20) + production-mode Next Link prefetch/POST evidence (AC-42/43); then H3-V review.
 
 ### V13 — Atomic website accepted order and once-only voucher consume
-**Intent:** Add local accepted marker distinct from DRAFT, consume held vouchers and persist immutable quote/order/vendor facts atomically before POS confirmation.
-**Deps:** V09, V11, V12, H1. **Size:** M (4–5 files).
+**Intent:** Consume voucher and freeze quote/order at V04's **already persisted** local accepted marker, after successful capacity reservation and before remote POS confirmation.
+**Deps:** V04, V09, V11, V12, H1-V, H3-V. **Size:** M (4–5 files).
 **Likely files:** src/commerce/voucher-order-acceptance.ts (new), src/commerce/guest-checkout-submit.ts, src/commerce/guest-checkout-snapshot.ts, src/commerce/guest-checkout-submit-runtime.ts, tests/database/voucher-order-acceptance.test.ts (new).
-**Acceptance:** [ ] 2 tabs/retries/price drift do not double consume; [ ] accepted order never re-priced via DRAFT retry; [ ] POS pending/unknown does not trigger premature refund or confirmed purchase analytics.
-**Verify:** DB acceptance/retry/ABA tests AC-17/18/38 and existing guest-checkout snapshot/concurrency tests.
+**Acceptance:** [ ] accepted marker + immutable quote and voucher consume atomic on verified quote **after stock reservation succeeds**; stock reservation failure/rollback ⇒ no acceptance/consumption/POS write; [ ] retries/2 tabs cannot double consume/reprice accepted orders; [ ] POS UNKNOWN doesn't refund/publish purchase prematurely.
+**Verify:** DB crash/capacity failure/retry/ABA/2-tab acceptance tests AC-17/18/38 plus existing guest capacity/quote regression suite.
 
 ### V14 — POS reconciliation, verified cancel and refund once
 **Intent:** Refund used quota/budget on trusted definitive reject or cancel, including post-fulfillment, without interpreting SYNC_UNKNOWN/timeout as absent order.
-**Deps:** V13, H1. **Size:** M (3–4 files).
+**Deps:** V13, H1-V. **Size:** M (3–4 files).
 **Likely files:** src/commerce/voucher-redemption-service.ts (new), src/commerce/pancake-order-status-reconciliation.ts, src/commerce/pancake-order-reconciliation.ts, tests/database/voucher-redemption-reconciliation.test.ts (new).
 **Acceptance:** [ ] duplicate/out-of-order cancel and definitive reject refund once; [ ] UNKNOWN stays pending and alertable; [ ] refund after campaign expiry never reactivates it, history unchanged.
 **Verify:** DB/reconciliation tests AC-18/19/27 and trust-source/status mapping review.
 
 ### Phase E — buyer UX and marketing
 
-### V15 — Server picker view model, shortfall and selection locks
-**Intent:** Read-only view model of 2 groups with eligible/near-threshold/disabled reasons, actual savings, gift-loss preview and pinned manual NONE/CODE.
+### V15 — Picker model + cart-bound selection and CODE validation
+**Intent:** Build two-group picker view model **and cart-owned server selection state** (AUTO/manual/NONE/CODE). CSRF-protected, throttled code-validation POST stores manual choice **without any hold**, survives cart→checkout and reload, and never accepts browser money.
 **Deps:** V03, V05, V08. **Size:** S/M (3 files).
-**Likely files:** src/routes/voucher-picker-model.ts (new), src/commerce/voucher-preview.ts (new), tests/domain/voucher-picker-model.test.ts (new).
-**Acceptance:** [ ] scoped shortfall never uses whole-cart ineligible goods; [ ] PRIVATE not listed before validated code; [ ] auto best combo but manual persists until invalid with announcement.
-**Verify:** focused domain tests AC-01/04/11/13/36/37.
+**Likely files:** src/routes/voucher-picker-model.ts (new), src/commerce/voucher-selection-service.ts (new), src/commerce/voucher-selection-actions.ts (new), tests/domain/voucher-picker-model.test.ts (new), tests/integrations/voucher-selection.test.ts (new). If >5 files, split service + view model into two small PRs.
+**Acceptance:** [ ] scoped shortfall and PRIVATE disclosure; [ ] persisted manual voucher/NONE/validated CODE across PDP/cart/checkout/reload until invalid; [ ] invalid/guessed codes rate-limited, cart/shop isolated; selection actions never grant quota/budget.
+**Verify:** domain/integration action tests AC-01/04/11/13/26/36/37 incl reload, cart switch, invalid PRIVATE, manual NONE and no-hold security.
 
 ### V16 — Responsive Grab-inspired picker component
-**Intent:** Mobile full-screen and desktop panel/dialog, 2 radios incl NONE, input code, readable disabled cards and sticky "Áp dụng • N ưu đãi".
+**Intent:** Responsive Grab-style picker and code input wired to **V15 server-owned validated selection actions**, with two group radios, NONE, disabled reasons and sticky apply footer.
 **Deps:** V15. **Size:** M (3 files).
 **Likely files:** src/components/brand/voucher-picker.tsx (new), src/components/brand/voucher-card.tsx (new), tests/a11y-runtime/voucher-picker.spec.ts (new).
-**Acceptance:** [ ] focus trap/restore, keyboard, AA contrast, 44px targets, reasons not just grey; [ ] footer commits only after server response; [ ] cancel/back keeps original selection.
+**Acceptance:** [ ] keyboard/focus/contrast/touch-target a11y; [ ] V15 action response governs selection commit and failure, not client-only state; [ ] cancel/back preserves choice, picker preview never holds quota.
 **Verify:** browser a11y/visual checks mobile/desktop AC-12/26; Playwright only where runtime exists.
 
 ### V17 — PDP/cart teaser and picker entry points
 **Intent:** Small relevant PDP teaser, one cart block with applied savings/progress, no duplicated promotion bars or broken sticky checkout.
 **Deps:** V15, V16. **Size:** M (3–4 files).
 **Likely files:** src/routes/product.ts, src/routes/cart-model.ts, src/app/cart/page.tsx, tests/domain/voucher-entry-points.test.ts (new).
-**Acceptance:** [ ] no unconditional eligibility before variant/cart; [ ] one consistent cart/checkout offer summary; [ ] no fake benefit claims, no hold on render.
+**Acceptance:** [ ] no fake eligibility/duplicate banners; [ ] PDP/cart operate on V15 selection state used in checkout; [ ] no hold on page render and no sticky CTA regression.
 **Verify:** domain + browser PDP/cart smoke, mobile scroll/sticky CTA.
 
 ### V18 — Checkout UI and explicit gift-loss confirmation
 **Intent:** Show selected vouchers vs preview holds; apply/undo selection while preserving guest COD fields and saved gift choices.
-**Deps:** V08, V12, V13, V16. **Size:** M (4–5 files).
+**Deps:** V08, V12, V13, V15, V16, H3-V. **Size:** M (4–5 files).
 **Likely files:** src/app/checkout/page.tsx, src/routes/checkout-model.ts, src/commerce/cart-gift-selection-actions.ts, tests/domain/voucher-gift-confirmation.test.ts (new), tests/a11y-runtime/checkout-voucher.spec.ts (new).
-**Acceptance:** [ ] preview warns and does not silently delete gift; confirm updates gift/voucher atomically and reissues quote; [ ] expiry/fee increase/manual override require buyer acknowledgment without clearing form.
+**Acceptance:** [ ] voucher/gift preview never silently removes gift; [ ] checkout reads V15 persisted manual/NONE/CODE choice and runs V12 only with H1-V/H3-V; [ ] price/ship increases require consent while COD form remains intact.
 **Verify:** targeted domain + browser scenarios AC-08/26/35/42/43 and checkout benefit regressions.
 
 ### V19 — Safe KOL/code redemption links
-**Intent:** Capture bounded code as untrusted server intent, redirect/clean URL before GTM/Meta, persist without leaking raw private code or quote/hold token.
+**Intent:** Handle KOL/PRIVATE deep links by sanitizing the URL before analytics and invoking **the same V15 code validation/selection action**, not a duplicate code store.
 **Deps:** V05, V15, V17. **Size:** S/M (3 files).
 **Likely files:** src/commerce/voucher-marketing-link.ts (new), src/routes/product.ts, tests/integrations/voucher-marketing-link.test.ts (new).
-**Acceptance:** [ ] private code only materializes after validated input and then pins selection; [ ] referrer/analytics never receive the code query; [ ] rate-limit guessing/replay and ensure shop/session isolation.
+**Acceptance:** [ ] V15 action validates/locks PRIVATE code per cart; [ ] raw URL code absent from referrer/tracking; [ ] guessed/replayed codes rate-limited with shop isolation.
 **Verify:** integration/browser network/referrer tests AC-13/40 and security review.
 
 ### Phase F — verification, operations and release gates
@@ -248,14 +237,14 @@ Merged PR #212 + owner product decisions
 **Intent:** Prove quote/render/signed submit/order/POS consistency, failure paths, DB races and whole-flow UX, without Mức 1 session tracking or secrets.
 **Deps:** V07, V09, V13, V14, V16, V17, V18, V19. **Size:** M (3–4 verification files per PR; split suites if larger).
 **Likely files:** tests/integrations/voucher-checkout-convergence.test.ts (new), tests/database/voucher-invariants.test.ts (new), tests/a11y-runtime/voucher-checkout.spec.ts (new), docs/verification/storefront-voucher-v1.md (new).
-**Acceptance:** [ ] AC-01..47 each has named evidence; [ ] fail-closed, rate limit, privacy, flag-OFF and valid-held-while-OFF cases; [ ] audit quote/POS totals, admin cap/hold race and latency baseline.
+**Acceptance:** [ ] AC-01..47/TG-01..12 + H1-V/H3-V have named runtime evidence; [ ] vendor infeasible→no hold, stock failure→no consume, Admin cap race, CODE/NONE persistence and OFF-with-hold tested; [ ] quote/POS money parity and performance baseline.
 **Verify:** pnpm test:domain; pnpm test; pnpm test:db; pnpm prisma:validate; pnpm prisma:generate; pnpm typecheck; pnpm lint; pnpm build; Playwright/browser/a11y; operator-authorized vendor acceptance.
 
 ### V21 — Production readiness and rollback packet (NOT automatic launch)
 **Intent:** Record staged rollout, feature flags, reconciliation operations, counters, rollback and human go/no-go; **do not** enable or deploy as part of this task without new permission.
-**Deps:** V20, H5. **Size:** S (2–3 docs).
+**Deps:** V20. **Size:** S (2–3 docs). Produces H5 readiness packet; H5 is reviewed AFTER V21.
 **Likely files:** docs/operations/storefront-voucher-runbook.md (new), docs/verification/storefront-voucher-v1.md, tasks/storefront-voucher-v1-todo.md.
-**Acceptance:** [ ] kill switch stops NEW holds yet continues existing accepted/held settlement; [ ] refund/reconciliation runbook and alerts for UNKNOWN/budget anomalies; [ ] exact-head CI, security review, owner sign-off and production rollback plan recorded.
+**Acceptance:** [ ] stop NEW holds while settling existing; [ ] UNKNOWN/refund alerts and reconciliation runbook; [ ] rollback/CI/security evidence assembled for subsequent H5 owner go/no-go without claiming release permission.
 **Verify:** human release checklist/DoD, migration rollback dry-run and staging operator evidence; separate /ship approval required.
 
 ## 6. Test coverage / acceptance traceability
@@ -267,8 +256,8 @@ Merged PR #212 + owner product decisions
 | AC-08..10 | V03, V08, V18 |
 | AC-11..13 | V05, V15, V16, V19 |
 | AC-14..16 | V11, V12 |
-| AC-17..19 | V13, V14 |
-| AC-20..22 | V08, V09, V10, V14 |
+| AC-17..19 | V04, V13, V14 |
+| AC-20..22 | V03, V08, V09, V10, V12, V14 |
 | AC-23..25 | V04, V05, V08, V10, V11, V12 |
 | AC-26..28 | V09, V14, V18 |
 | AC-29..30 | V03, V08 |
@@ -276,7 +265,7 @@ Merged PR #212 + owner product decisions
 | AC-35..37 | V01, V03, V15, V18 |
 | AC-38..39 | V08, V13 |
 | AC-40..41 | V06, V11, V19 |
-| AC-42..43 | V12, V18 |
+| AC-42..43 | V09, V12, V18 |
 | AC-44..45 | V06, V11 |
 | AC-46..47 | V02, V08, V11, V20 |
 
@@ -284,12 +273,12 @@ Merged PR #212 + owner product decisions
 
 ## 7. Checkpoints and no-shortcuts
 
-- **C0 (before /build):** Owner approves **this plan**, architecture gate H1 and migration boundary H2 have named reviewers. All V00..V21 remain unchecked until real evidence exists.
+- **C0 (before /build):** H0 owner sign-off and H1-D/H2 reviewer assigned; H1-D/H2/H3-D reached only after their prerequisite designs, no gates pre-checked.
 - **C1 (after V02–V05):** Scope, VND math, TG-11 A and flag-OFF regression covered; DB schema approved/validated before new write paths.
-- **C2 (after V08–V10):** One server quote, gift/shipping/legacy parity, exact POS contract and signed proof in staging; vendor unsupported cases remain blocked.
-- **C3 (after V11–V14):** Holds and website acceptance/remission exactly once; T+10 boundary, cancelled/unknown and 2-tab races; no GET/prefetch mutation.
+- **C2 (after V09–V10):** H1-V exact POS write/readback and vendor feasibility evidence; V12 remains OFF if unsupported/unauthorized.
+- **C3 (after V11–V14):** H3-V after V12 proves hold/POST/preflight concurrency; V13 stock failure cannot consume voucher, V14 handles refunds/UNKNOWN.
 - **C4 (after V15–V19):** Grab-like UX, gift-loss confirmation, buyer form retained, KOL URL sanitized; accessibility/browser evidence.
-- **C5 (after V20):** Full tests + security/POS/observability evidence, review findings closed; **no deployment before separate release decision**.
+- **C5 (after V21):** V20 QA and V21 rollback packet complete; **then** H5 owner launch go/no-go; no earlier deploy.
 
 **Every implementation PR:** RED regression test where behavior changes → small implementation → focused tests → full relevant suite → security/architecture review → exact-head CI evidence; record command/output and no unresolved Critical/Required. Do not mark TODO checked from code presence alone.
 
