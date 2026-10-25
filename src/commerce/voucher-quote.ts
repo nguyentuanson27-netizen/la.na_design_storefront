@@ -66,6 +66,12 @@ export type VoucherQuoteInput = Readonly<{
   heldCampaignIds?: ReadonlySet<string>;
   /** Injected POS exact-money predicate (V09). Absent means not wired: the quote stays preview-only. */
   isFeasible?: (evaluation: EvaluatedCombination) => boolean;
+  /**
+   * The same predicate, handed the lines exactly as the POS would receive them for that combination (the
+   * chosen voucher's allocation already applied). Prefer this over `isFeasible`: the caller cannot get the
+   * allocation wrong, and the vendor check runs on the very lines the quote prices.
+   */
+  isFeasibleOnLines?: (args: Readonly<{ evaluation: EvaluatedCombination; linesAfterVoucher: readonly VoucherPaidLine[] }>) => boolean;
 }>;
 
 export type VoucherQuote =
@@ -125,7 +131,7 @@ function byId<T extends { id: string }>(left: T, right: T): number {
 }
 
 export function buildVoucherQuote(input: VoucherQuoteInput): VoucherQuote {
-  const { lines, existingOtherPromotions, campaignShippingFeeVnd, isFeasible } = input;
+  const { lines, existingOtherPromotions, campaignShippingFeeVnd } = input;
   const selectionIntent = input.selection ?? AUTO_SELECTION;
   const held = input.heldCampaignIds ?? new Set<string>();
   const campaigns = [...input.campaigns].sort(byId);
@@ -165,6 +171,12 @@ export function buildVoucherQuote(input: VoucherQuoteInput): VoucherQuote {
     const quote = merchandiseQuotes.get(merchandiseId);
     return quote !== undefined && quote.ok ? quote.allocation : null;
   };
+  const isFeasible: ((evaluation: EvaluatedCombination) => boolean) | undefined =
+    input.isFeasible === undefined && input.isFeasibleOnLines === undefined
+      ? undefined
+      : (evaluation) =>
+          (input.isFeasible?.(evaluation) ?? true) &&
+          (input.isFeasibleOnLines?.({ evaluation, linesAfterVoucher: applyAllocationToLines(lines, allocationOf(evaluation.merchandiseId)) }) ?? true);
   const scopeSubtotalAfter = (shippingId: string, merchandiseId: string | null) =>
     shippingScopeSubtotalAfterMerchandise({ lines, resolver: resolverOf.get(shippingId)!, merchandise: allocationOf(merchandiseId) });
 

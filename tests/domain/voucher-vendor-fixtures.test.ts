@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { allocateMerchandiseDiscount, type VoucherPaidLine } from "../../src/commerce/voucher-allocation.ts";
-import { projectBenefitQuoteForVendor, type ProjectionLine } from "../../src/commerce/pancake-gift-projection.ts";
+import { canProjectExactMoney } from "../../src/commerce/pancake-voucher-projection.ts";
+import { applyAllocationToLines } from "../../src/commerce/voucher-quote.ts";
 
 /**
  * Offline POS fixtures (V00 / docs/integrations/pancake-voucher-acceptance.md).
@@ -24,17 +25,16 @@ const line = (lineId: string, pancakeVariationId: string, quantity: number, unit
 function projectVoucherCart(lines: readonly SourceLine[], discountVnd: number, gifts: readonly { pancakeVariationId: string; quantity: number }[] = []) {
   const allocated = allocateMerchandiseDiscount({ lines, resolver: () => true, discountVnd });
   assert.equal(allocated.ok, true, JSON.stringify(allocated));
-  const projectionLines: ProjectionLine[] = [];
-  for (const entry of (allocated as { allocation: { lines: readonly { lineId: string; segments: readonly { quantity: number; unitPriceVnd: number }[] }[] } }).allocation.lines) {
-    const source = lines.find((candidate) => candidate.lineId === entry.lineId)!;
-    entry.segments.forEach((segment, index) =>
-      projectionLines.push({ lineId: `${entry.lineId}~${index}`, role: "PAID", pancakeVariationId: source.pancakeVariationId, quantity: segment.quantity, unitPriceVnd: segment.unitPriceVnd }),
-    );
-  }
-  gifts.forEach((gift, index) =>
-    projectionLines.push({ lineId: `gift~${index}`, role: "GIFT", pancakeVariationId: gift.pancakeVariationId, quantity: gift.quantity, unitPriceVnd: 0 }),
-  );
-  return projectBenefitQuoteForVendor(projectionLines);
+  const allocation = (allocated as { allocation: Parameters<typeof applyAllocationToLines>[1] }).allocation;
+  const variationOf = new Map(lines.map((l) => [l.lineId, l.pancakeVariationId]));
+  const paidLines = applyAllocationToLines(lines, allocation).map((l) => ({
+    lineId: l.lineId,
+    pancakeVariationId: variationOf.get(l.lineId.replace(/\|v\d+$/, ""))!,
+    quantity: l.quantity,
+    unitPriceVnd: l.unitPriceVnd,
+  }));
+  const paid = lines.reduce((sum, l) => sum + l.quantity * l.unitPriceVnd, 0) - discountVnd;
+  return canProjectExactMoney({ paidLines, gifts, expectedPaidSubtotalVnd: paid, shippingFeeVnd: 30_000, expectedTotalVnd: paid + 30_000 });
 }
 
 test("F1: three units of one variation split a 10.000đ voucher into 2 x 96.667 + 1 x 96.666 and total 290.000", () => {
