@@ -20,6 +20,8 @@ import type { GroupSelection, VoucherSelectionIntent } from "./voucher-optimizer
 
 export type VoucherGroup = "MERCHANDISE" | "SHIPPING_FREE";
 
+export type VoucherGroupDraft = Readonly<{ mode: "AUTO" | "MANUAL"; voucherId: string | null }>;
+
 export type VoucherSelectionResult =
   | Readonly<{ ok: true; selection: VoucherSelectionIntent }>
   | Readonly<{ ok: false; reason: "FEATURE_DISABLED" | "CART_UNAVAILABLE" | "INVALID_INPUT" | "NOT_AVAILABLE" }>;
@@ -110,6 +112,35 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
   }
 
   /**
+   * Commits the picker's "Áp dụng": both groups at once, in one transaction, so a shopper never ends up with half a
+   * choice. Each manual voucher is validated exactly like `setGroup`; if either is refused nothing is written.
+   */
+  async function applyBoth(input: Readonly<{ cartId: string; merchandise: VoucherGroupDraft; shipping: VoucherGroupDraft; now?: Date }>): Promise<VoucherSelectionResult> {
+    const now = input.now ?? new Date();
+    if (!canIssueNewVouchers(env)) return { ok: false, reason: "FEATURE_DISABLED" };
+    const drafts: Array<[VoucherGroup, VoucherGroupDraft]> = [["MERCHANDISE", input.merchandise], ["SHIPPING_FREE", input.shipping]];
+    for (const [, draft] of drafts) {
+      if ((draft.mode !== "AUTO" && draft.mode !== "MANUAL") || (draft.mode === "AUTO" ? draft.voucherId !== null : draft.voucherId !== null && !ID_PATTERN.test(draft.voucherId))) {
+        return { ok: false, reason: "INVALID_INPUT" };
+      }
+    }
+    const result = await withCart<VoucherSelectionResult>(input.cartId, now, async (tx, cart) => {
+      const ids = drafts.flatMap(([, draft]) => (draft.mode === "MANUAL" && draft.voucherId !== null ? [draft.voucherId] : []));
+      const found = ids.length === 0 ? [] : await readSelectedVouchers({ client: tx, shopId, ids, now, env });
+      for (const [group, draft] of drafts) {
+        if (draft.mode === "MANUAL" && draft.voucherId !== null && found.find((campaign) => campaign.id === draft.voucherId)?.kind !== group) return { ok: false, reason: "NOT_AVAILABLE" };
+      }
+      const row = await tx.cartVoucherSelection.upsert({
+        where: { cartId: cart.id },
+        create: { cartId: cart.id, expiresAt: cart.expiresAt, ...columns("MERCHANDISE", input.merchandise.mode, input.merchandise.voucherId), ...columns("SHIPPING_FREE", input.shipping.mode, input.shipping.voucherId) },
+        update: { expiresAt: cart.expiresAt, ...columns("MERCHANDISE", input.merchandise.mode, input.merchandise.voucherId), ...columns("SHIPPING_FREE", input.shipping.mode, input.shipping.voucherId) },
+      });
+      return { ok: true, selection: selectionIntentFromRow(row, new Date(0)) };
+    });
+    return result ?? { ok: false, reason: "CART_UNAVAILABLE" };
+  }
+
+  /**
    * Validates a typed or linked code and, if good, locks that voucher in its group as the shopper's manual
    * choice (spec §4.2: a valid entered code is a manual lock). Throttled before the lookup; every failure of a
    * private code answers INVALID_CODE (see the candidate repository). Grants nothing.
@@ -129,5 +160,5 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
     return result ?? { ok: false, reason: "CART_UNAVAILABLE" };
   }
 
-  return { read, setGroup, applyCode };
+  return { read, setGroup, applyBoth, applyCode };
 }

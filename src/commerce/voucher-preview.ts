@@ -59,12 +59,14 @@ export async function readVoucherPreview(input: Readonly<{
   shopId: number;
   now: Date;
   env?: Readonly<Record<string, string | undefined>>;
+  /** A draft the shopper is looking at in the picker: previewed as if chosen, never saved. */
+  selectionOverride?: VoucherSelectionIntent;
 }>): Promise<VoucherPreview> {
   const { client, cartId, shopId, now } = input;
   const env = input.env ?? process.env;
   if (!canIssueNewVouchers(env)) return { enabled: false };
   try {
-    return await client.$transaction((tx) => readInTransaction(tx, { cartId, shopId, now, env }), { isolationLevel: "RepeatableRead" });
+    return await client.$transaction((tx) => readInTransaction(tx, { cartId, shopId, now, env, selectionOverride: input.selectionOverride }), { isolationLevel: "RepeatableRead" });
   } catch {
     // A read that cannot complete is "unavailable", never "no voucher": the caller keeps the plain cart and says so.
     return { enabled: true, ok: false, reason: "QUOTE_UNAVAILABLE" };
@@ -73,7 +75,7 @@ export async function readVoucherPreview(input: Readonly<{
 
 async function readInTransaction(
   tx: Prisma.TransactionClient,
-  { cartId, shopId, now, env }: Readonly<{ cartId: string; shopId: number; now: Date; env: Readonly<Record<string, string | undefined>> }>,
+  { cartId, shopId, now, env, selectionOverride }: Readonly<{ cartId: string; shopId: number; now: Date; env: Readonly<Record<string, string | undefined>>; selectionOverride: VoucherSelectionIntent | undefined }>,
 ): Promise<VoucherPreview> {
   const cart = await tx.cart.findFirst({
     where: { id: cartId, userId: null, expiresAt: { gt: now } },
@@ -157,7 +159,7 @@ async function readInTransaction(
 
   // 5. Candidates (public + any saved manual choice, which may be a private one) and the saved intent.
   const saved = await tx.cartVoucherSelection.findUnique({ where: { cartId } });
-  const selectionIntent = selectionIntentFromRow(saved, now);
+  const selectionIntent = selectionOverride ?? selectionIntentFromRow(saved, now);
   const wantedIds = [selectionIntent.merchandise, selectionIntent.shipping].flatMap((group) => (group.mode === "MANUAL" && group.voucherId !== null ? [group.voucherId] : []));
   const [publicCampaigns, savedCampaigns] = await Promise.all([
     readPublicVoucherCandidates({ client: tx, shopId, now, env }),

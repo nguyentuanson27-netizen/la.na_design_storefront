@@ -178,3 +178,20 @@ test("a saved lock expires with its cart-bound row and is not read afterwards", 
   await service.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: m.id });
   assert.deepEqual((await service.read(c.id, new Date(Date.now() + 2 * 86_400_000))).merchandise, { mode: "AUTO" });
 });
+
+test("Áp dụng commits both groups in one transaction; if either is refused, neither is written", async () => {
+  const c = await cart();
+  const m = await f.campaign();
+  const s = await f.shippingCampaign();
+  const both = await service.applyBoth({ cartId: c.id, merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "MANUAL", voucherId: s.id } });
+  assert.deepEqual(both, { ok: true, selection: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "MANUAL", voucherId: s.id } } });
+  // A shipping voucher offered in the merchandise group is refused and the earlier choice is untouched.
+  const bad = await service.applyBoth({ cartId: c.id, merchandise: { mode: "MANUAL", voucherId: s.id }, shipping: { mode: "MANUAL", voucherId: null } });
+  assert.deepEqual(bad, { ok: false, reason: "NOT_AVAILABLE" });
+  assert.deepEqual(await service.read(c.id), { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "MANUAL", voucherId: s.id } });
+  assert.deepEqual(await service.applyBoth({ cartId: c.id, merchandise: { mode: "AUTO", voucherId: "x" }, shipping: { mode: "AUTO", voucherId: null } }), { ok: false, reason: "INVALID_INPUT" });
+  const auto = await service.applyBoth({ cartId: c.id, merchandise: { mode: "AUTO", voucherId: null }, shipping: { mode: "MANUAL", voucherId: null } });
+  assert.deepEqual(auto, { ok: true, selection: { merchandise: { mode: "AUTO" }, shipping: { mode: "MANUAL", voucherId: null } } });
+  const off = createVoucherSelectionService(prisma, { shopId: SHOP, env: {} });
+  assert.deepEqual(await off.applyBoth({ cartId: c.id, merchandise: { mode: "AUTO", voucherId: null }, shipping: { mode: "AUTO", voucherId: null } }), { ok: false, reason: "FEATURE_DISABLED" });
+});

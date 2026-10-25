@@ -10,6 +10,7 @@ import {
   metaFirstPartySetCookies,
   readMetaFirstPartyCookiesEnabled,
 } from "@/integrations/meta/first-party-cookies";
+import { VOUCHER_REDIRECT_HEADERS, planVoucherLinkRedirect } from "@/commerce/voucher-marketing-link";
 import { readSearchExposure, shouldNoIndexRequest } from "@/seo/search-exposure";
 import {
   readStrictScriptPolicyMode,
@@ -112,6 +113,16 @@ function applyResponseHeaders(
 }
 
 export async function proxy(request: NextRequest) {
+  // A marketing link carrying a voucher code is answered before anything renders: a body-less redirect to the clean
+  // URL (by way of the server handler that validates the code), so the code never reaches a document that loads
+  // analytics, a Referer header or a cache (Voucher v1 V19, spec §8).
+  const voucherLink = planVoucherLinkRedirect({ method: request.method, pathname: request.nextUrl.pathname, search: request.nextUrl.search });
+  if (voucherLink !== null) {
+    const redirect = NextResponse.redirect(new URL(voucherLink.handlerPath, request.nextUrl.origin), 307);
+    for (const [name, value] of Object.entries(VOUCHER_REDIRECT_HEADERS)) redirect.headers.set(name, value);
+    return redirect;
+  }
+
   const scriptPolicy = readStrictScriptPolicy(request);
   const forward = { request: { headers: scriptPolicy.request } };
 

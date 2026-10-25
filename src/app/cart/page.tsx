@@ -13,7 +13,9 @@ import { OrderSummary } from "@/components/brand/order-summary";
 import { OrderTrustLine } from "@/components/brand/order-trust-line";
 import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
-import { loadCartRoute, type CartRouteProps } from "@/routes/cart";
+import { loadCartRoute, type CartRouteProps, type CartRouteViewModel } from "@/routes/cart";
+import { voucherPickerKey } from "@/routes/voucher-picker-model";
+import { VoucherPicker } from "@/components/brand/voucher-picker";
 import type { CartLineView, CartViewModel } from "@/routes/cart-model";
 import { createStorefrontRoute } from "@/routes/factory";
 import { buildCartMetadata } from "@/routes/metadata/cart";
@@ -48,7 +50,7 @@ function LineVisual({ line, priority }: Readonly<{ line: CartLineView; priority:
   );
 }
 
-function render(data: CartViewModel) {
+function render(data: CartRouteViewModel) {
   if (data.isEmpty) {
     return (
       <PageShell>
@@ -180,6 +182,12 @@ function render(data: CartViewModel) {
           </div>
         </div>
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
+          {data.vouchers ? (
+            <section aria-label="Ưu đãi" className="mb-6" data-cart-vouchers>
+              <VoucherPicker key={voucherPickerKey(data.vouchers)} initial={data.vouchers} prefillCode={data.voucherPrefillCode} />
+              <p className="mt-2 text-xs leading-5 text-black/65">Ưu đãi được xác nhận lại khi nàng đặt hàng.</p>
+            </section>
+          ) : null}
           <p className="text-xs font-semibold uppercase tracking-[0.14em]">Tóm tắt</p>
           {data.summary ? (
             <OrderSummary className="mt-5" summary={data.summary} />
@@ -271,7 +279,7 @@ function render(data: CartViewModel) {
   );
 }
 
-const route = createStorefrontRoute<CartRouteProps, CartViewModel>({ load: loadCartRoute, render });
+const route = createStorefrontRoute<CartRouteProps, CartRouteViewModel>({ load: loadCartRoute, render });
 
 export const metadata = buildCartMetadata();
 export default route.Page;
