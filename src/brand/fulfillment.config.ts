@@ -102,6 +102,10 @@ export const FULFILLMENT: FulfillmentConfig = {
   // §14 — what the website can take today. The bank-transfer sentence is approved word for word.
   payment: {
     codNote: "Thanh toán khi nhận hàng (COD).",
+    // Owner-approved 25/10/2026 for the cart and checkout reassurance line.
+    inspectionNote: "Được kiểm tra hàng trước khi thanh toán.",
+    // The same commitment in the COD wording short enough for the one-line trust row under an order button.
+    inspectionShortNote: "Được kiểm hàng",
     bankTransferUnavailableNote:
       "Chuyển khoản ngân hàng hiện tạm thời chưa khả dụng trên website.",
   },
@@ -129,3 +133,18 @@ export const HOME_SERVICE_FACTS: readonly string[] = Object.freeze([
   FULFILLMENT.delivery.coverage,
   `Tư vấn size ${BRAND.contact.supportHours.opens}–${BRAND.contact.supportHours.closes}`,
 ]);
+
+/**
+ * The reassurance line under the order button (cart drawer, cart page, checkout) and in the mobile
+ * sticky order bar: how the buyer pays, that they may inspect before paying, and the return window,
+ * each in its shortest form so the three fit one line beside an order action. Derived from the same
+ * payment and returns authorities as the policy pages, so the button can never promise a different window.
+ */
+export const ORDER_TRUST_FACTS: readonly string[] = Object.freeze([
+  "COD",
+  FULFILLMENT.payment.inspectionShortNote,
+  `Đổi trả ${FULFILLMENT.returns.windowDays} ngày`,
+]);
+
+/** {@link ORDER_TRUST_FACTS} as one string, for a surface that can only hold a line of text. */
+export const ORDER_TRUST_SHORT: string = ORDER_TRUST_FACTS.join(" · ");

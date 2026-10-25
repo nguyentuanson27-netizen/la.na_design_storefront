@@ -22,6 +22,7 @@ export default defineConfig({
     "promotion-upsell.spec.ts",
     "checkout-benefit.spec.ts",
     "cart-gift-picker.spec.ts",
+    "cart-drawer-exit.spec.ts",
     "collection-breadcrumb.spec.ts",
     "collection-landing.spec.ts",
     "commerce-events.spec.ts",

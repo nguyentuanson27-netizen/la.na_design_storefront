@@ -6,13 +6,25 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
+import { CartLineUrgency } from "@/components/brand/cart-line-urgency";
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
-import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
+import { OrderTrustLine } from "@/components/brand/order-trust-line";
 import {
+  firstPromotionProgress,
+  hasPromotionProgress,
+  PromotionBanner,
+  PromotionProgressLine,
+  PromotionSavings,
+} from "@/components/brand/promotion-banner";
+import { trackFacebookPixelCustomEvent } from "@/components/analytics/facebook-pixel-client";
+import {
+  CART_DRAWER_EXIT_EVENT,
+  cartDrawerExitParameters,
   checkoutBlockedMessages,
   handleDrawerFocusTrap,
   isMeaningfulReturnFocusTarget,
+  type CartDrawerExit,
 } from "@/components/headless/cart-drawer-model";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import { useCartDrawer } from "@/components/headless/use-cart-drawer";
@@ -33,10 +45,65 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
 
   const wasOpenRef = useRef(false);
 
+  // Whether the "mua thêm" milestone has actually been at least half on screen during this opening.
+  // It sits in the fixed footer, so it normally is; the observer keeps `seen` honest anyway (a screen
+  // too short for the footer, the drawer closed before it painted). The viewport is the root.
+  const nudgeSeenRef = useRef(false);
+  const nudgeObserverRef = useRef<IntersectionObserver | null>(null);
+  const observeNudge = useCallback((node: HTMLElement | null) => {
+    nudgeObserverRef.current?.disconnect();
+    nudgeObserverRef.current = null;
+    if (node === null || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.5)) {
+          nudgeSeenRef.current = true;
+          observer.disconnect();
+        }
+      },
+      { threshold: [0.5] },
+    );
+    observer.observe(node);
+    nudgeObserverRef.current = observer;
+  }, []);
+
+  // Every way out of a non-empty drawer is reported once, with where it led. Paired with
+  // InitiateCheckout this shows whether the "mua thêm" nudge sends shoppers off browsing.
+  const leave = useCallback(
+    (exit: CartDrawerExit) => {
+      if (cart && !cart.isEmpty) {
+        trackFacebookPixelCustomEvent(
+          CART_DRAWER_EXIT_EVENT,
+          cartDrawerExitParameters(exit, {
+            giftNudgeAvailable: hasPromotionProgress(cart.promotions),
+            giftNudgeSeen: nudgeSeenRef.current,
+            canCheckout: cart.canCheckout,
+          }),
+        );
+      }
+      onClose();
+    },
+    [cart, onClose],
+  );
+  const dismiss = useCallback(() => leave("close"), [leave]);
+
+  // A Flash Sale that ends while the drawer is open leaves its price stale: re-read the view once,
+  // even when several lines end on the same tick.
+  const expiryReloadRef = useRef(false);
+  const reloadForExpiry = useCallback(() => {
+    if (expiryReloadRef.current) return;
+    expiryReloadRef.current = true;
+    void loadCart().finally(() => {
+      expiryReloadRef.current = false;
+    });
+  }, [loadCart]);
+
   // Focus management: save active element on open, focus close button, restore focus on close
   useEffect(() => {
     if (isOpen) {
       wasOpenRef.current = true;
+      // Exposure is per opening: what was seen last time says nothing about this one.
+      nudgeSeenRef.current = false;
       previouslyFocusedElement.current = document.activeElement as HTMLElement | null;
       // Focus after DOM render
       const timer = setTimeout(() => {
@@ -67,12 +134,12 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
       if (!isOpen) return;
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        dismiss();
       } else if (event.key === "Tab") {
         handleDrawerFocusTrap(event, drawerRef.current);
       }
     },
-    [isOpen, onClose],
+    [isOpen, dismiss],
   );
 
   useEffect(() => {
@@ -82,12 +149,15 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
 
   if (!isOpen) return null;
 
+  // The one "mua thêm" milestone the fixed footer carries.
+  const footerProgress = cart ? firstPromotionProgress(cart.promotions) : null;
+
   return createPortal(
     <div className="fixed inset-0 z-50 overflow-hidden" role="region" aria-label="Giỏ hàng">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
-        onClick={onClose}
+        onClick={dismiss}
         aria-hidden="true"
       />
 
@@ -115,7 +185,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
             <button
               ref={closeButtonRef}
               type="button"
-              onClick={onClose}
+              onClick={dismiss}
               aria-label="Đóng giỏ hàng"
               className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#3B2219] hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
             >
@@ -177,7 +247,6 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
               </div>
             ) : cart ? (
               <>
-                <PromotionBanner className="mb-5" giftHref="/cart#cart-gifts" onNavigate={onClose} variant="compact" view={cart.promotions} />
                 <ul className="divide-y divide-[#3B2219]/10">
                   {cart.lines.map((line) => {
                     const notice = lineNotice?.variantId === line.variantId ? lineNotice : null;
@@ -211,7 +280,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                             {line.productSlug ? (
                               <Link
                                 href={`/shop/${encodeURIComponent(line.productSlug)}`}
-                                onClick={onClose}
+                                onClick={() => leave("product")}
                                 className="font-display text-sm font-medium text-[#2A1810] underline underline-offset-4"
                               >
                                 {line.productName}
@@ -234,6 +303,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                                 Giá sau ưu đãi: {line.paidSegments.join(" + ")}
                               </p>
                             ) : null}
+                            <CartLineUrgency className="mt-1" flashRemainingMs={line.flashRemainingMs} lowStockText={line.lowStockText} onExpired={reloadForExpiry} />
                             {!line.available ? (
                               <p className="mt-1 text-[0.7rem] font-medium text-amber-800">
                                 {line.availabilityLabel}
@@ -285,13 +355,28 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                     );
                   })}
                 </ul>
+                {/* What the basket has already reached, after the lines. The next milestone ("mua thêm")
+                    is not listed here: it sits in the fixed footer, where no basket is long enough to
+                    scroll it out of sight. */}
+                <PromotionBanner
+                  className="mt-5"
+                  giftHref="/cart#cart-gifts"
+                  onNavigate={() => leave("gift")}
+                  variant="compact"
+                  view={cart.promotions ? { ...cart.promotions, items: cart.promotions.items.filter((item) => item.state !== "progress") } : undefined}
+                />
               </>
             ) : null}
           </div>
 
           {/* Footer */}
           {cart && !cart.isEmpty ? (
-            <div className="border-t border-[#3B2219]/10 bg-[#FAF7F2] p-6 space-y-4">
+            <div className="space-y-3 border-t border-[#3B2219]/10 bg-[#FAF7F2] px-6 pb-4 pt-4">
+              {footerProgress ? (
+                <div className="border-b border-[#3B2219]/10 pb-3">
+                  <PromotionProgressLine item={footerProgress} lineRef={observeNudge} />
+                </div>
+              ) : null}
               {cart.summary ? (
                 <OrderSummary summary={cart.summary} variant="compact" />
               ) : (
@@ -311,15 +396,18 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                 </>
               )}
 
-              <div className="space-y-2 pt-2">
+              <div className="space-y-1.5 pt-1">
                 {cart.canCheckout ? (
-                  <Link
-                    href="/checkout"
-                    onClick={onClose}
-                    className="btn btn--primary w-full"
-                  >
-                    Tiến hành đặt hàng
-                  </Link>
+                  <>
+                    <Link
+                      href="/checkout"
+                      onClick={() => leave("checkout")}
+                      className="btn btn--primary w-full"
+                    >
+                      Tiến hành đặt hàng
+                    </Link>
+                    <OrderTrustLine />
+                  </>
                 ) : (
                   <div className="space-y-1 text-center text-xs leading-relaxed text-amber-800" role="status">
                     {checkoutBlockedMessages(cart).map((message) => (
@@ -328,10 +416,12 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                   </div>
                 )}
 
+                {/* One primary action. The cart page stays reachable, as a quiet link rather than a second
+                    button competing with the order button. */}
                 <Link
                   href="/cart"
-                  onClick={onClose}
-                  className="btn btn--outline w-full"
+                  onClick={() => leave("cart")}
+                  className="mx-auto flex min-h-8 w-fit items-center text-xs text-[#70584B] underline underline-offset-4 hover:text-[#2A1810]"
                 >
                   Xem chi tiết giỏ hàng
                 </Link>
