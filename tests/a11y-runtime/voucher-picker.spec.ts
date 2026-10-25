@@ -46,6 +46,7 @@ async function startServer(): Promise<ChildProcess> {
       PANCAKE_SHOP_ID: String(SHOP),
       LA_VOUCHER_ENABLED: "true",
       LA_TRACKING_MODE: "preview",
+      LA_GTM_CONTAINER_ID: "GTM-VCHRTST",
       BETTER_AUTH_URL: BASE,
       APP_DOMAIN: `127.0.0.1:${PORT}`,
       ...nextServerEnv(".next-test/voucher-picker"),
