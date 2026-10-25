@@ -17,7 +17,7 @@
 **Bối cảnh:** Next.js 16.4.1, React 19.2.0, TypeScript 5.9, Prisma 7.10.1/PostgreSQL, pnpm 11.4.0 (package.json). Đã có:
 - src/commerce/promotion-pricing.ts: promotion/flash sale/clearance từng variant; **campaign legacy trùng nhau không tự stack**.
 - src/commerce/gift-quantity-stack.ts, gift-quantity-entitlement.ts, benefit-checkout-quote.ts: ưu đãi mua nhiều, quà, stack và signed quote theo paid groups.
-- [ADR 0016 D-12](../decisions/0016-gift-quantity-promotions-v1-decisions.md) (Accepted) quy định ORDER_SUBTOTAL ladder chạy cuối chuỗi discount **trong engine hiện hữu khi ADR được phê duyệt**. Cross-feature voucher ↔ ladder mới có thể làm tiền khác nhau; cần owner phê duyệt ranh giới phase tại TG-11.
+- [ADR 0016 D-12](../decisions/0016-gift-quantity-promotions-v1-decisions.md) (Accepted) quy định ORDER_SUBTOTAL ladder chạy cuối **trong legacy/quantity engine hiện có**. **TG-11 A đã được owner chốt:** giữ D-12 trong engine đó rồi áp voucher **sau** khi toàn bộ tiers hoàn tất. Đây là hợp đồng liên kết engine mới, không sửa ADR hoặc đơn không voucher.
 - src/commerce/shipping-campaign.ts: freeship chiến dịch theo paid quantity, không phải freeship vĩnh viễn; PR #198 đã loại bỏ mốc freeship mặc định. Base ship 30.000đ là **giá trị config mặc định**, không hardcode ở voucher. **Quan trọng:** engine hiện có chặn campaign khi có khuyến mãi khác và campaign đặt stackingEnabled=false; tác động của voucher hàng hóa mới phải được mô tả và kiểm thử rõ ở §4.1/TG-10.
 - src/commerce/checkout-quote-proof.ts, guest-checkout-snapshot.ts, guest-checkout-submit.ts và pancake-order-submit.ts: server reprice/proof, OrderMirror DRAFT/VALIDATING/POS_SUBMITTING/CONFIRMED/REJECTED/SYNC_UNKNOWN, stock reservation, POS reconciliation.
 - src/routes/checkout.ts hiện tạo quote/proof trong loader; cart/page.tsx có `<Link href="/checkout">` được Next.js hỗ trợ prefetch. **GET/render/prefetch không được tự ghi voucher hold/quota**; chỉ mutation từ buyer intent tại §5.1.1/TG-12.
@@ -45,10 +45,11 @@
 | Owner — TG-09 (xác nhận 25/10/2026) | Khi tổng tiền thanh toán bằng nhau, ưu tiên tổ hợp giữ quà cho khách; nếu quyền lợi quà bằng nhau, ưu tiên ít voucher hơn rồi stable ID |
 | Owner — TG-05 **A** (25/10/2026) | **Không cưỡng chế thu hồi** hold voucher đã được cấp còn hiệu lực trong 10 phút, kể cả Admin tắt chiến dịch khẩn cấp; chỉ ngừng cấp mới, không bảo đảm tồn kho/giá gốc |
 | Owner — TG-10 **B** (25/10/2026) | MERCHANDISE voucher thực giảm được tính là một `other promotion` khi xét `stackingEnabled` của shipping campaign cũ; tự chọn tổng tiền tốt nhất, manual tăng tổng phải cảnh báo/xác nhận |
+| Owner — TG-11 **A** (25/10/2026) | `ORDER_SUBTOTAL` ladder được tính sau legacy/quantity nhưng **trước voucher**. Voucher xét ngưỡng/giảm trên giá đã qua tier; không giải lại ladder khi voucher kéo P_after xuống dưới mốc; gift ORDER_SUBTOTAL vẫn tính lại sau voucher |
 
 **Ưu tiên:** Q15/Q20 thay luật cũ “chỉ 1 voucher cả đơn” ở Q02; Q32A quy định phạm vi áp dụng cho Q31C. “Luôn stack với Flash Sale/tier” nghĩa là **áp voucher sau kết quả từ engine hiện có**, không tự ý thay luật xung đột giữa các legacy campaign và tier.
 
-**Trạng thái quyết định:** **TG-05 A, TG-09 và TG-10 B đã chốt**. **TG-11 CHỜ OWNER (P1):** ADR 0016 D-12 đặt ORDER_SUBTOTAL ladder cuối chuỗi giảm giá; Q07 yêu cầu ngưỡng voucher xét sau tier. Q07 không tự phê duyệt ngoại lệ với D-12. Hai phương án và tổng tiền khác nhau có tại §4.1/EX-10. **Không ship tổ hợp voucher + ORDER_SUBTOTAL ladder khi chưa có owner approval TG-11.**
+**Trạng thái quyết định:** **TG-05 A, TG-09, TG-10 B và TG-11 A đều đã được owner chốt**. TG-11 A giữ D-12 chạy cuối **trong pre-voucher legacy/quantity stack**, không chạy lại do voucher. Owner policy gate TG-11 đã đóng; các technical gates (regression/quote/POS/browser/concurrency) vẫn phải có bằng chứng trước implementation và ship.
 
 ## 2. Phạm vi MVP
 
@@ -104,7 +105,7 @@ Cho product P đang thuộc đúng shop của campaign, dùng **cùng cấp Prod
 
 ### 4.1. Thứ tự tính và phạm vi
 
-1. **Đề xuất thứ tự đang CHỜ TG-11 owner chốt:** tính paid lines sau PROMOTION/FLASH_SALE/CLEARANCE + QUANTITY_TIER (**bao gồm ORDER_SUBTOTAL ladder**) bằng engine có sẵn, gọi subtotal là **P**, rồi mới áp voucher (Q04/Q07). Theo phương án này, tier ORDER_SUBTOTAL chốt bậc **trong pre-voucher engine**, không tính lại sau voucher; chỉ mốc quà ORDER_SUBTOTAL tính lại theo P_after (Q05). **ADR 0016 D-12 đã Accepted** quy định ladder chạy cuối các discount trong engine lúc đó; voucher chưa tồn tại khi duyệt ADR. Cách chia phase này là **ngoại lệ cross-feature cần owner ký**, không sửa ngầm D-12 cho đơn không voucher. Nếu owner muốn ladder chạy cuối cả sau voucher, phải sửa hợp đồng Q07/solver để tránh dependency vòng tier ↔ voucher. **Cho tới khi TG-11 chốt, không coi thứ tự này là đã phê duyệt để triển khai.** Quà không vào tiền hàng.
+1. **Thứ tự bắt buộc — TG-11 A đã được owner chốt:** tính paid lines từ cart qua PROMOTION/FLASH_SALE/CLEARANCE và QUANTITY_TIER bằng engine hiện tại. Trong engine này, **ORDER_SUBTOTAL ladder vẫn luôn chạy cuối theo ADR 0016 D-12**, xét paid goods sau legacy và quantity tiers, trước shipping và không gồm gifts; giữ nguyên solver conflicts/priority. Gọi subtotal sau toàn bộ legacy/quantity/tier là **P**. Sau đó voucher MERCHANDISE mới xét ngưỡng trên eligible scoped paid goods và giảm D. **Không** truyền giá đã trừ voucher vào ORDER_SUBTOTAL solver; **không** chạy lại rung đã đạt khi voucher làm P_after thấp hơn ngưỡng; **không** tạo vòng phụ thuộc tier ↔ voucher. Mốc **quà** theo tiền tiếp tục tính lại sau voucher theo Q05. Đây là cách nối voucher sau engine hiện tại, không sửa ADR D-12 hoặc giá đơn không có voucher. Quote/proof/order/Pancake phải bảo toàn thứ tự từng bước.
 2. Với voucher hàng hóa có scope S, **E** = subtotal của paid groups thuộc S sau sale/tier, chưa có voucher và ship. Không tính hàng không thuộc scope, gift hay shipping để đạt ngưỡng; nếu E không đạt minimum → ineligible.
 3. Voucher MERCHANDISE lấy **D**:
    - FIXED: D = amountVnd; min spend bắt buộc **> D**.
@@ -121,7 +122,7 @@ Cho product P đang thuộc đúng shop của campaign, dùng **cùng cấp Prod
 ### 4.2. Tối ưu tổ hợp, manual override
 
 - Candidates: **NONE** + các voucher hợp lệ trong từng nhóm. PRIVATE/CODE chỉ được xét sau khi khách nhập hoặc link đã được xác thực. Một nhóm chỉ có tối đa một voucher chọn.
-- Với **cùng cart snapshot, đồng hồ, category membership và price authority**, server tính các cặp candidate (MERCHANDISE/NONE, SHIPPING_FREE/NONE), recheck gift/shipping và khả năng cấp quota/budget **cho các candidate MỚI**; sau đó chọn **totalPayableVnd nhỏ nhất**, bao gồm candidate NONE/NONE. Nếu checkout đã có **hold hợp lệ thuộc chính attempt và quote không đổi**, **không** đòi campaign còn ACTIVE, revision mới bằng revision đã khóa, hay quota **trống** sau khi trừ hold của chính khách: dùng contract hold §5.1. Không dùng hold của attempt khác.
+- Với **cùng cart snapshot, đồng hồ, category membership và price authority**, server tính các cặp candidate (MERCHANDISE/NONE, SHIPPING_FREE/NONE), recheck gift/shipping và khả năng cấp quota/budget **cho các candidate MỚI**; sau đó chọn **totalPayableVnd nhỏ nhất**, bao gồm candidate NONE/NONE. Nếu checkout đã có **hold hợp lệ thuộc chính attempt và quote không đổi**, **không** đòi campaign còn ACTIVE, revision mới bằng revision đã khóa, hay quota **trống** sau khi trừ hold của chính khách: dùng contract hold §5.1. Không dùng hold của attempt khác. **TG-11 A:** các candidate voucher của cùng cart snapshot dùng **cùng giá nền đã qua legacy/quantity/ORDER_SUBTOTAL ladder**; optimizer không đưa voucher-adjusted prices vào tier solver, tránh sai ngưỡng và double-count.
 - **Tie-break đã được owner phê duyệt (TG-09):** khi total bằng nhau, ưu tiên tổ hợp **giữ được quà khách đã chọn trước đó**; nếu như nhau, ưu tiên **nhiều suất quà hợp lệ hơn** (không gán quà thành tiền); tiếp theo ít voucher phải tiêu hao hơn, cuối cùng stable ID. Không tự chọn voucher saving 0. **Chỉ** áp dụng tie-break sau bước tối thiểu hóa tổng tiền, không chọn phương án đắt hơn chỉ để giữ quà; tiếp tục tôn trọng manual selection hợp lệ.
 - Nếu user manual lock một nhóm, giữ nếu hợp lệ và tối ưu nhóm còn lại; nhập mã ẩn hợp lệ được coi là manual lock. Khi manual mất hiệu lực, auto chọn lại nhóm đó và **thông báo rõ**.
 - Khi người mua chỉnh cart/gift, non-held price facts, shipping policy, hoặc hết hold, phải recompute; nếu tổng tiền/entitlement thay đổi, client chỉ được đặt khi đã nhận được **quote/proof mới** và xem/chấp thuận tiền mới. **Riêng sửa/disable voucher ở Admin hoặc voucher hết hạn tự nhiên không tự buộc thay điều khoản voucher của cùng hold còn hợp lệ**; dùng §5.1. Không dùng revision mới của campaign làm điều kiện loại một self-held quote.
@@ -144,9 +145,9 @@ Cho product P đang thuộc đúng shop của campaign, dùng **cùng cấp Prod
 
 **EX-08 — Self-held quota trong natural expiry:** voucher quota=1; khách hold lúc T0 với discount 50K, campaign hết hạn tự nhiên ở T+3 phút, khách submit không đổi cart/quote tại T+5 phút: phải honor **hold riêng còn hạn**, không đòi ACTIVE hay quota free=1. Submit lúc T+10 phút hoặc sau phải từ chối hold hết hạn và re-quote.
 
-**EX-09 — Mốc tier vs gift (ĐỀ XUẤT TG-11 CHỜ OWNER):** Theo phương án tier chạy trong pre-voucher engine, tier ORDER_SUBTOTAL đạt mốc trước voucher **không tính lại sau voucher**; quà ORDER_SUBTOTAL được tính lại trên P_after. **Không coi là quyết định đã chốt.**
+**EX-09 — Mốc tier vs gift (TG-11 A ĐÃ CHỐT):** bậc `ORDER_SUBTOTAL` đạt trên giá hàng **trước voucher** và đã giảm qua tier; nếu voucher làm P_after xuống dưới mốc thì bậc tier **không** tính lại. Quà có điều kiện ORDER_SUBTOTAL được tính lại trên P_after; cảnh báo/cho xác nhận khi mất quà.
 
-**EX-10 — Tranh chấp ADR D-12 (P1):** sau legacy/quantity nhưng trước ORDER_SUBTOTAL ladder và voucher = **650.000đ**; ladder giảm **30.000đ** từ **600.000đ**, voucher giảm **80.000đ**. **A (đề xuất):** ladder chạy cuối pre-voucher stack → 650K−30K−80K = **540.000đ**; voucher eligibility xét trên 620K theo Q07. **B:** áp voucher trước rồi ORDER_SUBTOTAL ladder chạy cuối toàn bộ → 650K−80K = **570.000đ**, ladder không đủ mốc, đồng thời phải định nghĩa lại Q07 và xử lý dependency. Hai kết quả **khác tiền thật**; TG-11 yêu cầu owner chọn A/B và tài liệu hóa tương thích ADR, không đoán.
+**EX-10 — TG-11 A chốt ranh giới ADR D-12:** paid goods sau legacy/quantity nhưng trước `ORDER_SUBTOTAL` ladder và voucher = **650.000đ**; ladder min **600.000đ** giảm **30.000đ**; voucher MERCHANDISE giảm **80.000đ** và hợp lệ. **Kết quả 650.000 − 30.000 − 80.000 = 540.000đ**; ngưỡng voucher xét trên **620.000đ** (sau tier), chưa ship. **Không được dùng phương án B 570.000đ** (voucher trước khiến ladder rớt mốc). **Không dùng voucher** phải giữ giá nền **620.000đ trước shipping**. Test quote/proof/snapshot/POS phải khớp từng đồng, không chạy lại tier hoặc double-count.
 
 ## 5. Hold 10 phút, dùng lượt tại website, refund
 
@@ -286,7 +287,7 @@ Voucher vận chuyển                          Chọn 1
 | AC-02 | 1 hàng hóa + 1 freeship cùng eligible | Tổng chính xác sau cả hai; không chồng >1 mỗi loại |
 | AC-03 | EX-01 40K vs 20K+freeship | Auto chọn **600K**, không phải 610K |
 | AC-04 | Manual lock một nhóm, cart đổi | Giữ nếu còn hợp lệ, tối ưu nhóm kia; invalid mới tự thay kèm thông báo |
-| AC-05 | Flash Sale/tier + voucher | Voucher luôn áp sau engine có sẵn; giữ quy tắc conflict giữa campaign cũ |
+| AC-05 | Flash Sale/quantity tier/ORDER_SUBTOTAL ladder + voucher | Voucher chạy sau legacy/quantity engine, ADR D-12 ladder cuối trong engine đó; không thay luật conflict hoặc chạy lại ladder do voucher |
 | AC-06 | EX-03 Đầm 400K/Túi 300K, min 500K | Không đủ; chỉ scope Đầm tính ngưỡng/discount; danh mục dynamic |
 | AC-07 | Fixed giảm >= min; % trần tùy chọn | Admin không publish fixed invalid; không paid unit có giá 0/âm |
 | AC-08 | EX-02 gift threshold 600K | Voucher 50K làm mất quà, cảnh báo; đổi 10K giữ quà được |
@@ -320,7 +321,7 @@ Voucher vận chuyển                          Chọn 1
 | AC-36 | EX-07: hai tổ hợp total=610K nhưng khác số quà giữ được | **TG-09 đã chốt:** chọn tổ hợp giữ quà; nếu như nhau thì chọn ít voucher hơn; không định giá quà thành VND |
 | AC-37 | ALL_SHOP + exclude; TARGETED category OR include AND NOT exclude; category cha/con | Membership động và đúng shop, không dùng GLOBAL_ALL_PAID_LINES theo cách phá Gift & Quantity |
 | AC-38 | Local accepted marker rồi cart đổi/POS reprice/retry | Voucher/quote/fee/vendor projection immutable; chỉ reject/reconcile, không sửa DRAFT đã accepted |
-| AC-39 | Tier ORDER_SUBTOTAL đạt trước voucher nhưng P_after xuống dưới mốc | **Phương án TG-11 A CHỜ OWNER:** tier không chạy lại; gift ORDER_SUBTOTAL trên P_after vẫn thay entitlement. Không được coi là đã approved |
+| AC-39 | `ORDER_SUBTOTAL` ladder đã đạt nhưng voucher khiến P_after xuống dưới mốc | **TG-11 A đã chốt:** không chạy lại bậc tier; gift ORDER_SUBTOTAL theo P_after có thể mất quà và phải cảnh báo |
 | AC-40 | Link PRIVATE code và GTM/Meta/referrer | Mã không bị gửi vào analytics/doc load URL sau redirect sang URL sạch; server session giữ intent, request đầu hạn chế log/referrer |
 | AC-41 | TG-05 A: Admin edit/disable/emergency kill switch khi hold còn | Không force-revoke existing valid hold trong 10 phút, vẫn honor snapshot nếu checkout facts không đổi; chặn cấp mới |
 
@@ -328,7 +329,7 @@ Voucher vận chuyển                          Chọn 1
 | AC-43 | Buyer click CTA cart/buy-now, picker “Áp dụng” hoặc checkout “Đặt hàng” | POST cấp hold một lần, CSRF/idempotent; retry cùng quote dùng lại expiresAt, preview không giả đã giữ |
 | AC-44 | Admin hạ maxUses/maxBudget dưới redeemed chưa refund + active holds | Reject chỉnh sửa, không ảnh hưởng các hold; bằng committed floor thì cho phép nhưng không cấp mới |
 | AC-45 | Admin sửa quota đồng thời hai khách POST xin hold | Transaction serialization giữ cap không thấp hơn committed, không oversubscribe/force revoke |
-| AC-46 | EX-10 D-12: 650K, ladder 600K/30K, voucher 80K | **TG-11 CHỜ OWNER:** A total 540K vs B total 570K; bắt buộc test quyết định sau phê duyệt, đơn không voucher không đổi |
+| AC-46 | EX-10: 650K, ladder 600K/30K, voucher 80K | **TG-11 A đã chốt:** tổng hàng sau giảm **540K**, **không** 570K; không voucher **620K** (chưa ship); quote/proof/vendor cùng kết quả |
 | AC-47 | Feature flag OFF nhưng trước đó đã cấp hold còn 5 phút | Ngừng cấp mới, vẫn consume/reconcile existing valid hold không silently tăng tiền |
 
 
@@ -366,10 +367,10 @@ pnpm build
 
 **Boundaries:**
 - **Always:** source-driven verification của POS/version, TDD cho money/race, quote→commit→readback parity, a11y, security/PII, rollback/monitoring, human review.
-- **Ask owner first:** migration/high-impact API, đổi mốc website accepted order, **bất kỳ force-revoke trái TG-05 A**, **quyết định cross-feature D-12 TG-11**, chính sách khác với §1, bật campaign có ngân sách thật.
+- **Ask owner first:** migration/high-impact API, đổi mốc website accepted order, **bất kỳ force-revoke trái TG-05 A**, **thay đổi thứ tự tier → voucher đã chốt TG-11 A**, chính sách khác với §1, bật campaign có ngân sách thật.
 - **Never:** tin tiền/browser, bỏ quote proof, bỏ POS acceptance/readback, chạm đơn committed lịch sử, ghi secret, silently thay quà/giá, coi specs là production enabled.
 
-**Definition of Done:** Spec reviewed; **TG-05 A/TG-09/TG-10 B đã chốt**; **TG-11 vẫn chờ owner duyệt**; technical gates khác có bằng chứng; AC có tests thực sự, **pnpm test (gồm tests/integrations)** + typecheck/lint/DB/browser và Pancake staging evidence; security/reconciliation/migration/rollback đủ trước ship. Không claim test pass trong spec-only PR.
+**Definition of Done:** Spec reviewed; **TG-05 A/TG-09/TG-10 B/TG-11 A đều đã được owner chốt**; technical gates (TG-11 AC-39/46 regression, TG-12 prefetch/mutation, POS/DB races) vẫn cần chứng minh; các AC có tests thực sự, **pnpm test** (gồm tests/integrations) + typecheck/lint/DB/browser/Pancake staging; security/reconciliation/migration/rollback đủ trước ship. Không claim test pass trong spec-only PR.
 
 ## 12. Technical gates trước implementation PR
 
@@ -380,17 +381,17 @@ pnpm build
 | TG-03 10-minute hold + budget | Existing quote HMAC stateless, chưa có durable voucher quota/budget holds | Hold self-ownership/discount/revision snapshot, ACTIVE/quota bypass **chỉ** cho same valid hold khi natural expiry, trừ self hold khi kiểm tra capacity, absolute TTL/rebind/swap trong transaction, DB concurrency + anti-abuse |
 | TG-04 Cancellation source | Order status từ Pancake là external, không mặc định suy mọi mã là CANCELED | Map trusted status, verified shop/order, chống duplicate/out-of-order, reconciliation & operator evidence |
 | TG-05 Owner hold guarantee — **ĐÃ CHỐT A** | Owner quyết định KHÔNG force-revoke hold đã cấp còn 10 phút, kể cả Admin emergency disable | Stop new holds; honor old holds, reject giảm cap dưới redeemed chưa refund + active holds bằng cùng DB lock/transaction; AC-41/44/45/47 |
-| TG-06 Existing stack/quote | Gift, shipping campaign, immutable OrderQuoteSnapshot và quote proof đang có contracts riêng | Chỉ ra thứ tự/tính lại entitlement và shipping, new voucher ledger, signed proof versioning, backward compat tests |
+| TG-06 Existing stack/quote | Gift, shipping campaign, ADR D-12 pre-voucher ladder và quote/snapshot có contract riêng | Chứng minh tier D-12 cuối trong legacy/quantity stack; voucher chạy sau tier; gift threshold tính sau voucher; proof/versioning, POS/backward compatibility |
 | TG-07 UI reference | Hai ảnh Grab chỉ ở conversation, không phải asset repo | Review wireframe §7 và mobile/desktop accessibility acceptance; không phụ thuộc file ảnh chưa có |
 | TG-08 Capacity/measurement | Candidate combos + hold có khả năng tăng tải checkout, funnel chỉ Mức 0 | Chốt bounded reads/quoting, benchmark P95, rate-limit hold, metrics không PII và không sink mới |
 | TG-09 Owner tie-break — **ĐÃ CHỐT** | Owner xác nhận sau review PR #212 ngày 25/10/2026: **có**, ưu tiên giữ quà khi tổng tiền bằng nhau | Decision closed: giữ quà đã chọn → nhiều suất quà hợp lệ hơn → ít voucher hơn → stable ID; AC-36 vẫn cần test ở implementation |
 | TG-10 Owner shipping stacking — **ĐÃ CHỐT B** | MERCHANDISE voucher thực giảm là other promotion khi xét shipping campaign hiện có | hasOtherPromotions = existingFlag OR merchandiseDiscount>0; tôn trọng stackingEnabled, optimizer so NONE, manual tăng tiền phải báo/xác nhận; AC-29/30 |
 
-| TG-11 ADR 0016 D-12 ↔ Voucher v1 — **CHỜ OWNER** | D-12 (Accepted) cho ORDER_SUBTOTAL ladder chạy cuối discount hiện có, nhưng Q07 yêu cầu ngưỡng voucher sau tier | Owner chọn **A (đề xuất):** D-12 cuối pre-voucher engine, voucher sau tier (EX-10=540K), là ngoại lệ xuyên engine; hoặc **B:** ladder chạy cuối cả voucher (EX-10=570K), cần xét lại Q07/solver/ADR. **Không ship tier+voucher trước khi chốt** |
+| TG-11 ADR 0016 D-12 ↔ Voucher v1 — **ĐÃ CHỐT A (owner)** | Owner chọn A: ORDER_SUBTOTAL ladder chạy cuối **pre-voucher legacy/quantity stack**, voucher áp sau tier, không chạy lại ladder vì voucher | Decision closed; technical verification pending: AC-05/39/46 phải chứng minh 650K−30K−80K=540K (không 570K), không voucher=620K; giữ D-12 solver, quote/POS parity |
 | TG-12 Checkout hold mutation vs prefetch | Loader checkout render quote/proof, Next Link có prefetch; GET không chứng minh buyer intent | Preview GET/render/prefetch read-only; POST/Server Action có CSRF/idempotency từ buyer intent, quote bind hold; production browser/network AC-42/43 |
 
 
-**Gate thất bại:** dừng build pricing/submit liên quan, không ship voucher báo giá mà vendor không cam kết. **TG-05 A/TG-09/TG-10 B đã chốt** nhưng cần implementation verification; **TG-11 vẫn cần owner decision** và TG-12 cần browser/concurrency evidence. ADR D-12 không được sửa ngầm.
+**Gate thất bại:** dừng build pricing/submit khi thiếu technical evidence hoặc Pancake chưa xác nhận exact money. **TG-05 A/TG-09/TG-10 B/TG-11 A đã được owner chốt**; TG-11 vẫn cần regression tests, TG-12 cần browser/DB evidence. **Không sửa ADR D-12** trong PR này, không coi CI xanh là voucher E2E pass.
 
 ## 13. Related specs / source links
 
@@ -403,4 +404,4 @@ pnpm build
 - [Mobile Commerce UX](storefront-mobile-commerce-ux.md)
 - [ADR 0016 — Gift Quantity](../decisions/0016-gift-quantity-promotions-v1-decisions.md)
 
-**Owner YES phê duyệt intent; owner đã chốt thêm TG-05 A, TG-09 (giữ quà khi cùng tổng) và TG-10 B.** Chưa có phê duyệt **TG-11 (ADR D-12 cross-feature)**, schema/technical choices, POS acceptance hoặc prefetch mutation behavior. PR spec-only này chờ review trước plan/implementation.
+**Owner đã phê duyệt intent và chốt TG-05 A, TG-09, TG-10 B, TG-11 A.** TG-11 A áp voucher sau pre-voucher engine gồm D-12; ADR 0016 giữ nguyên. Chưa có implementation/schema approval, POS acceptance, prefetch mutation evidence hoặc E2E; PR này vẫn **spec-only** trước plan/build.
