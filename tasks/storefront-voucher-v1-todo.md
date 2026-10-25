@@ -1,13 +1,13 @@
 # Storefront Voucher v1 — execution checklist
 
-**Status:** DRAFT / PLAN REVIEW — **no /build approval yet**, no implementation has started. All tasks and checkpoints are unchecked.
+**Status:** BUILD IN PROGRESS — owner instructed `/build` on 2026-10-25 (H0). **Slice A (V00–V03) only** is implemented in the first build PR; every task from V04 on is blocked by H1-D / H2 and stays unchecked. Voucher code is not wired into any runtime path and the feature flag does not exist yet.
 **Authority:** [Merged Voucher v1 spec](../docs/specs/storefront-voucher-v1.md) (PR #212, main@2c6e35d39d165064f5986ef901a5bb3efa464e1a).
 **Execution design:** [Voucher v1 implementation plan](./storefront-voucher-v1-plan.md); V00..V21 and H0..H5. This does **not** replace [master plan](./plan.md) or [master todo](./todo.md).
 **Quality:** [ADR 0005 PR sizing](../docs/decisions/0005-pr-scope-reviewability.md); checkout/Pancake/DB migrations require real test evidence, not a checked box on docs.
 
 ## Gate approvals — must be documented before dependent work
 
-- [ ] **H0 — Plan approved:** owner approves new implementation work; spec merge is not automatic /build approval.
+- [x] **H0 — Plan approved:** owner approves new implementation work; spec merge is not automatic /build approval. _Evidence: owner asked for the PR #213 plan to be built end to end on 2026-10-25; scope taken as Slice A because later slices wait on H1-D / H2 below._
 - [ ] **H1-D — Accepted/POS design (after V00, before V09):** accepted marker vs DRAFT, stock/quote transaction and offline exact-money vendor design; sandbox probe needs separate operator permission.
 - [ ] **H1-V — POS verification (after V09, before V12):** real canProjectExactMoney tests plus authorized sandbox write/readback; otherwise real holds stay OFF.
 - [ ] **H2 — Database/API authorization (after V00, before V04):** owner approves additive voucher ledger, accepted marker + immutable quote storage, selection storage if needed, and rollback.
@@ -20,18 +20,18 @@
 
 ## Phase A — architecture and pure rules
 
-- [ ] **V00 — Accepted-order/POS architecture design** _(deps: none; produces H1-D/H2 design inputs)_
-  - [ ] Specify persisted accepted marker, immutable quote, stock-reservation-before-consume and rollback-on-capacity-failure; historical order migration boundary.
-  - [ ] Offline vendor fixtures, cancellation states, cart-bound selection storage; H1-D/H2 review, no unauthorized POS calls.
-- [ ] **V01 — Voucher scope and campaign validation** _(deps: V00)_
-  - [ ] Test ALL_SHOP+exclude, TARGETED category OR product include minus exclude, parent/child membership and bounds.
-  - [ ] Run focused scope/rule domain tests; verify existing Gift & Quantity scope unchanged.
-- [ ] **V02 — Merchandise money and allocation** _(deps: V01)_
-  - [ ] Test fixed/%/cap, per-unit >=1đ, exact VND conservation; TG-11 A EX-10 = 540K and no voucher = 620K.
-  - [ ] Run focused money + ORDER_SUBTOTAL ladder regression tests.
-- [ ] **V03 — Two-group optimizer and POS feasibility seam** _(deps: V02)_
-  - [ ] Test min total, nonstack shipping, gift tie, manual NONE, and injected infeasible POS candidate excluded/clearly rejected.
-  - [ ] Run domain optimizer/shipping tests (EX-01/02/06/07).
+- [ ] **V00 — Accepted-order/POS architecture design** _(deps: none; produces H1-D/H2 design inputs)_ — **drafted, review pending**
+  - [x] Specify persisted accepted marker, immutable quote, stock-reservation-before-consume and rollback-on-capacity-failure; historical order migration boundary. _[ADR 0018](../docs/decisions/0018-voucher-v1-accepted-order-architecture.md), status Proposed._
+  - [ ] Offline vendor fixtures, cancellation states, cart-bound selection storage; H1-D/H2 review, no unauthorized POS calls. _Fixtures + status rules written ([doc](../docs/integrations/pancake-voucher-acceptance.md), `tests/domain/voucher-vendor-fixtures.test.ts`); stays open until a reviewer signs H1-D/H2._
+- [x] **V01 — Voucher scope and campaign validation** _(deps: V00)_
+  - [x] Test ALL_SHOP+exclude, TARGETED category OR product include minus exclude, parent/child membership and bounds. _`tests/domain/voucher-scope.test.ts`, `voucher-rule-validation.test.ts`._
+  - [x] Run focused scope/rule domain tests; verify existing Gift & Quantity scope unchanged. _`gift-quantity-scope.ts` is not modified; its tests pass._
+- [x] **V02 — Merchandise money and allocation** _(deps: V01)_
+  - [x] Test fixed/%/cap, per-unit >=1đ, exact VND conservation; TG-11 A EX-10 = 540K and no voucher = 620K. _`tests/domain/voucher-money.test.ts` (EX-10 runs through the real `priceStack` ladder)._
+  - [x] Run focused money + ORDER_SUBTOTAL ladder regression tests. _`gift-quantity-order-subtotal-tier.test.ts` passes._
+- [x] **V03 — Two-group optimizer and POS feasibility seam** _(deps: V02)_
+  - [x] Test min total, nonstack shipping, gift tie, manual NONE, and injected infeasible POS candidate excluded/clearly rejected. _`tests/domain/voucher-optimizer.test.ts`._
+  - [x] Run domain optimizer/shipping tests (EX-01/02/06/07). _`voucher-optimizer.test.ts`, `voucher-shipping.test.ts`; shipping engine exercised for real in the latter._
 
 ## Phase B — persistence and Admin (H2 required before writes)
 

@@ -1,0 +1,82 @@
+# ADR 0018: Voucher v1 — durable website-accepted state, immutable quote and exactly-once consume
+
+- **Status:** Proposed — design input for gates **H1-D** (accepted-order / POS design) and **H2** (migration authorization). It is **not** an approval to write a migration, call Pancake, or enable anything.
+- **Date:** 2026-10-25
+- **Task:** V00 of [`tasks/storefront-voucher-v1-plan.md`](../../tasks/storefront-voucher-v1-plan.md).
+- **Governs:** [`docs/specs/storefront-voucher-v1.md`](../specs/storefront-voucher-v1.md) §3.2, §5.1–§5.3, TG-01, TG-03, TG-04.
+- **Companion:** [`docs/integrations/pancake-voucher-acceptance.md`](../integrations/pancake-voucher-acceptance.md) (POS exact-money fixtures and the operator probe boundary).
+- **Does not decide:** column names (the spec says a proposal is not a column approval), POS sandbox probes (separate operator authorization), production enablement (H5 / `/ship`).
+
+## Context (read from main@0b6be20)
+
+| Fact | Where | Consequence |
+| --- | --- | --- |
+| `OrderMirror.state` is `DRAFT → VALIDATING → POS_SUBMITTING → CONFIRMED / REJECTED / SYNC_UNKNOWN`. A DRAFT is written at validation time and may be repriced and superseded. | `prisma/schema.prisma` `LocalOrderState` | **Inserting or reading a DRAFT cannot be the Q33B "website accepted" moment** (spec §5.2). |
+| `OrderQuoteSnapshot` is 1:1 with the order (`orderId @unique`, `onDelete: Restrict`) and already stores digest, totals and `vendorProjection`. | `OrderQuoteSnapshot` | The immutable quote already has a home; what is missing is a rule that nothing may change it once accepted. |
+| `VariantCapacityReservation` is unique per `(orderId, variantId)`; the submit service reserves capacity (`reserveOrderCapacity`) before the POS call and moves it `RESERVED → SUBMITTING → COMMITTED / RELEASED / UNKNOWN`. | ADR 0014, `guest-checkout-submit.ts` | Capacity is decided before anything reaches Pancake; the voucher consume must come after a successful reservation, never before. Where exactly the accepted marker sits relative to the `SUBMITTING` transition is an open H1-D item. |
+| Pancake status is stored as a raw `pancakeStatus Int` with no mapping to "cancelled". | `pancake-order-status-reconciliation.ts` | A trusted cancel signal does not exist yet (TG-04). |
+| Anonymous carts are server-side `Cart` rows (with `expiresAt` and a `paidRevision` ABA guard) reached through an HttpOnly cookie. | `prisma/schema.prisma` `Cart`, `anonymous-cart-*.ts` | Voucher intent (AUTO / manual / NONE / validated code) can be stored against the cart row without a new client token. |
+
+## Decision
+
+### D-1 Accepted marker: a separate, insert-only `OrderAcceptance` record
+
+A new 1:1 record (`orderId @unique`, `acceptedAt`, `quoteDigest`, frozen voucher references) is the **single, durable "website accepted" marker**. Rejected alternatives:
+
+- *New `LocalOrderState.ACCEPTED`*: widens an enum every state reader, the reconciliation worker and the Meta purchase gate switch on; an older deployment meeting the value is a rollback hazard.
+- *Nullable `websiteAcceptedAt` on `OrderMirror`*: additive and simple, but it puts a write-once field on the hottest mutable row and makes "was this order accepted" depend on a column that ordinary updates also touch.
+
+A separate table is additive, ignored by old code, rolled back by dropping the table, and its row can be **insert-only by construction** (no `UPDATE` path, `onDelete: Restrict`). Final shape is for H2 to approve; the invariants below are what any shape must satisfy.
+
+### D-2 Immutability is enforced by the database, not by convention
+
+Once an `OrderAcceptance` row exists for an order, the database rejects `UPDATE`/`DELETE` on that order's money-bearing rows: `OrderMirror` money columns (`merchandiseSubtotalVnd`, `shippingFeeVnd`, `totalVnd`, shipping provenance), `OrderLineSnapshot`, `OrderQuoteSnapshot`, `OrderQuoteLine`, `OrderQuoteEntitlement`, and the voucher snapshot. State, Pancake identifiers and sync fields stay writable — the order still has to move through `POS_SUBMITTING → CONFIRMED / REJECTED / SYNC_UNKNOWN`. Before acceptance nothing changes: a DRAFT remains repriceable exactly as today. Application code that tries to reprice an accepted order fails closed instead of silently succeeding (spec §5.2, AC-38). A PRICE_CHANGED answer from Pancake on an accepted order ends in reject/reconcile with a refund and a **new** checkout attempt, never an in-place reprice.
+
+### D-3 Transaction order: reserve stock, then accept + consume in one transaction
+
+```text
+1  verify signed submit-capable proof, hold ownership, cart revision        (read-only checks, no writes)
+2  reserve capacity (existing VariantCapacityReservation, ADR 0014)         (may fail: out of stock / lock timeout)
+3  ── one DB transaction ───────────────────────────────────────────────
+   3a re-check hold: HELD, owner, voucher+revision, expiresAt > now() (DB clock)
+   3b insert OrderAcceptance (unique orderId)       → replay/2-tab hits the unique key
+   3c hold → CONSUMED; insert VoucherRedemption (unique orderId+kind); move reserved→redeemed counters
+   3d freeze quote snapshot + voucher snapshot (already written, now protected by D-2)
+   ───────────────────────────────────────────────────────────────────
+4  after commit: submit the stored vendor projection to Pancake
+```
+
+| Failure point | Required outcome |
+| --- | --- |
+| Step 2 fails (stock, lock timeout) | No acceptance, hold untouched (still `HELD` until its own expiry), voucher not consumed, **no POS write**. |
+| Crash/rollback inside step 3 | Whole transaction rolls back: no marker, hold still `HELD`, counters unchanged. Capacity reservation is released by the existing reservation sweeper. |
+| Crash after step 3, before step 4 | Order is accepted and consumed; POS submit is retried from the frozen projection by the existing submit/reconcile path. Voucher is **not** refunded. |
+| Step 3b unique violation (replay, double-click, two tabs, A→B→A) | The loser reads the winner's order and returns it; exactly one redemption exists. |
+| Hold expired at or after `expiresAt` | Step 3a rejects; hold is released idempotently; buyer must re-quote and confirm (spec §5.1, AC-32). Expiry is checked inside the transaction against the database clock, never a cleanup job. |
+| Pancake `REJECTED` with evidence the order was not created | Refund once (D-4); buyer starts a new attempt. |
+| Pancake timeout / `SYNC_UNKNOWN` | Stays consumed and pending; alertable; **no** refund, **no** purchase analytics until `CONFIRMED`. |
+
+### D-4 Refund is a compare-and-set on the redemption, from a trusted signal only
+
+`VoucherRedemption.refundedAt IS NULL → now()` in one statement; a duplicate or out-of-order event matches zero rows and changes nothing. Triggers: a definitive reject with evidence, a verified cancellation from Pancake reconciliation (after the status mapping in the companion doc is proven, TG-04), or an authenticated Admin cancel with audit. A refund returns quota and budget to the ledger; it never reactivates an expired or disabled campaign. Ambiguous status, network error or an unmapped code means *pending reconciliation*, never refund.
+
+### D-5 Cart-bound selection storage
+
+Voucher intent (AUTO / manual id / explicit NONE / validated PRIVATE code, per group) is stored **server-side against the anonymous cart row**, with an expiry, so it survives PDP → cart → checkout and reload without any code in the URL, a client cookie or analytics (spec §8). It stores intent only: no money, no hold. Selection actions never touch quota or budget. Whether this is a new table or columns on the cart row is an H2 choice; a new table is preferred for the same additive-rollback reason as D-1.
+
+### D-6 Flag OFF settles, it does not strand
+
+`LA_VOUCHER_ENABLED` unset or not exactly `"true"` stops **new** campaign reads, selections and holds. Consume, reconcile and refund of already-granted holds and redemptions keep running (TG-05 A, AC-47). The gate therefore must not wrap the settle path.
+
+## Consequences
+
+- V04 can be written against these invariants once H2 approves a shape, and V13 consumes a marker that already exists instead of inventing one.
+- Two database triggers (or an equivalent constraint mechanism) are required by D-2; H2 must approve them explicitly because they are the part most likely to surprise a future maintainer.
+- No existing order, enum or reader changes; historical orders have no acceptance row and are simply "not voucher orders".
+
+## Review checklist for H1-D / H2
+
+- [ ] The marker shape (D-1) and the immutability mechanism (D-2) are acceptable, including the writable-column list.
+- [ ] Step 2 precedes step 3 against the real submit service: `reserveOrderCapacity` runs before the POS call today; confirm where `beginSubmitting` sits relative to the accepted marker when V13 is scoped (this ADR changes no runtime file).
+- [ ] The failure table has no missing row for the current submit service.
+- [ ] Rollback: dropping the new tables and triggers leaves old code and historical orders untouched.

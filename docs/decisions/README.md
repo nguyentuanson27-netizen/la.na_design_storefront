@@ -19,5 +19,6 @@
 
 | [0015](./0015-direct-meta-capi.md) | **Accepted implementation; activation unverified** | Direct Meta funnel CAPI, server authority, shared IDs, PDP provenance and bounded attribution retention |
 | [0016](./0016-gift-quantity-promotions-v1-decisions.md) | **Accepted** | Gift & Quantity Promotions v1 owner decisions H0 (stack, legacy FIXED_PRICE ceiling, duplicate gifts, READY gifts, FROM `N0`, half-up per-unit rounding, category taxonomy) and Pancake gift projection at 1.000đ per gift unit (D-08) |
+| [0018](./0018-voucher-v1-accepted-order-architecture.md) | **Proposed** | Voucher v1 durable website-accepted marker (separate insert-only record), DB-enforced immutable accepted quote, reserve-then-consume transaction order, CAS refund and cart-bound selection storage; design input for gates H1-D / H2, no migration authorized |
 
 ADR files are retained as historical records when superseded or amended. The newest accepted ADR governs where decisions overlap, including repository workflow policy documented by ADR 0005, Merchant domain authority documented by ADR 0010, Merchant apparel-fact policy documented by ADR 0007, and Merchant manufacturer-MPN source/ownership semantics documented by ADR 0008.

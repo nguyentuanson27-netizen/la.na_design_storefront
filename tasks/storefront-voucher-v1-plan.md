@@ -1,6 +1,6 @@
 # Storefront Voucher v1 — implementation plan
 
-**Status:** DRAFT PLAN — waiting for owner review/approval before /build. This PR writes **planning documents only**.
+**Status:** PLAN APPROVED FOR SLICE A — owner instructed `/build` on 2026-10-25 (H0). Slice A (V00–V03) is built in the first implementation PR; V04 onward waits on H1-D / H2. Originally written as planning documents only (PR #213).
 **Source of truth:** [Voucher v1 spec](../docs/specs/storefront-voucher-v1.md), merged from PR #212 by squash commit 2c6e35d39d165064f5986ef901a5bb3efa464e1a on 25/10/2026.
 **Planning baseline:** main@2c6e35d39d165064f5986ef901a5bb3efa464e1a.
 **Companion checklist:** [storefront-voucher-v1-todo.md](./storefront-voucher-v1-todo.md). Existing [plan.md](./plan.md) and [todo.md](./todo.md) are the unrelated current master workstream; **do not overwrite them**.
