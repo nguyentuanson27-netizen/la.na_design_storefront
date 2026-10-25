@@ -17,7 +17,7 @@
 **Bối cảnh:** Next.js 16.4.1, React 19.2.0, TypeScript 5.9, Prisma 7.10.1/PostgreSQL, pnpm 11.4.0 (package.json). Đã có:
 - src/commerce/promotion-pricing.ts: promotion/flash sale/clearance từng variant; **campaign legacy trùng nhau không tự stack**.
 - src/commerce/gift-quantity-stack.ts, gift-quantity-entitlement.ts, benefit-checkout-quote.ts: ưu đãi mua nhiều, quà, stack và signed quote theo paid groups.
-- src/commerce/shipping-campaign.ts: freeship chiến dịch theo paid quantity, không phải freeship vĩnh viễn; PR #198 đã loại bỏ mốc freeship mặc định. Base ship 30.000đ là **giá trị config mặc định**, không hardcode ở voucher.
+- src/commerce/shipping-campaign.ts: freeship chiến dịch theo paid quantity, không phải freeship vĩnh viễn; PR #198 đã loại bỏ mốc freeship mặc định. Base ship 30.000đ là **giá trị config mặc định**, không hardcode ở voucher. **Quan trọng:** engine hiện có chặn campaign khi có khuyến mãi khác và campaign đặt stackingEnabled=false; tác động của voucher hàng hóa mới phải được mô tả và kiểm thử rõ ở §4.1/TG-10.
 - src/commerce/checkout-quote-proof.ts, guest-checkout-snapshot.ts, guest-checkout-submit.ts và pancake-order-submit.ts: server reprice/proof, OrderMirror DRAFT/VALIDATING/POS_SUBMITTING/CONFIRMED/REJECTED/SYNC_UNKNOWN, stock reservation, POS reconciliation.
 - docs/specs/storefront-funnel-measurement-v1.md: owner mới duyệt **đo Mức 0**; không được thêm durable session sink ngoài approval.
 
@@ -29,7 +29,7 @@
 | Q02 được thay bởi Q15/Q20 | Tối đa **1 voucher trong mỗi loại**; các loại khác nhau cộng dồn; mặc định tối ưu **tổng thanh toán thấp nhất** |
 | Q03/Q04 | Voucher giảm tiền hàng **luôn cộng dồn** với Flash Sale và ưu đãi mua nhiều hiện có |
 | Q05/Q18 | Mốc quà theo giá trị đơn xét **sau voucher**; có thể mất quà; cảnh báo và cho khách đổi voucher |
-| Q06/Q17/Q19/Q25 | Voucher freeship 100%, kết hợp voucher tiền hàng; mốc tiền xét **sau voucher giảm hàng**; nếu phí ship đã 0 thì không tiêu voucher freeship |
+| Q06/Q17/Q19/Q25 | Voucher freeship 100%, kết hợp voucher tiền hàng; mốc tiền xét **sau voucher giảm hàng**; nếu phí ship đã 0 thì không tiêu voucher freeship. **Không suy diễn** câu trả lời này thành quyền bỏ qua cấu hình stackingEnabled của shipping campaign hiện có |
 | Q07/Q10/Q11 | Ngưỡng voucher và số tiền giảm xét trên **các paid lines trong phạm vi**, sau Flash Sale/mua nhiều, trước voucher, chưa gồm shipping |
 | Q08/Q23/Q24 | Quota **tổng lượt**, không giới hạn theo khách; dùng khi website tạo đơn thành công; **hoàn lượt khi đơn hủy**, kể cả đã giao vận chuyển |
 | Q09/Q34/Q35 | Phạm vi áp dụng cho cả hai nhóm: toàn shop/danh mục/sản phẩm cụ thể/loại trừ; danh mục **động**, tự nhận sản phẩm mới |
@@ -42,6 +42,8 @@
 | Ảnh Grab + YES | Picker 2 nhóm, item disabled có lý do/“Đặt thêm Xđ…”, sticky footer “Áp dụng • N ưu đãi” |
 
 **Ưu tiên:** Q15/Q20 thay luật cũ “chỉ 1 voucher cả đơn” ở Q02; Q32A quy định phạm vi áp dụng cho Q31C. “Luôn stack với Flash Sale/tier” nghĩa là **áp voucher sau kết quả từ engine hiện có**, không tự ý thay luật xung đột giữa các legacy campaign và tier.
+
+**Hai diễn giải bổ sung CHƯA phải quyết định owner:** (i) voucher giảm tiền hàng được tính là một khuyến mãi khác khi xét stackingEnabled của shipping campaign cũ — giữ đúng khả năng từ chối cộng dồn của campaign (TG-10); (ii) nếu hai tổ hợp có cùng tổng tiền, ưu tiên giữ quà đã đạt trước khi ưu tiên ít voucher hơn (TG-09). Đưa ra làm **đề xuất mặc định để review**, không được triển khai/activate logic chưa được owner chấp thuận.
 
 ## 2. Phạm vi MVP
 
@@ -70,7 +72,7 @@
 - Code: normalize canonical, bounded ký tự [A-Z0-9_-], unique theo shop; mã là công cụ phân phối **không phải bảo mật danh tính**, nên có thể được chia sẻ.
 - Discount: MERCHANDISE/FIXED_AMOUNT_VND (whole positive VND) hoặc PERCENTAGE (1..99); maxDiscountVnd tùy chọn, chỉ áp dụng cho %. SHIPPING_FREE không có percent/fixed money hàng hóa.
 - minEligibleSubtotalVnd nullable với %/shipping; **bắt buộc và > fixedAmountVnd** với giảm số tiền cố định; >0 nếu điền.
-- Scope: ALL_SHOP hoặc scope danh mục động (categoryKeys) với include/exclude sản phẩm, cùng taxonomy website hiện tại; exclude thắng include. Sản phẩm mới vào danh mục tự được xét sau membership update.
+- Scope: ALL_SHOP (cho phép **chỉ** excludeProductIds) hoặc TARGETED (categoryKeys và/hoặc includeProductIds, có thể excludeProductIds), dùng taxonomy website hiện tại; exclude luôn thắng. Danh mục là dynamic, sản phẩm mới vào danh mục tự được xét sau membership update. Công thức và ranh giới helper ở §3.3.
 - Lifecycle: Draft/Scheduled/Active/Ended/Disabled **derived** từ isEnabled, startsAt, endsAt, enabledAt, disabledAt; time UTC interval [start,end), null bound được phép; campaign tạo mới không tự Active.
 - Quota: maxUses nullable (tổng lượt, không theo khách), maxBudgetVnd nullable (whole VND), redeemedUses/redeemedVnd và reservedUses/reservedVnd **hoặc ledger tương đương chứng minh được invariant**. SHIPPING_FREE cost = phí vận chuyển thật được miễn.
 - Admin: CRUD/copy/publish/schedule/disable có authorization, shop ownership, optimistic revision và audit. Sửa điều kiện kinh tế tăng revision; không ghi đè lịch sử đơn. Reject incomplete Draft khi publish; reject scope invalid, duplicate code, negative money, invalid time/discount/budget.
@@ -82,28 +84,39 @@
 - **Order audit:** immutable snapshot của voucher ID/kind/revision/mức tiền/thuộc nhóm nào, line allocation, shipping winner và tổng chốt; không đọc config hiện thời để quyết định lại giá đơn cũ. Migration additive, tương thích đơn lịch sử.
 - Nếu implementation chứng minh schema khác đơn giản hơn nhưng vẫn đúng các invariant thì được dùng; **đề xuất không phải phê duyệt column cụ thể**.
 
+### 3.3. Contract membership của voucher (bổ sung sau review)
+
+Cho product P đang thuộc đúng shop của campaign, dùng **cùng cấp ProductMirror**, không so category theo variant:
+
+- **ALL_SHOP:** eligible(P) = thuộc shop hiện tại AND **P.id không nằm trong excludeProductIds**. Hợp lệ với exclusions; từ chối categoryKeys/includeProductIds đi kèm ALL_SHOP vì dư thừa và gây mơ hồ.
+- **TARGETED:** eligible(P) = thuộc shop hiện tại AND **(categoryMatch(P) OR P.id nằm trong includeProductIds) AND P.id không nằm trong excludeProductIds**. Bắt buộc có ít nhất một category hoặc include, không cho scope trống. Category + include là **OR**, không phải AND.
+- **categoryMatch:** dùng hệ phân cấp/category expansion hiện tại (kiểm tra các danh mục con tương ứng khi Admin chọn danh mục cha), cùng canonical ProductCategoryMembership.categoryKey. Truy vấn membership động tại thời điểm server quote, không đóng băng tại publish; khi cart/order cần reprice, thay đổi membership phải dẫn đến re-evaluation.
+- Tất cả input do Admin ghi phải được normalize/validate bounded theo shop, distinct product IDs, danh mục hợp lệ và loại trừ thắng trong cả hai mode. **Không dùng trực tiếp GLOBAL_ALL_PAID_LINES của gift-quantity-scope.ts cho ALL_SHOP+exclude:** helper đó cố ý từ chối mọi target. Dùng resolver voucher riêng, hoặc mở rộng bằng contract tách biệt không làm thay đổi ngữ nghĩa Gift & Quantity.
+- Ví dụ TARGETED: chọn danh mục Đầm + include Túi B + exclude Đầm A ⇒ Đầm khác và Túi B đủ điều kiện, Đầm A bị loại. ALL_SHOP + exclude Túi B ⇒ mọi paid product trừ Túi B; quà không tham gia.
+
 ## 4. Pricing contract chính tắc
 
 ### 4.1. Thứ tự tính và phạm vi
 
-1. Tính paid lines từ authoritative cart và giá sau legacy PROMOTION/FLASH_SALE/CLEARANCE + QUANTITY_TIER bằng engine hiện tại. Gọi tổng tiền paid sau các giảm cũ là **P**. Quà chưa thêm vào tiền hàng.
+1. Tính paid lines từ authoritative cart và giá sau legacy PROMOTION/FLASH_SALE/CLEARANCE + QUANTITY_TIER (**bao gồm ORDER_SUBTOTAL ladder**) bằng engine hiện tại. Gọi tổng tiền paid sau các giảm cũ là **P**. **Chốt eligibility và bậc của QUANTITY_TIER/ORDER_SUBTOTAL trước voucher; không chạy lại tier trên P_after, không lặp vòng tier ↔ voucher.** Đây là ranh giới có chủ đích với gift: mốc **quà theo tiền** được xét lại sau voucher ở bước 4. Quà chưa thêm vào tiền hàng.
 2. Với voucher hàng hóa có scope S, **E** = subtotal của paid groups thuộc S sau sale/tier, chưa có voucher và ship. Không tính hàng không thuộc scope, gift hay shipping để đạt ngưỡng; nếu E không đạt minimum → ineligible.
 3. Voucher MERCHANDISE lấy **D**:
    - FIXED: D = amountVnd; min spend bắt buộc **> D**.
    - PERCENTAGE: D = round-half-up(E × integerPercent / 100), optional cap min(D, maxDiscountVnd). BigInt intermediate, whole VND.
    - Yêu cầu **0 < D < E**; không để paid unit <1đ. Chỉ trừ đúng D trên **paid groups thuộc scope**, không sửa tiền ngoài scope.
    - Allocation xuống POS line/paid segments phải **deterministic và chính xác từng đồng**, ổn định khi đổi thứ tự dòng, bảo toàn quantity/fulfillment, không giảm chồng thêm lần hai. Nếu vendor không thể biểu diễn chính xác D với số lượng/mức giá cụ thể, **block quote/hold/submit** cho candidate đó, không silent rounding: TG-02.
-4. **P_after = P − D**. Gift entitlements ORDER_SUBTOTAL được **tính lại sau voucher** theo scope/campaign có sẵn; QUANTITY gifts xét paid quantity. Nếu mất suất đang chọn, cho khách biết và xác nhận/đổi voucher/quà trước submit; **không tự xóa CartGiftSelection** không có đồng ý.
-5. Tính shipping campaign hiện hành theo own scope/paid quantity/stacking (PR #198). Nếu fee đã 0 thì SHIPPING_FREE voucher không tham gia.
-6. Nếu fee >0, voucher SHIPPING_FREE đủ điều kiện khi subtotal paid **thuộc scope của voucher shipping sau voucher merchandise** đạt min (nếu có). Fee_after = 0; nếu không đủ thì giữ fee hiện tại. Quà/ship không được cộng vào threshold. Voucher không biến phí ship âm.
+4. **P_after = P − D**. Gift entitlements ORDER_SUBTOTAL được **tính lại sau voucher** theo scope/campaign có sẵn; QUANTITY gifts xét paid quantity. **Preview voucher/tổ hợp không được tự sửa CartGiftSelection đang lưu.** Nếu lựa chọn voucher làm mất suất quà đã chọn, phải đi theo luồng preview → cảnh báo số suất/quà mất → khách xác nhận đổi voucher và bỏ/đổi lựa chọn quà liên quan (hoặc hủy để giữ lựa chọn cũ) → server cập nhật nhất quán → revalidate entitlement và phát quote/proof mới. Cho đến khi xác nhận, chưa commit voucher làm invalid gift; submit bị chặn an toàn như hợp đồng GIFT_SELECTION_INVALID hiện có. Không tự xóa quà, không được xem bấm nút đóng popup là đồng ý.
+5. **Đánh giá lại shipping campaign hiện hành cho TỪNG candidate voucher MERCHANDISE**, không tái sử dụng shipping fee từng tính cho candidate khác. Giữ nguyên quy tắc paid quantity/scope/priorities và guard **hasOtherPromotions AND NOT stackingEnabled** của shipping-campaign.ts. **Đề xuất tương thích chờ owner duyệt (TG-10):** hasOtherPromotionsForCandidate = existingPromotionFlag do authority hiện có tính (bao gồm legacy/tier/quà theo contract hiện hành) **OR candidate MERCHANDISE thực sự giảm >0**. Nếu campaign shipping có stackingEnabled=false, chọn voucher tiền hàng có thể khiến campaign đó không còn hợp lệ và phí ship quay lại; khi stackingEnabled=true thì không bị loại chỉ vì voucher. Q03/Q04 bắt buộc cộng với Flash Sale/tier, **không tự động thay** luật stacking của shipping campaign hiện có.
+6. Trên **shipping fee thực tế của từng candidate**: nếu fee = 0 nhờ shipping campaign, không áp/hold/consume SHIPPING_FREE voucher. Nếu fee >0, xét SHIPPING_FREE trên subtotal paid **thuộc scope của voucher shipping sau voucher merchandise** (và loại trừ sản phẩm chính xác theo §3.3); đủ min thì fee_after = 0, không đủ thì giữ phí. Quà/ship không được cộng vào threshold; phí không âm. Voucher SHIPPING_FREE là quyền lợi vận chuyển riêng và được cộng với MERCHANDISE khi hợp lệ, nhưng **không nhận hai lần ưu đãi ship**.
+7. **Chống tổng tiền tăng âm thầm:** server so sánh total của mỗi tổ hợp với candidate NONE/NONE cùng cart snapshot. Auto không được chọn tổ hợp khiến tổng tiền cao hơn phương án không dùng voucher. Manual lock hợp lệ vẫn được phép chọn tổ hợp có total cao hơn theo Q21 nhưng UI phải cảnh báo rõ **mất freeship chiến dịch cũ / phí ship tăng / chênh lệch tổng tiền**, yêu cầu xác nhận báo giá mới trước khi commit/submit; không nói voucher luôn làm đơn rẻ hơn. Khi thay giỏ khiến lựa chọn manual tăng tổng, cũng áp cùng quy tắc xác nhận.
 
 **Tổng thanh toán = P_after + shippingFeeAfter**. Cả gift, shipping, order summary và vendor line projection phải lấy từ **cùng một canonical quote**, không tự tính một công thức khác ở cart/checkout/POS.
 
 ### 4.2. Tối ưu tổ hợp, manual override
 
 - Candidates: **NONE** + các voucher hợp lệ trong từng nhóm. PRIVATE/CODE chỉ được xét sau khi khách nhập hoặc link đã được xác thực. Một nhóm chỉ có tối đa một voucher chọn.
-- Với **cùng cart snapshot, đồng hồ, category membership, campaign revision**, server tính các cặp candidate (MERCHANDISE/NONE, SHIPPING_FREE/NONE), recheck quota/budget và gift/shipping, rồi chọn **totalPayableVnd nhỏ nhất**.
-- Khi hai phương án có tổng bằng nhau, ưu tiên **ít voucher phải tiêu hao hơn**, rồi stable ID tie-break. Không tự chọn voucher saving 0; ưu đãi quà không được giả định là tiền để biến mục tiêu tối ưu thành mục tiêu khác.
+- Với **cùng cart snapshot, đồng hồ, category membership và price authority**, server tính các cặp candidate (MERCHANDISE/NONE, SHIPPING_FREE/NONE), recheck gift/shipping và khả năng cấp quota/budget **cho các candidate MỚI**; sau đó chọn **totalPayableVnd nhỏ nhất**, bao gồm candidate NONE/NONE. Nếu checkout đã có **hold hợp lệ thuộc chính attempt và quote không đổi**, **không** đòi campaign còn ACTIVE, revision mới bằng revision đã khóa, hay quota **trống** sau khi trừ hold của chính khách: dùng contract hold §5.1. Không dùng hold của attempt khác.
+- **Đề xuất tie-break chờ owner phê duyệt (TG-09):** khi total bằng nhau, ưu tiên tổ hợp **giữ được số quà đã chọn và suất quà đủ điều kiện nhiều hơn** (không gán quà thành tiền); tiếp theo ít voucher phải tiêu hao hơn; cuối cùng stable ID. Không tự chọn voucher saving 0. Quy tắc này không được coi là Q18/Q20 đã chốt, vì owner mới chỉ yêu cầu tối ưu **tiền thanh toán** và có quyền chọn voucher để giữ quà.
 - Nếu user manual lock một nhóm, giữ nếu hợp lệ và tối ưu nhóm còn lại; nhập mã ẩn hợp lệ được coi là manual lock. Khi manual mất hiệu lực, auto chọn lại nhóm đó và **thông báo rõ**.
 - Khi người mua chỉnh cart/gift, thay quote, campaign đổi, hoặc hết hold, phải recompute; nếu tổng tiền/entitlement thay đổi, client chỉ được đặt khi đã nhận được **quote/proof mới** và xem/chấp thuận tiền mới.
 
@@ -119,23 +132,33 @@
 
 **EX-05 — Lượt và ngân sách:** quota 1 và hai checkout cùng chọn voucher; chỉ một hold được grant. Mã có quota 100 nhưng maxBudgetVnd 1.000.000đ cũng phải giữ đúng phần budget từng checkout.
 
+**EX-06 — Shipping campaign không cho stack:** giỏ P=100.000đ, campaign freeship đang có hiệu lực với stackingEnabled=false → không dùng voucher total 100.000đ. Thử voucher MERCHANDISE giảm 10.000đ (và không có voucher SHIPPING_FREE hợp lệ) khiến shipping campaign rơi, fee trở lại 30.000đ → total 120.000đ. **Auto phải chọn NONE (100.000đ)**; nếu khách manual chọn giảm 10K thì hiển thị phí ship mới, total tăng 20K và yêu cầu xác nhận tường minh. Với stackingEnabled=true, không được rơi freeship chỉ vì voucher. Đây là cách diễn giải đề xuất TG-10, chưa phải quyết định owner đã ký.
+
+**EX-07 — Cùng tổng tiền nhưng khác quyền lợi quà:** P=620.000đ, base ship 30K, shipping-voucher min 600K, gift min 600K. Giảm hàng 40K → P_after=580K, fee=30K, total 610K, mất quà. Giảm hàng 10K + SHIPPING_FREE → P_after=610K, fee=0, total **cũng 610K**, giữ quà. Đề xuất tie-break TG-09 chọn phương án **giữ quà**, trừ khi khách manual chọn khác.
+
+**EX-08 — Self-held quota trong natural expiry:** voucher quota=1; khách hold lúc T0 với discount 50K, campaign hết hạn tự nhiên ở T+3 phút, khách submit không đổi cart/quote tại T+5 phút: phải honor **hold riêng còn hạn**, không đòi ACTIVE hay quota free=1. Submit lúc T+10 phút hoặc sau phải từ chối hold hết hạn và re-quote.
+
+**EX-09 — Mốc tier vs gift:** tier ORDER_SUBTOTAL đạt mức tại P_beforeVoucher, sau voucher P_after thấp hơn mốc: **tier đã đạt không bị tính lại**; riêng entitlement gift ORDER_SUBTOTAL **phải tính lại** trên P_after.
+
 ## 5. Hold 10 phút, dùng lượt tại website, refund
 
 ### 5.1. Hold bảo đảm quyền lợi (Q31C/Q32A)
 
 - **Chỉ cấp hold khi checkout phát hành quote đủ điều kiện**, không giữ lượt vì người dùng xem PDP, picker/cart hoặc gõ thử code.
-- Hold tối đa **1 lượt + đúng số VND ngân sách cho mỗi voucher được chọn**, cùng giao dịch DB. Giữ chỗ thành công lúc issuedAt; expiresAt = issuedAt + 10 phút. Hệ thống không over-allocate khi có concurrent users.
-- Natural expiry của campaign hoặc quota bị người khác dùng hết **trong 10 phút** không phá quyền lợi voucher đã giữ của **quote/cart không thay đổi**. Không dùng hold để bảo đảm stock, giữ giá cơ sở hoặc shipping policy khác.
-- Reload/retry/2 tab không sinh hold mới hoặc kéo dài vô hạn một attempt; đổi voucher phải swap/release có khóa nhất quán. Nếu đổi cart/line quantity/eligibility/quote revision, báo giá lại và rebind hold; không tự hứa ưu đãi chưa giữ được.
-- Hết 10 phút phải release (idempotent) và **yêu cầu refresh quote, xem tổng mới, xác nhận lại** trước đặt hàng. Job dọn TTL là phụ; DB live check/transaction quyết định correctness. Có rate limit/guard chống chiếm slot bằng nhiều abandoned carts.
-- Admin emergency disable/revoke khi đã có hold là **technical owner gate TG-05**, không được âm thầm tăng tiền hoặc thu hồi khi khách chưa được báo.
+- Hold tối đa **1 lượt + đúng số VND ngân sách cho mỗi voucher được chọn**, trong **cùng DB transaction** cho hai nhóm; giữ quota/budget của hai voucher theo lock order ổn định để tránh deadlock. Chỉ cấp signed checkout quote đặt hàng được **sau khi** cấp hold cho tất cả voucher được chọn thành công. expiresAt = issuedAt + **10 phút tuyệt đối**, không rolling expiry; tính cap bằng (đã tiêu chưa refund) + (tất cả **hold còn hạn** chưa consume). Khi test quota của chính checkout đang giữ, **loại chính hold của attempt đó khỏi phần quota/đơn vị budget cần cấp mới**; không cộng đôi.
+- **Precedence của hold có hiệu lực:** khi submit/re-quote đúng **cart, selected vouchers, signed quote, gift selection và base shipping/price facts** đã khóa, server kiểm tra ownership của hold, quote digest, voucher ID + **revision đã khóa**, discountVnd, expiresAt, trạng thái HELD. Nếu tất cả còn khớp, **honor điều khoản đã snapshot** cho natural campaign expiry và free-quota/budget=0; **không re-run ACTIVE/current revision/free-cap validation** cho voucher đã được hold đó bảo đảm. Vẫn kiểm tra tồn kho, tính khả thi xuất POS và các authority không được hold bảo đảm. Bất cứ trường hợp nào khác phải đi theo re-quote/new hold. Giữ quyền lợi không đồng nghĩa giữ tồn kho, giá cơ sở hay shipping policy ngoài voucher.
+- **Khi cart hoặc quote đổi:** old hold **không thể bảo đảm** ưu đãi cho giỏ mới. Trước khi release/rebind, server tính preview trên snapshot mới; thực hiện swap/release + acquire atomically/compensating transaction theo trạng thái, không giải phóng lượt của checkout khác. Không thể cấp new hold thì không báo đã bảo đảm voucher; hiển thị lại tổng mới và yêu cầu xác nhận, tránh mất hold cũ mà vẫn dùng proof cũ.
+- **Reload/retry/hai tab** cùng attempt: trả về **cùng hold/expiry** nếu còn phù hợp, không tạo duplicate hay kéo dài thời gian mỗi lần render. Same hold sẽ được CONSUMED **đúng một lần**; concurrent checkout khác không được trừ slot đang giữ.
+- **Expiry T+10 phút:** reject consume tại hoặc sau expiresAt (đúng ranh giới thời gian), release idempotent và **bắt buộc re-quote + buyer confirmation**. Worker cleanup không là nguồn xác thực TTL; request phải check expiry trực tiếp trong transaction. Natural campaign expiry ở phút thứ 3 **không** được làm hold chết ở phút thứ 5 (EX-08). Có rate limit/anti-flood chống giữ quota bằng bỏ checkout.
+- **Admin edit:** đề xuất chỉnh sửa thông thường nâng revision chỉ áp cho **quote/hold mới**, không đổi snapshot benefit của hold đang hợp lệ. **Emergency revoke** là **owner decision gate TG-05**: stop new holds, mô tả xử lý hold đang giữ và thông báo trước khi bỏ cam kết; chưa được tự động triển khai một chính sách thu hồi khác.
 
 ### 5.2. Mốc “website tạo đơn thành công” (Q33B)
 
 **Quan trọng:** OrderMirror DRAFT có thể được tạo khi validate rồi được trả về DRAFT để reprice; **insert DRAFT không đủ** để gọi là đơn thành công.
 
-- Implementation phải xác định một **local checkout accepted marker bền**: server đã kiểm tra input, proof, cart version, hold/budget, gift/shipping, đủ điều kiện order và ghi nhận chấp thuận vào DB. Marker và hold→CONSUMED/redemption cần chung transaction hoặc cơ chế tương đương có bằng chứng exactly-once effect.
-- Trừ lượt khi website accepted, **không đợi Pancake**. Nếu POS_SUBMITTING/SYNC_UNKNOWN thì ledger đã ghi tiêu lượt cho website accepted order. Không ghi lượt nếu request bị từ chối trước accepted (mã sai, quote mismatch, giá đổi, quà invalid).
+- Implementation phải xác định **mốc accepted riêng và bền vững**: server đã kiểm tra input, proof, cart version, hold/budget, gift/shipping, đủ điều kiện order và đã ghi sự chấp thuận. **Không đồng nhất với INSERT OrderMirror DRAFT**. Việc ghi accepted marker, **đóng băng immutable order quote/snapshot/voucher identity/amount**, và hold→CONSUMED/redemption phải atomically commit trong một transaction hoặc có cơ chế tương đương với exactly-once effect chứng minh được.
+- **Sau accepted, tuyệt đối không mutate/reprice DRAFT như trước accepted**: số tiền hàng/voucher/fee/quà/total và vendor projection đã khóa phải không đổi, kể cả khi Pancake trả PRICE_CHANGED, retry sau lỗi, cart thay đổi hay người mua mở tab khác. Nếu vendor không thể chấp nhận accepted quote, dùng trạng thái reject/reconcile có bằng chứng, refund voucher phù hợp và **yêu cầu checkout attempt mới**; không cập nhật quote của accepted order rồi gửi giá mới. Chỉ đơn chưa accepted mới được phép supersede/reprice DRAFT theo flow hiện hành.
+- Trừ lượt khi website accepted, **không đợi Pancake**. Nếu POS_SUBMITTING/SYNC_UNKNOWN thì ledger đã ghi tiêu lượt cho website accepted order. Không ghi lượt nếu request bị từ chối trước accepted (mã sai, quote mismatch, giá đổi, quà invalid). Một order/attempt ID và redemption ledger phải chống replay/double-submit.
 - Nếu POS trả **REJECTED có bằng chứng không tạo đơn**, hoàn/trả lại quota/budget idempotent và lưu audit. Nếu **SYNC_UNKNOWN**, giữ pending; không tự hoàn theo timeout hay đoán “không có đơn”; reconciliation bằng POS identity/readback.
 - Double-click, replay, hai tab cùng attempt, A→B→A phải giữ một accepted order và không tiêu voucher hai lần. Không phát purchase conversion analytics khi order chưa CONFIRMED theo contract hiện có.
 
@@ -198,9 +221,9 @@ Voucher vận chuyển                          Chọn 1
 - **Near threshold:** disabled nhưng đọc rõ, dòng **“Đặt thêm Xđ để được hưởng ưu đãi này”**. X lấy từ **server eligible subtotal trong phạm vi đúng**, sau sale/tier và voucher tiền hàng đã chọn nếu xét freeship. Requote sau khi thêm hàng; không quảng bá X như bảo đảm tuyệt đối nếu giảm giá thay đổi cùng giỏ.
 - **Ineligible khác:** rõ lý do “Hết lượt”, “Đã hết hạn”, “Không áp dụng cho sản phẩm”, “Không thể kết hợp với lựa chọn hiện tại”. PRIVATE chưa nhập **không** lộ trong list; sau khi nhập sai có thông báo không làm lộ private campaign inventory.
 - **Tự động:** server preselect combo có tổng cuối thấp nhất; không gắn nhãn “Tốt nhất” khi chưa được server xác minh. **Manual:** đổi nhóm đó vẫn chọn cứng nếu hợp lệ; nhóm còn lại auto. Nếu manual invalid, auto-reselect và thông báo.
-- **Quà:** khi voucher làm mất quà theo giá trị đơn, cảnh báo trước “Dùng ưu đãi này sẽ không còn đủ điều kiện nhận X quà”, cho đổi. Không tự xóa saved gift selection khi chưa xác nhận.
+- **Quà:** preview tổ hợp làm mất quà trước khi commit; hiển thị rõ số suất đã chọn sẽ không còn hợp lệ, cùng hai nhánh **“Giữ quà / đổi voucher”** hoặc **“Tiếp tục với voucher (bỏ/đổi quà bị mất)”**. Xác nhận tường minh mới cho phép cập nhật voucher và CartGiftSelection liên quan trong giao dịch nhất quán, rồi lập quote mới. Đóng picker/back/cancel **không** đổi voucher đã commit hoặc quà đã chọn. Auto preselect chỉ là preview khi xung đột, không được âm thầm thực thi.
 - **Footer:** khi đang có N=1/2 voucher thực sự giảm tiền, nút **“Áp dụng • N ưu đãi”**. N=0: **“Bỏ qua ưu đãi và tiếp tục”**. Bấm chỉ commit selection sau phản hồi server; đóng/back trước khi bấm giữ selection cũ. Không báo thành công chỉ từ click.
-- Nếu đang quote/loading, disable submit phù hợp, hiển thị lỗi có lối retry; khi giá tăng hoặc hết giữ chỗ phải hiển thị báo giá mới và yêu cầu đồng ý. Không tạo 2 thanh checkout sticky cạnh nhau.
+- Nếu đang quote/loading, disable submit phù hợp, hiển thị lỗi có lối retry; khi giá tăng hoặc hết giữ chỗ phải hiển thị báo giá mới và yêu cầu đồng ý. **Manual chọn voucher làm shipping campaign cũ mất hiệu lực** phải có cảnh báo dạng “Phí vận chuyển tăng Xđ; tổng đơn tăng Yđ so với không dùng mã”, yêu cầu xác nhận trước khi áp dụng. Không tạo 2 thanh checkout sticky cạnh nhau.
 
 ### 7.4. Accessibility & visual QA
 
@@ -213,7 +236,7 @@ Voucher vận chuyển                          Chọn 1
 - PUBLIC/AUTO: hiện công khai và tham gia auto optimizer.
 - PUBLIC/CODE: có thể hiện công khai, tự tham gia optimizer khi hợp lệ.
 - PRIVATE/CODE: chỉ được xét sau khách nhập đúng mã hoặc từ URL (ví dụ **/shop/san-pham?voucher=KOL50**), được ghi như manual choice; không liệt kê khi chưa có mã.
-- URL chỉ truyền ý định, không tự cho quyền, trừ tiền hay hold. Validate/normalize/rate limit, duy trì ý định qua PDP → cart → checkout; sau consume loại query khỏi URL để hạn chế referrer/history. Không log raw code PRIVATE hoặc gắn vào analytics.
+- URL chỉ truyền ý định, không tự cho quyền, trừ tiền hay hold. Validate/normalize/rate limit; **nhận mã từ request đầu trên server và chuyển sang URL sạch trước khi tài liệu tải bên thứ ba (GTM/Meta/analytics)**, ví dụ qua redirect an toàn hoặc cơ chế khác đã kiểm chứng. Lưu ý định mã trong session/cart server-side có expiry thích hợp để đi PDP → cart → checkout mà không phơi mã qua client analytics; áp dụng referrer policy hạn chế và không phát nguyên query vào tracking. **Không chờ đến khi đặt hàng mới xóa query.** URL đã được người gửi/nhà mạng/CDN nhìn thấy không thể hoàn toàn thu hồi; PRIVATE chỉ là không công khai trong picker, không phải secret bảo mật.
 - Vì Q08 không giới hạn theo khách, mã KOL được chia sẻ có thể bị người khác dùng; đây là **đặc tính của chính sách**, không coi mã là bí mật bảo mật.
 
 ## 9. Security, observability, rollout
@@ -270,6 +293,19 @@ Voucher vận chuyển                          Chọn 1
 | AC-26 | Mở/đóng picker trong checkout | Form COD, gift selection không bị xóa; chỉ bấm Áp dụng mới commit |
 | AC-27 | Refund khi campaign expired | Ledger hoàn đúng, không tự kích hoạt; counters/budget chính xác |
 | AC-28 | Summary/discount/fee | Không double-count sale/tier/voucher/freeship; total reconcile từng đồng |
+| AC-29 | EX-06 shipping campaign stackingEnabled=false, fee trước 0 | Voucher MERCHANDISE được tính là other promotion theo **đề xuất TG-10**; auto NONE giữ 100K, manual 10K phải hiện fee 30K + tổng tăng 20K và xác nhận |
+| AC-30 | Shipping campaign stackingEnabled=true, khác campaign non-stack; có gift/Flash Sale | Đánh giá hasOtherPromotions đúng authority hiện tại cho **mỗi candidate**; true vẫn freeship, false chỉ khi config không cho; fee/provenance stable |
+| AC-31 | EX-08: quota=1 đã hold, natural campaign expiry T+3, submit T+5 | Hold của chính attempt còn hạn được honor, không bị từ chối vì campaign inactive/revision khác/free quota=0 |
+| AC-32 | Hết TTL T+10 chính xác, cleanup job chưa chạy | Hold không được consume; release idempotent, bắt buộc re-quote + buyer consent |
+| AC-33 | Quote không đổi: reload/2 tab, quota free=0 nhưng self hold còn | Reuse cùng hold/expiry, không double-count quota/budget, không rolling TTL |
+| AC-34 | Cart/quote đổi khi hold đang giữ; swap hai nhóm | Không dùng proof/hold cũ cho cart mới; reacquire đúng quota/budget, fail phải báo giá lại |
+| AC-35 | Gift đang chọn, auto/manual voucher làm mất quà, khách confirm/cancel | Preview không sửa saved gift; cancel giữ nguyên; confirm cập nhật choice và revalidate/reproof atomically |
+| AC-36 | EX-07: hai tổ hợp total=610K nhưng khác số quà giữ được | **Đề xuất TG-09 chờ owner duyệt:** chọn tổ hợp giữ quà, không định giá quà thành VND |
+| AC-37 | ALL_SHOP + exclude; TARGETED category OR include AND NOT exclude; category cha/con | Membership động và đúng shop, không dùng GLOBAL_ALL_PAID_LINES theo cách phá Gift & Quantity |
+| AC-38 | Local accepted marker rồi cart đổi/POS reprice/retry | Voucher/quote/fee/vendor projection immutable; chỉ reject/reconcile, không sửa DRAFT đã accepted |
+| AC-39 | Tier ORDER_SUBTOTAL đạt trước voucher nhưng P_after xuống dưới mốc | Tier không bị chạy lại; gift ORDER_SUBTOTAL theo P_after vẫn giảm suất đúng |
+| AC-40 | Link PRIVATE code và GTM/Meta/referrer | Mã không bị gửi vào analytics/doc load URL sau redirect sang URL sạch; server session giữ intent, request đầu hạn chế log/referrer |
+| AC-41 | Admin normal edit/disable vs emergency revoke khi hold còn | Normal edit không phá snapshot của hold chưa hết TTL; emergency policy phải qua TG-05, không silently charge thêm |
 
 ## 11. Project structure, code conventions, test strategy & boundaries
 
@@ -277,7 +313,7 @@ Voucher vận chuyển                          Chọn 1
 - Pure voucher rules/optimizer, quote integration & ledger: src/commerce/voucher-*.ts; áp vào benefit-checkout-quote.ts, checkout-quote-proof.ts, guest-checkout-snapshot.ts và pancake-order-submit.ts (chỉ khi kỹ thuật TG-01/TG-02 được chứng minh).
 - Admin: src/app/admin/promotions/... + form; UI picker: src/components/brand/ hoặc src/components/commerce/ + shared route view models; không tính giá trong React.
 - Persistence: prisma/schema.prisma + additive migration; order audit snapshot và lifecycle reconcile.
-- Tests: tests/domain (pricing, scope, tie, gift), tests/database (hold, race, accepted/redemption, POS, cancellation), tests/a11y-runtime (picker), browser E2E checkout và sandbox POS contract.
+- Tests: tests/domain (pricing, scope, tie, gift), **tests/integrations** (trong pnpm test: checkout/Pancake workflows), tests/database (hold, race, accepted/redemption, POS, cancellation), tests/a11y-runtime (picker), browser E2E checkout và sandbox POS contract. Không được chỉ chạy pnpm test:domain + pnpm test:db rồi coi là full regressions.
 
 **Code style:** pure calculator, Readonly types và BigInt cho intermediate money, stable deterministic sorting, return typed result/error, không mutate global campaign state để tính candidate. Ví dụ pseudocode:
 
@@ -298,6 +334,7 @@ pnpm prisma:generate
 pnpm typecheck
 pnpm lint
 pnpm test:domain
+pnpm test
 pnpm test:db
 pnpm build
 ~~~
@@ -307,22 +344,24 @@ pnpm build
 - **Ask owner first:** migration/high-impact API, đổi mốc website accepted order, emergency revoke hold, chính sách khác với decisions §1, bật chiến dịch có ngân sách thật.
 - **Never:** tin tiền/browser, bỏ quote proof, bỏ POS acceptance/readback, chạm đơn committed lịch sử, ghi secret, silently thay quà/giá, coi specs là production enabled.
 
-**Definition of Done:** Spec reviewed; technical gates được giải quyết; AC có tests thực sự, typecheck/lint/DB/browser và Pancake staging evidence; security/reconciliation/migration/rollback đủ trước ship. Không claim test pass trong spec-only PR.
+**Definition of Done:** Spec reviewed và các phương án chính sách TG-05/TG-09/TG-10 được owner chấp thuận; technical gates được giải quyết; AC có tests thực sự, **pnpm test (gồm tests/integrations)** + typecheck/lint/DB/browser và Pancake staging evidence; security/reconciliation/migration/rollback đủ trước ship. Không claim test pass trong spec-only PR.
 
 ## 12. Technical gates trước implementation PR
 
 | Gate | Vấn đề source thực tế | Bằng chứng cần có |
 | --- | --- | --- |
-| TG-01 Website accepted (Q33B) | OrderMirror DRAFT có thể bị reprice, không đồng nghĩa đơn thành công | Xác định atomic local accepted boundary + durable marker, state transitions/retries với VALIDATING/POS_SUBMITTING/REJECTED/SYNC_UNKNOWN; không ảnh hưởng purchase analytics |
+| TG-01 Website accepted (Q33B) | OrderMirror DRAFT có thể bị reprice, không đồng nghĩa đơn thành công | Chứng minh transaction accepted marker + hold consume + **immutable order quote/snapshot/vendor projection**, không reprice/supersede accepted DRAFT; retry/REJECTED/UNKNOWN đúng; purchase analytics chỉ CONFIRMED |
 | TG-02 POS exact money | Pancake có per-line price và gift projection; fixed voucher/order-level allocation có thể không chia hết theo quantity/price segment | Sandbox POS acceptance/readback đầy đủ, giữ signed total chính xác từng đồng; nếu không, block voucher activation/candidate |
-| TG-03 10-minute hold + budget | Existing quote HMAC stateless, chưa có durable voucher quota/budget holds | Schema/transaction/CAS, lock order, release expiry/swap, concurrency & anti-abuse tests; quote/cart binding |
+| TG-03 10-minute hold + budget | Existing quote HMAC stateless, chưa có durable voucher quota/budget holds | Hold self-ownership/discount/revision snapshot, ACTIVE/quota bypass **chỉ** cho same valid hold khi natural expiry, trừ self hold khi kiểm tra capacity, absolute TTL/rebind/swap trong transaction, DB concurrency + anti-abuse |
 | TG-04 Cancellation source | Order status từ Pancake là external, không mặc định suy mọi mã là CANCELED | Map trusted status, verified shop/order, chống duplicate/out-of-order, reconciliation & operator evidence |
-| TG-05 Emergency revoke | Q32 bảo đảm hold qua natural expiry, chưa có quyết định về thu hồi khẩn cấp do campaign cấu hình sai | Đề xuất owner phê duyệt: stop new holds, cách xử lý hold đã cấp và thông báo; không âm thầm phá promise |
+| TG-05 Emergency revoke | Q32 bảo đảm hold qua natural expiry. **Đề xuất** normal admin edit tăng revision chỉ áp quote/hold mới; thu hồi khẩn cấp chưa được owner quyết định | Owner chốt policy emergency: stop new holds, existing hold nghĩa vụ gì, thủ tục cảnh báo/reconfirm; không silent revoke. Chưa chốt thì **không triển khai chức năng emergency revoke làm hủy hold** |
 | TG-06 Existing stack/quote | Gift, shipping campaign, immutable OrderQuoteSnapshot và quote proof đang có contracts riêng | Chỉ ra thứ tự/tính lại entitlement và shipping, new voucher ledger, signed proof versioning, backward compat tests |
 | TG-07 UI reference | Hai ảnh Grab chỉ ở conversation, không phải asset repo | Review wireframe §7 và mobile/desktop accessibility acceptance; không phụ thuộc file ảnh chưa có |
 | TG-08 Capacity/measurement | Candidate combos + hold có khả năng tăng tải checkout, funnel chỉ Mức 0 | Chốt bounded reads/quoting, benchmark P95, rate-limit hold, metrics không PII và không sink mới |
+| TG-09 Owner tie-break | Q18/Q20 chỉ chốt minimize tổng tiền; **chưa chốt** chọn giữ quà khi tổng bằng nhau | Xin owner duyệt **ưu tiên giữ existing gift entitlements khi total bằng nhau**, rồi ít voucher; hoặc owner chọn chính sách khác và cập nhật EX-07/AC-36 |
+| TG-10 Owner shipping stacking | Q03/Q04/Q06 không quyết định việc voucher MERCHANDISE có làm hasOtherPromotions=true cho campaign shipping cũ hay không | Xin owner duyệt đề xuất **giữ stackingEnabled hiện tại, OR với voucher MERCHANDISE thực giảm**; nếu owner không duyệt, cập nhật §4.1/EX-06/AC-29/30 trước implementation |
 
-**Gate thất bại:** dừng build phần pricing/submit liên quan, không ship một hệ thống voucher báo giá mà vendor không thể cam kết; đề xuất giải pháp/tối giản scope để owner xét.
+**Gate thất bại:** dừng build phần pricing/submit liên quan, không ship một hệ thống voucher báo giá mà vendor không thể cam kết; đề xuất giải pháp/tối giản scope để owner xét. **TG-05 (emergency), TG-09 (tie-break), TG-10 (shipping stacking) là owner approval gates**, không tự gắn nhãn “đã chốt” từ review hoặc từ code.
 
 ## 13. Related specs / source links
 
@@ -335,4 +374,4 @@ pnpm build
 - [Mobile Commerce UX](storefront-mobile-commerce-ux.md)
 - [ADR 0016 — Gift Quantity](../decisions/0016-gift-quantity-promotions-v1-decisions.md)
 
-**Owner YES là phê duyệt intent**, chưa phải chấp thuận schema/technical choices hay chứng minh POS. PR này đưa spec vào repository để review **trước plan và implementation**.
+**Owner YES là phê duyệt intent**, chưa phải chấp thuận schema/technical choices, **các đề xuất TG-05/TG-09/TG-10** hay chứng minh POS. PR này đưa spec vào repository để review **trước plan và implementation**. Bản sửa sau self-review và external review chỉ thêm contract/test/owner gates trong tài liệu, không thay chính sách sản phẩm đã trả lời ở interview.
