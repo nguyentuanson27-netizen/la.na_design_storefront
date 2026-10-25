@@ -304,7 +304,9 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
       }
       return true;
     }
-    // Lazy: only the cart surfaces ask for it; checkout and order paths never pay for it.
+    // Lazy: `getLines` (checkout context, order submission) never builds it. `getQuote` and
+    // `getLinesWithUrgency` always do, so the gift-selection quote path pays for it too: pure CPU over
+    // the cart's own products, ~0.4 ms for 20 products x 8 variants all on Flash Sale, no extra query.
     const lineUrgency = () => lineUrgencyFrom(safeItems, cartProducts, campaignsByVariantId, now);
     return { lines, products, lineUrgency, canAddQuantity };
   }
