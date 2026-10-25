@@ -259,6 +259,18 @@ const nextConfig = {
         source: "/(.*)",
         headers: securityHeaders,
       },
+      // Later rules win for the same key. A voucher-code landing and its server handler must not leak the code in a
+      // Referer, so they override the baseline with the stricter policy (src/commerce/voucher-marketing-link.ts).
+      // Every other request keeps exactly the baseline above.
+      {
+        source: "/(.*)",
+        has: [{ type: "query", key: "voucher" }],
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      {
+        source: "/voucher-link",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
     ];
   },
 };

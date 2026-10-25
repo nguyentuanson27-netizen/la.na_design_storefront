@@ -123,7 +123,7 @@ test("AC-12: the picker shows two groups, NONE options, the exact shortfall and 
     await expect(dialog.getByRole("button", { name: "Áp dụng • 2 ưu đãi" })).toBeVisible();
     expect((await new AxeBuilder({ page }).include("dialog").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
     // Touch targets: every radio row is at least 44px tall.
-    const heights = await dialog.locator("label").evaluateAll((labels) => labels.map((label) => label.getBoundingClientRect().height));
+    const heights = await dialog.locator("label:has(input[type=radio])").evaluateAll((labels) => labels.map((label) => label.getBoundingClientRect().height));
     expect(Math.min(...heights)).toBeGreaterThanOrEqual(44);
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -135,7 +135,9 @@ test("AC-26 / AC-42: choosing in the picker previews on the server and saves not
   await page.goto(`${BASE}/cart`);
   await trigger(page).click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await dialog.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ }).check();
+  // Nothing is optimistic: the radio flips when the server answers, so click and wait for the answer.
+  await dialog.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ }).click();
+  await expect(dialog.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ })).toBeChecked();
   await expect(dialog.getByRole("button", { name: "Bỏ qua ưu đãi và tiếp tục" }).or(dialog.getByRole("button", { name: /Áp dụng • 1 ưu đãi/ }))).toBeVisible();
   expect(await selection()).toBeNull();
   await page.keyboard.press("Escape");
@@ -150,7 +152,8 @@ test("AC-43: Áp dụng commits both groups on the server and the cart shows wha
   await page.goto(`${BASE}/cart`);
   await trigger(page).click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await dialog.getByRole("radio", { name: /Không dùng voucher vận chuyển/ }).check();
+  await dialog.getByRole("radio", { name: /Không dùng voucher vận chuyển/ }).click();
+  await expect(dialog.getByRole("radio", { name: /Không dùng voucher vận chuyển/ })).toBeChecked();
   await dialog.getByRole("button", { name: /Áp dụng • 1 ưu đãi/ }).click();
   await expect(dialog).toBeHidden();
   await expect.poll(async () => (await selection())?.shippingMode).toBe("MANUAL");
