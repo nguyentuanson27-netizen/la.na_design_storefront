@@ -5,6 +5,7 @@ import {
   META_VISITOR_ID_COOKIE,
   readMetaFirstPartyCookiesEnabled,
 } from "@/integrations/meta/first-party-cookies";
+import { readMetaAdvancedMatchingEnabled } from "@/integrations/meta/advanced-matching-config";
 import { readMetaPixelConfig } from "@/integrations/meta/pixel-config";
 
 import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
@@ -24,6 +25,9 @@ import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
  * What `init` was given stays on `window.laMetaPixelUserData` and is never rewritten, so a later
  * manual advanced matching update (checkout) can repeat `init` with that base plus only the new
  * shopper's identifiers.
+ *
+ * `window.laMetaAdvancedMatching` is set only while `LA_META_ADVANCED_MATCHING_ENABLED` is on; the
+ * checkout reads it, so the feature is a per-request runtime switch that ships off.
  *
  * The external script's lifecycle is also persisted on the element itself before insertion. A
  * later Purchase effect can therefore distinguish `ready` from `unavailable` even if the one-shot
@@ -51,7 +55,7 @@ t.onload=function(){t.dataset.laMetaPixelStatus=typeof f.fbq==='function'&&typeo
 t.onerror=function(){t.dataset.laMetaPixelStatus='unavailable'};
 s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script',
 'https://connect.facebook.net/en_US/fbevents.js');
-window.laMetaPixelUserData=${advancedMatching};
+${readMetaAdvancedMatchingEnabled() ? "window.laMetaAdvancedMatching=true;\n" : ""}window.laMetaPixelUserData=${advancedMatching};
 fbq('init', ${JSON.stringify(config.pixelId)}, window.laMetaPixelUserData);`}
       </Script>
       {/* The tracker reads search params, which opts its subtree out of static rendering; the

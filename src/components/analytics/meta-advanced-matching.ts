@@ -53,11 +53,18 @@ export async function buildMetaAdvancedMatching(
  */
 let latestAttempt = 0;
 
+/** Set by the pixel snippet only while `LA_META_ADVANCED_MATCHING_ENABLED` is on. */
+function isAdvancedMatchingEnabled(): boolean {
+  return typeof window !== "undefined"
+    && (window as { laMetaAdvancedMatching?: unknown }).laMetaAdvancedMatching === true;
+}
+
 async function sendToPixel(
   input: Readonly<{ name: string; phone: string }>,
   isCurrent: () => boolean,
 ): Promise<void> {
   try {
+    if (!isAdvancedMatchingEnabled()) return;
     if (resolveConsentDefaults(readConsentPolicy()).ad_user_data !== "granted") return;
     const matching = await buildMetaAdvancedMatching(input);
     if (!isCurrent()) return;
@@ -93,6 +100,8 @@ export function applyMetaAdvancedMatchingWithin(
   input: Readonly<{ name: string; phone: string }>,
   maxWaitMs: number = META_ADVANCED_MATCHING_MAX_WAIT_MS,
 ): Promise<void> {
+  // Switched off: nothing to send, so nothing to wait for.
+  if (!isAdvancedMatchingEnabled()) return Promise.resolve();
   return new Promise<void>((resolve) => {
     const attempt = ++latestAttempt;
     let expired = false;

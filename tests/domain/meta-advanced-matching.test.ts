@@ -61,7 +61,7 @@ test("the pixel gets hashed identifiers merged into what init already carried", 
   const { applyMetaAdvancedMatching } = await loadModule(t);
   const calls: unknown[][] = [];
   const fbq = (...args: unknown[]) => void calls.push(args);
-  const holder = { fbq, laMetaPixelUserData: { external_id: VISITOR_ID } as Record<string, string> };
+  const holder = { laMetaAdvancedMatching: true, fbq, laMetaPixelUserData: { external_id: VISITOR_ID } as Record<string, string> };
   t.after(replaceWindow(holder));
 
   await applyMetaAdvancedMatching({ name: "Trần Bình", phone: "0912345678" });
@@ -87,6 +87,7 @@ test("a later shopper never inherits an earlier shopper's identifiers", async (t
   const { applyMetaAdvancedMatching } = await loadModule(t);
   const calls: unknown[][] = [];
   const holder = {
+    laMetaAdvancedMatching: true,
     fbq: (...args: unknown[]) => void calls.push(args),
     laMetaPixelUserData: { external_id: VISITOR_ID } as Record<string, string>,
   };
@@ -103,7 +104,7 @@ test("a later shopper never inherits an earlier shopper's identifiers", async (t
 test("the checkout waits for the pixel update, but never longer than the bound", async (t) => {
   const { applyMetaAdvancedMatchingWithin } = await loadModule(t);
   const calls: unknown[][] = [];
-  t.after(replaceWindow({ fbq: (...args: unknown[]) => void calls.push(args) }));
+  t.after(replaceWindow({ laMetaAdvancedMatching: true, fbq: (...args: unknown[]) => void calls.push(args) }));
 
   // Fast path: the update has reached the pixel by the time the wait resolves.
   await applyMetaAdvancedMatchingWithin({ name: "Trần Bình", phone: "0912345678" });
@@ -126,7 +127,7 @@ test("the checkout waits for the pixel update, but never longer than the bound",
 test("an attempt that ran out of time never reaches the pixel after a newer one", async (t) => {
   const { applyMetaAdvancedMatchingWithin } = await loadModule(t);
   const calls: unknown[][] = [];
-  t.after(replaceWindow({ fbq: (...args: unknown[]) => void calls.push(args) }));
+  t.after(replaceWindow({ laMetaAdvancedMatching: true, fbq: (...args: unknown[]) => void calls.push(args) }));
 
   // Attempt A's three digests hang until released; every later digest is immediate.
   const subtle = globalThis.crypto.subtle;
@@ -159,11 +160,31 @@ test("an attempt that ran out of time never reaches the pixel after a newer one"
 test("a missing pixel or nothing matchable is a silent no-op", async (t) => {
   const { applyMetaAdvancedMatching } = await loadModule(t);
 
-  t.after(replaceWindow({}));
+  t.after(replaceWindow({ laMetaAdvancedMatching: true }));
   await applyMetaAdvancedMatching({ name: "Trần Bình", phone: "0912345678" });
 
   const calls: unknown[][] = [];
-  t.after(replaceWindow({ fbq: (...args: unknown[]) => void calls.push(args) }));
+  t.after(replaceWindow({ laMetaAdvancedMatching: true, fbq: (...args: unknown[]) => void calls.push(args) }));
   await applyMetaAdvancedMatching({ name: "", phone: "" });
   assert.equal(calls.length, 0);
+});
+
+test("switched off, nothing reaches the pixel and the checkout does not wait", async (t) => {
+  const { applyMetaAdvancedMatching, applyMetaAdvancedMatchingWithin } = await loadModule(t);
+  const calls: unknown[][] = [];
+  // No `laMetaAdvancedMatching` flag: what the snippet renders while the switch is off.
+  t.after(replaceWindow({ fbq: (...args: unknown[]) => void calls.push(args) }));
+
+  await applyMetaAdvancedMatching({ name: "Trần Bình", phone: "0912345678" });
+  await applyMetaAdvancedMatchingWithin({ name: "Trần Bình", phone: "0912345678" });
+  assert.equal(calls.length, 0);
+});
+
+test("the advanced matching switch is on only for exactly true", async () => {
+  const { readMetaAdvancedMatchingEnabled } = await import("../../src/integrations/meta/advanced-matching-config.ts");
+  assert.equal(readMetaAdvancedMatchingEnabled({}), false);
+  assert.equal(readMetaAdvancedMatchingEnabled({ LA_META_ADVANCED_MATCHING_ENABLED: "" }), false);
+  assert.equal(readMetaAdvancedMatchingEnabled({ LA_META_ADVANCED_MATCHING_ENABLED: "1" }), false);
+  assert.equal(readMetaAdvancedMatchingEnabled({ LA_META_ADVANCED_MATCHING_ENABLED: "TRUE" }), false);
+  assert.equal(readMetaAdvancedMatchingEnabled({ LA_META_ADVANCED_MATCHING_ENABLED: "true" }), true);
 });
