@@ -11,7 +11,7 @@ import {
   type FeedbackVariantRow,
   type ProductFeedbackReadClient,
 } from "../../src/commerce/feedback-repository.ts";
-import { DEFAULT_GUEST_SHIPPING_POLICY, describeGuestShippingPromotionHeadline } from "../../src/commerce/guest-shipping-policy.ts";
+import { DEFAULT_GUEST_SHIPPING_POLICY } from "../../src/commerce/guest-shipping-policy.ts";
 import { FULFILLMENT } from "../../src/brand/index.ts";
 import { HOMEPAGE_CONFIG } from "../../src/content/homepage.config.ts";
 import { buildPurchaseAssuranceViewModel } from "../../src/routes/evergreen-model.ts";
@@ -349,11 +349,11 @@ test("the buying facts under the purchase buttons are derived from their authori
   assert.deepEqual(items, [
     { key: "cod", label: "Thanh toán khi nhận hàng (COD)", href: null },
     { key: "returns", label: `Đổi trả trong ${FULFILLMENT.returns.windowDays} ngày`, href: "/returns" },
-    { key: "free-shipping", label: describeGuestShippingPromotionHeadline(DEFAULT_GUEST_SHIPPING_POLICY), href: "/shipping" },
+    { key: "free-shipping", label: "Miễn phí vận chuyển từ 2 set", href: "/shipping" },
   ]);
 
   const custom = buildPurchaseAssuranceViewModel({
     policy: { feeVnd: 25_000 },
   });
-  assert.equal(custom[2]?.label, describeGuestShippingPromotionHeadline({ feeVnd: 25_000 }));
+  assert.equal(custom[2]?.label, "Miễn phí vận chuyển từ 2 set");
 });
