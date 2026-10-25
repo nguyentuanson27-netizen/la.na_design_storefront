@@ -160,6 +160,30 @@ export function checkoutPixelContentIds(lines: readonly StorefrontCartLine[]): r
   return lines.map((line) => (line.metaContentId ?? line.productSlug)!);
 }
 
+/**
+ * InitiateCheckout for a gift / quantity-tier checkout that is ready to submit.
+ *
+ * Only facts the page itself shows: the products (by the same public identity as the ordinary
+ * checkout), the paid units and the total the buyer is asked to pay, shipping included. There is no
+ * `contents`: a split-price line has no single unit price to report truthfully, so the event says what
+ * the order is worth without inventing a per-item price. Gifts are not counted: they are not bought.
+ */
+export function benefitCheckoutPixelParameters(
+  data: CheckoutViewModel,
+  lines: readonly StorefrontCartLine[],
+): Readonly<{ content_ids: readonly string[]; content_type: "product"; currency: "VND"; value: number; num_items: number }> | null {
+  if (data.state !== "ready" || data.benefit === null || data.totals === null || data.lines.length === 0) return null;
+  const contentIds = checkoutPixelContentIds(lines);
+  if (contentIds === null || contentIds.length === 0) return null;
+  return Object.freeze({
+    content_ids: contentIds,
+    content_type: "product",
+    currency: "VND",
+    value: data.totals.totalVnd,
+    num_items: data.lines.reduce((sum, line) => sum + line.quantity, 0),
+  });
+}
+
 function checkoutDiscountEntry(discount: ReturnType<typeof describeLineDiscount>): { originalPriceText?: string; discountPercent?: number } {
   if (!discount) return {};
   return { originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };

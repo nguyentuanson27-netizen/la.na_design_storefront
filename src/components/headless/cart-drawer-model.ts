@@ -13,6 +13,24 @@ export function checkoutBlockedMessages(
   return messages.length > 0 ? messages : ["Nàng xem lại giỏ hàng trước khi đặt hàng nhé."];
 }
 
+/** Meta custom event name for how a shopper left a non-empty drawer. */
+export const CART_DRAWER_EXIT_EVENT = "CartDrawerExit";
+
+/** Where the shopper went from the drawer: the order button, the cart page, a product, a gift choice, or nowhere. */
+export type CartDrawerExit = "checkout" | "cart" | "product" | "gift" | "close";
+
+/**
+ * The parameters of one {@link CART_DRAWER_EXIT_EVENT}. Read against `exit_to`, `gift_nudge` says
+ * whether a "mua thêm" milestone was on screen, which is what tells a nudge that sends shoppers
+ * browsing apart from one that does not; `can_checkout` separates a blocked basket from a choice.
+ */
+export function cartDrawerExitParameters(
+  exit: CartDrawerExit,
+  facts: Readonly<{ giftNudge: boolean; canCheckout: boolean }>,
+): Readonly<{ exit_to: CartDrawerExit; gift_nudge: boolean; can_checkout: boolean }> {
+  return Object.freeze({ exit_to: exit, gift_nudge: facts.giftNudge, can_checkout: facts.canCheckout });
+}
+
 export type CartDrawerFocusable = {
   first: HTMLElement | null;
   last: HTMLElement | null;

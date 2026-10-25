@@ -8,11 +8,21 @@ import Link from "next/link";
 import { BRAND } from "@/brand";
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
-import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
+import { OrderTrustLine } from "@/components/brand/order-trust-line";
 import {
+  hasPromotionProgress,
+  PROMOTION_PROGRESS_NOTE,
+  PromotionBanner,
+  PromotionSavings,
+} from "@/components/brand/promotion-banner";
+import { trackFacebookPixelCustomEvent } from "@/components/analytics/facebook-pixel-client";
+import {
+  CART_DRAWER_EXIT_EVENT,
+  cartDrawerExitParameters,
   checkoutBlockedMessages,
   handleDrawerFocusTrap,
   isMeaningfulReturnFocusTarget,
+  type CartDrawerExit,
 } from "@/components/headless/cart-drawer-model";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import { useCartDrawer } from "@/components/headless/use-cart-drawer";
@@ -32,6 +42,22 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
     useCartDrawer(isOpen);
 
   const wasOpenRef = useRef(false);
+
+  // Every way out of a non-empty drawer is reported once, with where it led. Paired with
+  // InitiateCheckout this shows whether the "mua thêm" nudge sends shoppers off browsing.
+  const leave = useCallback(
+    (exit: CartDrawerExit) => {
+      if (cart && !cart.isEmpty) {
+        trackFacebookPixelCustomEvent(
+          CART_DRAWER_EXIT_EVENT,
+          cartDrawerExitParameters(exit, { giftNudge: hasPromotionProgress(cart.promotions), canCheckout: cart.canCheckout }),
+        );
+      }
+      onClose();
+    },
+    [cart, onClose],
+  );
+  const dismiss = useCallback(() => leave("close"), [leave]);
 
   // Focus management: save active element on open, focus close button, restore focus on close
   useEffect(() => {
@@ -67,12 +93,12 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
       if (!isOpen) return;
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        dismiss();
       } else if (event.key === "Tab") {
         handleDrawerFocusTrap(event, drawerRef.current);
       }
     },
-    [isOpen, onClose],
+    [isOpen, dismiss],
   );
 
   useEffect(() => {
@@ -87,7 +113,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
-        onClick={onClose}
+        onClick={dismiss}
         aria-hidden="true"
       />
 
@@ -115,7 +141,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
             <button
               ref={closeButtonRef}
               type="button"
-              onClick={onClose}
+              onClick={dismiss}
               aria-label="Đóng giỏ hàng"
               className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#3B2219] hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
             >
@@ -177,7 +203,6 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
               </div>
             ) : cart ? (
               <>
-                <PromotionBanner className="mb-5" giftHref="/cart#cart-gifts" onNavigate={onClose} variant="compact" view={cart.promotions} />
                 <ul className="divide-y divide-[#3B2219]/10">
                   {cart.lines.map((line) => {
                     const notice = lineNotice?.variantId === line.variantId ? lineNotice : null;
@@ -211,7 +236,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                             {line.productSlug ? (
                               <Link
                                 href={`/shop/${encodeURIComponent(line.productSlug)}`}
-                                onClick={onClose}
+                                onClick={() => leave("product")}
                                 className="font-display text-sm font-medium text-[#2A1810] underline underline-offset-4"
                               >
                                 {line.productName}
@@ -285,6 +310,16 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                     );
                   })}
                 </ul>
+                {/* After the lines, not above them: the shopper first confirms what they added, and the
+                    way to the next gift reads as an option on the way to the order button. */}
+                <PromotionBanner
+                  className="mt-5"
+                  giftHref="/cart#cart-gifts"
+                  onNavigate={() => leave("gift")}
+                  progressNote={PROMOTION_PROGRESS_NOTE}
+                  variant="compact"
+                  view={cart.promotions}
+                />
               </>
             ) : null}
           </div>
@@ -311,15 +346,18 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                 </>
               )}
 
-              <div className="space-y-2 pt-2">
+              <div className="space-y-3 pt-2">
                 {cart.canCheckout ? (
-                  <Link
-                    href="/checkout"
-                    onClick={onClose}
-                    className="btn btn--primary w-full"
-                  >
-                    Tiến hành đặt hàng
-                  </Link>
+                  <>
+                    <Link
+                      href="/checkout"
+                      onClick={() => leave("checkout")}
+                      className="btn btn--primary w-full"
+                    >
+                      Tiến hành đặt hàng
+                    </Link>
+                    <OrderTrustLine />
+                  </>
                 ) : (
                   <div className="space-y-1 text-center text-xs leading-relaxed text-amber-800" role="status">
                     {checkoutBlockedMessages(cart).map((message) => (
@@ -328,10 +366,12 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                   </div>
                 )}
 
+                {/* One primary action. The cart page stays reachable, as a quiet link rather than a second
+                    button competing with the order button. */}
                 <Link
                   href="/cart"
-                  onClick={onClose}
-                  className="btn btn--outline w-full"
+                  onClick={() => leave("cart")}
+                  className="mx-auto flex min-h-11 w-fit items-center text-xs text-[#70584B] underline underline-offset-4 hover:text-[#2A1810]"
                 >
                   Xem chi tiết giỏ hàng
                 </Link>

@@ -31,6 +31,7 @@ import { reminderSubmitDecision } from "@/components/headless/checkout-gift-remi
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 import { CheckoutUpsell } from "./checkout-upsell";
 import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
+import { OrderTrustLine } from "@/components/brand/order-trust-line";
 import type { CheckoutUpsellBanner } from "@/routes/checkout-model";
 
 const EMPTY_GIFT_PICKER: CartGiftPickerModel = { campaigns: [], selections: [], invalid: false, stackConflict: false };
@@ -738,6 +739,7 @@ export function GuestCheckoutForm({
       >
         {isSubmitting ? "Đang đặt hàng…" : "Đặt hàng COD"}
       </button>
+      <OrderTrustLine />
 
       {/* Room for the bottom bar, so it never sits over the last of the page. */}
       {totalText ? <div aria-hidden="true" className="h-24 lg:hidden" /> : null}

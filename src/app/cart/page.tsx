@@ -9,7 +9,8 @@ import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
-import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
+import { OrderTrustLine } from "@/components/brand/order-trust-line";
+import { PROMOTION_PROGRESS_NOTE, PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { loadCartRoute, type CartRouteProps } from "@/routes/cart";
 import type { CartLineView, CartViewModel } from "@/routes/cart-model";
@@ -99,7 +100,7 @@ function render(data: CartViewModel) {
             </dl>
           ) : null}
           {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
-          <PromotionBanner className="mb-5" view={promotions} />
+          <PromotionBanner className="mb-5" progressNote={PROMOTION_PROGRESS_NOTE} view={promotions} />
           <div className="divide-y divide-black/15">
             {data.lines.map((line, index) => (
               <article
@@ -223,6 +224,9 @@ function render(data: CartViewModel) {
             >
               Tiến hành đặt hàng
             </Link>
+          ) : null}
+          {data.canCheckout ? (
+            <OrderTrustLine className="mt-3" />
           ) : problemLines.length === 0 ? (
             <p className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6 text-black/75">
               {data.benefitsNotice ?? "Hãy xử lý các dòng chưa khả dụng trước khi thanh toán."}

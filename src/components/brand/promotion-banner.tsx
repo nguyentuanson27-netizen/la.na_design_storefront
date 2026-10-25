@@ -20,8 +20,21 @@ export type PromotionBannerProps = Readonly<{
   giftHref?: string;
   /** The drawer closes itself when the shopper follows `giftHref`. */
   onNavigate?: () => void;
+  /**
+   * Said once under the list whenever a "mua thêm" milestone is showing, beside an order button, so a
+   * nudge toward the next gift or tier never reads as a condition for ordering the basket as it is.
+   */
+  progressNote?: string;
   className?: string;
 }>;
+
+/** The `progressNote` the cart surfaces pass: the next milestone is an option, never a gate. */
+export const PROMOTION_PROGRESS_NOTE = "Không bắt buộc — nàng vẫn đặt hàng được ngay.";
+
+/** Whether the banner is nudging toward a milestone the basket has not reached. */
+export function hasPromotionProgress(view: PromotionBannerView | null | undefined): boolean {
+  return Boolean(view?.items.some((item) => item.state === "progress"));
+}
 
 function Tick() {
   return (
@@ -83,7 +96,7 @@ function Item({
   );
 }
 
-export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, className = "" }: PromotionBannerProps) {
+export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, progressNote, className = "" }: PromotionBannerProps) {
   if (!view || view.items.length === 0) return null;
   return (
     <section
@@ -97,6 +110,11 @@ export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, 
           <Item giftHref={giftHref} item={item} key={item.id} onNavigate={onNavigate} />
         ))}
       </ul>
+      {progressNote && hasPromotionProgress(view) ? (
+        <p className="ml-6 mt-2 text-[0.72rem] leading-5 text-[#70584B]" data-promotion-progress-note>
+          {progressNote}
+        </p>
+      ) : null}
     </section>
   );
 }
