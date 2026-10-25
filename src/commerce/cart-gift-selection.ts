@@ -250,6 +250,9 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
 
   // `selections` are the choices that count for this cart; `replacedSelections` wait at a lower milestone.
   return { quote, campaigns, entitlements, selections: active, replacedSelections: replaced, validation, giftStackDropped: stack.dropped,
+    // The same entitlement / stack / selection authority, on groups the caller priced differently (Voucher v1 asks
+    // "what would the gifts be after this voucher" without a second derivation that could drift).
+    evaluateGifts: (groups: readonly StackedGroup[]) => evaluateGifts(groups),
     giftSuperseded: [...superseded].map(([campaignId, byCampaignIds]) => ({ campaignId, byCampaignIds })),
     items: cart.items, paidDemand: demand, campaignEntries: lookup.campaigns, productFacts: facts, paidVariants,
     labels: variants.map((v): CartGiftLabel => ({
