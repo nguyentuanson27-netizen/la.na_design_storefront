@@ -94,7 +94,7 @@ export function useStickyCtaVisible(targetId: string, suppressed = false): boole
   return wanted && shown;
 }
 
-export function MobileStickyCta({ targetId, totalText, totalLabel = "Tổng thanh toán", suppressed = false, note, children }: Readonly<{
+export function MobileStickyCta({ targetId, totalText, totalLabel = "Tổng thanh toán", suppressed = false, note, footnote, children }: Readonly<{
   /** The primary control this bar stands in for while it is off screen. */
   targetId: string;
   /** The amount the page is showing, as the page already formatted it. */
@@ -104,6 +104,8 @@ export function MobileStickyCta({ targetId, totalText, totalLabel = "Tổng than
   suppressed?: boolean;
   /** A short reason the action is unavailable, the same one shown beside the primary control. */
   note?: string | null;
+  /** One short line under the bar, e.g. the order trust facts the off-screen button carries below it. */
+  footnote?: string;
   children: ReactNode;
 }>) {
   const visible = useStickyCtaVisible(targetId, suppressed);
@@ -122,6 +124,11 @@ export function MobileStickyCta({ targetId, totalText, totalLabel = "Tổng than
         </div>
         <div className="shrink-0">{children}</div>
       </div>
+      {footnote ? (
+        <p className="mx-auto mt-1.5 w-full max-w-[42rem] truncate text-center text-[0.68rem] text-black/60" data-mobile-sticky-footnote="">
+          {footnote}
+        </p>
+      ) : null}
     </div>
   );
 }

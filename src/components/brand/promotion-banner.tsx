@@ -25,6 +25,8 @@ export type PromotionBannerProps = Readonly<{
    * nudge toward the next gift or tier never reads as a condition for ordering the basket as it is.
    */
   progressNote?: string;
+  /** Attached to the first "mua thêm" milestone line, so a surface can tell when it is actually on screen. */
+  progressRef?: (node: HTMLLIElement | null) => void;
   className?: string;
 }>;
 
@@ -59,10 +61,11 @@ function Item({
   item,
   giftHref,
   onNavigate,
-}: Readonly<{ item: PromotionBannerItem; giftHref?: string; onNavigate?: () => void }>) {
+  itemRef,
+}: Readonly<{ item: PromotionBannerItem; giftHref?: string; onNavigate?: () => void; itemRef?: (node: HTMLLIElement | null) => void }>) {
   const achieved = item.state === "achieved";
   return (
-    <li data-promotion-state={item.state} data-promotion-kind={item.kind}>
+    <li data-promotion-state={item.state} data-promotion-kind={item.kind} ref={itemRef}>
       <div className="flex items-center gap-2">
         {achieved ? <Tick /> : <Gift />}
         <p className={`min-w-0 flex-1 text-[0.8rem] leading-5 ${achieved ? "text-[#24472D]" : "text-[#3B2219]"}`}>{item.title}</p>
@@ -96,8 +99,9 @@ function Item({
   );
 }
 
-export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, progressNote, className = "" }: PromotionBannerProps) {
+export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, progressNote, progressRef, className = "" }: PromotionBannerProps) {
   if (!view || view.items.length === 0) return null;
+  const firstProgressId = view.items.find((item) => item.state === "progress")?.id;
   return (
     <section
       aria-label="Ưu đãi của nàng"
@@ -107,7 +111,13 @@ export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, 
     >
       <ul className="space-y-2.5">
         {view.items.map((item) => (
-          <Item giftHref={giftHref} item={item} key={item.id} onNavigate={onNavigate} />
+          <Item
+            giftHref={giftHref}
+            item={item}
+            itemRef={item.id === firstProgressId ? progressRef : undefined}
+            key={item.id}
+            onNavigate={onNavigate}
+          />
         ))}
       </ul>
       {progressNote && hasPromotionProgress(view) ? (

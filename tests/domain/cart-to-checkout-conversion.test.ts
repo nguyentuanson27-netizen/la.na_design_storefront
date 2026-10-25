@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { FULFILLMENT, ORDER_TRUST_FACTS } from "../../src/brand/index.ts";
+import { FULFILLMENT, ORDER_TRUST_FACTS, ORDER_TRUST_SHORT } from "../../src/brand/index.ts";
 import type { StorefrontCartLine } from "../../src/commerce/storefront-cart.ts";
 import { CART_DRAWER_EXIT_EVENT, cartDrawerExitParameters } from "../../src/components/headless/cart-drawer-model.ts";
 import { benefitCheckoutPixelParameters, type CheckoutViewModel } from "../../src/routes/checkout-model.ts";
@@ -26,6 +26,15 @@ test("the order trust line is derived from the approved payment and returns poli
     `Đổi trả trong ${FULFILLMENT.returns.windowDays} ngày`,
   ]);
   assert.equal(FULFILLMENT.returns.windowDays, 15);
+  // The sticky bar's one-line form says the same three facts.
+  assert.equal(ORDER_TRUST_SHORT, "COD · Kiểm tra hàng trước khi thanh toán · Đổi trả 15 ngày");
+});
+
+test("the mobile sticky order bar carries the short trust line on the cart page and checkout", () => {
+  assert.match(read("src/components/brand/mobile-sticky-cta.tsx"), /data-mobile-sticky-footnote/);
+  for (const file of ["src/app/cart/page.tsx", "src/components/commerce/guest-checkout-form.tsx"]) {
+    assert.match(read(file), /footnote=\{ORDER_TRUST_SHORT\}/, file);
+  }
 });
 
 test("the trust line sits under every order button: drawer, cart page and checkout", () => {
@@ -48,22 +57,29 @@ test("the drawer has one primary action; the cart page is a quiet link, not a se
 test("the next-milestone nudge follows the lines and is said to be optional", () => {
   const drawer = read("src/components/brand/cart-drawer.tsx");
   assert.ok(drawer.indexOf("<PromotionBanner") > drawer.indexOf("cart.lines.map"), "banner renders after the lines");
-  assert.match(drawer, /progressNote=\{PROMOTION_PROGRESS_NOTE\}/);
-  assert.match(read("src/app/cart/page.tsx"), /progressNote=\{PROMOTION_PROGRESS_NOTE\}/);
+  // "Đặt hàng được ngay" only while checkout is actually offered.
+  assert.match(drawer, /progressNote=\{cart\.canCheckout \? PROMOTION_PROGRESS_NOTE : undefined\}/);
+  assert.match(read("src/app/cart/page.tsx"), /progressNote=\{data\.canCheckout \? PROMOTION_PROGRESS_NOTE : undefined\}/);
   assert.match(read("src/components/brand/promotion-banner.tsx"), /Không bắt buộc/);
 });
 
 test("every way out of the drawer is reported with where it led", () => {
   assert.equal(CART_DRAWER_EXIT_EVENT, "CartDrawerExit");
-  assert.deepEqual(cartDrawerExitParameters("checkout", { giftNudge: true, canCheckout: true }), {
+  assert.deepEqual(cartDrawerExitParameters("checkout", { giftNudgeAvailable: true, giftNudgeSeen: false, canCheckout: true }), {
     exit_to: "checkout",
-    gift_nudge: true,
+    gift_nudge_available: true,
+    gift_nudge_seen: false,
     can_checkout: true,
   });
+  // Seen implies available: an observation left from a nudge that has since gone says nothing.
+  assert.equal(cartDrawerExitParameters("close", { giftNudgeAvailable: false, giftNudgeSeen: true, canCheckout: true }).gift_nudge_seen, false);
   const drawer = read("src/components/brand/cart-drawer.tsx");
   for (const exit of ["checkout", "cart", "product", "gift", "close"]) {
     assert.match(drawer, new RegExp(`leave\\("${exit}"\\)`), exit);
   }
+  // Exposure is observed on the milestone line itself and reset on every opening.
+  assert.match(drawer, /progressRef=\{observeNudge\}/);
+  assert.match(drawer, /nudgeSeenRef\.current = false;/);
   // Escape, the backdrop and the close button are all the same "close" exit.
   assert.equal(drawer.match(/\{dismiss\}|dismiss\(\);/g)?.length, 3);
 });

@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { BRAND } from "@/brand";
+import { BRAND, ORDER_TRUST_SHORT } from "@/brand";
 import { BrandCartLineControls } from "@/components/brand/cart-line-controls";
 import { BrandCartGiftPicker } from "@/components/brand/cart-gift-picker";
 import { CartLineJumpLink } from "@/components/brand/cart-line-jump-link";
@@ -101,7 +101,8 @@ function render(data: CartViewModel) {
             </dl>
           ) : null}
           {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
-          <PromotionBanner className="mb-5" progressNote={PROMOTION_PROGRESS_NOTE} view={promotions} />
+          {/* "Đặt hàng được ngay" is a promise only while checkout is actually offered. */}
+          <PromotionBanner className="mb-5" progressNote={data.canCheckout ? PROMOTION_PROGRESS_NOTE : undefined} view={promotions} />
           <div className="divide-y divide-black/15">
             {data.lines.map((line, index) => (
               <article
@@ -261,6 +262,7 @@ function render(data: CartViewModel) {
             targetId={CHECKOUT_CTA_ID}
             totalText={data.summary?.totalText ?? data.subtotalText}
             totalLabel={data.summary ? "Tổng thanh toán" : "Tạm tính"}
+            footnote={ORDER_TRUST_SHORT}
           >
             <Link className="btn btn--primary px-4" href="/checkout">Thanh toán</Link>
           </MobileStickyCta>

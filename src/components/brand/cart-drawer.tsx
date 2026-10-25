@@ -44,6 +44,28 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
 
   const wasOpenRef = useRef(false);
 
+  // Whether the "mua thêm" milestone has actually been at least half on screen during this opening.
+  // The drawer body scrolls and the banner follows the lines, so having one is not seeing it. The
+  // viewport is the root: an element clipped by the scrolling body does not intersect it.
+  const nudgeSeenRef = useRef(false);
+  const nudgeObserverRef = useRef<IntersectionObserver | null>(null);
+  const observeNudge = useCallback((node: HTMLLIElement | null) => {
+    nudgeObserverRef.current?.disconnect();
+    nudgeObserverRef.current = null;
+    if (node === null || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.5)) {
+          nudgeSeenRef.current = true;
+          observer.disconnect();
+        }
+      },
+      { threshold: [0.5] },
+    );
+    observer.observe(node);
+    nudgeObserverRef.current = observer;
+  }, []);
+
   // Every way out of a non-empty drawer is reported once, with where it led. Paired with
   // InitiateCheckout this shows whether the "mua thêm" nudge sends shoppers off browsing.
   const leave = useCallback(
@@ -51,7 +73,11 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
       if (cart && !cart.isEmpty) {
         trackFacebookPixelCustomEvent(
           CART_DRAWER_EXIT_EVENT,
-          cartDrawerExitParameters(exit, { giftNudge: hasPromotionProgress(cart.promotions), canCheckout: cart.canCheckout }),
+          cartDrawerExitParameters(exit, {
+            giftNudgeAvailable: hasPromotionProgress(cart.promotions),
+            giftNudgeSeen: nudgeSeenRef.current,
+            canCheckout: cart.canCheckout,
+          }),
         );
       }
       onClose();
@@ -64,6 +90,8 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
   useEffect(() => {
     if (isOpen) {
       wasOpenRef.current = true;
+      // Exposure is per opening: what was seen last time says nothing about this one.
+      nudgeSeenRef.current = false;
       previouslyFocusedElement.current = document.activeElement as HTMLElement | null;
       // Focus after DOM render
       const timer = setTimeout(() => {
@@ -318,7 +346,9 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                   className="mt-5"
                   giftHref="/cart#cart-gifts"
                   onNavigate={() => leave("gift")}
-                  progressNote={PROMOTION_PROGRESS_NOTE}
+                  // "Đặt hàng được ngay" is a promise only while checkout is actually offered.
+                  progressNote={cart.canCheckout ? PROMOTION_PROGRESS_NOTE : undefined}
+                  progressRef={observeNudge}
                   variant="compact"
                   view={cart.promotions}
                 />

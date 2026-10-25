@@ -142,3 +142,13 @@ export const ORDER_TRUST_FACTS: readonly string[] = Object.freeze([
   FULFILLMENT.payment.inspectionNote.replace(/\.$/, ""),
   `Đổi trả trong ${FULFILLMENT.returns.windowDays} ngày`,
 ]);
+
+/**
+ * The same three facts as one line short enough for the mobile sticky order bar, which stands in for
+ * the order button (and the trust line under it) while that button is off screen.
+ */
+export const ORDER_TRUST_SHORT: string = [
+  "COD",
+  FULFILLMENT.payment.inspectionNote.replace(/^Được\s+/, "").replace(/\.$/, "").replace(/^./, (first) => first.toUpperCase()),
+  `Đổi trả ${FULFILLMENT.returns.windowDays} ngày`,
+].join(" · ");
