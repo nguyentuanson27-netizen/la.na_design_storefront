@@ -47,21 +47,37 @@ export async function buildMetaAdvancedMatching(
 }
 
 /**
- * Sends the shopper's checkout identity to the pixel, if consent for advertising user data is
- * granted. Never throws and never delays the caller: matching is an enhancement, and the order must
- * not wait on, or fail because of, a hash or a blocked pixel.
+ * Each attempt takes the next number, and only the newest, unexpired attempt may touch the pixel.
+ * A hash that outlives the next checkout (or its own wait) would otherwise `init` an older shopper
+ * on top of a newer one.
  */
-export async function applyMetaAdvancedMatching(
+let latestAttempt = 0;
+
+async function sendToPixel(
   input: Readonly<{ name: string; phone: string }>,
+  isCurrent: () => boolean,
 ): Promise<void> {
   try {
     if (resolveConsentDefaults(readConsentPolicy()).ad_user_data !== "granted") return;
     const matching = await buildMetaAdvancedMatching(input);
+    if (!isCurrent()) return;
     if (Object.keys(matching).length === 0) return;
     updateFacebookPixelUserData(matching);
   } catch {
-    // See above: tracking failures stay invisible to the shopper.
+    // Tracking failures stay invisible to the shopper.
   }
+}
+
+/**
+ * Sends the shopper's checkout identity to the pixel, if consent for advertising user data is
+ * granted. Never throws and never delays the caller: matching is an enhancement, and the order must
+ * not wait on, or fail because of, a hash or a blocked pixel.
+ */
+export function applyMetaAdvancedMatching(
+  input: Readonly<{ name: string; phone: string }>,
+): Promise<void> {
+  const attempt = ++latestAttempt;
+  return sendToPixel(input, () => attempt === latestAttempt);
 }
 
 /** Longest checkout waits for the pixel to hear the shopper; a hash takes microseconds. */
@@ -70,16 +86,21 @@ export const META_ADVANCED_MATCHING_MAX_WAIT_MS = 300;
 /**
  * `applyMetaAdvancedMatching`, but resolves no later than `maxWaitMs`, so a caller can order "pixel
  * hears the shopper" before "order submitted" without letting analytics hold a checkout. Never
- * rejects. A hash that finishes after the wait still updates the pixel; it just may land after the
- * first browser event of the next page.
+ * rejects. An attempt that has run out of time is abandoned: it never reaches the pixel afterwards,
+ * so a late hash cannot replace what a newer checkout has already sent.
  */
 export function applyMetaAdvancedMatchingWithin(
   input: Readonly<{ name: string; phone: string }>,
   maxWaitMs: number = META_ADVANCED_MATCHING_MAX_WAIT_MS,
 ): Promise<void> {
   return new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, maxWaitMs);
-    void applyMetaAdvancedMatching(input).then(() => {
+    const attempt = ++latestAttempt;
+    let expired = false;
+    const timer = setTimeout(() => {
+      expired = true;
+      resolve();
+    }, maxWaitMs);
+    void sendToPixel(input, () => !expired && attempt === latestAttempt).then(() => {
       clearTimeout(timer);
       resolve();
     });

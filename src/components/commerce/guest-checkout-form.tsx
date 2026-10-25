@@ -183,12 +183,16 @@ export function GuestCheckoutForm({
   const [giftPending, setGiftPending] = useState(false);
   const coordinatedBusy = useRef({ gifts: false, quote: false });
   const submissionBusy = useRef(false);
+  // The pause before the action starts (the pixel hears the buyer first). `submissionBusy` alone
+  // cannot cover it: the effect below clears it on any re-render while `isSubmitting` is still false.
+  const preparingSubmit = useRef(false);
+  const [isPreparingSubmit, setIsPreparingSubmit] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const paymentRef = useRef<HTMLHeadingElement>(null);
   const submitButton = useRef<HTMLButtonElement>(null);
   const reminder = useCheckoutGiftReminder(attemptKey);
   const onGiftBusyChange = useCallback((value: boolean) => { coordinatedBusy.current.gifts = value; setGiftPending(value); }, []);
-  const isInteractionLocked = useCallback(() => Object.values(coordinatedBusy.current).some(Boolean) || submissionBusy.current, []);
+  const isInteractionLocked = useCallback(() => Object.values(coordinatedBusy.current).some(Boolean) || submissionBusy.current || preparingSubmit.current, []);
   const refreshQuote = useCallback(() => {
     coordinatedBusy.current.quote = true;
     startQuoteRefresh(() => router.refresh());
@@ -326,11 +330,11 @@ export function GuestCheckoutForm({
   // could not be loaded at all (the retry button is the way forward then).
   const waitingForNewRender = Boolean(submitState && !submitState.ok && (submitState.status === "PRICE_CHANGED" || (submitState.status === "RETRYABLE" && submitState.giftRepairRequired)) && submittedRenderId === quoteRenderId);
   const submitDisabled =
-    waitingForNewRender || !quoteProof || isSubmitting || giftPending || Boolean(geoError) || isRefreshingQuote || lockSubmission;
+    waitingForNewRender || !quoteProof || isSubmitting || isPreparingSubmit || giftPending || Boolean(geoError) || isRefreshingQuote || lockSubmission;
 
   // UX-08: a disabled button always says why, beside it, in the same words the bar below repeats.
   // A final outcome is already explained by the feedback block right above the button.
-  const submitLockReason = isSubmitting || lockSubmission ? null
+  const submitLockReason = isSubmitting || isPreparingSubmit || lockSubmission ? null
     : !quoteProof ? (unavailableNotice ? "Giỏ hàng cần xem lại một chút, nàng xem hướng dẫn ở đầu trang nhé." : "Giá chưa được cập nhật, nàng tải lại trang nhé.")
     : giftPending ? "Đang lưu quà tặng…"
     : isRefreshingQuote || waitingForNewRender ? "Đang cập nhật giá mới…"
@@ -408,9 +412,13 @@ export function GuestCheckoutForm({
     if (benefit?.needsAcknowledgement && reminder.current.current === "seen") formData.set("nonclaimAcknowledged", "yes");
     // The pixel hears who this is before the order goes, so the confirmation page's browser events
     // carry it. The wait is bounded and never rejects: analytics cannot hold or fail a checkout.
-    // `submissionBusy` is already set, so the buyer cannot submit twice meanwhile.
+    // The button and Enter stay locked until the action has started, so it runs exactly once.
+    preparingSubmit.current = true;
+    setIsPreparingSubmit(true);
     void applyMetaAdvancedMatchingWithin({ name, phone }).then(() => {
       startTransition(() => submitAction(formData));
+      preparingSubmit.current = false;
+      setIsPreparingSubmit(false);
     });
   }
   useEffect(() => {

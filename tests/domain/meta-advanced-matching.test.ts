@@ -123,6 +123,39 @@ test("the checkout waits for the pixel update, but never longer than the bound",
   assert.equal(calls.length, 1);
 });
 
+test("an attempt that ran out of time never reaches the pixel after a newer one", async (t) => {
+  const { applyMetaAdvancedMatchingWithin } = await loadModule(t);
+  const calls: unknown[][] = [];
+  t.after(replaceWindow({ fbq: (...args: unknown[]) => void calls.push(args) }));
+
+  // Attempt A's three digests hang until released; every later digest is immediate.
+  const subtle = globalThis.crypto.subtle;
+  const original = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(subtle), "digest")!;
+  const realDigest = (original.value as SubtleCrypto["digest"]).bind(subtle);
+  const releases: Array<() => void> = [];
+  let digestCalls = 0;
+  Object.defineProperty(subtle, "digest", {
+    configurable: true,
+    value: (algorithm: AlgorithmIdentifier, data: BufferSource) => {
+      digestCalls += 1;
+      if (digestCalls > 3) return realDigest(algorithm, data);
+      return new Promise<ArrayBuffer>((resolve) => {
+        releases.push(() => void realDigest(algorithm, data).then(resolve));
+      });
+    },
+  });
+  t.after(() => Reflect.deleteProperty(subtle, "digest"));
+
+  // A starts and times out; B then completes quickly; only after that A's hashes arrive.
+  await applyMetaAdvancedMatchingWithin({ name: "Nguyễn An", phone: "0911111111" }, 20);
+  await applyMetaAdvancedMatchingWithin({ name: "Trần Bình", phone: "0987654321" }, 500);
+  for (const release of releases) release();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(calls.length, 1);
+  assert.equal((calls[0]![2] as Record<string, string>).ph, sha256("84987654321"));
+});
+
 test("a missing pixel or nothing matchable is a silent no-op", async (t) => {
   const { applyMetaAdvancedMatching } = await loadModule(t);
 
