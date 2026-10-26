@@ -1,60 +1,110 @@
-# Voucher v1 — operations runbook (DRAFT)
+# Voucher v1 — operations runbook
 
-- **Status:** DRAFT. The checkout path (V11–V14, V18) is not built, so this describes the controls that exist today and marks what is still missing. It is not a go-live approval; the launch decision is gate H5.
-- **Spec / ADRs:** [spec](../specs/storefront-voucher-v1.md), [ADR 0018](../decisions/0018-voucher-v1-accepted-order-architecture.md), [ADR 0019](../decisions/0019-voucher-v1-hold-design.md).
+- **Status:** READY FOR REVIEW (V21, 2026-10-26). It describes the controls that exist in the code on PR #214 and says plainly what an operator still has to prove. It is **not** a go-live approval and nothing here was run against a production system. The launch decision is gate H5; the evidence packet is [the H5 readiness packet](../verification/storefront-voucher-v1-h5-packet.md).
+- **Spec / ADRs:** [spec](../specs/storefront-voucher-v1.md), [ADR 0018](../decisions/0018-voucher-v1-accepted-order-architecture.md), [ADR 0019](../decisions/0019-voucher-v1-hold-design.md). Vendor boundary: [Pancake acceptance](../integrations/pancake-voucher-acceptance.md).
 
-## 1. The switch
+## 1. Switches (all server-side, read from `.env.production`; a change needs the `app` container restarted)
 
-| Control | Meaning |
+| Variable | Meaning |
 | --- | --- |
-| `LA_VOUCHER_ENABLED` unset, empty, or anything but exactly `true` | **OFF** (default). No voucher is listed, selected, previewed, linked or held. The cart, PDP and checkout are byte-for-byte what they were. |
-| `LA_VOUCHER_ENABLED=true` | Vouchers appear in the cart and PDP as **previews**. **Do not set this in production yet**: checkout does not apply vouchers (V18 is not built), so a shopper would see a saving that checkout does not honour. |
+| `LA_VOUCHER_ENABLED` | Exactly `true` turns NEW exposure on: voucher lists, selections, previews, links, holds, and applying holds in checkout. Anything else (unset, empty, `1`, `TRUE`, a `NEXT_PUBLIC_` copy) is OFF. **Default OFF; keep it unset in production until H5.** |
+| `LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS` | Comma-separated shop ids allowed to receive a NEW hold (ADR 0019 D-6). List a shop only after `pnpm pancake:voucher:accept` passed for it (shop 715077776 passed 2026-10-26). Unset or malformed: no hold is ever granted. |
+| `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` | Voucher checkout rides the benefit checkout, so this gate must be `true` too. With it off a held voucher is not applied and checkout shows the price without it. |
+| `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS` | The shop must also be line-level-pricing verified (the POS order carries one price per line). |
+| `LA_VOUCHER_TEST_HARNESS` | **Never set in production.** It only matters to a test build; an official build answers 404 for the harness even if it is set by mistake (`pnpm voucher:hold-harness` proves both). |
 
-`LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS` (comma-separated shop ids, default empty) is the second gate for a NEW hold (ADR 0019 D-6): list a shop only after `pnpm pancake:voucher:accept` passed for it (shop 715077776 passed on 2026-10-26, see the verification folder). Unset or malformed means no hold is ever granted. It is not read on the settle path.
+What OFF means (ADR 0018 D-6, AC-47): it stops **new** exposure. The settle paths never read it: accepting a still-valid hold at the POS write boundary, reconciling `SYNC_UNKNOWN`, and refunding a rejected or cancelled order keep running. Consequences an operator should expect when the flag is switched OFF while shoppers are mid-checkout:
 
-Turning the flag OFF stops **new** exposure only. Existing holds and redemptions keep settling (consume, expire, refund); the settle path does not read the flag (ADR 0018 D-6, AC-47). There is nothing to "drain" before switching off.
+- A checkout page re-rendered after the switch prices **without** the voucher (the held voucher is not applied, `voucherStale`), so the shopper's old proof no longer matches and they are asked to review the new total.
+- An order that is still before the POS write boundary is re-derived without the voucher and is closed as `VOUCHER_REQUOTE_REQUIRED`/`PRICE_CHANGED`; nothing was accepted, so nothing is consumed and nothing needs a refund.
+- An order already accepted (marker, redemptions written) is unaffected and settles normally.
+- The hold itself simply expires (10 minutes, absolute) and frees its cap on the next grant for that campaign.
 
-## 2. Admin
+The second and third bullets come from reading the code paths (`resolveHeldVoucherCheckout` returns `STALE` when the preview is disabled; `acceptWithin` does not consult the flag). The flag-flip-in-flight case is **not** covered by a dedicated test; the H5 packet lists it.
 
-`/admin/promotions/vouchers`. A voucher is created **inactive** and never activates itself; an Admin presses Bật after checking it.
+## 2. Staged rollout (each step needs the owner's yes; this runbook enables nothing)
 
-- **Disable** stops new grants and leaves live holds and the ledger exactly as they are (TG-05 A). There is deliberately no force-revoke.
-- A campaign that has run and was switched off, or has ended, is read-only; **Sao chép** makes a new draft.
-- Caps cannot be set under *redeemed-not-refunded + live holds*. The screen shows the committed budget; the database refuses a lower cap even if a script tries.
+1. Deploy with `LA_VOUCHER_ENABLED` unset. The new migrations are additive and ignored by old behaviour; confirm the app is healthy and an ordinary COD order still works.
+2. Set `LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS` to the one verified shop, `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED=true` and the line-level list if not already, then `LA_VOUCHER_ENABLED=true`. Create **one** small test voucher in Admin (`/admin/promotions/vouchers`), enable it, and place a real COD order as the owner. Check §3 queries after each step.
+3. Only then publish real vouchers. A voucher is created inactive and never activates itself; the Admin presses Bật after checking it.
 
-## 3. What to watch (once holds exist)
+Stop at any step by §4.
 
-Queries are read-only and use the ledger columns on `VoucherCampaign`:
+## 3. What to watch
+
+Read-only SQL on the ledger. Run from the `ops` container (`docker compose --profile ops run --rm ops …`) or any read-only connection.
 
 ```sql
 -- committed vs caps, per campaign
 SELECT id, name, "redeemedUses", "reservedUses", "maxUses", "redeemedVnd", "reservedVnd", "maxBudgetVnd"
 FROM "VoucherCampaign" WHERE "pancakeShopId" = :shop ORDER BY "updatedAt" DESC;
 
--- holds that outlived their TTL without being swept (expected to be near zero once the sweeper runs)
-SELECT count(*) FROM "VoucherHold" WHERE state = 'HELD' AND "expiresAt" < now();
-
--- ledger drift: reserved must equal the live HELD holds (alert if any row returns)
+-- ledger drift: reserved must equal the HELD holds (alert if any row returns).
+-- Expired-but-unswept HELD holds still count on both sides, so they are not drift.
 SELECT c.id FROM "VoucherCampaign" c
 LEFT JOIN (SELECT "campaignId", count(*) n, coalesce(sum("heldDiscountVnd"),0) v FROM "VoucherHold" WHERE state = 'HELD' GROUP BY 1) h ON h."campaignId" = c.id
 WHERE c."reservedUses" <> coalesce(h.n,0) OR c."reservedVnd" <> coalesce(h.v,0);
 
--- redemptions waiting on POS (not refunded; order not CONFIRMED)
-SELECT r.id, o."publicCode", o.state FROM "VoucherRedemption" r JOIN "OrderMirror" o ON o.id = r."orderId"
-WHERE r."refundedAt" IS NULL AND o.state IN ('POS_SUBMITTING','SYNC_UNKNOWN');
+-- redeemed counters must equal the unrefunded redemptions
+SELECT c.id FROM "VoucherCampaign" c
+LEFT JOIN (SELECT "campaignId", count(*) n, coalesce(sum("amountVnd"),0) v FROM "VoucherRedemption" WHERE "refundedAt" IS NULL GROUP BY 1) r ON r."campaignId" = c.id
+WHERE c."redeemedUses" <> coalesce(r.n,0) OR c."redeemedVnd" <> coalesce(r.v,0);
+
+-- redemptions whose order is not settled (pending POS truth): these are NOT refunded and must be reconciled
+SELECT r.id, o."publicCode", o.state, o."pancakeStatus", r."createdAt"
+FROM "VoucherRedemption" r JOIN "OrderMirror" o ON o.id = r."orderId"
+WHERE r."refundedAt" IS NULL AND o.state IN ('POS_SUBMITTING','SYNC_UNKNOWN') ORDER BY r."createdAt";
+
+-- rejected orders that still hold an unrefunded redemption (the refund sweep should leave none)
+SELECT r.id, r."orderId" FROM "VoucherRedemption" r JOIN "OrderMirror" o ON o.id = r."orderId"
+WHERE r."refundedAt" IS NULL AND o.state = 'REJECTED';
+
+-- HELD holds past their TTL (harmless: grants expire them lazily; a large count only means the table is untidy)
+SELECT count(*) FROM "VoucherHold" WHERE state = 'HELD' AND "expiresAt" < now();
 ```
 
-Alert on: any drift row; `SYNC_UNKNOWN` redemptions older than the reconciliation window; a rising rate of `RATE_LIMITED` on voucher codes (guessing).
+Alert on: any row from the two drift queries; any row from the last-but-one query (should be empty); a `SYNC_UNKNOWN` redemption older than the reconciliation window; a rising rate of `RATE_LIMITED` answers on voucher codes (guessing).
 
-## 4. Rollback
+## 4. Stopping and rolling back, smallest first
 
 | Layer | How | Effect |
 | --- | --- | --- |
-| Feature | unset `LA_VOUCHER_ENABLED` | New exposure stops; settlement continues. No data change. |
-| Campaign | disable in Admin | New grants stop for that campaign; live holds honoured. |
-| Code | revert the deploy | The tables are additive and ignored by old code; accepted-order guards only affect orders that have an `OrderAcceptance` row (none exist until V13). |
-| Schema | the `DROP` list at the top of `20261025100000_voucher_v1_additive/migration.sql` | Safe only while no accepted order references the tables. **Never** drop after launch; disable instead. |
+| Feature | unset `LA_VOUCHER_ENABLED`, restart `app` | New exposure stops, settlement continues (§1 lists what happens to checkouts in flight). No data change. |
+| One shop | remove it from `LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS`, restart `app` | No new holds for that shop; existing holds honoured until they expire. |
+| One campaign | disable in Admin | New grants stop for it; live holds and the ledger are untouched (TG-05 A). There is deliberately no force-revoke. |
+| Code | revert the deploy (`release-and-rollback.md`) | The tables are additive and ignored by old code. Orders that carry an `OrderAcceptance` row keep their frozen money; an old release would not apply the voucher to a NEW order, which is why the flag is switched off first. |
+| Schema | the commented rollback list at the top of each voucher migration | **Only while no accepted order references the tables.** Dry run on an empty scratch ledger done 2026-10-26. After real redemptions a schema rollback needs a data decision by the owner; never drop after launch, disable instead. |
 
-## 5. Not yet covered (blocks H5)
+Order for an incident: unset the flag → restart → run §5 → decide on code rollback. Do not roll the code back first with live redemptions.
 
-Refund/reconciliation runbook for `SYNC_UNKNOWN` and cancelled orders (V14, needs the Pancake status mapping, TG-04); hold sweeper and its alert (V11); checkout screens and the gift-loss confirmation (V18); the operator-run sandbox probe (H1-V); a migration rollback dry run on staging.
+## 5. Reconciling and refunding
+
+A redemption is refunded **once** and **only from a trusted signal** (ADR 0018 D-4); everything else is pending and alerts, never a guess. The refund path is a compare-and-set under the order row lock, so the sweep, the status reconciliation and the submit hook can all run at once.
+
+| Situation | What happens | Operator action |
+| --- | --- | --- |
+| Pancake rejects the create (4xx), or confirmed absence after `SYNC_UNKNOWN` | Order closed `REJECTED`; the hook refunds the redemptions and returns the counters | none |
+| A hook was lost (crash between the state change and the refund) | The order stays `REJECTED` with an unrefunded redemption | `pnpm voucher:refund:sweep` (idempotent; prints `N rejected orders checked, M redemptions refunded`). Run it from the `ops` container. |
+| Order cancelled in Pancake with status `7` on a complete shop-verified status record (the cancel we issue ourselves) | The status reconciliation refunds once | none |
+| `SYNC_UNKNOWN`, timeout, network error, **any other status code**, a half-written status record | **Pending.** No refund. | Reconcile against Pancake, never create a duplicate order. A cancel made by staff in the Pancake UI has **not been observed**; check such orders by hand until it has. |
+| Admin cancel with evidence | `refundOrder(… "ADMIN_CANCEL", evidence)` exists in the service | **No screen or script calls it yet.** Until one exists, an operator-run script is an owner decision, not something to improvise on production. |
+| Campaign expired or disabled after acceptance | Counters return; the campaign's `isEnabled`, window and revision are not touched | none |
+
+**Scheduling gap (blocks H5):** nothing in `deploy/vps` runs `voucher:refund:sweep` on a schedule (`catalog-sync` is the only loop in the `ops` profile). The sweep is safe on any schedule; the owner has to decide where it runs (a cron or systemd timer on the VPS calling `docker compose --profile ops run --rm ops pnpm voucher:refund:sweep`, every 5–15 minutes) and add it to the release checklist. Holds need no scheduled job: expiry is lazy under the campaign lock, and `sweepExpired` is a tidy-up with no caller.
+
+## 6. Admin rules to remember
+
+- A campaign that has run and was switched off, or has ended, is read-only; **Sao chép** makes a new draft.
+- Caps cannot be set below *redeemed-not-refunded + live holds*. The screen shows the committed budget; the database refuses a lower cap even if a script tries.
+- A PRIVATE voucher is reachable only through its code (rate-limited); a link `?voucher=CODE` is validated, the parameter is stripped by redirect, and the code never reaches a rendered page or a later request URL (AC-40).
+
+## 7. Release checklist for the person flipping the switch
+
+- [ ] Owner approved the two migrations beyond H2 (`20261026100000_voucher_order_snapshot`, `20261026120000_order_quote_step_voucher`).
+- [ ] CI green on the exact release SHA, including the database and browser jobs.
+- [ ] `pnpm pancake:voucher:accept` passed for the shop within the agreed window; a staff-made cancel observed or its absence accepted in writing.
+- [ ] The refund sweep is scheduled (§5) and a first run printed `0 … 0` or its real numbers.
+- [ ] The §3 queries return no drift on the target database.
+- [ ] `LA_VOUCHER_TEST_HARNESS` is absent from `.env.production`.
+- [ ] A named person is on call for the first day and knows §4.
+- [ ] H5 go/no-go recorded by the owner. **A separate `/ship` approval is required to deploy.**
