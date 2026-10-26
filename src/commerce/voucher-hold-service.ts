@@ -67,6 +67,8 @@ export type VoucherHoldFailureReason =
   | "CAMPAIGN_NOT_ACTIVE"
   | "CAMPAIGN_CHANGED"
   | "CAPACITY_EXHAUSTED"
+  /** The quote recomputed under the cart lock is not the one the buyer agreed to. */
+  | "QUOTE_CHANGED"
   /** The `finalize` step (issuing the proof) could not complete, so the whole call was rolled back. */
   | "PROOF_UNAVAILABLE";
 
@@ -229,13 +231,22 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
    */
   async function hold(
     request: VoucherHoldRequest,
-    /**
-     * Runs INSIDE the transaction after every hold exists and before COMMIT. Returning a reason rolls everything
-     * back (a swap keeps its old hold, nothing is reserved): a buyer never ends up with quota held and no proof
-     * to spend it with.
-     */
-    finalize?: (holds: readonly HeldVoucher[]) => VoucherHoldFailureReason | null,
+    hooks: Readonly<{
+      /**
+       * Runs INSIDE the transaction right after the cart row is locked (selection writers take the same lock, so
+       * they are excluded from here on) and before anything is granted, swapped or released. Returning a reason rolls
+       * the call back untouched: this is where the flow proves the quote is still the one the buyer agreed to.
+       */
+      verifyUnderCartLock?: (tx: Prisma.TransactionClient) => Promise<VoucherHoldFailureReason | null>;
+      /**
+       * Runs INSIDE the transaction after every hold exists and before COMMIT. Returning a reason rolls everything
+       * back (a swap keeps its old hold, nothing is reserved): a buyer never ends up with quota held and no proof
+       * to spend it with.
+       */
+      finalize?: (holds: readonly HeldVoucher[]) => VoucherHoldFailureReason | null;
+    }> = {},
   ): Promise<VoucherHoldResult> {
+    const { finalize, verifyUnderCartLock } = hooks;
     if (!validRequest(request)) return { ok: false, reason: "INVALID_REQUEST", kind: null, campaignId: null };
     const releaseKinds = request.releaseKinds ?? [];
     const attemptKey = voucherAttemptKey(request.cartId, options.attemptSecret);
@@ -252,6 +263,10 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
           SELECT "paidRevision" FROM "Cart" WHERE "id" = ${request.cartId} AND "userId" IS NULL AND "expiresAt" > now() FOR UPDATE`;
         if (carts.length !== 1) throw fail("CART_NOT_FOUND");
         if (request.grants.length > 0 && Number(carts[0]!.paidRevision) !== request.paidRevision) throw fail("CART_CHANGED");
+        if (verifyUnderCartLock) {
+          const refusal = await verifyUnderCartLock(tx);
+          if (refusal !== null) throw fail(refusal);
+        }
 
         // 2  every campaign involved (requested, or already held for a group in play), ascending id. The hold
         //    rows are only peeked at here (a hold's campaign never changes, and only this cart's lock creates one);
@@ -352,9 +367,9 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
    * The live holds of this attempt (HELD and not past `expiresAt` by the database clock), for a preview that must
    * not lose an entitlement the buyer already holds. Read-only; ignores the feature gate like the other settle reads.
    */
-  async function readOwnLiveHolds(cartId: string): Promise<readonly Readonly<{ kind: VoucherGroup; campaignId: string; campaignRevision: number; heldDiscountVnd: number }>[]> {
+  async function readOwnLiveHoldsIn(db: Pick<PrismaClient, "$queryRaw">, cartId: string): Promise<readonly Readonly<{ kind: VoucherGroup; campaignId: string; campaignRevision: number; heldDiscountVnd: number }>[]> {
     const attemptKey = voucherAttemptKey(cartId, options.attemptSecret);
-    const rows = await client.$queryRaw<HoldRow[]>`
+    const rows = await db.$queryRaw<HoldRow[]>`
       SELECT "id", "campaignId", "campaignRevision", "kind", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
       FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "state" = 'HELD' AND "expiresAt" > clock_timestamp()`;
     return rows.map((row) => ({ kind: row.kind, campaignId: row.campaignId, campaignRevision: row.campaignRevision, heldDiscountVnd: Number(row.heldDiscountVnd) }));
@@ -397,7 +412,9 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
     return rows[0] ? toHeld(rows[0], true) : null;
   }
 
-  return { hold, sweepExpired, findHonourableHold, readOwnLiveHolds };
+  const readOwnLiveHolds = (cartId: string) => readOwnLiveHoldsIn(client, cartId);
+
+  return { hold, sweepExpired, findHonourableHold, readOwnLiveHolds, readOwnLiveHoldsIn };
 }
 
 export type VoucherHoldService = ReturnType<typeof createVoucherHoldService>;

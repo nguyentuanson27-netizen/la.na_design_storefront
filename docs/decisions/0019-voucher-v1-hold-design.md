@@ -27,15 +27,20 @@ The service therefore only has to **sequence** these, not re-implement them.
    combination; keep only feasible ones. An infeasible combination is never locked, held or signed (AC-20).
 1  BEGIN
 2  lock the cart row (FOR UPDATE) and read paidRevision        -- the same lock cart and selection writers take
+   THEN recompute the quote in THIS transaction and compare its digest with the one the buyer agreed to.
+   Selection writers take the cart lock, so from here on the selection cannot change; a mismatch rolls the
+   call back untouched (QUOTE_CHANGED). This is the check that closes the gap between the preview that was
+   read before the transaction and the grant itself.
 3  lock the chosen VoucherCampaign rows FOR UPDATE, in ascending id order   -- merchandise and shipping together
 4  lazily expire: HELD holds of those campaigns with expiresAt <= now() -> EXPIRED, and give their uses/VND back
 5  for each chosen voucher: skip the capacity test if THIS attempt already holds it (self-held), else require
    free uses >= 1 and free VND >= discount; then reservedUses += 1, reservedVnd += discount   (CHECK is the backstop)
 6  insert the hold(s) with createdAt and expiresAt both taken from ONE database timestamp
-7  COMMIT, then sign the HELD `lav1` proof over the new facts
+7  sign the HELD `lav1` proof over the new facts INSIDE the transaction (`finalize`), then COMMIT.
+   If the proof cannot be issued the transaction rolls back: quota is never held without a proof to spend it.
 ```
 
-- **Ascending id order across both groups** makes two checkouts that pick the same pair of vouchers deadlock-free. Admin edits take the shop advisory lock first and then the campaign row (V06); a grant never takes the advisory lock, so there is no cycle.
+- **Ascending id order across both groups** makes two checkouts that pick the same pair of vouchers deadlock-free. Admin edits take the shop advisory lock first and then the campaign row (V06); a grant never takes that voucher advisory lock, so there is no cycle. The quote recomputed in step 2 takes the *shared* side of the shipping-campaign advisory lock (the read side the preview always takes); only shipping administration takes the exclusive side, and it never takes a cart or voucher row, so this adds no cycle either.
 - **One database timestamp** (`WITH t AS (SELECT date_trunc('milliseconds', clock_timestamp()) AS now) INSERT … SELECT … t.now, t.now + interval '10 minutes'`) keeps the application clock out of the TTL; the consume guard also uses the database clock, so there is no skew between "granted" and "expired".
 - **Lazy expiry in step 4** means an abandoned checkout never blocks capacity, with or without the background sweeper. The sweeper is a convenience that keeps the table small; correctness does not depend on it (spec §5.1: "worker cleanup không là nguồn xác thực TTL").
 
@@ -88,7 +93,7 @@ Real-database tests, not mocks: quota = 1 with two simultaneous grants → exact
 
 ## Implementation notes (V12, `voucher-hold-flow.ts` / `voucher-hold-actions.ts`) — revised after the H3-V review
 
-- **Order inside the POST:** gates, per-cart and per-shop throttle (own keys, `voucher-hold-*`, so spending hold budget never spends the code budget), the buyer's **own live holds** are read, the read-only preview is recomputed with them in play, the quote digest is compared, consent is checked, `canProjectExactMoney` runs on the exact vendor lines, then the atomic hold. A refusal at any step leaves no hold, no budget and no proof.
+- **Order inside the POST (revised after the second H3-V review):** gates, per-cart and per-shop throttle (own keys, `voucher-hold-*`, so spending hold budget never spends the code budget), the buyer's **own live holds** are read, the read-only preview is recomputed with them in play, the quote digest is compared, consent is checked, `canProjectExactMoney` runs on the exact vendor lines, then the atomic hold. A refusal at any step leaves no hold, no budget and no proof.
 - **Own holds stay in play (review P1-1, TG-05 A / AC-31 / AC-33):** `readVoucherPreview({ ownHolds })` loads each campaign the attempt holds whatever its lifecycle (ended, switched off, full), credits back the use and VND the hold itself reserves, and keeps a PRIVATE one only while the shopper's manual choice still names it. A campaign edited since the hold (new revision) is **not** the held entitlement, so the retry swaps to the new terms instead of silently reusing. The picker read paths pass the same holds (`voucher-own-holds.ts`), so the digest the shopper sees is the digest the POST recomputes. Only a quote that genuinely selects no voucher releases a hold.
 - **The buyer consents to a quote, not a total (review P1-2, AC-34):** the picker model carries `quoteDigest` (digest of the voucher ids and revisions, per-line prices, gift slots, shipping and total — `voucher-quote-facts.ts`); the Server Action takes `{ expectedQuoteDigest, acknowledged? }` and the server recomputes. Two different vouchers worth the same are different quotes (`QUOTE_CHANGED`, answered with the current digest and total). A quote that costs a gift or raises the total answers `CONFIRMATION_REQUIRED` with the amounts, and is held only with `acknowledged: true`.
 - **No quota without a proof (review P1-3):** the HELD proof is issued by a `finalize` step **inside** the hold transaction. If it cannot be issued (size envelope, bad secret) the call rolls back: nothing is reserved, and a swap keeps its old hold.
@@ -96,3 +101,9 @@ Real-database tests, not mocks: quota = 1 with two simultaneous grants → exact
 - **Gifts in the proof:** the proof binds the retained gift slot COUNT (a synthetic `gift-slots` GIFT line), not the chosen gift variation. **V13 must prove the voucher proof and the checkout/gift proof stay consistent**, including a buyer switching gift A to gift B at the same count, so an acknowledgement for the old gift is never reused.
 - **Not covered by the hold:** a catalog price change that does not move the cart's `paidRevision` is caught at submit by recomputation (V13), not by the hold; the hold guarantees the voucher entitlement, not the price base (D-3).
 - **H3-V browser evidence (AC-42/43):** done with a test-only harness that exists only in a temporary worktree built from the commit under test (`tests/fixtures/voucher-hold-harness`, `pnpm voucher:hold-harness`); the official build is proved free of the route and of the hold action. See `docs/verification/storefront-voucher-v1-h3v.md`. **CI is green on `05a031c`; H3-V closes on the owner's sign-off.**
+
+### Second H3-V review (2026-10-26): two more P1, one P2
+
+- **"No voucher" is a quote like any other.** The NONE branch used to release the attempt's holds *before* the digest was compared, so a stale tab (still showing voucher M) could release M after another tab saved NONE. The digest is now compared for **every** outcome, including NONE; a stale POST answers `QUOTE_CHANGED` and leaves the hold and the ledger row untouched.
+- **The preview is outside the transaction.** Another tab can save a different voucher (of equal value, or none), and a price can move, between the preview read and the grant; `Cart.paidRevision` only follows paid lines, so it does not see a selection change. The flow therefore recomputes the quote **inside** the hold transaction, right after the cart row is locked, and compares the digest again (`verifyUnderCartLock`, run before any grant, swap or release). One mechanism covers the selection, prices, gifts and shipping instead of a version number per input. The hold service still checks campaign revision and lifecycle under the campaign locks.
+- **Documentation:** D-1 above now describes what runs (proof signed inside the transaction, quote re-verified under the cart lock).

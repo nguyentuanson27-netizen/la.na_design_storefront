@@ -305,20 +305,20 @@ test("finalize runs inside the transaction: a refusal rolls back new holds and k
   const cartId = await cart();
   const refuse = () => "PROOF_UNAVAILABLE" as const;
 
-  assert.deepEqual(await holds.hold(request(cartId, [merch(m)]), refuse), { ok: false, reason: "PROOF_UNAVAILABLE", kind: null, campaignId: null });
+  assert.deepEqual(await holds.hold(request(cartId, [merch(m)]), { finalize: refuse }), { ok: false, reason: "PROOF_UNAVAILABLE", kind: null, campaignId: null });
   assert.equal(await prisma.voucherHold.count({ where: { campaign: { pancakeShopId: SHOP } } }), 0);
   assert.equal((await ledger(m.id)).reservedUses, 0);
 
-  const first = await holds.hold(request(cartId, [merch(m)]), () => null);
+  const first = await holds.hold(request(cartId, [merch(m)]), { finalize: () => null });
   assert.ok(first.ok);
   if (!first.ok) return;
-  assert.deepEqual(await holds.hold(request(cartId, [merch(m, 25_000)], { quoteDigest: DIGEST_B }), refuse), { ok: false, reason: "PROOF_UNAVAILABLE", kind: null, campaignId: null });
+  assert.deepEqual(await holds.hold(request(cartId, [merch(m, 25_000)], { quoteDigest: DIGEST_B }), { finalize: refuse }), { ok: false, reason: "PROOF_UNAVAILABLE", kind: null, campaignId: null });
   const rows = await prisma.voucherHold.findMany({ where: { campaignId: m.id } });
   assert.deepEqual(rows.map((h) => [h.id, h.state, Number(h.heldDiscountVnd)]), [[first.holds[0]!.holdId, "HELD", 30_000]]);
   assert.equal((await ledger(m.id)).reservedVnd, BigInt(30_000));
 
   let seen = 0;
-  const swapped = await holds.hold(request(cartId, [merch(m, 25_000)], { quoteDigest: DIGEST_B }), (granted) => { seen = granted.length; return null; });
+  const swapped = await holds.hold(request(cartId, [merch(m, 25_000)], { quoteDigest: DIGEST_B }), { finalize: (granted) => { seen = granted.length; return null; } });
   assert.ok(swapped.ok);
   assert.equal(seen, 1, "finalize sees the holds that will exist");
   await assertLedgerConsistent(m.id);
@@ -334,4 +334,32 @@ test("readOwnLiveHolds returns only this attempt's HELD, unexpired holds, by the
   assert.deepEqual(await holds.readOwnLiveHolds(expiredCart), [], "expired by the clock, still HELD in the table");
   assert.deepEqual(await holds.readOwnLiveHolds(await cart()), [], "a cart with no hold");
   assert.deepEqual(await holds.readOwnLiveHolds(ownCart), [{ kind: "MERCHANDISE", campaignId: m.id, campaignRevision: 1, heldDiscountVnd: 30_000 }]);
+});
+
+test("verifyUnderCartLock runs with the cart row locked, before anything changes, and a refusal rolls the call back (grant, reuse and release alike)", async () => {
+  const m = await f.campaign({ maxUses: 5 });
+  const cartId = await cart();
+  let sawLock: string | null = null;
+  const probe = async () => {
+    // Another connection cannot take the cart row while the hook runs: selection writers are excluded here.
+    try {
+      await prisma.$queryRaw`SELECT "id" FROM "Cart" WHERE "id" = ${cartId} FOR UPDATE NOWAIT`;
+      sawLock = "NOT LOCKED";
+    } catch (error) {
+      sawLock = /lock|55P03/i.test(String(error)) ? "LOCKED" : String(error);
+    }
+    return null;
+  };
+  const first = await holds.hold(request(cartId, [merch(m)]), { verifyUnderCartLock: async () => { await probe(); return null; } });
+  assert.ok(first.ok);
+  assert.equal(sawLock, "LOCKED");
+
+  const refuse = async () => "QUOTE_CHANGED" as const;
+  const expected = { ok: false, reason: "QUOTE_CHANGED", kind: null, campaignId: null };
+  assert.deepEqual(await holds.hold(request(cartId, [merch(m, 25_000)], { quoteDigest: DIGEST_B }), { verifyUnderCartLock: refuse }), expected, "swap");
+  assert.deepEqual(await holds.hold(request(cartId, [merch(m)]), { verifyUnderCartLock: refuse }), expected, "reuse");
+  assert.deepEqual(await holds.hold({ shopId: SHOP, cartId, paidRevision: 0, quoteDigest: DIGEST_A, grants: [], releaseKinds: ["MERCHANDISE"] }, { verifyUnderCartLock: refuse }), expected, "release");
+  const rows = await prisma.voucherHold.findMany({ where: { campaignId: m.id } });
+  assert.deepEqual(rows.map((h) => [h.state, Number(h.heldDiscountVnd)]), [["HELD", 30_000]]);
+  await assertLedgerConsistent(m.id);
 });

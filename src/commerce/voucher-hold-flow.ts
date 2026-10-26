@@ -1,10 +1,10 @@
-import type { PrismaClient } from "../generated/prisma/client.ts";
+import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 import { canProjectExactMoney } from "./pancake-voucher-projection.ts";
 import { createVoucherHoldRateLimiter, type VoucherCodeRateLimiter } from "./voucher-code-rate-limit.ts";
 import { canIssueNewVouchers, readVoucherVerifiedShopIds } from "./voucher-gate.ts";
 import { createVoucherHoldService, type HeldVoucher, type VoucherGroup, type VoucherHoldFailureReason, type VoucherHoldGrant } from "./voucher-hold-service.ts";
-import { readVoucherPreview } from "./voucher-preview.ts";
+import { readVoucherPreview, readVoucherPreviewWithin } from "./voucher-preview.ts";
 import { buildVoucherQuoteFacts, GIFT_SLOTS_VARIATION } from "./voucher-quote-facts.ts";
 import { issueVoucherQuoteProof, voucherProofFactsFromQuote } from "./voucher-quote-proof.ts";
 
@@ -18,8 +18,9 @@ import { issueVoucherQuoteProof, voucherProofFactsFromQuote } from "./voucher-qu
  *     repeatable-read) with those holds kept in play: a retry never loses what the buyer already holds because the
  *     campaign has since filled up, ended or been switched off (TG-05 A, AC-31, AC-33);
  *  3. the buyer must have seen THIS quote: `expectedQuoteDigest` is the digest of the exact vouchers, revisions,
- *     line prices, gift slots, shipping and total. Equal totals of two different quotes are not consent. A quote
- *     that costs the buyer a gift or raises the total needs an explicit `acknowledged` (AC-34);
+ *     line prices, gift slots, shipping and total. Equal totals of two different quotes are not consent. This holds
+ *     for EVERY outcome, including "no voucher": a hold is never released on a quote the buyer did not agree to. A
+ *     quote that costs the buyer a gift or raises the total needs an explicit `acknowledged` (AC-34);
  *  4. `canProjectExactMoney` on the exact vendor lines BEFORE any hold, budget or proof (AC-20);
  *  5. the atomic hold (`voucher-hold-service`), all groups or none, and -- still inside that transaction -- the HELD
  *     `lav1` proof. If the proof cannot be issued the whole call rolls back: quota is never held without a proof to
@@ -75,11 +76,13 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
   env?: Readonly<Record<string, string | undefined>>;
   /** Test seams only: the production readers/issuers are `readVoucherPreview` and `issueVoucherQuoteProof`. */
   readPreview?: typeof readVoucherPreview;
+  readPreviewWithin?: typeof readVoucherPreviewWithin;
   issueProof?: typeof issueVoucherQuoteProof;
   rateLimiter?: VoucherCodeRateLimiter;
 }>) {
   const env = options.env ?? process.env;
   const readPreview = options.readPreview ?? readVoucherPreview;
+  const readPreviewWithin = options.readPreviewWithin ?? readVoucherPreviewWithin;
   const issueProof = options.issueProof ?? issueVoucherQuoteProof;
   const limiter = options.rateLimiter ?? createVoucherHoldRateLimiter(client);
   const holds = createVoucherHoldService(client, { attemptSecret: options.attemptSecret, env });
@@ -101,18 +104,25 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
     const { quote, campaigns, paidRevision } = preview;
     if (paidRevision > BigInt(Number.MAX_SAFE_INTEGER)) return { ok: false, reason: "QUOTE_UNAVAILABLE" };
 
-    // Nothing chosen: release whatever this attempt still holds and say so. (No digest test: no hold is made.)
+    const facts = buildVoucherQuoteFacts({ quote, campaigns, lines: preview.lines, variationOfLine: preview.variationOfLine, paidRevision });
+    if (facts === null) return { ok: false, reason: "QUOTE_UNAVAILABLE" };
+
+    // 3. The buyer saw THIS quote -- also when that quote is "no voucher" -- and agreed to anything it costs them.
+    if (facts.digest !== expectedQuoteDigest) return { ok: false, reason: "QUOTE_CHANGED", currentTotalVnd: quote.totalPayableVnd, currentQuoteDigest: facts.digest };
+
+    // Under the cart lock, before any grant, swap or release: is this still the quote the buyer agreed to?
+    const verifyUnderCartLock = async (tx: Prisma.TransactionClient): Promise<VoucherHoldFailureReason | null> => {
+      const again = await readPreviewWithin(tx, { cartId, shopId: options.shopId, now: new Date(), env, selectionOverride: undefined, ownHolds: await holds.readOwnLiveHoldsIn(tx, cartId) });
+      return again.enabled && again.ok && again.quoteDigest === facts.digest ? null : "QUOTE_CHANGED";
+    };
+
+    // Nothing chosen: release whatever this attempt still holds and say so.
     if (quote.voucherCount === 0) {
-      const released = await holds.hold({ shopId: options.shopId, cartId, paidRevision: Number(paidRevision), quoteDigest: "0".repeat(64), grants: [], releaseKinds: ["MERCHANDISE", "SHIPPING_FREE"] });
+      const released = await holds.hold({ shopId: options.shopId, cartId, paidRevision: Number(paidRevision), quoteDigest: facts.digest, grants: [], releaseKinds: ["MERCHANDISE", "SHIPPING_FREE"] }, { verifyUnderCartLock });
       if (!released.ok) return { ok: false, reason: released.reason };
       return { ok: true, state: "NONE", totalPayableVnd: quote.totalPayableVnd, released: released.released };
     }
 
-    const facts = buildVoucherQuoteFacts({ quote, campaigns, lines: preview.lines, variationOfLine: preview.variationOfLine, paidRevision });
-    if (facts === null) return { ok: false, reason: "QUOTE_UNAVAILABLE" };
-
-    // 3. The buyer saw THIS quote, and agreed to anything it costs them.
-    if (facts.digest !== expectedQuoteDigest) return { ok: false, reason: "QUOTE_CHANGED", currentTotalVnd: quote.totalPayableVnd, currentQuoteDigest: facts.digest };
     if ((quote.giftLoss !== null || quote.confirmation !== null) && input.acknowledged !== true) {
       return {
         ok: false,
@@ -166,7 +176,7 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
       }
       return proof === null ? "PROOF_UNAVAILABLE" : null;
     };
-    const granted = await holds.hold({ shopId: options.shopId, cartId, paidRevision: Number(paidRevision), quoteDigest: facts.digest, grants, releaseKinds }, finalize);
+    const granted = await holds.hold({ shopId: options.shopId, cartId, paidRevision: Number(paidRevision), quoteDigest: facts.digest, grants, releaseKinds }, { verifyUnderCartLock, finalize });
     if (!granted.ok) return { ok: false, reason: granted.reason };
     if (proof === null) return { ok: false, reason: "PROOF_UNAVAILABLE" };
     return {

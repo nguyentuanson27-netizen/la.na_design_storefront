@@ -298,7 +298,7 @@ test("a swap on a changed quote releases the old hold and holds the new one; cho
   assert.equal((await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: small.id } })).reservedUses, 0);
 });
 
-test("a cart whose paid lines moved after the preview is CART_CHANGED, and a voucher taken by someone else meanwhile is CAPACITY_EXHAUSTED; neither leaves a hold", async () => {
+test("a cart whose paid lines moved after the preview is CART_CHANGED, and a voucher taken by someone else meanwhile makes the quote changed; neither leaves a hold", async () => {
   const variantId = await product(450_000);
   const a = await cart([{ variantId, quantity: 2 }]);
   const b = await cart([{ variantId, quantity: 2 }]);
@@ -308,7 +308,8 @@ test("a cart whose paid lines moved after the preview is CART_CHANGED, and a vou
   const stalePreview = await shown(b.id);
   held(await click(a.id));
   const staleFlow = createVoucherHoldFlow(prisma, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: ENV, readPreview: async () => stalePreview });
-  assert.deepEqual(await staleFlow.hold({ cartId: b.id, expectedQuoteDigest: stalePreview.quoteDigest! }), { ok: false, reason: "CAPACITY_EXHAUSTED" });
+  // The stale preview still offers the voucher, but the quote recomputed under the cart lock no longer does.
+  assert.deepEqual(await staleFlow.hold({ cartId: b.id, expectedQuoteDigest: stalePreview.quoteDigest! }), { ok: false, reason: "QUOTE_CHANGED" });
 
   // Cart b changes after its preview was read (a paid line is added): the hold refuses the stale revision.
   await prisma.cartItem.create({ data: { cartId: b.id, variantId: await product(100_000), quantity: 1 } });
@@ -344,4 +345,91 @@ test("the real hold limiter admits a normal reload burst and refuses a flood, wi
   assert.deepEqual([results.slice(0, 20).every(Boolean), results[20], results[21]], [true, false, false]);
   assert.equal(await code.consume(input), true, "spending the hold budget did not touch the code budget");
   await prisma.$executeRaw`DELETE FROM "rateLimit" WHERE "key" LIKE 'voucher-hold-%' OR "key" LIKE 'voucher-code-%'`;
+});
+
+const selection = createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV });
+async function snapshot(campaignIds: string[]) {
+  const holdRows = await holdsOf();
+  const campaigns = await prisma.voucherCampaign.findMany({ where: { id: { in: campaignIds } }, orderBy: { id: "asc" } });
+  return {
+    holds: holdRows.map((h) => ({ id: h.id, state: h.state, heldVnd: Number(h.heldDiscountVnd), expiresAtMs: h.expiresAt.getTime() })),
+    campaigns: campaigns.map((c) => ({ id: c.id, reservedUses: c.reservedUses, reservedVnd: Number(c.reservedVnd), updatedAtMs: c.updatedAt.getTime() })),
+  };
+}
+
+/** A flow whose preview is read normally, and then `between()` runs BEFORE the grant transaction starts: a deterministic barrier for another tab's write. */
+const racing = (between: () => Promise<void>) =>
+  createVoucherHoldFlow(prisma, {
+    shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: ENV,
+    readPreview: async (input) => {
+      const preview = await readVoucherPreview(input);
+      await between();
+      return preview;
+    },
+  });
+const noHoldAnywhere = async (campaignIds: string[]) => {
+  const state = await snapshot(campaignIds);
+  assert.deepEqual(state.holds, []);
+  assert.ok(state.campaigns.every((c) => c.reservedUses === 0 && c.reservedVnd === 0));
+};
+
+test("P1 TOCTOU: another tab changes the selection AFTER the preview and BEFORE the grant (same value, or none): QUOTE_CHANGED, nothing is held", async () => {
+  const a = await fixed(50_000, 100_000, { name: "race A" });
+  const b = await fixed(50_000, 100_000, { name: "race B" });
+  const c = await cart([{ variantId: await product(450_000), quantity: 2 }]);
+  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: a.id });
+  const digest = (await shown(c.id)).quoteDigest!;
+  const before = (await shown(c.id)).quote.totalPayableVnd;
+
+  // A -> B, both worth 50.000: same total, different voucher.
+  const toB = racing(() => selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: b.id }).then(() => undefined));
+  assert.equal((await shown(c.id)).quote.totalPayableVnd, before);
+  assert.equal((await toB.hold({ cartId: c.id, expectedQuoteDigest: digest })).ok, false);
+  await noHoldAnywhere([a.id, b.id]);
+
+  // A -> NONE
+  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: a.id });
+  const toNone = racing(() => selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: null }).then(() => undefined));
+  const refused = await toNone.hold({ cartId: c.id, expectedQuoteDigest: (await shown(c.id)).quoteDigest! });
+  assert.deepEqual(refused, { ok: false, reason: "QUOTE_CHANGED" });
+  await noHoldAnywhere([a.id, b.id]);
+});
+
+test("P1 TOCTOU: a price that moves between the preview and the grant is also caught by the quote recomputed under the cart lock", async () => {
+  const m = await fixed(50_000, 100_000, { maxUses: 3 });
+  const c = await cart([{ variantId: await product(450_000), quantity: 2 }]);
+  const digest = (await shown(c.id)).quoteDigest!;
+  const moved = racing(async () => {
+    await prisma.variantMirror.updateMany({ where: { product: { pancakeShopId: SHOP } }, data: { pancakeRetailPrice: 440_000, pancakeRetailPriceAfterDiscount: 440_000 } });
+  });
+  assert.deepEqual(await moved.hold({ cartId: c.id, expectedQuoteDigest: digest }), { ok: false, reason: "QUOTE_CHANGED" });
+  await noHoldAnywhere([m.id]);
+});
+
+test("P1 NONE: a stale tab can neither release a hold it did not agree to release, nor release on a quote the selection has since changed", async () => {
+  const m = await fixed(50_000, 100_000, { maxUses: 3 });
+  const c = await cart([{ variantId: await product(450_000), quantity: 2 }]);
+  const first = held(await click(c.id)); // tab A holds M and still shows M's digest
+  const digestM = (await shown(c.id)).quoteDigest!;
+  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: null }); // tab B chooses NONE
+
+  // Tab A's stale POST: the server now computes the NONE quote, whose digest A never agreed to.
+  const stale = await flow.hold({ cartId: c.id, expectedQuoteDigest: digestM });
+  assert.equal(!stale.ok && stale.reason, "QUOTE_CHANGED");
+  const intact = await snapshot([m.id]);
+  assert.deepEqual(intact.holds.map((h) => h.state), ["HELD"]);
+  assert.equal(intact.campaigns[0]!.reservedUses, 1);
+
+  // The race: the NONE quote is what the buyer saw, but the selection flips back between the preview and the release.
+  const digestNone = (await shown(c.id)).quoteDigest!;
+  const flipBack = racing(() => selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "AUTO" }).then(() => undefined));
+  assert.deepEqual(await flipBack.hold({ cartId: c.id, expectedQuoteDigest: digestNone }), { ok: false, reason: "QUOTE_CHANGED" });
+  assert.deepEqual(await snapshot([m.id]), intact, "the hold is untouched, down to the ledger row");
+
+  // The intentional NONE: the buyer's own NONE digest releases it.
+  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: null });
+  const released = await click(c.id);
+  assert.deepEqual(released.ok && released.state === "NONE" && released.released, ["MERCHANDISE"]);
+  assert.equal((await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: m.id } })).reservedUses, 0);
+  assert.ok(first.holds.length === 1);
 });

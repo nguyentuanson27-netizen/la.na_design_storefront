@@ -76,14 +76,18 @@ export async function readVoucherPreview(input: Readonly<{
   const env = input.env ?? process.env;
   if (!canIssueNewVouchers(env)) return { enabled: false };
   try {
-    return await client.$transaction((tx) => readInTransaction(tx, { cartId, shopId, now, env, selectionOverride: input.selectionOverride, ownHolds: input.ownHolds ?? [] }), { isolationLevel: "RepeatableRead" });
+    return await client.$transaction((tx) => readVoucherPreviewWithin(tx, { cartId, shopId, now, env, selectionOverride: input.selectionOverride, ownHolds: input.ownHolds ?? [] }), { isolationLevel: "RepeatableRead" });
   } catch {
     // A read that cannot complete is "unavailable", never "no voucher": the caller keeps the plain cart and says so.
     return { enabled: true, ok: false, reason: "QUOTE_UNAVAILABLE" };
   }
 }
 
-async function readInTransaction(
+/**
+ * The same read, inside a transaction the caller already owns. The hold flow runs it AFTER locking the cart row, so a
+ * selection written by another tab (written under that same lock) cannot change underneath the grant.
+ */
+export async function readVoucherPreviewWithin(
   tx: Prisma.TransactionClient,
   { cartId, shopId, now, env, selectionOverride, ownHolds }: Readonly<{ cartId: string; shopId: number; now: Date; env: Readonly<Record<string, string | undefined>>; selectionOverride: VoucherSelectionIntent | undefined; ownHolds: readonly OwnVoucherHold[] }>,
 ): Promise<VoucherPreview> {
