@@ -1,6 +1,6 @@
 # Voucher v1 — verification status
 
-- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. V09 now has its H1-V live evidence ([POS probe](./storefront-voucher-v1-pos-probe.md), 2026-10-26, 4/4 PASS); V07 (Admin browser/axe) still lacks one piece of evidence. **Not built** (blocked by gates that need a person): V11–V14 (holds, V11 built (see rows 14–16, 31–34, 45); V12 next, accepted order, consume, cancel/refund), V18 (checkout exposure), V20/V21 completion, H3-V, H4, H5.
+- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. V09 now has its H1-V live evidence ([POS probe](./storefront-voucher-v1-pos-probe.md), 2026-10-26, 4/4 PASS); V07 (Admin browser/axe) still lacks one piece of evidence. **Not built** (blocked by gates that need a person): V11–V14 (holds, V11 and V12 built (see rows 14–16, 20, 31–34, 43, 45); H3-V review and V13/V14/V18 remain, accepted order, consume, cancel/refund), V18 (checkout exposure), V20/V21 completion, H3-V, H4, H5.
 - **Rule used here:** a row is "verified" only when a named test exercises it against real code (and, where the criterion is about the database, a real PostgreSQL). Anything else is "pending" with the reason. Nothing is marked done from code presence.
 - Spec: [`../specs/storefront-voucher-v1.md`](../specs/storefront-voucher-v1.md). Plan: [`../../tasks/storefront-voucher-v1-plan.md`](../../tasks/storefront-voucher-v1-plan.md).
 
@@ -25,7 +25,7 @@
 | 13 PRIVATE code, KOL link, invalid code | verified (server) | B `voucher-candidates`, `voucher-selection` (uniform INVALID_CODE, throttle); D `voucher-marketing-link`; U |
 | 14–16 quota/budget races, expiry, reload/2 tabs | **pending V11/V12** | DB invariants only: `voucher-schema` (partial unique live hold, absolute TTL, no oversubscribe) |
 | 17–19 accept → consume once; reject vs unknown; cancel refunds once | **pending V13/V14** | DB guards only: `voucher-schema` (acceptance insert-only, redemption needs consumed hold + accepted order, refund CAS one-way) |
-| 20 unrepresentable POS money → no hold, no proof | verified at the representation level | D `pancake-voucher-projection` (AUTO excludes, manual reported `POS_INFEASIBLE`); H1-V live readback PASSED 2026-10-26 ([evidence](./storefront-voucher-v1-pos-probe.md)) |
+| 20 unrepresentable POS money → no hold, no proof | verified at the representation level **and through the hold POST** (B `voucher-hold-flow`: the flow re-runs `canProjectExactMoney` before any hold; a cart it cannot represent leaves no hold, no budget, no proof) | D `pancake-voucher-projection` (AUTO excludes, manual reported `POS_INFEASIBLE`); H1-V live readback PASSED 2026-10-26 ([evidence](./storefront-voucher-v1-pos-probe.md)) |
 | 21 Admin edit/disable keeps history and live holds | verified | B `voucher-admin-operations`, `voucher-admin-cap-edit` |
 | 22 cart/checkout/commit/Pancake agree | partial | quote ↔ proof ↔ order snapshot ↔ vendor projection are built and tested (D `voucher-quote-proof`, `pancake-voucher-projection`); checkout/submit wiring **pending V13/V18** |
 | 23 voucher read fails → never a silently dearer total | partial | `readVoucherPreview` returns `QUOTE_UNAVAILABLE` and the cart renders its plain totals; submit-side behaviour pending V12/V13 |
@@ -43,8 +43,8 @@
 | 39 / 46 EX-10: 650K − 30K − 80K = 540K, never 570K | verified | D `voucher-money`; B `voucher-order-subtotal-checkout` through the real engines |
 | 40 PRIVATE link never reaches analytics/Referer | verified | D `voucher-marketing-link`; U (clean URL, redirects `no-referrer` + `no-store`, no code in the page or later requests, HttpOnly pending cookie). GTM itself was not loaded (no network) |
 | 41 TG-05 A: edit/disable never revokes a hold | verified | B `voucher-admin-cap-edit` |
-| 42 GET / prefetch / hover never hold | verified for the preview and the PDP/cart pages; **production-mode prefetch evidence pending V12** | B `voucher-order-subtotal-checkout`; U (no hold exists after opening the picker or the PDP). Run against `next dev`, not a production build |
-| 43 POST grants once, idempotent | **pending V12** | |
+| 42 GET / prefetch / hover never hold | verified for the preview and the PDP/cart pages; **production-mode prefetch evidence pending V18 (nothing in the UI calls the hold action yet)** | B `voucher-order-subtotal-checkout`; U (no hold exists after opening the picker or the PDP). Run against `next dev`, not a production build |
+| 43 POST grants once, idempotent | verified (database); **browser evidence pending V18's UI** | B `voucher-hold-flow` (reload / double click / two tabs: same holds, same expiry, same proof, one ledger entry; a PREVIEW proof can never submit; the HELD proof verifies against an independently recomputed quote and expires at the earliest hold) |
 | 44 cap under committed floor refused | verified | B `voucher-admin-cap-edit`, `voucher-schema` |
 | 14–16 / 33 hold is 10 minutes, absolute, reused on reload / two tabs | verified (database) | B `voucher-hold` (TTL from one database timestamp; reload and parallel tabs return the same hold with the original `expiresAt`; nothing extended or double counted) |
 | 31 / 32 held entitlement vs natural campaign expiry | verified at the hold read (V11); **submit-time consume is V13** | B `voucher-hold` (campaign ended at T+3: the T+5 hold is still honoured, nothing new is granted; T+10 refused by the database clock) |

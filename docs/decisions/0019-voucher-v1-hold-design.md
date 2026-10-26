@@ -85,3 +85,11 @@ Real-database tests, not mocks: quota = 1 with two simultaneous grants → exact
 - **Self-held credit:** capacity is tested with the attempt's own live hold on the same campaign credited back, so a full campaign can still swap the buyer's own entitlement (D-3).
 - **Cart revision:** `paidRevision` is checked on the locked cart row only when something is granted; a pure release does not need it.
 - **Gate:** `canIssueNewVouchers` then `LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS` for any call that grants; release, the sweeper and the honour read (`findHonourableHold`, for V13) never read either.
+
+## Implementation notes (V12, `voucher-hold-flow.ts` / `voucher-hold-actions.ts`)
+
+- **Order inside the POST:** gates, per-cart and per-shop throttle (own keys, `voucher-hold-*`, so spending hold budget never spends the code budget), read-only preview, the buyer's `expectedTotalVnd` must equal the server's total (`TOTAL_CHANGED` otherwise), `canProjectExactMoney` on the exact vendor lines, the atomic hold, and only then the HELD `lav1` proof. A refusal at any step leaves no hold, no budget and no proof.
+- **What a hold's `quoteDigest` is:** the digest of the PREVIEW facts (the same facts without hold ids). A hold cannot name itself, and a submit recomputes the same PREVIEW facts to compare.
+- **Gifts in the proof:** the proof binds the retained gift slot COUNT (a synthetic `gift-slots` GIFT line); which gift variation was chosen stays with the gift selection and the checkout proof.
+- **Not covered by the hold:** a catalog price change that does not move the cart's `paidRevision` is caught at submit by recomputation (V13), not by the hold; the hold guarantees the voucher entitlement, not the price base (D-3).
+- **Open:** AC-42/43 browser evidence and the H3-V review wait for a UI that calls the action (V18).

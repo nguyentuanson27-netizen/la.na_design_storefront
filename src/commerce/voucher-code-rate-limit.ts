@@ -11,16 +11,26 @@ import type { PrismaClient } from "../generated/prisma/client.ts";
  * not sit in a table. Every attempt counts, valid or not -- the limiter must not tell a guesser which codes exist.
  */
 
-const CART_MAX_ATTEMPTS = 10;
-const CART_WINDOW_MS = 60_000;
-const SHOP_MAX_ATTEMPTS = 300;
-const SHOP_WINDOW_MS = 60_000;
+type RateLimitProfile = Readonly<{ name: string; cartMax: number; shopMax: number; windowMs: number }>;
+
+const CODE_PROFILE: RateLimitProfile = { name: "voucher-code", cartMax: 10, shopMax: 300, windowMs: 60_000 };
+/** Hold grants are idempotent, so a reload must not lock a real buyer out; a flood of fresh carts still hits the shop bucket (ADR 0019 D-5). */
+const HOLD_PROFILE: RateLimitProfile = { name: "voucher-hold", cartMax: 20, shopMax: 600, windowMs: 60_000 };
 
 export type VoucherCodeRateLimiter = Readonly<{
   consume(input: Readonly<{ cartId: string; shopId: number; now: Date }>): Promise<boolean>;
 }>;
 
 export function createVoucherCodeRateLimiter(client: PrismaClient): VoucherCodeRateLimiter {
+  return createProfileLimiter(client, CODE_PROFILE);
+}
+
+/** The same two-bucket limiter with the hold profile and its own keys (a code throttle never spends hold budget). */
+export function createVoucherHoldRateLimiter(client: PrismaClient): VoucherCodeRateLimiter {
+  return createProfileLimiter(client, HOLD_PROFILE);
+}
+
+function createProfileLimiter(client: PrismaClient, profile: RateLimitProfile): VoucherCodeRateLimiter {
   async function bucket(key: string, now: Date, windowMs: number, max: number): Promise<boolean> {
     const nowMs = BigInt(now.getTime());
     const resetBefore = nowMs - BigInt(windowMs);
@@ -49,10 +59,10 @@ export function createVoucherCodeRateLimiter(client: PrismaClient): VoucherCodeR
       if (typeof cartId !== "string" || cartId.length === 0 || cartId.length > 128) throw new TypeError("Voucher code rate limit needs a cart identity");
       if (!Number.isSafeInteger(shopId) || shopId <= 0) throw new TypeError("Voucher code rate limit needs a shop");
       if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError("Voucher code rate-limit time must be valid");
-      const cartHash = createHash("sha256").update("voucher-code-cart:v1\0").update(cartId).digest("hex");
+      const cartHash = createHash("sha256").update(`${profile.name}-cart:v1\0`).update(cartId).digest("hex");
       // Both buckets are consumed on every attempt: a refused attempt still counts against the other.
-      const cartAllowed = await bucket(`voucher-code-cart:${cartHash}`, now, CART_WINDOW_MS, CART_MAX_ATTEMPTS);
-      const shopAllowed = await bucket(`voucher-code-shop:${shopId}`, now, SHOP_WINDOW_MS, SHOP_MAX_ATTEMPTS);
+      const cartAllowed = await bucket(`${profile.name}-cart:${cartHash}`, now, profile.windowMs, profile.cartMax);
+      const shopAllowed = await bucket(`${profile.name}-shop:${shopId}`, now, profile.windowMs, profile.shopMax);
       return cartAllowed && shopAllowed;
     },
   };

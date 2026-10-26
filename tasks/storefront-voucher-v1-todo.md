@@ -65,9 +65,9 @@
 - [x] **V11 — Atomic holds and real Admin cap race** _(deps: V04, V05, V06, V10, H3-D)_ — **done 2026-10-26:** `src/commerce/voucher-hold-service.ts`, `tests/database/voucher-hold.test.ts` (15)
   - [x] Grant, swap, reuse and expire holds atomically across two groups; no rolling TTL, no oversubscribe.
   - [x] Run actual V06×V11 simultaneous cap edit/hold grant AC-45, plus T+3/T+5 natural expiry, T+10 and idempotent ledger. _Mutations checked: no self-credit, no lazy expiry and an unsorted lock order each make a test fail (the last with a real `deadlock detected`)._
-- [ ] **V12 — Verified-POS-only buyer POST hold** _(deps: V09, V10, V11, H1-V; produces H3-V)_
-  - [ ] GET/prefetch read-only; CSRF/idempotent POST invokes verified V09 canProjectExactMoney BEFORE any hold or submit-capable proof.
-  - [ ] DB/integration unrepresentable money→no hold/budget/proof/POS (AC-20), plus production prefetch-vs-POST browser evidence (AC-42/43), then H3-V review.
+- [ ] **V12 — Verified-POS-only buyer POST hold** _(deps: V09, V10, V11, H1-V; produces H3-V)_ — **built 2026-10-26** (`voucher-hold-flow.ts`, `voucher-hold-actions.ts`, `tests/database/voucher-hold-flow.test.ts` 9); **browser evidence (AC-42/43) and the H3-V review are open**: no UI calls the action until V18, so a production-mode prefetch-vs-POST run is not possible yet
+  - [x] GET/prefetch read-only; CSRF/idempotent POST invokes verified V09 canProjectExactMoney BEFORE any hold or submit-capable proof. _The only grantor is a Server Action (POST-only, origin-checked, cookie-owned cart); gates, per-cart/per-shop throttle, expected-total agreement, exact-money check, atomic hold, then the HELD proof. Mutations (no exact-money check, no total check, no gates) each fail a test._
+  - [ ] DB/integration unrepresentable money→no hold/budget/proof/POS (AC-20) **[done: database]**, plus production prefetch-vs-POST browser evidence (AC-42/43) **[pending V18's UI]**, then H3-V review **[pending]**.
 - [ ] **V13 — Durable accepted state and consume once** _(deps: V04, V09, V11, V12, H1-V, H3-V)_
   - [ ] Use V04 accepted marker/immutable quote, only after capacity reservation succeeds; stock fail/rollback means no accepted marker, no consumed voucher and no POS write.
   - [ ] DB stock-failure injection, retry/2-tab/PRICE_CHANGED/UNKNOWN tests; accepted orders never reprice and analytics waits confirmed.

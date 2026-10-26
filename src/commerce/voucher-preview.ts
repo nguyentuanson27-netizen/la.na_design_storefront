@@ -45,6 +45,8 @@ export type VoucherPreview =
       lines: readonly VoucherPaidLine[];
       /** The cart's monotonic paid-line version, for the proof (ABA guard). */
       paidRevision: bigint;
+      /** Pancake variation of each paid line id, for the exact-money check before a hold (V12). */
+      variationOfLine: ReadonlyMap<string, string>;
     }>;
 
 const UNSET_LIMIT = 200;
@@ -186,5 +188,5 @@ async function readInTransaction(
 
   const cardById = new Map(campaigns.map((campaign) => [campaign.id, toVoucherCard(campaign)]));
   const entries = quote.cards.map((state) => ({ card: cardById.get(state.campaignId)!, state }));
-  return { enabled: true, ok: true, quote, entries, selectionIntent, campaigns, lines, paidRevision: cart.paidRevision };
+  return { enabled: true, ok: true, quote, entries, selectionIntent, campaigns, lines, paidRevision: cart.paidRevision, variationOfLine };
 }
