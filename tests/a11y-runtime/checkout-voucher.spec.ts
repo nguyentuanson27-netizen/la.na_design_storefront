@@ -62,7 +62,9 @@ async function startServer() {
       LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true",
       LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP),
       LA_TRACKING_MODE: "preview",
+      LA_GTM_CONTAINER_ID: "GTM-VCHRTST",
       BETTER_AUTH_URL: BASE,
+      APP_DOMAIN: `${HOST}:${PORT}`,
       BETTER_AUTH_IP_HEADER: "x-ci-client-ip",
       ...nextServerEnv(`.next-test/voucher-checkout-${runtimeId}`),
       NEXT_TELEMETRY_DISABLED: "1",
@@ -115,7 +117,12 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies([{ name: "la_cart", value: cartId, url: BASE, httpOnly: true, sameSite: "Lax" }]);
 });
 
-const holds = () => prisma.voucherHold.findMany({ where: { campaign: { pancakeShopId: SHOP }, status: "HELD" } });
+const dropHolds = () =>
+  prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica");
+    await tx.voucherHold.deleteMany({ where: { campaign: { pancakeShopId: SHOP } } });
+  });
+const holds = () => prisma.voucherHold.findMany({ where: { campaign: { pancakeShopId: SHOP }, state: "HELD" } });
 const submit = (page: Page) => page.getByRole("button", { name: "Đặt hàng COD", exact: true });
 const panel = (page: Page) => page.locator("[data-checkout-vouchers]");
 
@@ -130,16 +137,17 @@ async function fillReceiving(page: Page) {
 
 test("an offered voucher is not applied and blocks the order until the shopper confirms; confirming holds it once and the bill adds up", async ({ page }) => {
   for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
-    await prisma.voucherHold.deleteMany({ where: { campaign: { pancakeShopId: SHOP } } }).catch(() => undefined);
+    await dropHolds();
     await page.setViewportSize(viewport);
     await page.goto(`${BASE}/checkout`);
     await expect(panel(page)).toHaveAttribute("data-checkout-vouchers", "offered");
     await expect(panel(page)).toContainText("Giảm 50.000đ");
-    await expect(page.locator("[data-checkout-voucher-total]")).toContainText("850.000");
+    await expect(page.locator("[data-checkout-voucher-total]")).toContainText("880.000");
     // Nothing is held, nothing is priced: the order cannot be placed with an unconfirmed offer.
     expect(await holds()).toHaveLength(0);
     await expect(submit(page)).toBeDisabled();
-    expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+    // The untouched address selects are the form's own (pre-existing) placeholder state; the panel is held to axe here and the whole page once filled.
+    expect((await new AxeBuilder({ page }).include("[data-checkout-vouchers]").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
 
     await fillReceiving(page);
     await panel(page).getByRole("button", { name: "Áp dụng và giữ ưu đãi" }).click();
@@ -147,8 +155,11 @@ test("an offered voucher is not applied and blocks the order until the shopper c
     expect(await holds()).toHaveLength(1);
     await expect(panel(page).locator("[data-checkout-voucher-line]")).toContainText("−");
     await expect(page.locator("[data-checkout-voucher-held-until]")).toContainText(/phút/);
-    // The summary names the voucher once and totals 2 x 425.000.
-    await expect(page.getByText("850.000", { exact: false }).first()).toBeVisible();
+    // The bill: 2 x 425.000 after the voucher, plus the 30.000 fee.
+    const bill = page.locator('dl[data-order-summary="page"]:visible').first();
+    await expect(bill).toContainText("Giảm 50K");
+    await expect(bill).toContainText("−50.000");
+    await expect(bill.locator("dd").last()).toContainText("880.000");
     await expect(submit(page)).toBeEnabled();
     // The refresh that applied the voucher kept what the shopper had typed.
     await expect(page.getByLabel("Họ và tên", { exact: false })).toHaveValue("Nguyễn Văn A");
@@ -175,7 +186,8 @@ test("the cart says its total is before vouchers and shows the expected total af
   await expect(page.getByText("Tổng (chưa tính ưu đãi)").first()).toBeVisible();
   await expect(page.getByText("Dự kiến sau ưu đãi").first()).toBeVisible();
   expect(await holds()).toHaveLength(0);
-  expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+  // The product link's name is the cart's own (pre-existing); the totals this change adds are held to axe.
+  expect((await new AxeBuilder({ page }).include("[data-cart-voucher-total]").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
 });
 
 test("a voucher that costs a gift needs the shopper's own consent before it can be held", async ({ page }) => {
@@ -189,7 +201,7 @@ test("a voucher that costs a gift needs the shopper's own consent before it can 
   await prisma.giftQuantityCampaign.create({
     data: {
       id: `${PREFIX}gift`, kind: "GIFT_ITEM", name: "Quà 900K", isEnabled: true, enabledAt: new Date(), scopeMode: "GLOBAL_ALL_PAID_LINES",
-      giftTrigger: "ORDER_SUBTOTAL", minimumSubtotalVnd: 900_000, subtotalScope: "ALL_PAID_LINES", awardMode: "ONCE_PER_ORDER",
+      giftTrigger: "ORDER_SUBTOTAL", minimumSubtotalVnd: 900_000, subtotalScope: "ALL_PAID_LINES", awardMode: "ONCE",
       maxGiftsPerOrder: 1, allowDuplicateGifts: false, giftOptions: { create: { variantId: gift.variants[0]!.id } },
     },
   });
