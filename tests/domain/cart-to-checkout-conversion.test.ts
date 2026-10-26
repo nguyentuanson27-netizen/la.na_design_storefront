@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { FULFILLMENT, ORDER_TRUST_FACTS, ORDER_TRUST_SHORT } from "../../src/brand/index.ts";
+import { FULFILLMENT, ORDER_TRUST_FACTS, ORDER_TRUST_SHORT, orderTrustFor } from "../../src/brand/index.ts";
 import type { StorefrontCartLine } from "../../src/commerce/storefront-cart.ts";
 import { CART_DRAWER_EXIT_EVENT, cartDrawerExitParameters } from "../../src/components/headless/cart-drawer-model.ts";
 import { benefitCheckoutPixelParameters, type CheckoutViewModel } from "../../src/routes/checkout-model.ts";
@@ -34,9 +34,9 @@ test("the order trust line is derived from the approved payment and returns poli
 
 test("the mobile sticky order bar carries the short trust line on the cart page and checkout", () => {
   assert.match(read("src/components/brand/mobile-sticky-cta.tsx"), /data-mobile-sticky-footnote/);
-  for (const file of ["src/app/cart/page.tsx", "src/components/commerce/guest-checkout-form.tsx"]) {
-    assert.match(read(file), /footnote=\{ORDER_TRUST_SHORT\}/, file);
-  }
+  assert.match(read("src/app/cart/page.tsx"), /footnote=\{ORDER_TRUST_SHORT\}/);
+  // Checkout is the one place the method is chosen, so its footnote follows that choice.
+  assert.match(read("src/components/commerce/guest-checkout-form.tsx"), /footnote=\{orderTrust\.short\}/);
 });
 
 test("the trust line sits under every order button: drawer, cart page and checkout", () => {
@@ -45,7 +45,8 @@ test("the trust line sits under every order button: drawer, cart page and checko
   }
   // The component renders Brand Config facts; it never words a policy of its own.
   const line = read("src/components/brand/order-trust-line.tsx");
-  assert.match(line, /ORDER_TRUST_FACTS\.map/);
+  assert.match(line, /facts = ORDER_TRUST_FACTS/);
+  assert.match(line, /facts\.map/);
   assert.doesNotMatch(line, /ngày|kiểm tra|COD/);
   // One row: each fact stays whole, the row only breaks between facts.
   assert.match(line, /whitespace-nowrap/);
@@ -131,4 +132,21 @@ test("checkout wires the gift-checkout InitiateCheckout through the signed CAPI 
   const checkout = read("src/routes/checkout.ts");
   assert.match(checkout, /benefitCheckoutPixelParameters\(data, lines\)/);
   assert.match(checkout, /name: "InitiateCheckout", capiPath: "\/checkout", parameters: benefitPixel/);
+});
+
+test("checkout's trust line follows the chosen payment method and never promises COD to a transfer order", () => {
+  const cod = orderTrustFor("COD");
+  assert.deepEqual(cod.facts, ORDER_TRUST_FACTS);
+  assert.equal(cod.short, ORDER_TRUST_SHORT);
+
+  const transfer = orderTrustFor("BANK_TRANSFER");
+  assert.deepEqual(transfer.facts, ["Chuyển khoản", `Đổi trả ${FULFILLMENT.returns.windowDays} ngày`]);
+  assert.equal(transfer.short, "Chuyển khoản · Đổi trả 15 ngày");
+  // Inspection before paying is a COD fact: it is not carried to an order paid first.
+  assert.doesNotMatch(transfer.short, /COD|kiểm/);
+
+  const form = read("src/components/commerce/guest-checkout-form.tsx");
+  assert.match(form, /orderTrustFor\(paymentMethod\)/);
+  assert.match(form, /<OrderTrustLine facts=\{orderTrust\.facts\} \/>/);
+  assert.doesNotMatch(form, /ORDER_TRUST_SHORT/);
 });

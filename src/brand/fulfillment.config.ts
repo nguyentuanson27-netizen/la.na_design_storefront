@@ -148,3 +148,22 @@ export const ORDER_TRUST_FACTS: readonly string[] = Object.freeze([
 
 /** {@link ORDER_TRUST_FACTS} as one string, for a surface that can only hold a line of text. */
 export const ORDER_TRUST_SHORT: string = ORDER_TRUST_FACTS.join(" · ");
+
+/**
+ * The same line for a buyer who chose bank transfer.
+ *
+ * "Được kiểm hàng" is the COD promise of inspecting before paying, so it does not carry over to an
+ * order paid before it ships. Nothing here is a new promise: the method the buyer picked, and the
+ * same return window the policy pages state. Any further transfer-specific assurance is the owner's
+ * to approve with the payment policy, not wording to invent here.
+ */
+const ORDER_TRUST_FACTS_BANK_TRANSFER: readonly string[] = Object.freeze([
+  "Chuyển khoản",
+  `Đổi trả ${FULFILLMENT.returns.windowDays} ngày`,
+]);
+
+/** The trust line, as facts and as one string, for the payment method the buyer has chosen. */
+export function orderTrustFor(method: "COD" | "BANK_TRANSFER"): Readonly<{ facts: readonly string[]; short: string }> {
+  const facts = method === "BANK_TRANSFER" ? ORDER_TRUST_FACTS_BANK_TRANSFER : ORDER_TRUST_FACTS;
+  return Object.freeze({ facts, short: facts.join(" · ") });
+}
