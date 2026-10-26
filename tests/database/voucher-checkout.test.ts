@@ -164,11 +164,11 @@ function fakePancake() {
 }
 
 const events: string[] = [];
-function checkoutService(pancake: ReturnType<typeof fakePancake>, proof: unknown, options: Readonly<{ withVoucher?: boolean }> = {}) {
-  const { withVoucher = true } = options;
+function checkoutService(pancake: ReturnType<typeof fakePancake>, proof: unknown, options: Readonly<{ withVoucher?: boolean; env?: Readonly<Record<string, string | undefined>> }> = {}) {
+  const { withVoucher = true, env = ENV } = options;
   const snapshot = createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: true,
-    env: ENV,
+    env,
     ...(withVoucher ? { voucher: { attemptSecret: SECRET } } : {}),
     // A benefit proof is never a legacy proof: a cart that has fallen back to the plain format cannot be confirmed with it.
     verifyRenderedQuote: () => ({ ok: false, reason: "PROOF_UNVERIFIED" }) as never,
@@ -179,7 +179,7 @@ function checkoutService(pancake: ReturnType<typeof fakePancake>, proof: unknown
   });
   const pos = createPancakeOrderSubmissionService(prisma, pancake.gateway, {
     lineLevelPricingVerifiedShopIds: [SHOP],
-    env: ENV,
+    env,
     ...(withVoucher ? { voucher: { attemptSecret: SECRET } } : {}),
     onEvent: (event) => events.push(event.name),
     onConfirmed: async () => undefined,
@@ -283,6 +283,36 @@ test("TG-05 / AC-31: the holds stop describing the cart (it changed) -> priced W
   assert.deepEqual(pancake.calls.create, []);
   assert.deepEqual((await holdsNow()).map((h) => h.state), ["HELD"], "the stale hold is left for its own expiry, not consumed");
   assert.equal(await prisma.orderAcceptance.count({ where: { order: { sourceCartId: cartId } } }), 0);
+});
+
+test("AC-47: flag switched OFF while a voucher checkout is in flight: the live hold is still honoured and settles; no NEW hold is granted", async () => {
+  await seed();
+  const m = await fixedVoucher(50_000, 600_000);
+  await hold();
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") return;
+  const proof = issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })!;
+
+  // The operator unsets LA_VOUCHER_ENABLED (runbook section 4); the shopper presses "Đặt hàng" with the proof they saw.
+  const off = { ...ENV, LA_VOUCHER_ENABLED: undefined };
+  const pancake = fakePancake();
+  const result = await submit(checkoutService(pancake, proof, { env: off }));
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const order = await lastOrder();
+  assert.equal(order.totalVnd, BigInt(880_000), "850.000đ goods + the 30.000đ fee: the voucher the buyer held was honoured");
+  assert.deepEqual(items(pancake.calls.create[0]!), [[paid.variationId, 2, 425_000]]);
+  assert.deepEqual((await holdsNow()).map((h) => h.state), ["CONSUMED"]);
+  assert.equal((await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: m.id } })).redeemedUses, 1);
+
+  // What OFF does stop: a NEW hold, and the preview that would offer one.
+  const offFlow = createVoucherHoldFlow(prisma, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: off });
+  const before = await prisma.voucherHold.count({ where: { campaign: { pancakeShopId: SHOP } } });
+  const refused = await offFlow.hold({ cartId, expectedQuoteDigest: "0".repeat(64), acknowledged: false });
+  assert.equal(refused.ok, false);
+  assert.equal(await prisma.voucherHold.count({ where: { campaign: { pancakeShopId: SHOP } } }), before);
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: off });
+  assert.equal(preview.enabled, false);
 });
 
 test("no hold -> the checkout is exactly the plain checkout: no voucher, no declaration, no acceptance", async () => {

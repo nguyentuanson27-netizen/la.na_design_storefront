@@ -1,6 +1,6 @@
 # Storefront Voucher v1 — execution checklist
 
-**Status:** BUILD IN PROGRESS — owner approved H0, **H1-D and H2** on 2026-10-25. Built and verified: V00–V10, V15–V17, V19; gates **H3-D** (ADR 0019, 2026-10-26) and **H1-V** (live POS probe 4/4 PASS, 2026-10-26) are done. **Not built:** V14 and V18 (cancel/refund, checkout exposure). V12 (holds) and V13 (accepted order, once-only consume) are built; H3-V is approved, and the completion of V20/V21. `LA_VOUCHER_ENABLED` exists and is OFF by default; **keep it unset in production until V18 ships** (checkout does not apply vouchers yet). Evidence: [verification status](../docs/verification/storefront-voucher-v1.md).
+**Status:** BUILD COMPLETE FOR REVIEW, NOT LAUNCHED — owner approved H0, H1-D, H2, H3-D (ADR 0019), H1-V (live POS probe 4/4) and H3-V. Built and verified: V00–V19 (checkout exposure V18 included) plus the V21 runbook and H5 readiness packet. V20 ran its live POS convergence on 2026-10-26 (2 orders, both cancelled, refunds observed); V07 browser/axe evidence, H4, H5, the owner's approval of the two newest migrations, and CI for the newest commits are still open. `LA_VOUCHER_ENABLED` exists and is OFF by default; **keep it unset in production until H5**; PR #214 is not approved for merge. Evidence: [verification status](../docs/verification/storefront-voucher-v1.md), [H5 packet](../docs/verification/storefront-voucher-v1-h5-packet.md).
 **Authority:** [Merged Voucher v1 spec](../docs/specs/storefront-voucher-v1.md) (PR #212, main@2c6e35d39d165064f5986ef901a5bb3efa464e1a).
 **Execution design:** [Voucher v1 implementation plan](./storefront-voucher-v1-plan.md); V00..V21 and H0..H5. This does **not** replace [master plan](./plan.md) or [master todo](./todo.md).
 **Quality:** [ADR 0005 PR sizing](../docs/decisions/0005-pr-scope-reviewability.md); checkout/Pancake/DB migrations require real test evidence, not a checked box on docs.
@@ -96,10 +96,10 @@
 
 ## Phase F — QA and release packet
 
-- [ ] **V20 — AC/TG convergence test evidence** _(deps: V07, V09, V13, V14, V16–V19)_
+- [ ] **V20 — AC/TG convergence test evidence** _(deps: V07, V09, V13, V14, V16–V19)_ — _live POS run done 2026-10-26 (`pnpm voucher:convergence:live`, 2 orders, owner-authorised up to 10; see the packet §2b); AC-47 flag-off test added; **still open: V07 browser/axe evidence, quote/POS performance baseline, one named run of the full AC/TG list**_
   - [ ] AC-01..47/TG-01..12 and H1-V/H3-V evidence includes impossible POS money no-hold, stock failure no-consume, Admin grant race and code/NONE persistence.
   - [ ] Run pnpm test:domain, pnpm test, pnpm test:db, prisma:validate/generate, typecheck, lint, build; browser a11y and authorized POS checks.
-- [ ] **V21 — Rollback/runbook (H5 afterwards)** _(deps: V20)_ — _documents written 2026-10-26: [runbook](../docs/operations/storefront-voucher-runbook.md) and [H5 readiness packet](../docs/verification/storefront-voucher-v1-h5-packet.md); **stays open** because V20 (live convergence run) is not done and the packet lists items only a person can supply (migration approval, V20 authorisation, scheduled refund sweep, H4, H5)_
+- [ ] **V21 — Rollback/runbook (H5 afterwards)** _(deps: V20)_ — _documents written 2026-10-26: [runbook](../docs/operations/storefront-voucher-runbook.md) and [H5 readiness packet](../docs/verification/storefront-voucher-v1-h5-packet.md); **stays open** because the packet lists items only a person can supply (migration approval, scheduled refund sweep, kill-switch decision, H4, H5)_
   - [x] Runbook stops new holds without breaking valid existing holds, reconciles unknown/refunds, audits counters. _(switches, staged rollout, ledger queries run on a scratch DB, smallest-first rollback, refund/reconcile table, release checklist; gaps named: no scheduled refund sweep, no `ADMIN_CANCEL` caller, flag-flip-in-flight untested)_
   - [x] Assemble CI/security/rollback packet FOR later H5 owner go/no-go; do not auto-enable/deploy. _(packet claims no release permission; local gates: 3630 tests / 0 fail, 137/137 voucher DB tests, lint clean on changed files; CI for the newest commits must be read from GitHub)_
 

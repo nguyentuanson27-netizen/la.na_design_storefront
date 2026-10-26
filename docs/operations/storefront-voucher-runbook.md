@@ -13,14 +13,14 @@
 | `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS` | The shop must also be line-level-pricing verified (the POS order carries one price per line). |
 | `LA_VOUCHER_TEST_HARNESS` | **Never set in production.** It only matters to a test build; an official build answers 404 for the harness even if it is set by mistake (`pnpm voucher:hold-harness` proves both). |
 
-What OFF means (ADR 0018 D-6, AC-47): it stops **new** exposure. The settle paths never read it: accepting a still-valid hold at the POS write boundary, reconciling `SYNC_UNKNOWN`, and refunding a rejected or cancelled order keep running. Consequences an operator should expect when the flag is switched OFF while shoppers are mid-checkout:
+What OFF means (ADR 0018 D-6, AC-47): it stops **new** exposure. The settle paths never read it, **and neither does checkout for a hold that already exists**. Verified by a database test (`voucher-checkout.test.ts`, AC-47) and what an operator should expect when the flag is switched OFF while shoppers are mid-checkout:
 
-- A checkout page re-rendered after the switch prices **without** the voucher (the held voucher is not applied, `voucherStale`), so the shopper's old proof no longer matches and they are asked to review the new total.
-- An order that is still before the POS write boundary is re-derived without the voucher and is closed as `VOUCHER_REQUOTE_REQUIRED`/`PRICE_CHANGED`; nothing was accepted, so nothing is consumed and nothing needs a refund.
-- An order already accepted (marker, redemptions written) is unaffected and settles normally.
-- The hold itself simply expires (10 minutes, absolute) and frees its cap on the next grant for that campaign.
+- Voucher lists, the picker, previews, links and **new holds** disappear or are refused at once.
+- A shopper who already holds a voucher keeps it until the hold's own 10-minute expiry: the checkout still shows and prices it, the order is accepted, the voucher is consumed and the POS gets the voucher-priced lines. This is deliberate (a shopper is never charged a price they were not shown) and it means **switching the flag off does not instantly stop all voucher orders; allow up to 10 minutes**.
+- Holds that expire are not renewed, so after 10 minutes no voucher can reach an order. Expired holds free their cap on the next grant for that campaign.
+- Orders already accepted, refunds and reconciliation are unaffected.
 
-The second and third bullets come from reading the code paths (`resolveHeldVoucherCheckout` returns `STALE` when the preview is disabled; `acceptWithin` does not consult the flag). The flag-flip-in-flight case is **not** covered by a dedicated test; the H5 packet lists it.
+To stop vouchers from being *applied* sooner than 10 minutes there is no switch by design (TG-05 A: no force-revoke). The owner can accept this, or decide on an explicit kill switch before H5; that would be new code.
 
 ## 2. Staged rollout (each step needs the owner's yes; this runbook enables nothing)
 
@@ -69,7 +69,7 @@ Alert on: any row from the two drift queries; any row from the last-but-one quer
 
 | Layer | How | Effect |
 | --- | --- | --- |
-| Feature | unset `LA_VOUCHER_ENABLED`, restart `app` | New exposure stops, settlement continues (§1 lists what happens to checkouts in flight). No data change. |
+| Feature | unset `LA_VOUCHER_ENABLED`, restart `app` | New exposure and new holds stop; existing holds are honoured until they expire (≤ 10 minutes), settlement continues. No data change. |
 | One shop | remove it from `LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS`, restart `app` | No new holds for that shop; existing holds honoured until they expire. |
 | One campaign | disable in Admin | New grants stop for it; live holds and the ledger are untouched (TG-05 A). There is deliberately no force-revoke. |
 | Code | revert the deploy (`release-and-rollback.md`) | The tables are additive and ignored by old code. Orders that carry an `OrderAcceptance` row keep their frozen money; an old release would not apply the voucher to a NEW order, which is why the flag is switched off first. |

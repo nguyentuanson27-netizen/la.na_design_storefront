@@ -45,12 +45,23 @@ Acceptance criteria, refreshed (the AC table in the verification doc was written
 | 26 picker open/close keeps COD form | partial | `checkout-voucher.spec.ts`: typed fields survive the hold refresh; the picker lives in the cart, so the open/close-in-checkout half does not exist |
 | 27 refund after campaign expiry | verified (database) | `voucher-redemption-refund.test.ts` |
 | 35 gift-loss confirmation | verified | consent required (`CONFIRMATION_REQUIRED`), shown and enforced in the browser; the stored gift choice is not edited, checkout shows `GIFT_SELECTION_INVALID` until the buyer removes it |
-| 47 flag OFF settles existing holds | **partial** | refund path ignores the flag (tested); acceptance does not read it (by design); a flag flipped while an order is in flight is described in the runbook but **has no dedicated test** |
+| 47 flag OFF settles existing holds | verified (database) | `voucher-checkout.test.ts` AC-47: flag off mid-checkout → the held voucher is still priced, accepted, consumed and sent to the POS; a new hold and the preview are refused. Consequence: switching off takes up to 10 minutes to stop vouchers reaching orders (runbook §1) |
+
+## 2b. V20 live convergence run (2026-10-26, shop 715077776)
+
+`pnpm voucher:convergence:live` (`scripts/voucher-convergence-live.ts`). The production composition (hold → rendered benefit quote and proof → DRAFT → POS re-derivation → acceptance at the write boundary → **real** Pancake create and read-back) against the live shop, with a scratch local database. Authorised by the owner (up to 10 orders; this run created **2**, POS orders 9 and 10, same test variation `9e7a1103-…`, SKU `SQ069S`, live list price 849.000đ). Orders carry the marker `TEST AUTOMATION VOUCHER V20` and were cancelled by the script on every path.
+
+| Case | Website | POS read-back | Refund |
+| --- | --- | --- | --- |
+| C1: 2 units, merchandise voucher 10.000đ + free-shipping voucher | goods 1.688.000đ, fee waived to 0 | order 9: 2 × 844.000đ, total 1.688.000đ (list 849.000đ − 5.000đ per unit) | after the POS cancel the real status reconciliation read status 7 and refunded both vouchers once; counters back to 0/0; a second reconciliation changed nothing |
+| C2: 3 units, 10.000đ voucher that does not divide, no free-shipping voucher | goods 2.537.000đ, fee 30.000đ kept, total 2.567.000đ | order 10: 2 × 845.667đ + 1 × 845.666đ, total 2.537.000đ | same: refunded once, counters returned, second pass a no-op |
+
+Both orders read back **status 7** after the run (read-only check), and a first attempt that failed on a fixture rule before any create left no order. Not covered by this run: a gift line (covered by the H1-V probe fixture F3), a staff-made cancel in the Pancake UI, and `SYNC_UNKNOWN`.
 
 ## 3. What only a person can supply
 
 1. **Owner approval of the two migrations beyond H2:** `20261026100000_voucher_order_snapshot` (new table `OrderVoucherSnapshot`, index on `VoucherHold.orderId`) and `20261026120000_order_quote_step_voucher` (the `VOUCHER` step source). Neither has touched a real database.
-2. **A live end-to-end convergence run (V20)** through checkout to a real POS order at the approved shop. The H1-V probe proved the POS stores voucher-derived line prices exactly; nobody has yet placed a voucher order through the website against the real POS. That writes to Pancake, so it needs its own explicit permission — approving the plan or an ADR does not grant it.
+2. ~~A live end-to-end convergence run (V20)~~ — **done 2026-10-26** with the owner's explicit permission ("chạy v20 đi", "10 đơn"): see §2b. Any further live run needs its own permission.
 3. **A staff-made cancel in the Pancake UI**, observed once, to learn which status code it produces. Only status `7` (the cancel we issue ourselves) refunds today; anything else stays pending by design.
 4. **The refund sweep schedule** (runbook §5): nothing in `deploy/vps` runs `voucher:refund:sweep`.
 5. **H4 UX review** of the checkout panel, the cart totals wording and the gift-loss consent, ideally on a real phone and a desktop.
@@ -63,7 +74,7 @@ Acceptance criteria, refreshed (the AC table in the verification doc was written
 - **>16 KiB proof UX**: a cart whose voucher proof would exceed the limit gets `PROOF_UNAVAILABLE` and a message; there is no browser evidence for that state.
 - **Hold expiry while the checkout page is open**: the panel refreshes at expiry (code path exists), not browser-tested; the desktop viewport of `checkout-voucher.spec.ts` is also only exercised inside the mobile project.
 - **`ADMIN_CANCEL` has no caller** (no screen, no script). Decide whether v1 ships without it (manual reconciliation) or gets an operator command.
-- **Flag-off in flight** needs a test if the owner wants it proven rather than read from code.
+- **No instant kill switch**: with the flag off, held vouchers still settle for up to 10 minutes (tested, deliberate). Decide whether that is acceptable or an explicit kill switch is wanted before H5.
 - **Cart-gift-picker axe findings** need a CI check with the pinned axe to confirm they do not reproduce.
 - **`capacity-handoff-reconcile.ts` typecheck error** is pre-existing; confirm in CI.
 

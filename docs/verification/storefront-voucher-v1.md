@@ -50,7 +50,7 @@
 | 31 / 32 held entitlement vs natural campaign expiry | verified at the hold read (V11); **submit-time consume is V13** | B `voucher-hold` (campaign ended at T+3: the T+5 hold is still honoured, nothing new is granted; T+10 refused by the database clock) |
 | 34 swap keeps the old hold when the new one fails | verified | B `voucher-hold` (a pair is all-or-nothing; a refused swap leaves both holds and the ledger as they were) |
 | 45 Admin cap edit racing grants | verified (database) | B `voucher-hold` (6 rounds of a real `voucher-admin-service` edit against 4 simultaneous grants: never over a cap, edit refused exactly at the live-hold floor, counters equal the live holds) |
-| 47 flag OFF settles existing holds | partial | settle path has no flag read by design (ADR 0018 D-6); behaviour test pending V13/V14 |
+| 47 flag OFF settles existing holds | verified (database) | B `voucher-checkout`: with the flag off a live hold is still priced, accepted and consumed; new holds and previews are refused |
 
 ## Regression
 
@@ -155,3 +155,7 @@ Limits: this proves the schema round trip on an empty ledger. The rollback list 
 ## V21 — runbook and H5 packet (2026-10-26)
 
 [Operations runbook](../operations/storefront-voucher-runbook.md) rewritten for the built system and the [H5 readiness packet](./storefront-voucher-v1-h5-packet.md) assembled. The packet also carries a refreshed acceptance table for the rows above that still read "pending V11/V12/V13/V14/V18". Nothing was enabled or deployed; the runbook's SQL was run only against a scratch database (syntax and columns; the ledger was empty, so the drift queries were not exercised on real data).
+
+## V20 — live POS convergence run (2026-10-26)
+
+`pnpm voucher:convergence:live` drove the production hold → quote → proof → DRAFT → acceptance → POS create/read-back path against the live shop 715077776 with an owner-authorised cap of 10 orders (2 created, both cancelled; POS order ids 9 and 10), then observed status 7 through the real status reconciliation and the once-only refund. Details and numbers: [H5 packet §2b](./storefront-voucher-v1-h5-packet.md). The same work found that the runbook's description of "flag OFF in flight" was wrong (held vouchers keep settling until their 10-minute expiry); a database test (`voucher-checkout.test.ts`, AC-47) now pins the real behaviour and the runbook was corrected.
