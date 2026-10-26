@@ -50,6 +50,8 @@ The mapping, the shop-scope verification and the replay/out-of-order cases are V
 
 ## 4. Operator probe boundary
 
+> **Status 2026-10-26:** H1-V was authorised by the owner and run — F1–F4 4/4 PASS, test orders cancelled (status 0 → 7). Evidence: [`docs/verification/storefront-voucher-v1-pos-probe.md`](../verification/storefront-voucher-v1-pos-probe.md). Re-run `pnpm pancake:voucher:accept` (same approval variables as the gift-quantity probe) for any other shop before listing it in `LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS`.
+
 Approving the plan, the ADR or this document does **not** authorize a Pancake write. H1-V needs a separately authorized, operator-run sandbox probe:
 
 - shop and token supplied by the operator at run time, never committed or logged;

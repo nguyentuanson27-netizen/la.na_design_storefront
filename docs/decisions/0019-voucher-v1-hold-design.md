@@ -1,6 +1,6 @@
 # ADR 0019: Voucher v1 — 10-minute hold design (input for gate H3-D)
 
-- **Status:** Proposed — design input for gate **H3-D** (hold design review, before V11). It is **not** an approval to write the hold service, and nothing in it enables a hold.
+- **Status:** **Accepted** — the owner approved gate **H3-D** on 2026-10-26 ("duyệt adr0019"). This lets V11 (atomic holds) be built to this design. It does **not** approve granting a hold in production: V12 still needs H1-V, V13 needs H3-V, and `LA_VOUCHER_ENABLED` stays OFF until V18 ships.
 - **Date:** 2026-10-25
 - **Task:** V11/V12 of [`tasks/storefront-voucher-v1-plan.md`](../../tasks/storefront-voucher-v1-plan.md).
 - **Builds on:** [ADR 0018](./0018-voucher-v1-accepted-order-architecture.md) (accepted marker, reserve-then-consume), the approved schema (`VoucherHold`, `VoucherCampaign` ledger, migration `20261025100000_voucher_v1_additive`), `voucher-quote-proof.ts` (`lav1`) and `pancake-voucher-projection.ts`.

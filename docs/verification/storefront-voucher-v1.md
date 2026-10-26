@@ -1,6 +1,6 @@
 # Voucher v1 — verification status
 
-- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. Built, with one piece of evidence still missing: V07 (Admin browser/axe) and V09 (H1-V sandbox readback). **Not built** (blocked by gates that need a person): V11–V14 (holds, accepted order, consume, cancel/refund), V18 (checkout exposure), V20/V21 completion, H1-V, H3-D/V, H4, H5.
+- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. V09 now has its H1-V live evidence ([POS probe](./storefront-voucher-v1-pos-probe.md), 2026-10-26, 4/4 PASS); V07 (Admin browser/axe) still lacks one piece of evidence. **Not built** (blocked by gates that need a person): V11–V14 (holds, V11 now unblocked by H3-D, accepted order, consume, cancel/refund), V18 (checkout exposure), V20/V21 completion, H3-V, H4, H5.
 - **Rule used here:** a row is "verified" only when a named test exercises it against real code (and, where the criterion is about the database, a real PostgreSQL). Anything else is "pending" with the reason. Nothing is marked done from code presence.
 - Spec: [`../specs/storefront-voucher-v1.md`](../specs/storefront-voucher-v1.md). Plan: [`../../tasks/storefront-voucher-v1-plan.md`](../../tasks/storefront-voucher-v1-plan.md).
 
@@ -25,7 +25,7 @@
 | 13 PRIVATE code, KOL link, invalid code | verified (server) | B `voucher-candidates`, `voucher-selection` (uniform INVALID_CODE, throttle); D `voucher-marketing-link`; U |
 | 14–16 quota/budget races, expiry, reload/2 tabs | **pending V11/V12** | DB invariants only: `voucher-schema` (partial unique live hold, absolute TTL, no oversubscribe) |
 | 17–19 accept → consume once; reject vs unknown; cancel refunds once | **pending V13/V14** | DB guards only: `voucher-schema` (acceptance insert-only, redemption needs consumed hold + accepted order, refund CAS one-way) |
-| 20 unrepresentable POS money → no hold, no proof | verified at the representation level | D `pancake-voucher-projection` (AUTO excludes, manual reported `POS_INFEASIBLE`); **H1-V sandbox readback pending** |
+| 20 unrepresentable POS money → no hold, no proof | verified at the representation level | D `pancake-voucher-projection` (AUTO excludes, manual reported `POS_INFEASIBLE`); H1-V live readback PASSED 2026-10-26 ([evidence](./storefront-voucher-v1-pos-probe.md)) |
 | 21 Admin edit/disable keeps history and live holds | verified | B `voucher-admin-operations`, `voucher-admin-cap-edit` |
 | 22 cart/checkout/commit/Pancake agree | partial | quote ↔ proof ↔ order snapshot ↔ vendor projection are built and tested (D `voucher-quote-proof`, `pancake-voucher-projection`); checkout/submit wiring **pending V13/V18** |
 | 23 voucher read fails → never a silently dearer total | partial | `readVoucherPreview` returns `QUOTE_UNAVAILABLE` and the cart renders its plain totals; submit-side behaviour pending V12/V13 |
@@ -67,4 +67,4 @@ Not covered: desktop viewport, a production build, real devices, the Admin scree
 
 ## What a person still has to do
 
-H1-V operator sandbox probe · H3-D review of ADR 0019 · build V11–V14 and V18 · H4 UX review · V20 convergence run with approved POS · V21 rollback dry run · H5 go/no-go. **Keep `LA_VOUCHER_ENABLED` unset in production until V18 ships.**
+build V11–V14 and V18 · H4 UX review · V20 convergence run with approved POS · V21 rollback dry run · H5 go/no-go. **Keep `LA_VOUCHER_ENABLED` unset in production until V18 ships.**
