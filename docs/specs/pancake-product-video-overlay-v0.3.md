@@ -9,7 +9,7 @@ Source baseline: `main@12f140a590d450793229a4e25f9602a4ab1f2dd7` (read on 2026-1
 
 Display **at most one "Xem video" preview tile** at the bottom-right of the main product photo on `/shop/[slug]`, in the position inspired by the provided Shopee "Xem Live" screenshot. Clicking opens a modal with a native HTML video player. Video is pre-recorded, not a livestream. Do not move video into the photo gallery, change photo counters, alter `galleryIndexByVariantId`, add admin uploads/manual links, proxy media through Next.js, change price/inventory/order logic, or add another API polling job.
 
-Source of truth: Pancake POS. Persist only a trusted video URL in the website's source mirror; never copy video bytes to the database or VPS. No video means no tile; all other product behavior remains unchanged.
+Source of truth: Pancake POS. Persist only a trusted URL and minimal video-sync state in the website's source mirror; never copy video bytes to the database or VPS. No video means no tile; all other product behavior remains unchanged.
 
 ## 2. Evidence status - important distinction
 
@@ -34,39 +34,87 @@ Source of truth: Pancake POS. Persist only a trusted video URL in the website's 
 
 ## 3. Proposed domain contract
 
-Under `src/integrations/pancake/catalog-contract.ts`, map `variation.videos` only:
+Read **only** `variation.videos`, never `variation.product.videos`. The optional video parser must not fail a commerce-valid variation, its price, or stock. **Missing or malformed video data is not equivalent to explicit no-video.**
 
-```ts
-// illustrative internal shape (adjust to the existing type names)
-type ParsedVariationVideo = readonly string[] | null;
-```
+Classify the video field on **each variation** before product aggregation:
 
-Parse `null` and a bounded array of strings explicitly. Validate array cardinality and each URL length (4,096 max to match the media trust boundary). Unknown types and malformed elements must fail closed for **video only**; they must not prevent price, stock, and catalog synchronization. Do not pass raw external `videos` directly to client components.
+| Source observation | Video evidence | Meaning |
+| --- | --- | --- |
+| Own `videos` field explicitly `null` or `[]` | `EMPTY` | Valid observation of no video |
+| Own `videos` is a nonempty bounded array of trusted, valid source URL strings | `URLS` | Candidate(s), not yet approved product-wide |
+| Field missing; wrong type; invalid array element; too many entries; overlong, malformed, or untrusted URL | `UNKNOWN` | Video status undetermined; **never** treat as `EMPTY` |
 
-Do not trust `.startsWith("https://content.pancake.vn/")` as the only URL check. Reuse `parseTrustedProductVideoUrl()` and keep the existing HTTPS/host/path/extension/traversal checks. The reported MP4 path should need no broadening of the allowlist. Reject `.mov` in v1: the MOV container is not interchangeable with MP4, and using `type="video/mp4"` for a MOV URL does not transcode it or guarantee playback. Ask operators to upload a browser-compatible MP4 source to Pancake. No auto-transcoding is in scope.
+Bound the array to **8 URLs per variation**, and each URL to **4,096 characters**. A malformed member makes that variation `UNKNOWN`; never silently filter it to `[]`. Deduplicate **exact normalized URLs** independent of API order.
 
-## 4. Choosing one video per product (MVP policy)
+MP4 must pass the existing `parseTrustedProductVideoUrl()` (HTTPS, exact `content.pancake.vn`, reviewed path, no credentials, custom port, traversal or other extension). Recognize valid Pancake `.mov` **only as source evidence** under equivalent strict origin/path checks, so it can trigger conflict/unsupported handling; do **not** widen the browser player allowlist or label MOV as `video/mp4`. Other untrusted hosts/extensions or malformed values are `UNKNOWN`. Never pass raw `videos` to client code.
 
-The requirement is **one video tile per PDP**, not one tile per variation or one video per gallery slide.
+## 4. Choosing one video per product (deterministic MVP policy)
 
-1. Work from one complete, successfully parsed catalog snapshot for the relevant shop. Group variations by canonical `product_id`.
-2. Collect a bounded set of distinct nonblank source video URLs from all eligible variations, including unsupported `.mov` URLs when identifying conflicting source choices. Deduplicate identical URLs before evaluation.
-3. No candidate => `null` (no tile).
-4. Exactly one distinct URL => accept it only when `parseTrustedProductVideoUrl()` approves an MP4 and it is not evidently specific to a different color than the product currently shown. Unknown product-wide association should be conservatively hidden and recorded, not guessed.
-5. More than one distinct URL => **conflict: no tile for that product in MVP**. Do not use the first URL in API order, because 7 reported products distinguish colors and an arbitrary video could be misleading. Log only a safe conflict count/reason.
-6. A single source URL present on only some color variants is ambiguous. Record its coverage and verify representative products before treating it as product-wide; do not claim the agent's 130/137 count guarantees 130 visible tiles.
+This is one **product-wide** tile, not per-color/per-variation playback. Use **every variation** returned for that product from a single complete, successfully validated shop-wide paginated snapshot, including hidden/locked/out-of-stock variations. Do not select only video-bearing variations, infer coverage from the reported 130/137 figure, or rely on API ordering.
 
-A future, separately approved iteration may store per-variation candidates and switch the same single tile by selected color; that is deliberately out of MVP scope.
+**Precedence (exactly one outcome per product):**
+
+1. Classify every variation as `EMPTY`, `URLS`, or `UNKNOWN` using `3. Only recognized trusted MP4/MOV URLs count as definite nonempty source evidence.
+2. **Known `CONFLICT` takes precedence:** two or more **distinct** normalized trusted source URLs anywhere in the product (including different links in one array), **or** at least one trusted `URLS` and one explicit `EMPTY` variation. This proves product-wide video is nonuniform even if a third variation is `UNKNOWN`. **Clear previous URL; hide tile.**
+3. Otherwise, **any `UNKNOWN` => product `UNKNOWN`**. Retain previously mirrored URL **but hide tile** until a later complete, conclusive snapshot. Missing/malformed is never an implicit deletion.
+4. Otherwise, **all `EMPTY` => `NONE`**: clear old URL and hide tile.
+5. Otherwise, every variation has `URLS` and all normalize to **one identical trusted source URL**. If the URL passes the existing MP4 validator => `READY`: store it and show one tile. If the sole URL is a trusted MOV => `UNSUPPORTED`: clear old URL and hide tile.
+6. If complete variation coverage cannot be established, no `READY` or clearing action is authorized. No owner judgment or color guessing is permitted in MVP.
+
+**Partial coverage is a deterministic `CONFLICT`:** a video on S/M but `null` or `[]` on L/XL, or one color with video and another without, **always clears the URL and hides the tile**. Only explicit video on **all** variations with the same MP4 qualifies as product-wide.
+
+| Observed variation videos (complete snapshot) | Product state | Stored URL | PDP |
+| --- | --- | --- | --- |
+| `[A.mp4]` / `[A.mp4]` / `[A.mp4]`, trusted | `READY` | A | Show |
+| `null` / `[]` / `null` | `NONE` | Clear | Hide |
+| `[A.mp4]` / `null` | `CONFLICT` | Clear | Hide |
+| `[A.mp4]` / `[B.mp4]` | `CONFLICT` | Clear | Hide |
+| `[A.mp4,B.mp4]` in one variation | `CONFLICT` | Clear | Hide |
+| `[A.mp4]` / field missing | `UNKNOWN` | **Keep old** | Hide |
+| `[A.mp4]` / malformed array | `UNKNOWN` | **Keep old** | Hide |
+| `[A.mp4]` / `null` / missing | `CONFLICT` (known mismatch wins) | Clear | Hide |
+| `[A.mov]` / `[A.mov]`, trusted | `UNSUPPORTED` | Clear | Hide |
+| `null` / `null` / missing | `UNKNOWN` | **Keep old** | Hide |
+
+A later **separately approved** version may switch the tile based on color/variation selection; that is out of MVP scope.
 
 ## 5. Persistence and sync
 
-Proposed nullable source-owned field: `ProductMirror.pancakeVideoUrl String?`, via an **additive Prisma migration**. Do not store Pancake-owned data in website-owned `ProductContent`. Update create, update and reactivation paths in `src/commerce/catalog-mirror-repository.ts` while preserving shop isolation.
+Persist one trusted URL **and its minimal evidence state** in source-owned `ProductMirror` (never website-owned `ProductContent`). Proposed additive Prisma schema:
 
-Sync is idempotent. A complete successful snapshot may set, replace, or clear the selected URL; do not clear from incomplete/failed paginated fetches. Treat `videos:null` as an observed no-video state. Missing key, malformed source, and unknown semantics of delete transitions should be visible in safe metrics and explicitly tested. Preserve existing commerce behavior even if an optional video fails validation. Hidden/inactive/unpublished products must not surface a video through the PDP route.
+```prisma
+enum PancakeVideoSyncState {
+  UNKNOWN
+  READY
+  NONE
+  CONFLICT
+  UNSUPPORTED
+}
+
+model ProductMirror {
+  // all existing fields stay unchanged
+  pancakeVideoUrl       String?
+  pancakeVideoSyncState PancakeVideoSyncState @default(UNKNOWN)
+}
+```
+
+Existing products start at `UNKNOWN` after migration; this does not claim they have no video. Update the URL and state **atomically** on the product mirror create/update/reactivation path, preserving shop isolation and idempotence. Optional video errors must never block valid stock/price/catalog reconciliation.
+
+| Complete commerce-valid snapshot outcome | URL action | State action |
+| --- | --- | --- |
+| `READY` | Set trusted MP4 | `READY` |
+| `NONE`, `CONFLICT`, `UNSUPPORTED` | Set `null` | Corresponding state |
+| `UNKNOWN` (missing, malformed, untrusted, inconclusive coverage) | **Preserve previous URL** | `UNKNOWN` |
+
+**Hard display gate:** the server returns a video only when flag ON **and** `pancakeVideoSyncState === READY` **and** `pancakeVideoUrl` re-passes the trusted MP4 validator. A URL retained in `UNKNOWN` must **never** be sent to HTML/JSON as playable video. `CONFLICT` and `UNSUPPORTED` cannot display an old URL.
+
+Failed/incomplete page fetch => **no snapshot commit and no video state transition**. Complete commerce-valid snapshot with malformed/missing optional `videos` still syncs price/stock, but marks affected products `UNKNOWN` without clearing their old URL. `READY -> NONE/CONFLICT/UNSUPPORTED` clears stale URL **only on conclusive observed variation evidence**; `READY -> UNKNOWN` preserves the stored URL but **hides it**. A later complete valid snapshot can restore `READY` or clear it. No partial per-page video updates.
+
+Emit only aggregate state/reason counters (`partial_coverage`, `multi_url`, `mov_only`, `missing`, `malformed`, `untrusted`). Do not log video URLs, API keys, customer information, or raw payloads. An actual add/remove transition test remains a release gate; the read-only probe did not establish instant deletion propagation.
 
 ## 6. Read model and UI
 
-- Server route returns only a validated optional `{src, poster}` media object; poster comes from an already trusted product photo. Avoid server-side media URL fetching.
+- Server route returns a validated optional `{src, poster}` object **only** if the feature flag is ON and `pancakeVideoSyncState === READY`; even a retained URL in `UNKNOWN` must never reach the client. Poster comes from an already trusted product photo. Avoid server-side fetching.
 - In `src/components/brand/product-media-stage.tsx` (or its small child), anchor exactly one thumbnail button at bottom-right. Do not overlap the existing bottom-right photo counter, bottom-left Flash Sale badge, desktop navigation or mobile swiping.
 - Label: `Xem video`, with Play icon; no `LIVE` label. Keep a clearly visible focus indicator and a usable touch target.
 - Modal: native `<video controls playsInline preload="none">`, with source attached **only after an explicit click**. For approved MP4 use appropriate `video/mp4` source type. Close/Escape pauses playback, removes the source, restores focus; size/color/cart state is unchanged.
@@ -79,30 +127,34 @@ Sync is idempotent. A complete successful snapshot may set, replace, or clear th
 - Verify actual browser-playable MP4 and seeking with a bounded Range GET (206) plus iOS Safari and Android Chrome; HEAD 200 is only preliminary evidence.
 - Before user click, network logs must show zero MP4/MOV requests. Validate layout and interactions at 320/390/768/1024/1440 CSS pixels.
 - Add opt-in feature flag `LA_PDP_PANCAKE_VIDEO_ENABLED`, default OFF; only turn ON after controlled runtime tests and owner approval. Rollback by disabling flag, not by destructive migration.
-- Use existing full catalog sync schedule; do not assume near-real-time video updates. Observe sync success, video-present/invalid/conflict counts, playback errors and LCP/CLS; never emit raw video URLs or API keys.
+- Use the existing full catalog sync schedule; do not assume near-real-time updates. Observe sync success and per-state `READY/NONE/CONFLICT/UNKNOWN/UNSUPPORTED` and reason counts, playback errors and LCP/CLS; never emit raw video URLs or API keys.
 
 ## 8. Implementation slices / verification gates
 
-1. **Contract tests**: `videos:null`, missing field, `[]`, one MP4, repeated URL, 2-3 source URLs, MOV, malformed types, excessive arrays/URLs, malicious hosts and paths, absent/duplicate variation identity. Confirm RED then GREEN.
-2. **Mirror tests**: new `ProductMirror` nullable field, one unique trusted URL, conflict omission, clear/update/idempotence, complete snapshot only, shop isolation, no stock/price drift.
-3. **Read/UI tests**: optional video in `/shop/[slug]`, correct bottom-right tile, dialog focus and Escape, explicit user-initiated loading, no image-count changes, preserved selected variant/cart, error fallback, feature flag OFF.
-4. **Integration/browser tests**: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:db`, `pnpm build`; Playwright screenshot/network/accessibility; CI green and human review.
-5. **Live release gate**: compare agent-reported response shape with a sanitized repeatable read-only probe; test live browser playback on at least one MP4 product; verify removal/replacement semantics through a controlled human-operated test where safe; confirm sync interval and content freshness. Do not claim add/delete is instant from the current read-only report.
+1. **Video parser TDD:** distinguish explicit `videos:null`/`[]` from missing, invalid type/member, overlong/oversized array, malicious host/path, MOV, and valid MP4. A video-only error may not block valid commerce price/stock.
+2. **Product policy TDD:** test every-variation coverage (including hidden/locked/out-of-stock), all same MP4, all empty, single-variation URL, partial coverage (`MP4 + null`), multiple distinct URLs, MOV only, missing/malformed/untrusted, and `CONFLICT` overriding another `UNKNOWN`. Results and stored URL actions match `4.
+3. **Mirror tests:** initial state `UNKNOWN`; atomic URL/state writes; `READY -> NONE/CONFLICT/UNSUPPORTED` clears; `READY -> UNKNOWN` preserves URL but hides; `UNKNOWN -> READY` restores; complete snapshot only; no partial update on failed pagination; repeated sync idempotent; shop isolation, price/stock unaffected.
+4. **Read/UI tests:** only `READY` with valid MP4 and flag ON renders tile; `UNKNOWN` retaining a URL renders nothing and never exposes source; accessible modal, focus/Escape, explicit media request, preserved variant/cart, unchanged photo counts, error fallback, flag OFF.
+5. **CI/browser:** `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:db`, `pnpm build`; Playwright viewport/network/accessibility checks and human PR review.
+6. **Release gate:** reproduce sanitized video response evidence; check some partially covered product if available; verify MP4 playback and 206 seeking on mobile browsers; verify controlled add/delete/replace transition and actual production sync interval. Do not claim instantaneous deletion from read-only observations.
 
 ## 9. Acceptance criteria
 
-- AC1: Parse only `variation.videos: string[] | null`; no guessed product-level `videos` field and no extra Pancake API calls per PDP.
-- AC2: At most one trusted MP4 URL per product; conflicting URLs or MOV-only sources never show an incorrect tile.
-- AC3: Sync is complete-snapshot-based and idempotent, without affecting stock/price/order or website editorial fields.
-- AC4: One **overlay tile**, not a carousel item; no video data request before user click; photo counters and Flash Sale stay usable.
-- AC5: Modal plays/closes accessibly, restores focus, pauses media, preserves customer selection, and handles media errors.
-- AC6: All repo test/build/security/rollout gates pass, including the Definition of Done in `05_SHARED_REFERENCES.md`; a human approves the final PR.
+- AC1: Parse only `variation.videos`. `null`/`[]`, missing and malformed remain distinct; invalid optional video never prevents price/stock sync.
+- AC2: `READY` requires **all variations** to provide the **same one trusted MP4**; one subset only, mismatching color URLs or multiple distinct source URLs => `CONFLICT` and no tile. MOV-only => `UNSUPPORTED`.
+- AC3: Complete, conclusive `NONE/CONFLICT/UNSUPPORTED` clears old URLs; `UNKNOWN` preserves old URL but **suppresses every client-facing tile/source**; failed/incomplete pagination never commits partial mirror changes.
+- AC4: URL/state update is atomic and shop-isolated, migration defaults to `UNKNOWN`, and repeated syncs are idempotent without altering editorial content.
+- AC5: One bottom-right **overlay tile**, not carousel item; no video network before click; photo counters, Flash Sale and variant/cart interactions remain unchanged.
+- AC6: Modal plays/closes accessibly, pauses, restores focus and handles media errors.
+- AC7: Repo test/build/security/rollout gates and `05_SHARED_REFERENCES.md` Definition of Done pass before human implementation-PR approval.
 
 ## 10. Remaining uncertainties (must be marked in PR)
 
-- The live 6,851-variation probe was summarized by another agent and was not independently re-run in this conversation. Raw evidence must stay private; retain sanitized field/type/count evidence for review.
-- `videos:null` is observed, but the exact after-add / after-delete transitions and update latency were **not verified**, because no mutation was performed.
-- Browser decode, seeking behavior (206), video codec support, and current production sync interval were not verified here.
-- A product with different video URLs by color requires either conflict omission (this MVP) or a separately approved variant-aware policy.
+- The 6,851-variation scan was **reported by another agent**, not independently reproduced here. Keep raw evidence private; retain sanitized field/type/count results.
+- `videos:null` was observed, but actual add/remove latency is **not confirmed** without a controlled mutation. The `NONE` clear-on-complete-snapshot rule is a proposed deterministic mirror policy, not evidence of instant Pancake propagation.
+- Browser codec/206 seeking, playback and the production sync interval are unverified.
+- Full all-variation coverage for the reported 130 products sharing a URL **was not independently measured**. Some may be `CONFLICT` if only a subset carries a video. Do not promise 130 visible tiles.
+- Variant/color-aware switching and MOV transcoding are out of scope and require separate approval.
+
 
 This PR updates documentation only. It does not implement, enable, or deploy the feature; no application code, database row, production configuration, or runtime behavior is changed.
