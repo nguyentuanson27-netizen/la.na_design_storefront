@@ -169,3 +169,15 @@ Gates in §3-5 are unchanged and still need people.
 | Return the vouchers of a person-cancelled order | An operator command, not a screen. Note: this is the voucher's use and budget, **not money** (COD); an earlier wording that said "via accounting" was wrong and is removed | `pnpm voucher:refund:admin-cancel` (`voucher-admin-cancel.ts`): dry run unless `--apply`, evidence required (10-400 chars), once-only; domain and real-database tests |
 | Admin form emptied after a refused save | Fix | the form is submitted by hand so React no longer resets it; browser test asserts the typed values survive |
 | Saving text in the picker | "-amount" in red (was "Dự kiến giảm ...") | `-70.000đ` in red with a screen-reader prefix "Dự kiến giảm"; Axe clean |
+
+## 16. Staff cancel in the Pancake UI, observed (2026-10-26, shop 715077776, order `11`)
+
+One live test order (2 x SQ069S at 844.000đ, voucher-priced, marked "TEST AUTOMATION VOUCHER V20") was created with the owner's explicit request ("tạo 1 đơn đi để t hủy") and left open; the owner cancelled it by hand in the Pancake UI. Observation run (`V20_OBSERVE_ORDER=11`: no create, no cancel):
+
+| What | Result |
+| --- | --- |
+| Status Pancake reports after the staff cancel | **6** (the order we cancel ourselves through the API reports **7**, observed in V20) |
+| Website mirror after the real status reconciliation | `CONFIRMED`, status 6 stored on a complete shop-verified record |
+| Voucher redemptions of the order | 2, **0 refunded**, before and after: status 6 is not a mapped signal, so nothing was returned (the designed safe behaviour: ADR 0018 D-4, unmapped codes never refund) |
+
+Consequence for v1 as built: a voucher on an order that staff cancel in the Pancake UI stays "in use" until someone runs `pnpm voucher:refund:admin-cancel` for it. Proposal (owner decision needed): treat status **6 ("Đã hủy")** as a trusted cancel in the same way as 7, so the status reconciliation and the sweep return the vouchers once. Caveat to accept: staff can in principle move an order out of 6 again; if they do after the refund, the order is live with its voucher already returned (one voucher use over the cap). Not implemented: it widens the set of signals that move the ledger and was not decided. Tested order mapping would be: `POS_CANCELLED` for 6 and 7, nothing for the other codes; one database test per code.
