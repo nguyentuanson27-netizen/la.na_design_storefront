@@ -10,6 +10,7 @@ import { parsePancakeCatalogVariations } from "../../src/integrations/pancake/ca
 import { prisma } from "../../src/db/prisma.ts";
 import { summarizePdpVideoPlaybackLogs } from "../../src/operations/pdp-video-playback-summary.ts";
 import { VIDEO_A, VIDEO_POSTER, videoPage, videoVariation } from "../fixtures/pancake-video.ts";
+import { PDP_VIDEO_PLAYBACK_TIMEOUT_MS } from "../../src/components/headless/pdp-video-playback.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { OPTIMIZED_IMAGE_ROUTE } from "./image-routes";
 import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
@@ -223,6 +224,73 @@ test("an audio-only container is counted as unsupported video and stopped", asyn
   await expect(page.getByRole("button", { name: "Xem video", exact: true })).toBeFocused();
 });
 
+test("startup waiting forever without error times out once and unloads the player", async ({ page }) => {
+  await page.clock.install();
+  let finish: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => { finish = resolve; });
+  await page.route(VIDEO_A, async (route) => { await held; await route.abort().catch(() => undefined); });
+  try {
+    await page.goto(`${BASE}/shop/${slug}`);
+    await page.getByRole("button", { name: "Xem video", exact: true }).click();
+    const video = page.locator("video");
+    await video.evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+    await expect.poll(() => collectedPlayback().attempts).toBe(1);
+    await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
+    expect(await video.evaluate((element: HTMLVideoElement) => element.error)).toBeNull();
+    await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS - 1000);
+    await video.evaluate((element) => { element.dispatchEvent(new Event("waiting")); element.dispatchEvent(new Event("stalled")); });
+    expect(collectedPlayback().failures).toBe(0);
+    await page.clock.fastForward(1001);
+    await expect(page.getByRole("alert").filter({ hasText: "Chưa phát được video" })).toBeVisible();
+    await expect.poll(() => collectedPlayback().errors.timeout).toBe(1);
+    expect(collectedPlayback().failures).toBe(1);
+    expect(await video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+    await expect(video.locator("source")).not.toHaveAttribute("src");
+    await video.evaluate((element) => { element.dispatchEvent(new Event("error")); element.dispatchEvent(new Event("waiting")); });
+    await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
+    expect(collectedPlayback().failures).toBe(1);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Xem video", exact: true })).toBeFocused();
+  } finally { finish(); }
+});
+
+test("closing a waiting player cancels timeout and opening alone does not start a deadline", async ({ page }) => {
+  await page.clock.install();
+  let finish: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => { finish = resolve; });
+  await page.route(VIDEO_A, async (route) => { await held; await route.abort().catch(() => undefined); });
+  try {
+    await page.goto(`${BASE}/shop/${slug}`);
+    const tile = page.getByRole("button", { name: "Xem video", exact: true });
+    await tile.click();
+    await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
+    expect(collectedPlayback().attempts).toBe(0);
+    expect(collectedPlayback().failures).toBe(0);
+    await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+    await expect.poll(() => collectedPlayback().attempts).toBe(1);
+    await page.keyboard.press("Escape");
+    await expect(tile).toBeFocused();
+    await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
+    expect(collectedPlayback().failures).toBe(0);
+  } finally { finish(); }
+});
+
+test("successful playing cancels the startup deadline", async ({ page }) => {
+  await page.clock.install();
+  await page.route(VIDEO_A, (route) => route.fulfill({ contentType: "video/mp4", body: mp4 }));
+  await page.goto(`${BASE}/shop/${slug}`);
+  await page.getByRole("button", { name: "Xem video", exact: true }).click();
+  await page.locator("video").evaluate((element: HTMLVideoElement) => element.play());
+  await expect.poll(() => collectedPlayback().attempts).toBe(1);
+  await expect.poll(() => page.locator("video").evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(3);
+  // A network stalled event is not a playback stall while future data is buffered.
+  await page.locator("video").evaluate((element) => element.dispatchEvent(new Event("stalled")));
+  await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
+  expect(collectedPlayback().failures).toBe(0);
+  await expect(page.getByRole("alert").filter({ hasText: "Chưa phát được video" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+});
+
 test("non-READY retained URLs and invalid READY URLs never reach HTML/JSON or render a tile", async ({ page }) => {
   for (const status of ["UNKNOWN", "NONE", "CONFLICT", "UNSUPPORTED"] as const) {
     await state(status);
@@ -252,7 +320,7 @@ test("telemetry sends only fixed fields without cookies/referrer and collection 
   await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
   await expect.poll(() => bodies.length).toBe(2);
   expect(bodies[0]).toEqual({ kind: "attempt" });
-  expect(bodies[1]).toEqual({ kind: "failure", reason: expect.stringMatching(/^(network|decode|unsupported|unknown)$/) });
+  expect(bodies[1]).toEqual({ kind: "failure", reason: expect.stringMatching(/^(network|decode|unsupported|timeout|unknown)$/) });
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Xem video", exact: true })).toBeFocused();
   expect(collectedPlayback().attempts).toBe(0);

@@ -52,7 +52,10 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
         aria-haspopup="dialog"
         className="pdp-video-tile"
         onClick={() => {
-          setReporting(createPdpVideoPlaybackReporter());
+          setReporting(createPdpVideoPlaybackReporter(undefined, () => {
+            setFailed(true);
+            releaseVideo(player.current);
+          }));
           setFailed(false);
           setRequested(true);
           dialog.current?.showModal();
@@ -80,12 +83,15 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
             const element = event.currentTarget;
             // Some browsers accept an HEVC container's AAC track but silently discard the video.
             // A running audio clock is not evidence that the shopper can see a product video.
-            if ((element.videoWidth === 0 || element.videoHeight === 0) && reporting.error(4)) {
-              setFailed(true);
-              releaseVideo(element);
-            }
-          }} onPlay={() => reporting.play()} onError={() => { if (reporting.error(player.current?.error?.code)) setFailed(true); }}>
-            <source src={video.src} type="video/mp4" onError={() => { if (reporting.error(player.current?.error?.code)) setFailed(true); }} />
+            if (element.videoWidth === 0 || element.videoHeight === 0) reporting.error(4);
+          }} onPlay={() => reporting.play()}
+            onPlaying={() => reporting.playing()}
+            onWaiting={(event) => { if (!event.currentTarget.paused && !event.currentTarget.ended && event.currentTarget.readyState < 3) reporting.waiting(); }}
+            onStalled={(event) => { if (!event.currentTarget.paused && !event.currentTarget.ended && event.currentTarget.readyState < 3) reporting.waiting(); }}
+            onPause={() => reporting.pause()}
+            onEnded={() => reporting.pause()}
+            onError={() => { reporting.error(player.current?.error?.code); }}>
+            <source src={video.src} type="video/mp4" onError={() => { reporting.error(player.current?.error?.code); }} />
           </video>
         ) : null}
         {failed ? <p role="alert" className="mt-3 text-sm">Chưa phát được video. Nàng có thể đóng để xem ảnh và tiếp tục mua hàng.</p> : null}

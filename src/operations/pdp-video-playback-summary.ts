@@ -4,7 +4,7 @@ export function createPdpVideoPlaybackSummary() {
   let attempts = 0;
   let failures = 0;
   let suppressedWindows = 0;
-  const errors: Record<PdpVideoFailureReason, number> = { network: 0, decode: 0, unsupported: 0, unknown: 0 };
+  const errors: Record<PdpVideoFailureReason, number> = { network: 0, decode: 0, unsupported: 0, timeout: 0, unknown: 0 };
   return {
     add(line: string) {
       if (line.length > 4096) return;

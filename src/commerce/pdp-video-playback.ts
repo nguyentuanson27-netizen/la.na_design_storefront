@@ -1,5 +1,5 @@
 /** Privacy contract shared by the browser and its first-party collector. No media/product identity. */
-export const PDP_VIDEO_FAILURE_REASONS = ["network", "decode", "unsupported", "unknown"] as const;
+export const PDP_VIDEO_FAILURE_REASONS = ["network", "decode", "unsupported", "timeout", "unknown"] as const;
 export type PdpVideoFailureReason = typeof PDP_VIDEO_FAILURE_REASONS[number];
 export type PdpVideoPlaybackEvent =
   | Readonly<{ kind: "attempt" }>

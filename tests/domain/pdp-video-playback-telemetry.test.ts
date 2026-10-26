@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPdpVideoPlaybackReporter, sendPdpVideoPlaybackEvent } from "../../src/components/headless/pdp-video-playback.ts";
+import { createPdpVideoPlaybackReporter, sendPdpVideoPlaybackEvent, PDP_VIDEO_PLAYBACK_TIMEOUT_MS } from "../../src/components/headless/pdp-video-playback.ts";
 import type { PdpVideoPlaybackEvent } from "../../src/commerce/pdp-video-playback.ts";
 import { createPdpVideoCollector } from "../../src/operations/pdp-video-collector.ts";
 import { summarizePdpVideoPlaybackLogs } from "../../src/operations/pdp-video-playback-summary.ts";
@@ -56,7 +56,7 @@ test("browser transport is same-origin, has no cookies/referrer/source, and does
 
 test("collector emits only numeric deltas and allowlisted failure categories", async () => {
   const { handler, logs } = fixture();
-  for (const payload of [{ kind: "attempt" }, { kind: "failure", reason: "network" }, { kind: "failure", reason: "decode" }, { kind: "failure", reason: "unsupported" }, { kind: "failure", reason: "unknown" }]) {
+  for (const payload of [{ kind: "attempt" }, { kind: "failure", reason: "network" }, { kind: "failure", reason: "decode" }, { kind: "failure", reason: "unsupported" }, { kind: "failure", reason: "unknown" }, { kind: "failure", reason: "timeout" }]) {
     const response = await handler(request(payload));
     assert.equal(response.status, 204);
     assert.equal(response.headers.get("cache-control"), "no-store");
@@ -120,7 +120,46 @@ test("operator summary streams allowlisted counters, ignores poisoned/unrelated 
     JSON.stringify({ name: "pdp_video.playback", attempts: 500, failures: 0, url: "secret" }),
     JSON.stringify({ name: "unrelated", attempts: 999 }), "broken json",
   ]);
-  assert.deepEqual(summary, { attempts: 2, failures: 1, failureRate: 0.5, errors: { network: 0, decode: 1, unsupported: 0, unknown: 0 }, suppressedWindows: 0, status: "OBSERVED" });
+  assert.deepEqual(summary, { attempts: 2, failures: 1, failureRate: 0.5, errors: { network: 0, decode: 1, unsupported: 0, timeout: 0, unknown: 0 }, suppressedWindows: 0, status: "OBSERVED" });
   assert.equal(summarizePdpVideoPlaybackLogs([]).failureRate, null);
   assert.equal(summarizePdpVideoPlaybackLogs([]).status, "NO_DATA");
+});
+
+
+test("never-started playback times out once despite repeated waiting/stalled callbacks", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const events: PdpVideoPlaybackEvent[] = [];
+  let fallbacks = 0;
+  const player = createPdpVideoPlaybackReporter((event) => { events.push(event); }, () => { fallbacks++; });
+  player.play();
+  t.mock.timers.tick(PDP_VIDEO_PLAYBACK_TIMEOUT_MS - 1);
+  player.waiting(); player.waiting();
+  assert.equal(fallbacks, 0);
+  t.mock.timers.tick(1);
+  player.error(2); player.waiting(); player.play();
+  t.mock.timers.tick(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
+  assert.deepEqual(events, [{ kind: "attempt" }, { kind: "failure", reason: "timeout" }]);
+  assert.equal(fallbacks, 1);
+});
+
+test("playing, pause and close cancel deadlines; resumed buffering gets a bounded wait", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const events: PdpVideoPlaybackEvent[] = [];
+  const player = createPdpVideoPlaybackReporter((event) => { events.push(event); });
+  t.mock.timers.tick(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
+  assert.equal(events.length, 0, "opening without pressing play is not an attempt");
+  player.play(); player.playing();
+  t.mock.timers.tick(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
+  assert.deepEqual([...events], [{ kind: "attempt" }]);
+  player.waiting(); player.pause(); player.waiting();
+  t.mock.timers.tick(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
+  assert.equal(events.length, 1);
+  player.play(); player.playing(); player.waiting();
+  t.mock.timers.tick(PDP_VIDEO_PLAYBACK_TIMEOUT_MS);
+  assert.deepEqual(events[1], { kind: "failure", reason: "timeout" });
+  player.close();
+  const closed = createPdpVideoPlaybackReporter((event) => { events.push(event); });
+  closed.play(); closed.close(); closed.waiting();
+  t.mock.timers.tick(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
+  assert.equal(events.length, 3, "no failure after closing");
 });

@@ -114,13 +114,21 @@ Intentional aborts, close/Escape and late callbacks after closure are ignored.
 An audio-only result (metadata with zero video dimensions, as can happen with an
 unsupported HEVC track inside an otherwise playable container) is counted as
 unsupported and unloaded. A progressing audio clock alone never proves video
-playback. Reopening creates a fresh attempt. No event is sent just for viewing the PDP or
+playback. A 15-second startup deadline begins on native `play` intent. `playing`
+cancels
+it; `waiting`/`stalled` during an active attempt without future buffered data arm
+the same bounded wait without resetting an existing deadline. A network stall
+while playback still has future data is not a playback failure. Pause/ended, close/Escape, native failure and
+unmount cancel it. Expiry emits one `timeout` failure, shows the fallback and
+pauses/unloads the source. Later timeout/native callbacks cannot double-count.
+Reopening creates a fresh attempt. No event is sent just for viewing the PDP or
 opening a player that has not tried to play.
 
 `POST /api/product-video/events` is a real first-party collector in the existing
 JSON stdout stream (ADR 0002), gated by the same default-OFF feature flag. It
 accepts only `{kind:"attempt"}` or `{kind:"failure",reason}` with reason network,
-decode, unsupported or unknown. It rejects extra fields, requires the configured
+decode, unsupported, timeout or unknown. It rejects extra fields, requires the
+configured
 storefront Origin and JSON content type, caps the actual body at 128 bytes and
 bounds reads to three seconds. No Host/forwarded header chooses the origin.
 
@@ -145,12 +153,29 @@ on process restart and apply per replica; there is no per-person key or DB row.
 The operator must include all app replicas and retain the stdout stream across
 container replacement using the existing log-retention policy.
 
-From the deployed repository with its normal Compose environment selected:
+From a fresh VPS shell in the deployed repository (Bash, jq and Docker Compose
+are required; the deployed release-tagged ops image supplies Node):
 
 ```sh
-docker compose -f deploy/vps/compose.yml logs --no-color --no-log-prefix --since 1h app \
-  | node --experimental-strip-types scripts/pdp-video-playback-summary.ts
+bash deploy/vps/pdp-video-telemetry.sh 1h
 ```
+
+The wrapper resolves the repository root, reads only `DEPLOY_TARGET` from
+`deploy/vps/.env.production`, sources `project-identity.sh`, and invokes Compose
+with both `--env-file deploy/vps/.env.production` and `-f deploy/vps/compose.yml`.
+Thus project/domain/database identity comes from `project.config.json`, while
+required image, release, database and edge settings come from the deployment env
+file exactly as in `deploy.sh`. It never sources/evaluates the secret env file or
+prints its contents. Production and temporary deploy targets are both supported.
+
+The optional argument is a positive duration in s/m/h; the default is `1h`.
+Raw logs are spooled to a mode-0600 temporary file, summarized only after Compose
+succeeds, and deleted on exit. The summary runs in the deployed ops image with
+`--rm -T --no-deps --pull=never`: no host Node install, image pull/build or dependent
+service startup is needed. A Compose/configuration failure exits nonzero and
+produces no misleading NO_DATA JSON report. This command reads logs and starts
+only a transient summary container. It does not build, restart, deploy application
+or database services, or change the feature flag.
 
 The summary reports `attempts`, `failures`, per-reason counts, `failureRate`
 (fraction), `suppressedWindows` and status. `NO_DATA` has a null rate, never a
