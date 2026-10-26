@@ -105,7 +105,22 @@ build V14 and V18 · H4 UX review · V20 convergence run with approved POS · V2
 
 Design notes. (1) A shipping voucher is a named waiver of the fee the shipping engine decided (`shippingWaivedVnd`), not a rewrite of that decision, so the order's shipping provenance stays the real campaign's. (2) Voucher checkout rides the existing benefit path, so it needs the same two switches as any quote-bearing order: the gift/tier gate and a line-level-pricing-verified shop (the H1-V shop). (3) Migration `20261026120000_order_quote_step_voucher` relaxes ONE check constraint to admit `VOUCHER` as a discount-step source; it rewrites nothing. **It, like the V13 migration, needs the owner's approval before any real database.**
 
-**Not done:** the checkout page itself (voucher lines, held-until time, hold button, consent, expiry and over-16-KiB-proof UX), the cart-page totals, and the browser tests of all of it.
+**UI slice (2026-10-26):** see the next section. **Not done:** the over-16-KiB-proof UX evidence.
+
+## V18 UI — checkout voucher panel and cart totals (2026-10-26)
+
+The checkout never applies a voucher the shopper merely picked: a HELD voucher is already in the server's quote and is only listed (earliest expiry, "Đổi ưu đãi ở giỏ hàng"); an OFFERED one is the shopper's own selection previewed by the server, carries the digest the one hold POST must send back, and **blocks ordering until confirmed**; a STALE hold is reported and the price shown has no voucher. A gift loss or total increase needs the consent checkbox before the hold button enables. The cart labels its total "Tổng (chưa tính ưu đãi)" and shows "Dự kiến sau ưu đãi" separately (closes the PR #214 P2).
+
+| Criterion | Evidence |
+| --- | --- |
+| Bill adds up, voucher named once, waiver beside the reduced fee | D `checkout-voucher-model.test.ts` (7); B: 900.000 value, `Giảm 50K −50.000`, 880.000 total incl. 30.000 fee |
+| Offer blocks ordering; one deliberate hold | B `checkout-voucher.spec.ts`: submit disabled, no hold row, click → 1 `HELD` row, submit enabled; run at 390 and 1280 widths inside one test |
+| Typed COD fields survive the refresh | B: name, address and note unchanged after the hold |
+| Hold no longer describes the cart | B: quantity changed under a hold → "Nàng xác nhận lại ưu đãi", submit disabled |
+| Gift-loss consent | B: warning shown, button disabled until the checkbox, then one hold |
+| Cart totals | B: both labels visible, nothing held, axe clean on the new block |
+
+Run on a `NODE_ENV=production` build (4/4). Axe is scoped to the voucher panel and the new cart block before the form is filled: the untouched address `<select>` placeholder and the cart's product-image link have existing findings (contrast, label-in-name) that are not part of this change. Not covered: >16 KiB proof UX, expiry while the page is open.
 
 ## V14 — trusted cancel, reject and refund once (2026-10-26)
 
