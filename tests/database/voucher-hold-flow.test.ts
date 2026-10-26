@@ -384,7 +384,7 @@ test("P1 TOCTOU: another tab changes the selection AFTER the preview and BEFORE 
   // A -> B, both worth 50.000: same total, different voucher.
   const toB = racing(() => selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: b.id }).then(() => undefined));
   assert.equal((await shown(c.id)).quote.totalPayableVnd, before);
-  assert.equal((await toB.hold({ cartId: c.id, expectedQuoteDigest: digest })).ok, false);
+  assert.deepEqual(await toB.hold({ cartId: c.id, expectedQuoteDigest: digest }), { ok: false, reason: "QUOTE_CHANGED" });
   await noHoldAnywhere([a.id, b.id]);
 
   // A -> NONE
