@@ -130,7 +130,9 @@
     ".next-test/zalo-ads-pixel/types/**/*.ts",
     ".next-test/zalo-ads-pixel/dev/types/**/*.ts",
     ".next-test/pdp-flash-countdown/types/**/*.ts",
-    ".next-test/pdp-flash-countdown/dev/types/**/*.ts"
+    ".next-test/pdp-flash-countdown/dev/types/**/*.ts",
+    ".next-test/pdp-pancake-video/types/**/*.ts",
+    ".next-test/pdp-pancake-video/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

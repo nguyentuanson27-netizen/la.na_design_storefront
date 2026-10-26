@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
 import type { StorefrontProductMedia } from "@/commerce/product-media";
 import type { TryOnDisclosedProviders } from "@/commerce/try-on-provider";
 import { BrandProductGallery } from "@/components/brand/product-gallery";
@@ -38,6 +39,7 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
 type BrandProductDetailProps = Readonly<{
   selection: UseVariantSelectionInput;
   media: StorefrontProductMedia;
+  video?: PancakePdpVideo | null;
   productName: string;
   galleryIndexByVariantId: Readonly<Record<string, number>>;
   sizeGuide: ProductMappedSizeGuide | null;
@@ -62,6 +64,7 @@ type BrandProductDetailProps = Readonly<{
 export function BrandProductDetail({
   selection,
   media,
+  video = null,
   productName,
   galleryIndexByVariantId,
   sizeGuide,
@@ -133,6 +136,7 @@ export function BrandProductDetail({
     <>
       <BrandProductMediaStage
         media={media}
+        video={video}
         productName={productName}
         selectedVariantId={controller.view.selectedVariantId}
         galleryIndexByVariantId={galleryIndexByVariantId}

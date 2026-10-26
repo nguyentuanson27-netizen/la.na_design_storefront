@@ -21,6 +21,9 @@ import {
 } from "@/components/brand/product-gallery-layout";
 import { preloadImageForViewport } from "@/components/brand/viewport-image-preload";
 
+import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
+import { BrandProductVideoOverlay } from "./product-video-overlay";
+
 const DRAG_THRESHOLD_PX = 48;
 const DIALOG_FOCUSABLE_SELECTOR = [
   "button:not([disabled])",
@@ -49,6 +52,7 @@ type BrandProductMediaStageProps = Readonly<{
   galleryIndexByVariantId: Readonly<Record<string, number>>;
   /** The product is on Flash Sale: the photograph carries the tag its card carries. */
   flashSale?: boolean;
+  video?: PancakePdpVideo | null;
 }>;
 
 export function BrandProductMediaStage({
@@ -57,6 +61,7 @@ export function BrandProductMediaStage({
   selectedVariantId,
   galleryIndexByVariantId,
   flashSale = false,
+  video = null,
 }: BrandProductMediaStageProps) {
   const images = media.gallery;
   const slides = buildDesktopProductGallerySlides(images.length);
@@ -403,6 +408,15 @@ export function BrandProductMediaStage({
           ) : null}
         </div>
       </dialog>
+
+      {video ? (
+        <div className="pdp-video-anchor" data-single-image={images.length === 1 ? "true" : undefined}>
+          {/* Match the first photo's cell, including its portrait width inside a desktop half. */}
+          <div className="pdp-stage__cell">
+            <BrandProductVideoOverlay key={video.src} video={video} productName={productName} />
+          </div>
+        </div>
+      ) : null}
 
       {/*
         The card's FLASH SALE tag, so the shopper recognises the product they tapped. Only that

@@ -1,3 +1,5 @@
+import { parsePancakeVariationVideo, type PancakeVariationVideo } from "./catalog-video.ts";
+
 type JsonRecord = Record<string, unknown>;
 
 const PRODUCT_SOURCE_DESCRIPTION_MAX_LENGTH = 100_000;
@@ -55,6 +57,8 @@ export type PancakeCatalogVariation = {
   barcode: string;
   fields: PancakeCatalogField[];
   imageUrls: string[];
+  /** Absent on legacy internal snapshots means UNKNOWN, never empty. */
+  videoEvidence?: PancakeVariationVideo;
   isHidden: boolean;
   isLocked: boolean;
   retailPrice: number;
@@ -469,6 +473,7 @@ function parseVariation(value: unknown): PancakeParsedCatalogVariation {
       imagesReason,
       "Pancake variation images payload is malformed",
     ).map(parseImageUrl),
+    videoEvidence: parsePancakeVariationVideo(record),
     isHidden: requireBoolean(
       record,
       "is_hidden",

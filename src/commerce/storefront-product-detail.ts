@@ -1,3 +1,4 @@
+import { resolvePancakePdpVideo } from "./pancake-pdp-video.ts";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { createStorefrontCatalogRepository } from "./storefront-catalog.ts";
 import {
@@ -53,6 +54,20 @@ export function createStorefrontProductDetailRepository(client: PrismaClient | P
   }: { shopId: number; slug: string; now?: Date }) {
     const product = await catalog.getProductBySlug({ shopId, slug });
     if (!product) return null;
+
+    // Read source video only at the PDP boundary, never on listing/card projections.
+    const videoRow = process.env.LA_PDP_PANCAKE_VIDEO_ENABLED === "true"
+      ? await client.productMirror.findFirst({
+          where: { id: product.id, pancakeShopId: shopId, isPresent: true },
+          select: { pancakeVideoUrl: true, pancakeVideoSyncState: true },
+        })
+      : null;
+    const video = resolvePancakePdpVideo({
+      enabled: process.env.LA_PDP_PANCAKE_VIDEO_ENABLED,
+      state: videoRow?.pancakeVideoSyncState ?? "UNKNOWN",
+      url: videoRow?.pancakeVideoUrl,
+      poster: product.media.primary?.url,
+    });
 
     // I9 — website-owned, and deliberately its own read rather than a widened catalog select: the
     // selling policy is not mirrored Pancake data and must not travel with it.
@@ -418,6 +433,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient | P
 
     return {
       ...product,
+      video,
       variants: effectiveParentVariants,
       variantAvailabilityResolvedById: {
         ...product.variantAvailabilityResolvedById,

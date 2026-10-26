@@ -1,5 +1,7 @@
 # Spec v0.3 - Pancake variation video -> La.Na PDP overlay
 
+> **Selection policy superseded:** the owner's PR #217 clarification is recorded in [v0.4](pancake-product-video-overlay-v0.4.md). The all-variation parity / conflict rules below are historical v0.3 policy, not the current selector contract.
+
 Status: **Ready for implementation planning, subject to owner approval. Not ready for production release.**
 Date: 2026-10-26 (Asia/Bangkok)
 Repo: `nguyentuanson27-netizen/la.na_design_storefront`

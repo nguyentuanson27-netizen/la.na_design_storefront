@@ -3236,3 +3236,55 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     pointer-events: none;
   }
 }
+
+/* Match the primary photo's frame without adding a second tile or intercepting gallery gestures. */
+.pdp-video-anchor {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* A single tile above the counter, outside navigation and swipe tracks. No layout shift. */
+.pdp-video-tile {
+  position: absolute;
+  pointer-events: auto;
+  right: 1rem;
+  bottom: 3.75rem;
+  width: 96px;
+  height: 76px;
+  overflow: hidden;
+  border: 1px solid var(--paper);
+  border-radius: 4px;
+  background: var(--chocolate);
+  color: white;
+  box-shadow: 0 2px 8px #0003;
+}
+.pdp-video-tile:focus-visible {
+  outline: 3px solid var(--paper);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--chocolate);
+}
+.pdp-video-tile__label {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px 2px;
+  background: #3b2219;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pdp-video-tile__label svg { width: 16px; height: 16px; }
+@media (min-width: 1024px) {
+  .pdp-video-anchor {
+    right: auto;
+    width: 50%;
+    display: flex;
+    justify-content: center;
+  }
+  .pdp-video-anchor[data-single-image="true"] { width: 100%; }
+  .pdp-video-tile { right: 1rem; bottom: 4.5rem; }
+}

@@ -270,6 +270,14 @@ model Address {
   @@index([userId])
 }
 
+enum PancakeVideoSyncState {
+  UNKNOWN
+  READY
+  NONE
+  CONFLICT
+  UNSUPPORTED
+}
+
 model ProductMirror {
   id                String               @id @default(cuid())
   pancakeShopId     Int                  @default(0)
@@ -281,6 +289,8 @@ model ProductMirror {
   productCode       String?
   sourceDescription String?
   primaryImageUrl   String?
+  pancakeVideoUrl   String?
+  pancakeVideoSyncState PancakeVideoSyncState @default(UNKNOWN)
   isPresent         Boolean              @default(true)
   isActive          Boolean              @default(true)
   syncedAt          DateTime

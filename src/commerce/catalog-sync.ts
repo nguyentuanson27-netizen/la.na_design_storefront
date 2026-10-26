@@ -1,3 +1,4 @@
+import type { PancakeVideoSyncCounts } from "../integrations/pancake/catalog-video.ts";
 import type { PancakeParsedCatalogVariation } from "../integrations/pancake/catalog-contract.ts";
 import { fetchAllPancakeCatalogVariations } from "../integrations/pancake/catalog-pages.ts";
 import type { PancakeCompositeSnapshot } from "../integrations/pancake/composite-contract.ts";
@@ -20,6 +21,7 @@ type CatalogMirrorWriter = {
     variations: number;
     capacityHandedOff?: number;
     compositeQuarantined?: number;
+    videoSyncCounts?: PancakeVideoSyncCounts;
   }>;
 };
 
