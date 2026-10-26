@@ -1,3 +1,4 @@
+import { formatPancakeVideoSyncCounts } from "../src/integrations/pancake/catalog-video.ts";
 import { writeFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -35,7 +36,7 @@ async function main(): Promise<void> {
         const result = await syncConfiguredPancakeCatalog();
         console.log(
           `catalog sync ok: ${result.products} products, ${result.variations} variations, ` +
-            `${result.capacityHandedOff ?? 0} capacity holds handed to the mirror`,
+            `${result.capacityHandedOff ?? 0} capacity holds handed to the mirror${formatPancakeVideoSyncCounts(result.videoSyncCounts)}`,
         );
       } catch {
         console.error("catalog sync failed");

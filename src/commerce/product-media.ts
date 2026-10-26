@@ -15,6 +15,7 @@ const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
  * a custom port, credentials, or a path outside the reviewed shape -- is refused.
  */
 const ALLOWED_VIDEO_EXTENSIONS = new Set([".mp4"]);
+const SOURCE_VIDEO_EXTENSIONS = new Set([".mp4", ".mov"]);
 
 export type TrustedProductImage = {
   url: string;
@@ -120,11 +121,16 @@ export function parseTrustedProductVideoUrl(rawUrl: unknown): string | null {
   return parseTrustedMediaUrl(rawUrl, ALLOWED_VIDEO_EXTENSIONS, TRUSTED_VIDEO_HOSTNAMES);
 }
 
+/** Sync evidence only. MOV is recognized so it can be rejected product-wide, never played. */
+export function parseTrustedPancakeSourceVideoUrl(rawUrl: unknown): string | null {
+  return parseTrustedMediaUrl(rawUrl, SOURCE_VIDEO_EXTENSIONS, TRUSTED_VIDEO_HOSTNAMES);
+}
+
 const PANCAKE_MEDIA_PATH_REGEX =
-  /^\/[a-zA-Z0-9_.-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|webp|mp4)$/;
+  /^\/[a-zA-Z0-9_.-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|webp|mp4|mov)$/;
 
 const PANCAKE_WEB_MEDIA_PATH_REGEX =
-  /^\/web-media-[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.:-]+){4,5}\/[a-zA-Z0-9_.:-]+\.(jpg|jpeg|png|webp|mp4)$/;
+  /^\/web-media-[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.:-]+){4,5}\/[a-zA-Z0-9_.:-]+\.(jpg|jpeg|png|webp|mp4|mov)$/;
 
 function isValidReviewedMediaPath(
   pathname: string,

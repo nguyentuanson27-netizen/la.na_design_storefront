@@ -32,6 +32,8 @@ export type PancakeCompositeSnapshot = Readonly<{
    * not be sold at all, not even from its own mirrored stock. Absent means none.
    */
   quarantinedParentVariationIds?: readonly string[];
+  /** Preserve source ownership even when the parent is absent from the flat catalog. */
+  quarantinedParentIdentities?: readonly PancakeCompositeVariationIdentity[];
 }>;
 
 const CONTRACT_ERROR = "Pancake composite contract is malformed";
@@ -253,10 +255,14 @@ export function quarantineCompositesOutsideCatalog(
     return snapshot;
   }
 
+  const parentProductByVariationId = new Map<string, string>();
+  for (const { variationId, productId } of [...snapshot.parentIdentities, ...(snapshot.quarantinedParentIdentities ?? [])]) {
+    const existing = parentProductByVariationId.get(variationId);
+    if (existing !== undefined && existing !== productId) fail();
+    parentProductByVariationId.set(variationId, productId);
+  }
   return buildSnapshot({
-    parentProductByVariationId: new Map(
-      snapshot.parentIdentities.map(({ variationId, productId }) => [variationId, productId]),
-    ),
+    parentProductByVariationId,
     childProductByVariationId: new Map(
       snapshot.componentIdentities.map(({ variationId, productId }) => [variationId, productId]),
     ),
@@ -290,7 +296,11 @@ function buildSnapshot({
     [...childProductByVariationId].filter(([variationId]) => usedComponentIds.has(variationId)),
   );
 
+  const quarantinedIdentities = identitiesFromMap(new Map(
+    [...parentProductByVariationId].filter(([variationId]) => quarantinedParentIds.has(variationId)),
+  ));
   return {
+    ...(quarantinedIdentities.length ? { quarantinedParentIdentities: quarantinedIdentities } : {}),
     parentVariationIds: [...keptParents.keys()].sort(compareStrings),
     componentVariationIds: [...keptComponents.keys()].sort(compareStrings),
     parentIdentities: identitiesFromMap(keptParents),

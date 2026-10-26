@@ -1,3 +1,8 @@
+import {
+  countPancakeProductVideos,
+  resolvePancakeProductVideo,
+  type PancakeVariationVideo,
+} from "../integrations/pancake/catalog-video.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import type {
   PancakeCatalogField,
@@ -61,6 +66,7 @@ function parseReadLimit(limit: number): number {
 
 export function validateCatalogSnapshot(variations: readonly PancakeParsedCatalogVariation[]) {
   const productByExternalId = new Map<string, CatalogProductSnapshot>();
+  const videoEvidenceByProduct = new Map<string, PancakeVariationVideo[]>();
   const variationIds = new Set<string>();
   const productIdByVariationId = new Map<string, string>();
 
@@ -74,6 +80,11 @@ export function validateCatalogSnapshot(variations: readonly PancakeParsedCatalo
     if (variation.product.id !== variation.productId) {
       throw new Error("Catalog mirror snapshot contains inconsistent canonical product identity");
     }
+
+    // Video belongs only to this exact product. Never follow composite/component edges for it.
+    const evidence = videoEvidenceByProduct.get(variation.productId) ?? [];
+    evidence.push(variation.videoEvidence ?? { kind: "UNKNOWN", reason: "missing" });
+    videoEvidenceByProduct.set(variation.productId, evidence);
 
     const { sourceDescription, primaryImageUrl } = variation.product;
     const { name, productCode } = splitTrailingProductCode(variation.product.name);
@@ -116,7 +127,10 @@ export function validateCatalogSnapshot(variations: readonly PancakeParsedCatalo
     }
   }
 
-  return { productByExternalId, variationIds, productIdByVariationId };
+  const videoByProductId = new Map(
+    [...videoEvidenceByProduct].map(([id, evidence]) => [id, resolvePancakeProductVideo(evidence)]),
+  );
+  return { productByExternalId, variationIds, productIdByVariationId, videoByProductId };
 }
 
 function isBoundedCompositeIdentity(value: unknown): value is string {
@@ -215,6 +229,20 @@ function validateCompositeSnapshotAgainstCatalog(
 
   for (const id of snapshot.quarantinedParentVariationIds ?? []) {
     if (!isBoundedCompositeIdentity(id) || parents.has(id) || components.has(id)) fail();
+  }
+
+  const quarantinedIds = new Set(snapshot.quarantinedParentVariationIds ?? []);
+  const quarantinedIdentities = snapshot.quarantinedParentIdentities ?? [];
+  if (!Array.isArray(quarantinedIdentities) || quarantinedIdentities.length > MAX_COMPOSITE_ENTRIES) fail();
+  const validatedQuarantined = new Set<string>();
+  for (const identity of quarantinedIdentities) {
+    if (
+      identity === null || typeof identity !== "object" ||
+      !isBoundedCompositeIdentity(identity.variationId) || !isBoundedCompositeIdentity(identity.productId) ||
+      !quarantinedIds.has(identity.variationId) || validatedQuarantined.has(identity.variationId) ||
+      (productIdByVariationId.has(identity.variationId) && productIdByVariationId.get(identity.variationId) !== identity.productId)
+    ) fail();
+    validatedQuarantined.add(identity.variationId);
   }
 
   const pairs = new Set<string>();
@@ -381,7 +409,7 @@ export function createCatalogMirrorRepository(
     const safeShopId = requireShopId(shopId);
     const safeSyncedAt = requireSyncedAt(syncedAt);
     const safeAvailabilityObservedAt = requireSyncedAt(availabilityObservedAt);
-    const { productByExternalId, variationIds, productIdByVariationId } =
+    const { productByExternalId, variationIds, productIdByVariationId, videoByProductId } =
       validateCatalogSnapshot(variations);
     // A combo whose parent or component is not in this catalog snapshot (hidden, deleted) is
     // quarantined rather than failing the whole sync; identity contradictions still fail below.
@@ -391,6 +419,37 @@ export function createCatalogMirrorRepository(
         : quarantineCompositesOutsideCatalog(compositeSnapshot, (id) => productIdByVariationId.has(id));
     if (resolvedComposite !== undefined) {
       validateCompositeSnapshotAgainstCatalog(resolvedComposite, productIdByVariationId);
+    }
+    // A composite parent may even share a product ID with component SKUs. When the graph
+    // identifies parent variations, only those variations may supply that parent's video.
+    if (resolvedComposite) {
+      // Quarantine drops parent identities/edges for inventory, but must not erase video ownership.
+      // Pre-quarantined parser output also keeps only IDs; recover the product from the catalog.
+      const parentVariationIds = new Set([
+        ...resolvedComposite.parentVariationIds,
+        ...(resolvedComposite.quarantinedParentVariationIds ?? []),
+      ]);
+      const parentProducts = new Set<string>();
+      // Missing parents have no flat-catalog row, so carry their product identity through quarantine.
+      for (const identity of resolvedComposite.quarantinedParentIdentities ?? []) {
+        if (productByExternalId.has(identity.productId)) parentProducts.add(identity.productId);
+      }
+      for (const parentId of parentVariationIds) {
+        const productId = productIdByVariationId.get(parentId);
+        if (productId !== undefined) parentProducts.add(productId);
+      }
+      const parentVideos = new Map<string, PancakeVariationVideo[]>(
+        [...parentProducts].map((productId) => [productId, []]),
+      );
+      for (const variation of variations) {
+        if (!parentProducts.has(variation.productId) || !parentVariationIds.has(variation.id)) continue;
+        const evidence = parentVideos.get(variation.productId) ?? [];
+        evidence.push(variation.videoEvidence ?? { kind: "UNKNOWN", reason: "missing" });
+        parentVideos.set(variation.productId, evidence);
+      }
+      for (const [productId, evidence] of parentVideos) {
+        videoByProductId.set(productId, resolvePancakeProductVideo(evidence));
+      }
     }
     const productIds = [...productByExternalId.keys()];
     const variationIdList = [...variationIds];
@@ -440,10 +499,20 @@ export function createCatalogMirrorRepository(
         const internalProductIds = new Map<string, string>();
 
         for (const product of productByExternalId.values()) {
+          const video = videoByProductId.get(product.pancakeProductId)!;
+          // Omit the URL on UNKNOWN so Prisma preserves it; URL/state share one row write.
+          const videoUpdate = {
+            pancakeVideoSyncState: video.state,
+            ...(video.url === undefined ? {} : { pancakeVideoUrl: video.url }),
+          };
           const existing = await tx.productMirror.findUnique({
             where: { pancakeProductId: product.pancakeProductId },
-            select: { id: true, slug: true },
+            select: { id: true, slug: true, pancakeShopId: true },
           });
+
+          if (existing && existing.pancakeShopId !== safeShopId) {
+            throw new Error("Catalog product identity belongs to another shop");
+          }
 
           const mirrored = existing
             ? await (async () => {
@@ -456,6 +525,7 @@ export function createCatalogMirrorRepository(
                       productCode: product.productCode,
                       sourceDescription: product.sourceDescription,
                       primaryImageUrl: product.primaryImageUrl,
+                      ...videoUpdate,
                       isPresent: true,
                       syncedAt: safeSyncedAt,
                     },
@@ -508,6 +578,7 @@ export function createCatalogMirrorRepository(
                     productCode: product.productCode,
                     sourceDescription: product.sourceDescription,
                     primaryImageUrl: product.primaryImageUrl,
+                    ...videoUpdate,
                     isPresent: true,
                     syncedAt: safeSyncedAt,
                   },
@@ -540,6 +611,7 @@ export function createCatalogMirrorRepository(
                     productCode: product.productCode,
                     sourceDescription: product.sourceDescription,
                     primaryImageUrl: product.primaryImageUrl,
+                    ...videoUpdate,
                     isPresent: true,
                     isActive: false,
                     syncedAt: safeSyncedAt,
@@ -826,6 +898,7 @@ export function createCatalogMirrorRepository(
           variations: variationIdList.length,
           capacityHandedOff,
           compositeQuarantined,
+          videoSyncCounts: countPancakeProductVideos(videoByProductId.values()),
         };
       },
       { timeout: CATALOG_SYNC_TRANSACTION_TIMEOUT_MS },
