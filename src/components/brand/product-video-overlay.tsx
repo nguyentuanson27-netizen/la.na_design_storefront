@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
+import { createPdpVideoPlaybackReporter } from "@/components/headless/pdp-video-playback";
 import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
 import { pdpProductImageLoader } from "@/components/headless/pdp-image-loader";
 
@@ -22,16 +23,21 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
   const opener = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const player = useRef<HTMLVideoElement>(null);
+  const [reporting, setReporting] = useState(() => createPdpVideoPlaybackReporter());
   const [requested, setRequested] = useState(false);
   const [failed, setFailed] = useState(false);
 
   // Also stop an active player when navigation or refreshed server props remove the overlay.
   useEffect(() => {
     const element = player.current;
-    return () => releaseVideo(element);
-  }, [requested, video.src]);
+    return () => {
+      reporting.close();
+      releaseVideo(element);
+    };
+  }, [requested, video.src, reporting]);
 
   function close() {
+    reporting.close();
     releaseVideo(player.current);
     setRequested(false);
     dialog.current?.close();
@@ -46,6 +52,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
         aria-haspopup="dialog"
         className="pdp-video-tile"
         onClick={() => {
+          setReporting(createPdpVideoPlaybackReporter());
           setFailed(false);
           setRequested(true);
           dialog.current?.showModal();
@@ -69,8 +76,16 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
           <button type="button" className="min-h-11 min-w-11 px-2 underline focus-visible:outline-2 focus-visible:outline-offset-2" onClick={close}>Đóng</button>
         </div>
         {requested ? (
-          <video ref={player} controls playsInline preload="none" poster={video.poster} tabIndex={0} aria-label={`Video ${productName}`} className="max-h-[70dvh] w-full bg-black" onError={() => setFailed(true)}>
-            <source src={video.src} type="video/mp4" onError={() => setFailed(true)} />
+          <video ref={player} controls playsInline preload="none" poster={video.poster} tabIndex={0} aria-label={`Video ${productName}`} className="max-h-[70dvh] w-full bg-black" onLoadedMetadata={(event) => {
+            const element = event.currentTarget;
+            // Some browsers accept an HEVC container's AAC track but silently discard the video.
+            // A running audio clock is not evidence that the shopper can see a product video.
+            if ((element.videoWidth === 0 || element.videoHeight === 0) && reporting.error(4)) {
+              setFailed(true);
+              releaseVideo(element);
+            }
+          }} onPlay={() => reporting.play()} onError={() => { if (reporting.error(player.current?.error?.code)) setFailed(true); }}>
+            <source src={video.src} type="video/mp4" onError={() => { if (reporting.error(player.current?.error?.code)) setFailed(true); }} />
           </video>
         ) : null}
         {failed ? <p role="alert" className="mt-3 text-sm">Chưa phát được video. Nàng có thể đóng để xem ảnh và tiếp tục mua hàng.</p> : null}

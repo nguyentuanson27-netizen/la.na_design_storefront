@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { prisma } from "../../src/db/prisma.ts";
+import { summarizePdpVideoPlaybackLogs } from "../../src/operations/pdp-video-playback-summary.ts";
 import { VIDEO_A, VIDEO_POSTER } from "../fixtures/pancake-video.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { OPTIMIZED_IMAGE_ROUTE } from "./image-routes";
@@ -19,6 +20,7 @@ const slug = `pdp-video-${run}`;
 const externalId = `pdp-video-${run}`;
 const productName = "Sản phẩm video thử nghiệm";
 const mp4 = readFileSync(resolve(import.meta.dirname, "fixtures/product-video.mp4"));
+const audioOnlyMp4 = readFileSync(resolve(import.meta.dirname, "fixtures/product-video-audio-only.mp4"));
 const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
 let server: ChildProcess | undefined;
 let output = "";
@@ -26,7 +28,7 @@ let output = "";
 async function start(enabled: boolean) {
   output = "";
   server = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), NEXT_SERVER_COMMAND, "--hostname", "127.0.0.1", "--port", "3366"], {
-    cwd: ROOT, env: { ...process.env, ...nextServerEnv(".next-test/pdp-pancake-video"), PANCAKE_SHOP_ID: String(SHOP), LA_PDP_PANCAKE_VIDEO_ENABLED: String(enabled), BETTER_AUTH_URL: BASE, NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"],
+    cwd: ROOT, env: { ...process.env, ...nextServerEnv(".next-test/pdp-pancake-video"), PANCAKE_SHOP_ID: String(SHOP), APP_DOMAIN: "127.0.0.1:3366", LA_PDP_PANCAKE_VIDEO_ENABLED: String(enabled), BETTER_AUTH_URL: BASE, NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"],
   });
   server.stdout?.on("data", (b) => { output = (output + b.toString()).slice(-20000); });
   server.stderr?.on("data", (b) => { output = (output + b.toString()).slice(-20000); });
@@ -47,6 +49,7 @@ async function cleanup() { await prisma.promotionCampaign.deleteMany({ where: { 
 async function state(pancakeVideoSyncState: "READY" | "UNKNOWN" | "NONE" | "CONFLICT" | "UNSUPPORTED", pancakeVideoUrl: string | null = VIDEO_A) {
   await prisma.productMirror.update({ where: { pancakeProductId: externalId }, data: { pancakeVideoSyncState, pancakeVideoUrl } });
 }
+function collectedPlayback() { return summarizePdpVideoPlaybackLogs(output.split("\n")); }
 async function images(page: Page) {
   await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => route.fulfill({ contentType: "image/png", body: image }));
   await page.route("https://content.pancake.vn/**/*.jpg", (route) => route.fulfill({ contentType: "image/png", body: image }));
@@ -62,7 +65,7 @@ test.beforeAll(async () => {
   await prisma.promotionCampaign.create({ data: { id: externalId, kind: "FLASH_SALE", name: "Video layout fixture", discountType: "PERCENTAGE", percentageValue: 10, isEnabled: true, enabledAt: new Date(), startsAt: new Date(Date.now() - 60000), endsAt: new Date(Date.now() + 3600000), targets: { create: { productId: product.id } } } });
   await start(true);
 });
-test.beforeEach(async ({ page }) => { await state("READY"); await images(page); });
+test.beforeEach(async ({ page }) => { output = ""; await state("READY"); await images(page); });
 test.afterAll(async () => { await stop(); await cleanup(); await prisma.$disconnect(); });
 
 for (const width of [320, 390, 768, 1024, 1440]) {
@@ -155,11 +158,18 @@ test("explicit play fetches/decodes fixture MP4, seeks, closes and reopens acces
   const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
   const video = dialog.locator("video");
   expect(mediaRequests).toBe(0);
+  expect(collectedPlayback().attempts).toBe(0);
   await video.evaluate((element: HTMLVideoElement) => element.play());
   await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
+  expect(await video.evaluate((element: HTMLVideoElement) => element.videoWidth)).toBeGreaterThan(0);
+  expect(await video.evaluate((element: HTMLVideoElement) => element.videoHeight)).toBeGreaterThan(0);
   await video.evaluate((element: HTMLVideoElement) => { element.currentTime = 2; });
   await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThanOrEqual(2);
   expect(mediaRequests).toBeGreaterThan(0);
+  await expect.poll(() => collectedPlayback().attempts).toBe(1);
+  await video.evaluate(async (element: HTMLVideoElement) => { element.pause(); await element.play(); });
+  expect(collectedPlayback().attempts).toBe(1);
+  expect(collectedPlayback().failures).toBe(0);
   const axe = await new AxeBuilder({ page }).include("dialog[open]").withTags(BUYER_AXE_TAGS).analyze();
   expect(axe.violations).toEqual([]);
   await dialog.getByRole("button", { name: "Đóng", exact: true }).click();
@@ -179,10 +189,36 @@ test("playback failure retains photos and size selection", async ({ page }) => {
   await page.getByRole("button", { name: "Xem video", exact: true }).click();
   await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
   await expect(page.getByRole("alert").filter({ hasText: "Chưa phát được video" })).toBeVisible();
+  await expect.poll(() => collectedPlayback().failures).toBe(1);
+  await expect.poll(() => collectedPlayback().attempts).toBe(1);
+  // Native source and player callbacks may both fire; neither adds another failure.
+  await page.locator("video").evaluate((element) => {
+    element.dispatchEvent(new Event("error"));
+    element.querySelector("source")?.dispatchEvent(new Event("error"));
+  });
+  expect(collectedPlayback().failures).toBe(1);
   await page.keyboard.press("Escape");
   await expect(size).toBeChecked();
   await expect(page.locator(".pdp-mobile-gallery__counter")).toHaveText("1/3");
   await expect(page.getByRole("button", { name: "Thêm vào giỏ", exact: false }).first()).toBeEnabled();
+  await page.getByRole("button", { name: "Xem video", exact: true }).click();
+  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+  await expect.poll(() => collectedPlayback().failures).toBe(2);
+  expect(collectedPlayback().attempts).toBe(2);
+});
+
+test("an audio-only container is counted as unsupported video and stopped", async ({ page }) => {
+  await page.route(VIDEO_A, (route) => route.fulfill({ contentType: "video/mp4", body: audioOnlyMp4 }));
+  await page.goto(`${BASE}/shop/${slug}`);
+  await page.getByRole("button", { name: "Xem video", exact: true }).click();
+  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+  await expect(page.getByRole("alert").filter({ hasText: "Chưa phát được video" })).toBeVisible();
+  await expect.poll(() => collectedPlayback().errors.unsupported).toBe(1);
+  await expect.poll(() => collectedPlayback().attempts).toBe(1);
+  expect(await page.locator("video").evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+  await expect(page.locator("video source")).not.toHaveAttribute("src");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Xem video", exact: true })).toBeFocused();
 });
 
 test("non-READY retained URLs and invalid READY URLs never reach HTML/JSON or render a tile", async ({ page }) => {
@@ -198,9 +234,51 @@ test("non-READY retained URLs and invalid READY URLs never reach HTML/JSON or re
   await expect(page.getByRole("button", { name: "Xem video", exact: true })).toHaveCount(0);
 });
 
-test("flag OFF suppresses even READY source in rendered response", async ({ page }) => {
+test("telemetry sends only fixed fields without cookies/referrer and collection outages preserve player controls", async ({ page }) => {
+  const bodies: unknown[] = [];
+  await page.context().addCookies([{ name: "private-test-cookie", value: "must-not-travel", url: BASE }]);
+  await page.route(`${BASE}/api/product-video/events`, async (route) => {
+    const request = route.request();
+    bodies.push(request.postDataJSON());
+    expect(request.headers().cookie).toBeUndefined();
+    expect(request.headers().referer).toBeUndefined();
+    await route.fulfill({ status: 503 });
+  });
+  await page.route(VIDEO_A, (route) => route.abort());
+  await page.goto(`${BASE}/shop/${slug}`);
+  await page.getByRole("button", { name: "Xem video", exact: true }).click();
+  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+  await expect.poll(() => bodies.length).toBe(2);
+  expect(bodies[0]).toEqual({ kind: "attempt" });
+  expect(bodies[1]).toEqual({ kind: "failure", reason: expect.stringMatching(/^(network|decode|unsupported|unknown)$/) });
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Xem video", exact: true })).toBeFocused();
+  expect(collectedPlayback().attempts).toBe(0);
+});
+
+test("collector enforces server origin, strict schema and actual byte bounds over HTTP", async ({ request }) => {
+  const endpoint = `${BASE}/api/product-video/events`;
+  for (const [origin, data] of [
+    ["https://evil.test", { kind: "attempt" }],
+    [BASE, { kind: "attempt", src: VIDEO_A }],
+    [BASE, { kind: "failure", reason: "private-error-detail" }],
+    [BASE, { kind: "attempt", padding: "x".repeat(200) }],
+  ] as const) {
+    const response = await request.post(endpoint, { headers: { origin }, data });
+    expect(response.status()).toBe(204);
+  }
+  expect(collectedPlayback().attempts).toBe(0);
+  const response = await request.post(endpoint, { headers: { origin: BASE }, data: { kind: "attempt" } });
+  expect(response.status()).toBe(204);
+  await expect.poll(() => collectedPlayback().attempts).toBe(1);
+});
+
+test("flag OFF suppresses even READY source in rendered response and collector events", async ({ page, request }) => {
   await stop();
   await start(false);
+  const collected = await request.post(`${BASE}/api/product-video/events`, { headers: { origin: BASE }, data: { kind: "attempt" } });
+  expect(collected.status()).toBe(204);
+  expect(collectedPlayback().attempts).toBe(0);
   const response = await page.goto(`${BASE}/shop/${slug}`);
   expect(await response!.text()).not.toContain("a.mp4");
   await expect(page.getByRole("button", { name: "Xem video", exact: true })).toHaveCount(0);

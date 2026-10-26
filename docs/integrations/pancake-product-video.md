@@ -84,6 +84,7 @@ browser compatibility. Browser coverage is included in the existing CI suite.
 
 Before setting the flag to true in a deployed environment:
 
+- Review the [owner-provided CDN sample evidence](../audits/pancake-video-playback-evidence-2026-10-26.md): actual first/tail Range requests passed, but the MP4-suffixed file is QuickTime/HEVC and Linux Chromium discarded its video track. Real-device gates remain open.
 - Reproduce sanitized live variation video field/type/coverage evidence; identify
   a partially covered product if one exists. The original reported scan was not
   independently repeated by this implementation.
@@ -94,27 +95,76 @@ Before setting the flag to true in a deployed environment:
 - Check real-product layout, LCP/CLS and playback failures during controlled QA,
   then obtain the owner's rollout decision. Human PR review is still required.
 
-### Playback error observability — OPEN release gate (review P2)
+### Playback error observability — implemented; production evidence still required
 
-The current error handlers show a shopper-facing fallback only. **No production
-playback-error collector/counter is implemented by this PR.** The synthetic
-failure test proves the fallback, not operational monitoring. Keep the flag OFF
-until the following monitoring work and evidence are reviewed:
+The native player's `onPlay` sends one anonymous attempt per explicit opening.
+Pause/resume and seeking do not add attempts. A failure sends one failure across
+both source/player callbacks; an error before `onPlay` also records an attempt.
+Intentional aborts, close/Escape and late callbacks after closure are ignored.
+An audio-only result (metadata with zero video dimensions, as can happen with an
+unsupported HEVC track inside an otherwise playable container) is counted as
+unsupported and unloaded. A progressing audio clock alone never proves video
+playback. Reopening creates a fresh attempt. No event is sent just for viewing the PDP or
+opening a player that has not tried to play.
 
-- Wire website-owned telemetry for playback attempts and playback failures so an
-  operator can compare failure counts with attempts after rollout. Deduplicate
-  source/player error callbacks to one failure per explicit opening; reopening
-  starts another attempt.
-- Allow only fixed event names and reviewed error categories (network, decode,
-  unsupported, unknown). Exclude source/poster URLs, product IDs/slugs, user or
-  session identifiers, raw errors, request bodies and remote responses. Review the
-  receiving collector's retention and access before rollout.
-- Force a failure with a real supported mobile browser during controlled QA and
-  retain sanitized counter evidence; verify one error is counted, closing still
-  works, retries do not double-count, and ordinary playback records no error.
-- Identify the operator, dashboard/query and acceptable error-rate threshold for
-  the controlled rollout. Disable the existing flag if failures cross that
-  threshold; do not log raw media URLs while investigating.
+`POST /api/product-video/events` is a real first-party collector in the existing
+JSON stdout stream (ADR 0002), gated by the same default-OFF feature flag. It
+accepts only `{kind:"attempt"}` or `{kind:"failure",reason}` with reason network,
+decode, unsupported or unknown. It rejects extra fields, requires the configured
+storefront Origin and JSON content type, caps the actual body at 128 bytes and
+bounds reads to three seconds. No Host/forwarded header chooses the origin.
+
+The browser sends no credentials/cookies or referrer. Payloads and collected log
+records contain no source/poster URL, product ID/slug, account/session identifier,
+raw error or remote response. Telemetry transport/storage errors are swallowed,
+with no retry, so collection cannot block playback or checkout. Client callbacks
+are deduplicated per opening; this is not an exactly-once or authenticated usage
+ledger. Public client signals may be blocked, lost or forged.
+
+Each accepted event emits a fixed JSON delta:
+
+```json
+{"name":"pdp_video.playback","attempts":1,"failures":0}
+{"name":"pdp_video.playback","attempts":0,"failures":1,"reason":"decode"}
+```
+
+A singleton process budget admits at most 600 requests per minute, including
+malformed requests that reach the body reader. The first excess request logs one
+`{"name":"pdp_video.telemetry_suppressed"}` marker for that window. Budgets reset
+on process restart and apply per replica; there is no per-person key or DB row.
+The operator must include all app replicas and retain the stdout stream across
+container replacement using the existing log-retention policy.
+
+From the deployed repository with its normal Compose environment selected:
+
+```sh
+docker compose -f deploy/vps/compose.yml logs --no-color --no-log-prefix --since 1h app \
+  | node --experimental-strip-types scripts/pdp-video-playback-summary.ts
+```
+
+The summary reports `attempts`, `failures`, per-reason counts, `failureRate`
+(fraction), `suppressedWindows` and status. `NO_DATA` has a null rate, never a
+healthy zero. `INCOMPLETE` indicates suppression or more failures than attempts;
+do not treat that window as proof of successful playback. `OBSERVED` means only
+that valid unsuppressed signals were received, not that every browser reported.
+The CLI streams records and outputs aggregate counters only. It ignores unrelated
+or malformed lines. Docker log rotation/retention and the selected `--since`
+window determine how much evidence is available; counters are not stored in DB.
+
+Production-build Playwright exercises the actual route and captured server logs:
+successful play/pause/resume, failed load with duplicate callbacks, close/reopen,
+flag OFF, privacy headers, collector outages, schema/origin/body rejection. The
+forced error and MP4 are synthetic; this closes the missing-collector code gap,
+not real-device/CDN verification.
+
+Before activation, the VPS operator (role, not an assigned person) must capture
+real iOS Safari/Android Chrome attempt/failure counters and failure recovery,
+confirm retention/access and the aggregation command on the production log
+stream, and agree the rollout window/threshold with the owner. Proposed controlled
+QA stop rule: disable the flag on any reproducible playback/checkout regression,
+on an incomplete telemetry window, or a measured failure rate over 5% once at
+least 20 attempts are observed. This proposed rule and operator assignment still
+require the owner's rollout decision. The flag remains OFF.
 
 `release:check` in this workspace is blocked by missing `PANCAKE_API_KEY`; it is
 not evidence of production readiness. `05_SHARED_REFERENCES.md`, named by AC7,
