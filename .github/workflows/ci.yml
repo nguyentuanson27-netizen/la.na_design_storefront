@@ -520,7 +520,6 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ needs.identity.outputs.database-name }}
       BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
-      HARNESS_EVIDENCE_OUT: ${{ runner.temp }}/voucher-hold-harness-evidence.json
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
@@ -551,9 +550,14 @@ jobs:
         working-directory: tests/a11y-runtime
         run: npx playwright install chromium
 
+      # `runner` is a step-level context, so the evidence path is set per step rather than in the job `env`.
       - name: Prove the official artifact is clean and drive the real hold action
+        env:
+          HARNESS_EVIDENCE_OUT: ${{ runner.temp }}/voucher-hold-harness-evidence.json
         run: pnpm voucher:hold-harness
 
       - name: Show the sanitized evidence
         if: always()
+        env:
+          HARNESS_EVIDENCE_OUT: ${{ runner.temp }}/voucher-hold-harness-evidence.json
         run: test -f "$HARNESS_EVIDENCE_OUT" && cat "$HARNESS_EVIDENCE_OUT" || true
