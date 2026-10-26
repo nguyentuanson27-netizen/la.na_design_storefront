@@ -77,7 +77,6 @@ async function main(): Promise<number> {
     { readVoucherPreview },
     { createPancakeOrderStatusReconciliationService },
     { createVoucherRedemptionService },
-    { createVoucherFixtures },
     { validateProbeVariation, PROBE_VARIATION_ENV, PROBE_PRODUCT_CODE_ENV },
   ] = await Promise.all([
     import("../src/generated/prisma/client.ts"),
@@ -100,7 +99,6 @@ async function main(): Promise<number> {
     import("../src/commerce/voucher-preview.ts"),
     import("../src/commerce/pancake-order-status-reconciliation.ts"),
     import("../src/commerce/voucher-redemption-service.ts"),
-    import("../tests/support/voucher-fixtures.ts"),
     import("./pancake-gift-quantity-capability-probe.ts"),
   ]);
 
@@ -137,7 +135,16 @@ async function main(): Promise<number> {
     LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS: String(SHOP),
     LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP),
   } as const;
-  const f = createVoucherFixtures(prisma as never, SHOP, P);
+  // Campaign rows for the scratch database (no dependency on tests/, which the production image does not contain).
+  const campaignBase = {
+    pancakeShopId: SHOP, issuance: "AUTO", visibility: "PUBLIC", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date("2026-10-01T00:00:00Z"),
+  } as const;
+  const f = {
+    campaign: (data: Record<string, unknown>) =>
+      prisma.voucherCampaign.create({ data: { ...campaignBase, kind: "MERCHANDISE", discountType: "FIXED_AMOUNT_VND", ...data } as never }),
+    shippingCampaign: (data: Record<string, unknown>) =>
+      prisma.voucherCampaign.create({ data: { ...campaignBase, kind: "SHIPPING_FREE", discountType: null, fixedAmountVnd: null, ...data } as never }),
+  };
   const flow = createVoucherHoldFlow(prisma as never, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: ENV });
   const holdService = createVoucherHoldService(prisma as never, { attemptSecret: SECRET, env: ENV });
   const acceptance = createVoucherOrderAcceptance({ readAttemptSecret: () => SECRET });
