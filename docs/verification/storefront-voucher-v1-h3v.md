@@ -1,6 +1,6 @@
 # Voucher v1 — H3-V browser evidence (AC-42 / AC-43 / TG-12)
 
-- **Status:** local run **complete and green**; **H3-V is not closed** until CI is green on the head commit and the owner signs off (see "Closing H3-V").
+- **Status:** local run **and CI run both green**; **H3-V waits only for the owner's sign-off** (see "Closing H3-V").
 - **Code under test:** commit `68112c8db809a4cf1115157f29930aa75a346e35` (recorded in the evidence file). Run 2026-10-26, Node 22, Chromium (Desktop Chrome profile), PostgreSQL 16, **no Pancake call**.
 - **Raw, sanitized evidence:** [`storefront-voucher-v1-h3v-browser-evidence.json`](./storefront-voucher-v1-h3v-browser-evidence.json). Re-run with `pnpm voucher:hold-harness` (needs `DATABASE_URL`, `BETTER_AUTH_SECRET`; CI job `voucher-hold-harness`).
 
@@ -50,6 +50,12 @@ The hold action is **not bundled at all** in the official build: nothing in `src
 - Preview/hold mismatch found on the way: a voucher can be **offered** in the preview for a cart whose signed proof would exceed the 16 KiB envelope, and the hold then fails closed with `PROOF_UNAVAILABLE`. Safe (nothing is reserved) but a poor experience; the feasibility seam should exclude such a candidate before it is shown. Tracked for V18.
 - The layout's own read-only server actions (cart view/lines) run on page load; they are recorded separately and hold nothing.
 
+## CI
+
+GitHub Actions run `40268151627` on commit `05a031c0598482b688b6328cce3d88004585743b`: **19 of 19 check runs succeeded**, including the new `voucher-hold-harness` job (runner `ubuntu-latest`, PostgreSQL 16 service, `next build` ×2 + `next start`, Playwright Chromium), `verify`, `verify-runtime`, `verify-db-shard-2`, four `admin-a11y-runtime` shards and the container/QA workflows. The job's log shows every official-artifact check, the three positive controls and `playwright: every voucher-hold scenario passed — exit 0`, followed by the same sanitized evidence JSON (no cookie, proof or secret).
+
+An earlier push (`0096cee`) never ran CI at all: its `ci.yml` was invalid (the `runner` context is not available in job-level `env`), so GitHub started no jobs. That is fixed in `05a031c`; the later commits only change documentation.
+
 ## Closing H3-V
 
-H3-V closes only when all of: (1) this evidence, **done**; (2) the `voucher-hold-harness` CI job and the rest of CI are green **on the head commit** — pending, to be read from GitHub; (3) the owner signs off on the evidence. Until then V13 stays blocked.
+H3-V closes when all of: (1) this evidence — **done**; (2) CI green on the head commit — **done on `05a031c`** (re-confirm on the final head if code changes again); (3) the owner signs off on the evidence — **pending**. Until the sign-off V13 stays blocked.
