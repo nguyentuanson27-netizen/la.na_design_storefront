@@ -51,6 +51,8 @@ export type VoucherPickerModel = Readonly<{
     totalVnd: number;
   }>;
   footer: Readonly<{ label: string; count: number }>;
+  /** Digest of the exact quote shown. The hold POST sends it back; a different quote is never held on an equal total. */
+  quoteDigest: string | null;
   warnings: Readonly<{
     giftLoss: string | null;
     totalIncrease: string | null;
@@ -118,6 +120,7 @@ export function buildVoucherPickerModel(input: Readonly<{
   entries: readonly Readonly<{ card: VoucherCard; state: VoucherCardState }>[];
   /** The intent the quote was built from, so the picker knows which groups are locked. */
   intent?: VoucherSelectionIntent;
+  quoteDigest?: string | null;
 }>): VoucherPickerModel {
   const { quote, entries } = input;
   const group = (kind: "MERCHANDISE" | "SHIPPING_FREE", heading: string, noneLabel: string, noneSelected: boolean): VoucherPickerGroup => {
@@ -153,6 +156,7 @@ export function buildVoucherPickerModel(input: Readonly<{
     footer: Object.freeze(
       quote.voucherCount > 0 ? { label: `Áp dụng • ${quote.voucherCount} ưu đãi`, count: quote.voucherCount } : { label: "Bỏ qua ưu đãi và tiếp tục", count: 0 },
     ),
+    quoteDigest: input.quoteDigest ?? null,
     warnings: Object.freeze({
       giftLoss:
         giftLoss === null

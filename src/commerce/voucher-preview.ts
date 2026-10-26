@@ -11,11 +11,12 @@ import { evaluateShippingCampaigns, MAX_SHIPPING_QUOTE_LINES } from "./shipping-
 import { readActiveShippingCampaigns } from "./shipping-campaign-repository.ts";
 import { createStorefrontCartRepository, type StorefrontCartReadClient } from "./storefront-cart-repository.ts";
 import type { VoucherPaidLine } from "./voucher-allocation.ts";
-import type { VoucherCampaign } from "./voucher-campaign.ts";
+import { toVoucherCampaign, voucherCampaignSelection, type VoucherCampaign } from "./voucher-campaign.ts";
 import { readPublicVoucherCandidates, readSelectedVouchers, toVoucherCard, type VoucherCard } from "./voucher-candidate-repository.ts";
 import { canIssueNewVouchers } from "./voucher-gate.ts";
 import type { GiftOutcome, VoucherSelectionIntent } from "./voucher-optimizer.ts";
 import { buildVoucherQuote, type VoucherCardState, type VoucherQuote } from "./voucher-quote.ts";
+import { buildVoucherQuoteFacts } from "./voucher-quote-facts.ts";
 import { selectionIntentFromRow } from "./voucher-selection-service.ts";
 
 /**
@@ -47,7 +48,12 @@ export type VoucherPreview =
       paidRevision: bigint;
       /** Pancake variation of each paid line id, for the exact-money check before a hold (V12). */
       variationOfLine: ReadonlyMap<string, string>;
+      /** Digest of this exact quote (what a buyer consents to and a hold stores); null if it cannot be expressed as proof facts. */
+      quoteDigest: string | null;
     }>;
+
+/** A live hold of THIS checkout attempt: its entitlement is its own, so it neither counts against nor is lost to the caps. */
+export type OwnVoucherHold = Readonly<{ campaignId: string; campaignRevision: number; heldDiscountVnd: number }>;
 
 const UNSET_LIMIT = 200;
 
@@ -63,12 +69,14 @@ export async function readVoucherPreview(input: Readonly<{
   env?: Readonly<Record<string, string | undefined>>;
   /** A draft the shopper is looking at in the picker: previewed as if chosen, never saved. */
   selectionOverride?: VoucherSelectionIntent;
+  /** Live holds of this cart's own attempt (TG-05 A / AC-31 / AC-33): kept in play even if the campaign has since ended or filled. */
+  ownHolds?: readonly OwnVoucherHold[];
 }>): Promise<VoucherPreview> {
   const { client, cartId, shopId, now } = input;
   const env = input.env ?? process.env;
   if (!canIssueNewVouchers(env)) return { enabled: false };
   try {
-    return await client.$transaction((tx) => readInTransaction(tx, { cartId, shopId, now, env, selectionOverride: input.selectionOverride }), { isolationLevel: "RepeatableRead" });
+    return await client.$transaction((tx) => readInTransaction(tx, { cartId, shopId, now, env, selectionOverride: input.selectionOverride, ownHolds: input.ownHolds ?? [] }), { isolationLevel: "RepeatableRead" });
   } catch {
     // A read that cannot complete is "unavailable", never "no voucher": the caller keeps the plain cart and says so.
     return { enabled: true, ok: false, reason: "QUOTE_UNAVAILABLE" };
@@ -77,7 +85,7 @@ export async function readVoucherPreview(input: Readonly<{
 
 async function readInTransaction(
   tx: Prisma.TransactionClient,
-  { cartId, shopId, now, env, selectionOverride }: Readonly<{ cartId: string; shopId: number; now: Date; env: Readonly<Record<string, string | undefined>>; selectionOverride: VoucherSelectionIntent | undefined }>,
+  { cartId, shopId, now, env, selectionOverride, ownHolds }: Readonly<{ cartId: string; shopId: number; now: Date; env: Readonly<Record<string, string | undefined>>; selectionOverride: VoucherSelectionIntent | undefined; ownHolds: readonly OwnVoucherHold[] }>,
 ): Promise<VoucherPreview> {
   const cart = await tx.cart.findFirst({
     where: { id: cartId, userId: null, expiresAt: { gt: now } },
@@ -167,7 +175,25 @@ async function readInTransaction(
     readPublicVoucherCandidates({ client: tx, shopId, now, env }),
     readSelectedVouchers({ client: tx, shopId, ids: wantedIds, now, env }),
   ]);
-  const campaigns = [...new Map([...publicCampaigns, ...savedCampaigns].map((campaign) => [campaign.id, campaign])).values()];
+  const byId = new Map([...publicCampaigns, ...savedCampaigns].map((campaign) => [campaign.id, campaign]));
+  if (ownHolds.length > 0) {
+    // An entitlement this attempt already holds stays in play although the campaign has since ended, been
+    // switched off or filled up (TG-05 A): load it whatever its lifecycle, and credit back the use and VND the
+    // hold itself reserves so it is not counted against its own holder. A PRIVATE one is kept only while the
+    // shopper's own manual choice still names it; an edited campaign (new revision) is not the held entitlement.
+    const rows = await tx.voucherCampaign.findMany({ where: { id: { in: ownHolds.map((hold) => hold.campaignId) }, pancakeShopId: shopId }, select: voucherCampaignSelection });
+    for (const row of rows) {
+      const hold = ownHolds.find((candidate) => candidate.campaignId === row.id)!;
+      let campaign = byId.get(row.id);
+      if (campaign === undefined) {
+        const chosen = [selectionIntent.merchandise, selectionIntent.shipping].some((group) => group.mode === "MANUAL" && group.voucherId === row.id);
+        if (row.revision !== hold.campaignRevision || (row.visibility === "PRIVATE" && !chosen)) continue;
+        try { campaign = toVoucherCampaign(row); } catch { continue; }
+      }
+      byId.set(row.id, { ...campaign, reservedUses: Math.max(0, campaign.reservedUses - 1), reservedVnd: Math.max(0, campaign.reservedVnd - hold.heldDiscountVnd) });
+    }
+  }
+  const campaigns = [...byId.values()];
   if (campaigns.length > UNSET_LIMIT) return { enabled: true, ok: false, reason: "QUOTE_UNAVAILABLE" };
 
   const variationOfLine = new Map(priced.map((line) => [line.lineId, variantById.get(line.variantId)!.pancakeVariationId]));
@@ -188,5 +214,8 @@ async function readInTransaction(
 
   const cardById = new Map(campaigns.map((campaign) => [campaign.id, toVoucherCard(campaign)]));
   const entries = quote.cards.map((state) => ({ card: cardById.get(state.campaignId)!, state }));
-  return { enabled: true, ok: true, quote, entries, selectionIntent, campaigns, lines, paidRevision: cart.paidRevision, variationOfLine };
+  return {
+    enabled: true, ok: true, quote, entries, selectionIntent, campaigns, lines, paidRevision: cart.paidRevision, variationOfLine,
+    quoteDigest: buildVoucherQuoteFacts({ quote, campaigns, lines, variationOfLine, paidRevision: cart.paidRevision })?.digest ?? null,
+  };
 }

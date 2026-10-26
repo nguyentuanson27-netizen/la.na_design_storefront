@@ -8,6 +8,7 @@ import { buildVoucherPickerModel } from "../routes/voucher-picker-model.ts";
 import { readAnonymousCartCookie } from "./anonymous-cart-cookie.ts";
 import { parseVoucherCodeInput, parseVoucherDraftInput, parseVoucherSelectionInput } from "./voucher-selection-input.ts";
 import { createVoucherSelectionService } from "./voucher-selection-service.ts";
+import { readCartOwnVoucherHolds } from "./voucher-own-holds.ts";
 import { readVoucherPreview } from "./voucher-preview.ts";
 import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
 
@@ -19,10 +20,10 @@ import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
  */
 
 async function respond(selected: { ok: boolean }, cartId: string, selectionOverride?: VoucherSelectionIntent) {
-  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now: new Date(), ...(selectionOverride ? { selectionOverride } : {}) });
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now: new Date(), ownHolds: await readCartOwnVoucherHolds(prisma, cartId), ...(selectionOverride ? { selectionOverride } : {}) });
   if (selected.ok) refresh();
   if (!preview.enabled || !preview.ok) return { picker: null } as const;
-  return { picker: buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent }) } as const;
+  return { picker: buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent, quoteDigest: preview.quoteDigest }) } as const;
 }
 
 export async function setStorefrontVoucherSelection(input: unknown) {

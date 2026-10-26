@@ -6,6 +6,7 @@ import { buildVoucherPickerModel, type VoucherPickerModel } from "../routes/vouc
 import { readAnonymousCartCookie } from "./anonymous-cart-cookie.ts";
 import { canIssueNewVouchers } from "./voucher-gate.ts";
 import { VOUCHER_INTENT_COOKIE, readVoucherIntentCookie } from "./voucher-marketing-link.ts";
+import { readCartOwnVoucherHolds } from "./voucher-own-holds.ts";
 import { readVoucherPreview } from "./voucher-preview.ts";
 
 /**
@@ -19,10 +20,10 @@ export async function loadCurrentVoucherPicker(now: Date = new Date()): Promise<
   try {
     const cartId = readAnonymousCartCookie(await cookies());
     if (cartId === null) return null;
-    const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now });
+    const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now, ownHolds: await readCartOwnVoucherHolds(prisma, cartId) });
     // An empty list still renders the picker: a private code can only be entered, never listed.
     if (!preview.enabled || !preview.ok) return null;
-    return buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent });
+    return buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent, quoteDigest: preview.quoteDigest });
   } catch {
     return null;
   }

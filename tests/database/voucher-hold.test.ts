@@ -299,3 +299,39 @@ test("the sweeper expires only due holds, returns their uses once, and is idempo
   assert.equal(row.reservedVnd, BigInt(30_000));
   await assertLedgerConsistent(m.id);
 });
+
+test("finalize runs inside the transaction: a refusal rolls back new holds and keeps the old one on a swap", async () => {
+  const m = await f.campaign({ maxUses: 5 });
+  const cartId = await cart();
+  const refuse = () => "PROOF_UNAVAILABLE" as const;
+
+  assert.deepEqual(await holds.hold(request(cartId, [merch(m)]), refuse), { ok: false, reason: "PROOF_UNAVAILABLE", kind: null, campaignId: null });
+  assert.equal(await prisma.voucherHold.count({ where: { campaign: { pancakeShopId: SHOP } } }), 0);
+  assert.equal((await ledger(m.id)).reservedUses, 0);
+
+  const first = await holds.hold(request(cartId, [merch(m)]), () => null);
+  assert.ok(first.ok);
+  if (!first.ok) return;
+  assert.deepEqual(await holds.hold(request(cartId, [merch(m, 25_000)], { quoteDigest: DIGEST_B }), refuse), { ok: false, reason: "PROOF_UNAVAILABLE", kind: null, campaignId: null });
+  const rows = await prisma.voucherHold.findMany({ where: { campaignId: m.id } });
+  assert.deepEqual(rows.map((h) => [h.id, h.state, Number(h.heldDiscountVnd)]), [[first.holds[0]!.holdId, "HELD", 30_000]]);
+  assert.equal((await ledger(m.id)).reservedVnd, BigInt(30_000));
+
+  let seen = 0;
+  const swapped = await holds.hold(request(cartId, [merch(m, 25_000)], { quoteDigest: DIGEST_B }), (granted) => { seen = granted.length; return null; });
+  assert.ok(swapped.ok);
+  assert.equal(seen, 1, "finalize sees the holds that will exist");
+  await assertLedgerConsistent(m.id);
+});
+
+test("readOwnLiveHolds returns only this attempt's HELD, unexpired holds, by the database clock", async () => {
+  const m = await f.campaign({ maxUses: 5, reservedUses: 3, reservedVnd: BigInt(90_000) });
+  const [expiredCart, strangerCart, ownCart] = [await cart(), await cart(), await cart()];
+  const old = new Date(Date.now() - 11 * MIN);
+  await f.hold(m.id, { attemptKey: key(expiredCart), createdAt: old, expiresAt: new Date(old.getTime() + 10 * MIN) });
+  await f.hold(m.id, { attemptKey: key(strangerCart) });
+  await f.hold(m.id, { attemptKey: key(ownCart) });
+  assert.deepEqual(await holds.readOwnLiveHolds(expiredCart), [], "expired by the clock, still HELD in the table");
+  assert.deepEqual(await holds.readOwnLiveHolds(await cart()), [], "a cart with no hold");
+  assert.deepEqual(await holds.readOwnLiveHolds(ownCart), [{ kind: "MERCHANDISE", campaignId: m.id, campaignRevision: 1, heldDiscountVnd: 30_000 }]);
+});

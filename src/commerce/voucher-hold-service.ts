@@ -66,7 +66,9 @@ export type VoucherHoldFailureReason =
   | "CAMPAIGN_NOT_FOUND"
   | "CAMPAIGN_NOT_ACTIVE"
   | "CAMPAIGN_CHANGED"
-  | "CAPACITY_EXHAUSTED";
+  | "CAPACITY_EXHAUSTED"
+  /** The `finalize` step (issuing the proof) could not complete, so the whole call was rolled back. */
+  | "PROOF_UNAVAILABLE";
 
 export type VoucherHoldResult =
   | Readonly<{ ok: true; holds: readonly HeldVoucher[]; released: readonly VoucherGroup[] }>
@@ -225,7 +227,15 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
    * Grants, reuses or swaps the requested holds and releases the listed groups, all or nothing. Never throws
    * for an ordinary refusal; a refusal leaves every hold and counter as it was.
    */
-  async function hold(request: VoucherHoldRequest): Promise<VoucherHoldResult> {
+  async function hold(
+    request: VoucherHoldRequest,
+    /**
+     * Runs INSIDE the transaction after every hold exists and before COMMIT. Returning a reason rolls everything
+     * back (a swap keeps its old hold, nothing is reserved): a buyer never ends up with quota held and no proof
+     * to spend it with.
+     */
+    finalize?: (holds: readonly HeldVoucher[]) => VoucherHoldFailureReason | null,
+  ): Promise<VoucherHoldResult> {
     if (!validRequest(request)) return { ok: false, reason: "INVALID_REQUEST", kind: null, campaignId: null };
     const releaseKinds = request.releaseKinds ?? [];
     const attemptKey = voucherAttemptKey(request.cartId, options.attemptSecret);
@@ -327,12 +337,27 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
           campaign.reservedVnd += BigInt(grant.discountVnd);
           held.push(toHeld(inserted[0]!, false));
         }
-        return { ok: true as const, holds: held.sort((a, b) => a.kind.localeCompare(b.kind)), released };
+        const sorted = held.sort((a, b) => a.kind.localeCompare(b.kind));
+        const refusal = finalize ? finalize(sorted) : null;
+        if (refusal !== null) throw fail(refusal);
+        return { ok: true as const, holds: sorted, released };
       });
     } catch (error) {
       if (error instanceof HoldRollback) return error.result;
       throw error;
     }
+  }
+
+  /**
+   * The live holds of this attempt (HELD and not past `expiresAt` by the database clock), for a preview that must
+   * not lose an entitlement the buyer already holds. Read-only; ignores the feature gate like the other settle reads.
+   */
+  async function readOwnLiveHolds(cartId: string): Promise<readonly Readonly<{ kind: VoucherGroup; campaignId: string; campaignRevision: number; heldDiscountVnd: number }>[]> {
+    const attemptKey = voucherAttemptKey(cartId, options.attemptSecret);
+    const rows = await client.$queryRaw<HoldRow[]>`
+      SELECT "id", "campaignId", "campaignRevision", "kind", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
+      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "state" = 'HELD' AND "expiresAt" > clock_timestamp()`;
+    return rows.map((row) => ({ kind: row.kind, campaignId: row.campaignId, campaignRevision: row.campaignRevision, heldDiscountVnd: Number(row.heldDiscountVnd) }));
   }
 
   /**
@@ -372,7 +397,7 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
     return rows[0] ? toHeld(rows[0], true) : null;
   }
 
-  return { hold, sweepExpired, findHonourableHold };
+  return { hold, sweepExpired, findHonourableHold, readOwnLiveHolds };
 }
 
 export type VoucherHoldService = ReturnType<typeof createVoucherHoldService>;
