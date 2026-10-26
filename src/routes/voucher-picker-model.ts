@@ -104,7 +104,7 @@ function itemOf(card: VoucherCard, state: VoucherCardState): VoucherPickerItem {
     selectable: !unavailable,
     disabledReason,
     shortfallVnd: unavailable ? state.shortfallVnd : null,
-    savingText: state.savingVnd === null ? null : `Dự kiến giảm ${formatVoucherVnd(state.savingVnd)}`,
+    savingText: state.savingVnd === null ? null : `-${formatVoucherVnd(state.savingVnd)}`,
     publicCode: card.publicCode,
     endsAtIso: card.endsAt === null ? null : card.endsAt.toISOString(),
   });

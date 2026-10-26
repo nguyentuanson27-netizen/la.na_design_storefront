@@ -15,7 +15,11 @@ import { pathToFileURL } from "node:url";
  *  - at most `MAX_ORDERS` POS orders (the owner approved 10 on 2026-10-26; this run plans 3), one create per case and
  *    never a retry (Pancake has no idempotency key);
  *  - every order is marked in its note as a test and cancelled on EVERY path after creation; an order that is not
- *    confirmed cancelled stops the run and exits 3;
+ *    confirmed cancelled stops the run and exits 3. The one exception is asked for by name by the owner:
+ *    `V20_LEAVE_OPEN_FOR_STAFF=1` with `V20_ONLY_CASE=<id>` creates exactly ONE order and leaves it open on purpose so
+ *    staff can cancel it by hand in the Pancake UI; the scratch website rows are kept, and a second run with
+ *    `V20_OBSERVE_ORDER=<pancake order id>` (no create) reads back what status Pancake reports and what the real status
+ *    reconciliation does with it;
  *  - no key and no customer data in the report.
  */
 
@@ -114,9 +118,40 @@ async function main(): Promise<number> {
   const client = new PancakeClient({ apiKey: config.apiKey });
   const realGateway = createPancakeOrderGateway(client);
 
+  // Observe mode: no create, no cancel. What status does Pancake report for an order a person cancelled by hand, and what does
+  // the REAL status reconciliation do with it (it refunds only on the one trusted code)?
+  const observeId = nodeEnv("V20_OBSERVE_ORDER");
+  if (observeId) {
+    try {
+      const order = await prisma.orderMirror.findFirst({ where: { pancakeShopId: SHOP, pancakeOrderId: observeId } });
+      if (!order) throw new Error("no website order row for that Pancake order id (the scratch database of the run that created it is needed)");
+      const redemptions = createVoucherRedemptionService(prisma as never);
+      const before = await prisma.voucherRedemption.findMany({ where: { orderId: order.id } });
+      const read = await realGateway.readOrder(SHOP, observeId).catch(() => null);
+      const reconcile = createPancakeOrderStatusReconciliationService(prisma as never, realGateway as never, {
+        shopId: SHOP,
+        async onTrustedCancel({ orderId }: { orderId: string }) { await redemptions.refundOrder({ orderId, reason: "POS_CANCELLED" }); },
+      } as never);
+      const result = await reconcile.reconcile({ orderId: order.id });
+      const after = await prisma.voucherRedemption.findMany({ where: { orderId: order.id } });
+      const mirrored = await prisma.orderMirror.findUniqueOrThrow({ where: { id: order.id }, select: { state: true, pancakeStatus: true } });
+      console.log("VOUCHER_STAFF_CANCEL_OBSERVATION_BEGIN");
+      console.log(JSON.stringify({ pancakeOrderId: observeId, pancakeStatusReadBack: (read as { status?: unknown } | null)?.status ?? null, mirrored, reconcileOk: (result as { ok?: boolean }).ok === true, redemptionsBefore: before.length, refundedBefore: before.filter((row) => row.refundedAt !== null).length, refundedAfter: after.filter((row) => row.refundedAt !== null).length, refundReasons: after.map((row) => row.refundReason) }, null, 2));
+      console.log("VOUCHER_STAFF_CANCEL_OBSERVATION_END");
+      return 0;
+    } finally {
+      await prisma.$disconnect();
+    }
+  }
+
   // Preflight (reads only): the variation, its live price and stock, and a real two-level address.
   const variations = await client.getJson(`/shops/${SHOP}/products/variations`, { search: productCode });
-  const maxUnits = Math.max(...CASES.map((entry) => entry.quantity));
+  const leaveOpen = nodeEnv("V20_LEAVE_OPEN_FOR_STAFF") === "1";
+  const onlyCase = nodeEnv("V20_ONLY_CASE");
+  const activeCases = onlyCase ? CASES.filter((entry) => entry.id === onlyCase) : CASES;
+  if (onlyCase && activeCases.length !== 1) throw new Error(`V20_ONLY_CASE must name one of: ${CASES.map((entry) => entry.id).join(", ")}`);
+  if (leaveOpen && activeCases.length !== 1) throw new Error("V20_LEAVE_OPEN_FOR_STAFF=1 needs V20_ONLY_CASE: it creates exactly one order");
+  const maxUnits = Math.max(...activeCases.map((entry) => entry.quantity));
   validateProbeVariation(variations, variationId, maxUnits);
   const live = (await realGateway.fetchVariations(SHOP, [variationId]))[0];
   if (!live || !Number.isSafeInteger(live.retailPrice) || live.retailPrice < 50_000) throw new Error("the probe variation has no usable live price");
@@ -206,8 +241,9 @@ async function main(): Promise<number> {
 
   const reports: CaseReport[] = [];
   let openOrders: string[] = [];
+  let leftOpen: { pancakeOrderId: string; websiteOrderId: string } | null = null;
   try {
-    for (const definition of CASES) {
+    for (const definition of activeCases) {
       await cleanupWebsite();
       const checks: Check[] = [];
       const check = (name: string, ok: boolean, detail: string) => { checks.push({ name, ok, detail }); return ok; };
@@ -283,6 +319,14 @@ async function main(): Promise<number> {
       check("POS lines sum to the goods", readBack.lines.reduce((sum, line) => sum + line.quantity * line.unitPriceVnd, 0) === expectedPaid, readBack.lines.map((line) => `${line.quantity}x${line.unitPriceVnd}`).join(", "));
       check("POS line price differs from list price (the voucher is in the lines)", readBack.lines.every((line) => line.unitPriceVnd < unitPrice), `list ${unitPrice}`);
 
+      // Owner-requested exception: leave this one order open so staff can cancel it by hand in the Pancake UI.
+      if (leaveOpen && checks.every((entry) => entry.ok)) {
+        report.cleanup = "LEFT_OPEN_FOR_STAFF_CANCEL";
+        report.passed = true;
+        leftOpen = { pancakeOrderId: posId, websiteOrderId: order.id };
+        break;
+      }
+
       // Cancel in the POS, observe status 7 through the REAL reconciliation, and see the refund happen once.
       let cancelled = false;
       try { await realGateway.cancelOrder(SHOP, posId); cancelledOrderIds.add(posId); cancelled = true; } catch { cancelled = false; }
@@ -306,17 +350,21 @@ async function main(): Promise<number> {
       if (!report.passed) break;
     }
   } finally {
-    openOrders = [...openOrders, ...(await cancelEverythingCreated())];
-    try { await cleanupWebsite(); } catch { /* scratch rows only */ }
+    // An order left open on purpose is the only one not cancelled here, and its scratch rows are kept for the observation run.
+    if (leftOpen === null) {
+      openOrders = [...openOrders, ...(await cancelEverythingCreated())];
+      try { await cleanupWebsite(); } catch { /* scratch rows only */ }
+    }
     await prisma.$disconnect();
   }
 
-  const noOrderOpen = openOrders.length === 0;
-  const allPassed = noOrderOpen && reports.length === CASES.length && reports.every((entry) => entry.passed);
+  const noOrderOpen = openOrders.length === 0 && leftOpen === null;
+  const allPassed = (noOrderOpen || leftOpen !== null) && openOrders.length === 0 && reports.length === activeCases.length && reports.every((entry) => entry.passed);
   console.log("VOUCHER_CONVERGENCE_LIVE_BEGIN");
   console.log(JSON.stringify({ runId, timestamp: new Date().toISOString(), shopId: SHOP, variationId, unitPriceVnd: unitPrice, ordersCreated: creates, orderCap: MAX_ORDERS, cases: reports, allPassed, noOrderMayBeOpen: noOrderOpen, openOrderIds: openOrders }, null, 2));
   console.log("VOUCHER_CONVERGENCE_LIVE_END");
-  return !noOrderOpen ? 3 : allPassed ? 0 : 2;
+  if (leftOpen !== null) console.log(`ORDER LEFT OPEN ON PURPOSE for the owner to cancel by hand in Pancake: pancakeOrderId=${leftOpen.pancakeOrderId} (note contains "${MARKER}"). Then run V20_OBSERVE_ORDER=${leftOpen.pancakeOrderId}.`);
+  return openOrders.length > 0 ? 3 : allPassed ? 0 : 2;
 }
 
 function isDirectExecution(): boolean {

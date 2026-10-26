@@ -1,16 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { useFormStatus } from "react-dom";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { ProductPicker, type GiftQuantityProductRef } from "./gift-quantity-campaign-form";
+import { describeVoucherAdminReason } from "../../commerce/voucher-admin-feedback";
 import type { VoucherCampaignRow } from "../../commerce/voucher-campaign";
 
 const inputClass = "mt-2 w-full border border-black/30 bg-transparent px-3 py-2 focus-visible:outline-2 focus-visible:outline-offset-2";
 const buttonClass = "min-h-11 border border-black bg-black px-5 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-40";
 const localTime = (date: Date | null | undefined) => (date ? new Date(new Date(date).getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16) : "");
 
-function Submit() {
-  const { pending } = useFormStatus();
+function Submit({ pending }: Readonly<{ pending: boolean }>) {
   return <button className={buttonClass} disabled={pending} type="submit">{pending ? "Đang lưu…" : "Lưu voucher"}</button>;
 }
 
@@ -25,7 +24,7 @@ export function VoucherCampaignForm({ initial, categories, included = [], exclud
   categories: readonly { key: string; label: string; parentKey: string | null }[];
   included?: readonly GiftQuantityProductRef[];
   excluded?: readonly GiftQuantityProductRef[];
-  action: (form: FormData) => Promise<void>;
+  action: (form: FormData) => Promise<Readonly<{ reason: string; issue?: string }> | undefined | void>;
 }>) {
   const identityLocked = initial?.enabledAt != null;
   const [kind, setKind] = useState<string>(initial?.kind ?? "MERCHANDISE");
@@ -36,7 +35,20 @@ export function VoucherCampaignForm({ initial, categories, included = [], exclud
   const [includes, setIncludes] = useState(included);
   const [excludes, setExcludes] = useState(excluded);
   const choose = (setter: (value: string) => void, value: string) => () => setter(value);
-  return <form action={action} className="mt-8 max-w-3xl space-y-7">
+  // Submitted by hand, not as the form's own `action`: React resets a form after its action finishes. A refusal comes back as an
+  // answer (never a redirect, which remounts the page), so what the Admin typed stays on screen to be corrected.
+  const [pending, startTransition] = useTransition();
+  const [refusal, setRefusal] = useState<Readonly<{ reason: string; issue?: string }> | null>(null);
+  const refusalNote = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { if (refusal) refusalNote.current?.focus(); }, [refusal]);
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    setRefusal(null);
+    startTransition(async () => { setRefusal((await action(data)) ?? null); });
+  };
+  return <form onSubmit={submit} className="mt-8 max-w-3xl space-y-7">
+    {refusal ? <p ref={refusalNote} tabIndex={-1} role="alert" className="border-l-2 border-black bg-black/5 p-4 focus-visible:outline-2 focus-visible:outline-offset-2">{describeVoucherAdminReason(refusal.reason, refusal.issue)}</p> : null}
     {initial ? <><input type="hidden" name="campaignId" value={initial.id} /><input type="hidden" name="revision" value={initial.revision} /></> : null}
     <p className="border-l-2 border-black pl-4 text-sm leading-6" role="note">
       {initial?.isEnabled
@@ -118,6 +130,6 @@ export function VoucherCampaignForm({ initial, categories, included = [], exclud
       </label>
     </div>
     <p className="text-sm text-black/65">{"Để trống là không giới hạn. Không thể đặt giới hạn thấp hơn số lượt/ngân sách đã dùng và đang được giữ cho khách. Lượt dùng là tổng cho mọi khách, không giới hạn theo từng khách."}</p>
-    <Submit />
+    <Submit pending={pending} />
   </form>;
 }

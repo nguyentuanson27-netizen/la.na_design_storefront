@@ -81,7 +81,7 @@ test("the selected card and the NONE option follow the server's choice; the foot
   assert.deepEqual(view.footer, { label: "Áp dụng • 2 ưu đãi", count: 2 });
   assert.equal(view.groups[0].noneSelected, false);
   assert.equal(view.groups[0].items[0]!.selected, true);
-  assert.equal(view.groups[0].items[0]!.savingText, "Dự kiến giảm 30.000đ");
+  assert.equal(view.groups[0].items[0]!.savingText, "-30.000đ");
   const none = model([], [line("a", 1, 100_000)]);
   assert.deepEqual(none.view.footer, { label: "Bỏ qua ưu đãi và tiếp tục", count: 0 });
   assert.equal(none.view.groups[0].noneSelected, true);

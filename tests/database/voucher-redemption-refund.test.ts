@@ -7,6 +7,7 @@ import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import { createPancakeOrderReconciliationService } from "../../src/commerce/pancake-order-reconciliation.ts";
 import { createPancakeOrderStatusReconciliationService } from "../../src/commerce/pancake-order-status-reconciliation.ts";
 import { createPancakeOrderSubmissionService } from "../../src/commerce/pancake-order-submit.ts";
+import { adminCancelVoucherOrder } from "../../src/commerce/voucher-admin-cancel.ts";
 import { createVoucherRedemptionService } from "../../src/commerce/voucher-redemption-service.ts";
 import { PancakeHttpError } from "../../src/integrations/pancake/client.ts";
 import type { PancakeOrderStatus } from "../../src/integrations/pancake/order-status.ts";
@@ -348,4 +349,27 @@ test("SYNC_UNKNOWN reconciliation: confirmed absence calls the refund hook, an a
   const stillUnknown = await service("AMBIGUOUS").reconcileOrder(ambiguous.publicCode);
   assert.equal(!stillUnknown.ok && stillUnknown.state, "SYNC_UNKNOWN");
   assert.deepEqual(hooked, [absent.publicCode]);
+});
+
+test("the operator's admin-cancel: a dry run changes nothing, --apply returns the vouchers once with the evidence, a repeat is harmless, and unknown or voucher-less orders are refused", async () => {
+  const { order, m, s } = await acceptedOrder({ shipping: true });
+  const evidence = "staff cancelled order in Pancake UI, ticket 42";
+  const dry = await adminCancelVoucherOrder(prisma, { order: order.publicCode, evidence, apply: false });
+  assert.deepEqual(dry.ok && [dry.applied, dry.refunded, dry.redemptions.map((r) => [r.kind, r.amountVnd, r.alreadyRefunded])], [false, 0, [["MERCHANDISE", 50_000, false], ["SHIPPING_FREE", 30_000, false]]]);
+  assert.deepEqual(await counters(m.id), [1, BigInt(50_000), 0, BigInt(0)], "a dry run touches nothing");
+
+  const applied = await adminCancelVoucherOrder(prisma, { order: order.id, evidence, apply: true });
+  assert.deepEqual(applied.ok && [applied.applied, applied.refunded], [true, 2]);
+  assert.deepEqual(await counters(m.id), [0, BigInt(0), 0, BigInt(0)]);
+  assert.deepEqual(await counters(s!.id), [0, BigInt(0), 0, BigInt(0)]);
+  const rows = await redemptionsOf(order.id);
+  assert.ok(rows.every((row) => row.refundReason === "ADMIN_CANCEL" && row.refundEvidence === `admin:${evidence}`));
+
+  const again = await adminCancelVoucherOrder(prisma, { order: order.publicCode, evidence, apply: true });
+  assert.deepEqual(again.ok && [again.refunded, again.redemptions.every((r) => r.alreadyRefunded)], [0, true]);
+  assert.deepEqual(await counters(m.id), [0, BigInt(0), 0, BigInt(0)], "never refunded twice");
+
+  assert.deepEqual(await adminCancelVoucherOrder(prisma, { order: "no-such-order", evidence, apply: true }), { ok: false, reason: "ORDER_NOT_FOUND" });
+  const plain = await prisma.orderMirror.create({ data: { publicCode: f.token(), state: "REJECTED", pancakeShopId: SHOP } });
+  assert.deepEqual(await adminCancelVoucherOrder(prisma, { order: plain.publicCode, evidence, apply: true }), { ok: false, reason: "NO_REDEMPTION" });
 });

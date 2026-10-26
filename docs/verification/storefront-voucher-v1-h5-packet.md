@@ -158,3 +158,14 @@ Gates in §3-5 are unchanged and still need people.
 | Finding | Verified against the code | Change |
 | --- | --- | --- |
 | P2 the version the picker carries can belong to a newer choice than the quote it shows | yes: the preview read the saved choice inside its repeatable-read snapshot but returned only the intent used for the quote; `respond()` and `loadCurrentVoucherPicker()` then read the saved choice AGAIN after the snapshot to compute the version, so another tab saving in between gave a quote of S0 with the version of S1, and the stale draft passed the check | The preview returns `savedSelectionVersion`, computed from the saved choice read in its own snapshot; both callers use it and no longer read again. Test (real PostgreSQL): tab B saves right after the preview's snapshot is read (the client wrapper commits B's choice as the preview transaction returns); the preview's version is S0's, not S1's, and the picker built from it is refused with `SELECTION_CHANGED` and B's choice untouched; a mutation that re-reads the version after the snapshot fails it. The two server callers are not exercised as a pair in a browser: they are one-line uses of the preview's field |
+
+## 15. Owner decisions taken "theo khuyến nghị" (2026-10-26) and what was built for them
+
+| Decision | Taken | Built |
+| --- | --- | --- |
+| Drop a voucher while pricing is unreadable | Keep the exception (drop only, with the "price not known" notice) | already in `cabe82e`/`26f6d3a`; runbook §5 |
+| Gift/quantity gate OFF mid-hold | Hold set aside and reported, not honoured; keep the gate ON while vouchers are ON | already in place; runbook §1 and §5 |
+| Instant kill switch | Not for v1 (feature OFF stops new holds at once; existing holds finish within 10 minutes) | nothing; runbook §1 |
+| Return the vouchers of a person-cancelled order | An operator command, not a screen. Note: this is the voucher's use and budget, **not money** (COD); an earlier wording that said "via accounting" was wrong and is removed | `pnpm voucher:refund:admin-cancel` (`voucher-admin-cancel.ts`): dry run unless `--apply`, evidence required (10-400 chars), once-only; domain and real-database tests |
+| Admin form emptied after a refused save | Fix | the form is submitted by hand so React no longer resets it; browser test asserts the typed values survive |
+| Saving text in the picker | "-amount" in red (was "Dự kiến giảm ...") | `-70.000đ` in red with a screen-reader prefix "Dự kiến giảm"; Axe clean |

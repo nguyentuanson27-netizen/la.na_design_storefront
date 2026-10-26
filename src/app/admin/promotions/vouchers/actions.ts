@@ -12,8 +12,12 @@ import { readPancakeShopId } from "@/integrations/pancake/config";
 const PATH = "/admin/promotions/vouchers";
 type Operation = "create" | "edit" | "enable" | "disable" | "copy";
 
-async function run(operation: Operation, form: FormData): Promise<void> {
+/** A refused create/edit is ANSWERED to the form, not redirected: a redirect remounts the page and empties what the Admin typed. */
+export type VoucherFormRefusal = Readonly<{ reason: string; issue?: string }>;
+
+async function run(operation: Operation, form: FormData): Promise<VoucherFormRefusal | undefined> {
   let destination = `${PATH}?reason=UNAVAILABLE`;
+  let refusal: VoucherFormRefusal | undefined;
   try {
     // Each action re-authorizes. Hidden ids/revisions express intent, never authority.
     const session = await requireCurrentAdmin();
@@ -32,10 +36,11 @@ async function run(operation: Operation, form: FormData): Promise<void> {
     if (result.ok) {
       revalidatePath(PATH);
       destination = `${PATH}?status=ok`;
+    } else if (operation === "create" || operation === "edit") {
+      refusal = { reason: result.reason, ...("issues" in result && result.issues?.[0] ? { issue: result.issues[0].code } : {}) };
     } else {
-      const target = operation === "create" ? "&new=1" : identity ? `&edit=${encodeURIComponent(identity.id)}` : "";
-      const issue = "issues" in result && result.issues?.[0] ? `&issue=${encodeURIComponent(result.issues[0].code)}` : "";
-      destination = `${PATH}?reason=${encodeURIComponent(result.reason)}${issue}${target}`;
+      const target = identity ? `&edit=${encodeURIComponent(identity.id)}` : "";
+      destination = `${PATH}?reason=${encodeURIComponent(result.reason)}${target}`;
     }
     console.info(JSON.stringify({ event: "voucher_campaign_admin", operation, outcome: result.ok ? "committed" : "refused" }));
   } catch (error) {
@@ -43,12 +48,13 @@ async function run(operation: Operation, form: FormData): Promise<void> {
     console.warn(JSON.stringify({ event: "voucher_campaign_admin", operation, outcome: forbidden ? "forbidden" : "unavailable" }));
     destination = `${PATH}?reason=${forbidden ? "FORBIDDEN" : "UNAVAILABLE"}`;
   }
+  if (refusal) return refusal;
   // Next redirects throw intentionally; never catch one and report a successful write as a failure.
   redirect(destination);
 }
 
-export async function createVoucherAction(form: FormData): Promise<void> { await run("create", form); }
-export async function editVoucherAction(form: FormData): Promise<void> { await run("edit", form); }
+export async function createVoucherAction(form: FormData): Promise<VoucherFormRefusal | undefined> { return run("create", form); }
+export async function editVoucherAction(form: FormData): Promise<VoucherFormRefusal | undefined> { return run("edit", form); }
 export async function enableVoucherAction(form: FormData): Promise<void> { await run("enable", form); }
 export async function disableVoucherAction(form: FormData): Promise<void> { await run("disable", form); }
 export async function copyVoucherAction(form: FormData): Promise<void> { await run("copy", form); }

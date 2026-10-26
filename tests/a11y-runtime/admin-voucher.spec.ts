@@ -169,7 +169,7 @@ test("V07 the create form has no Axe violations, and a campaign written through 
   expect(saved.revision).toBe(1);
 });
 
-test("V07 a refused form says why (the server rule, not just the browser) and writes nothing", async ({ page, context }) => {
+test("V07 a refused form says why (the server rule, not just the browser), writes nothing and keeps what the Admin typed", async ({ page, context }) => {
   await context.addCookies(adminCookies);
   const before = await prisma.voucherCampaign.count({ where: { pancakeShopId: SHOP } });
   await page.goto(`${PAGE}?new=1`, { waitUntil: "networkidle" });
@@ -180,6 +180,10 @@ test("V07 a refused form says why (the server rule, not just the browser) and wr
   await page.getByRole("button", { name: "Lưu voucher" }).click();
   await expect(page.locator("p[role='alert']")).toBeVisible();
   await expect(page.locator("p[role='alert']")).toContainText("Giá trị đơn tối thiểu phải lớn hơn số tiền giảm");
+  // What was typed is still there to correct (the form is not emptied by the refusal).
+  await expect(page.getByRole("textbox", { name: "Tên voucher" })).toHaveValue(`V07 Refused ${runId}`);
+  await expect(page.getByLabel("Số tiền giảm (đồng)")).toHaveValue("90000");
+  await expect(page.getByLabel(/^Giá trị đơn tối thiểu/)).toHaveValue("80000");
   expect(await prisma.voucherCampaign.count({ where: { pancakeShopId: SHOP } })).toBe(before);
   const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibility.violations).toEqual([]);

@@ -34,7 +34,7 @@ export function VoucherCard({ item, name, onSelect, disabled }: Readonly<{
             {item.condition}
             {item.publicCode ? <span className="ml-2 border border-black/30 px-1.5 text-xs font-semibold tracking-wide">{item.publicCode}</span> : null}
             {item.disabledReason ? <span className="mt-1 block font-medium text-black">{item.disabledReason}</span> : null}
-            {!unavailable && item.savingText ? <span className="mt-1 block text-black/90">{item.savingText}</span> : null}
+            {!unavailable && item.savingText ? <span className="mt-1 block font-semibold text-[#b42318]"><span className="sr-only">Dự kiến giảm </span><span aria-hidden="true">{item.savingText}</span></span> : null}
           </span>
         </span>
       </label>
