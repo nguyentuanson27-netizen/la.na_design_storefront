@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  applyStorefrontLinkedVoucherCode,
   applyStorefrontVoucherCode,
   commitStorefrontVoucherDraft,
   previewStorefrontVoucherDraft,
@@ -19,5 +20,7 @@ export function useVoucherPickerActions() {
     commitDraft: commitStorefrontVoucherDraft,
     /** Validate a typed or linked code and, if good, lock it as the manual choice. */
     applyCode: applyStorefrontVoucherCode,
+    /** The code a marketing link left on the server (never sent by the browser): same verify, quote and consent as a typed one. */
+    applyLinkedCode: applyStorefrontLinkedVoucherCode,
   } as const;
 }

@@ -2,7 +2,7 @@ import { connection } from "next/server";
 
 import { tryReadGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
 import { getCurrentStorefrontCartBenefits } from "@/commerce/storefront-cart-runtime";
-import { loadCurrentVoucherPicker, readPendingVoucherCode } from "@/commerce/voucher-picker-runtime";
+import { loadCurrentVoucherPicker, hasPendingVoucherCode } from "@/commerce/voucher-picker-runtime";
 import { buildCartViewEvent } from "@/components/analytics/cart-funnel-tracking";
 import { isCommerceTrackingEnabled } from "@/components/analytics/commerce-event-reporter";
 
@@ -15,17 +15,17 @@ import type { VoucherPickerModel } from "./voucher-picker-model.ts";
 export type CartRouteProps = Readonly<Record<string, never>>;
 
 /** The cart view plus the voucher picker, which is null whenever there is nothing to offer or the feature is OFF. */
-export type CartRouteViewModel = CartViewModel & Readonly<{ vouchers: VoucherPickerModel | null; voucherPrefillCode: string | null }>;
+export type CartRouteViewModel = CartViewModel & Readonly<{ vouchers: VoucherPickerModel | null; voucherLinkOffered: boolean }>;
 
 export async function loadCartRoute(): Promise<RouteHandle<CartRouteViewModel>> {
   await connection();
   const cart = await getCurrentStorefrontCartBenefits();
   const { lines } = cart;
   const vouchers = cart.lines.length > 0 ? await loadCurrentVoucherPicker() : null;
-  const voucherPrefillCode = vouchers === null ? null : await readPendingVoucherCode();
+  const voucherLinkOffered = vouchers !== null && (await hasPendingVoucherCode());
 
   return sealRoute({
-    data: { ...buildCartViewModel({ ...cart, commerceTrackingEnabled: isCommerceTrackingEnabled(), shippingPolicy: tryReadGuestShippingPolicy() }), vouchers, voucherPrefillCode },
+    data: { ...buildCartViewModel({ ...cart, commerceTrackingEnabled: isCommerceTrackingEnabled(), shippingPolicy: tryReadGuestShippingPolicy() }), vouchers, voucherLinkOffered },
     // Cart prices are re-resolved on every request, so nothing here is promotion-cached; the shared
     // default cadence is what the shell mounts.
     refreshAfterMs: 60_000,

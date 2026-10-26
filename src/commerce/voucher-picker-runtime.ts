@@ -32,14 +32,15 @@ export async function loadCurrentVoucherPicker(now: Date = new Date()): Promise<
 }
 
 /**
- * A code a visitor arrived with through a marketing link before they had a cart (V19). It is only OFFERED -- pre-filled
- * in the code field for the shopper to confirm - because applying it would be a write on a page render.
+ * Whether a visitor arrived through a marketing link with a code waiting for them (V19). ONLY the fact crosses to the page: the
+ * code stays on the server (the HttpOnly cookie), because anything handed to a Client Component is serialized into the page's HTML
+ * and RSC payload, where scripts on the page (GTM, Meta) can read it. It is applied by a Server Action that reads the cookie itself.
  */
-export async function readPendingVoucherCode(): Promise<string | null> {
-  if (!canIssueNewVouchers()) return null;
+export async function hasPendingVoucherCode(): Promise<boolean> {
+  if (!canIssueNewVouchers()) return false;
   try {
-    return readVoucherIntentCookie((await cookies()).get(VOUCHER_INTENT_COOKIE)?.value);
+    return readVoucherIntentCookie((await cookies()).get(VOUCHER_INTENT_COOKIE)?.value) !== null;
   } catch {
-    return null;
+    return false;
   }
 }

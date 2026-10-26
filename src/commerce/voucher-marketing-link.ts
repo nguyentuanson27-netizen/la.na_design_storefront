@@ -7,7 +7,8 @@ import { normalizeVoucherCode } from "./voucher-rule-validation.ts";
  * A link such as `/shop/san-pham?voucher=KOL50` carries an intent, not an entitlement. The code must never reach a
  * document that loads GTM, Meta or analytics, so the very first request is answered with a body-less redirect to the
  * same URL WITHOUT the `voucher` parameter (and a `no-referrer` policy), by way of the server-side handler that
- * validates the code and stores the choice against the cart. The browser, its history, the Referer header and every
+ * remembers the code in an HttpOnly cookie (it saves NO choice: only the picker's own, gated, "Dùng mã từ liên kết" applies it, and the
+ * code itself is never handed to the page). The browser, its history, the Referer header and every
  * script therefore only ever see the clean URL. A code that is invalid or malformed is still stripped.
  *
  * Pure: it builds URLs and cookies and decides nothing about money. The destination is always rebuilt from the

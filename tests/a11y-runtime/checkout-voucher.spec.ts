@@ -442,12 +442,16 @@ test("review 54cb476: a marketing link to a code that would cost a chosen gift s
   expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
   await page.goto(`${BASE}/cart`);
+  // This server has tracking on (GTM): the code must not be anywhere in what the cart page sends the browser.
+  expect(await (await page.request.get(`${BASE}/cart`)).text()).not.toMatch(/KOL73/i);
+  expect(await page.content()).not.toMatch(/KOL73/i);
   await page.locator("[data-voucher-picker] > button").click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await expect(dialog.getByLabel("Nhập mã khuyến mãi")).toHaveValue(/KOL73/i);
-  await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
+  await expect(dialog.getByLabel("Nhập mã khuyến mãi")).toHaveValue("");
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
   // The code is valid but costs the gift: shown with the warning, still NOT saved.
   await expect(dialog).toContainText("quà đã chọn sẽ được bỏ khỏi giỏ hàng");
+  expect(await page.content()).not.toMatch(/KOL73/i);
   expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
   // Declining (closing the picker) keeps everything as it was.

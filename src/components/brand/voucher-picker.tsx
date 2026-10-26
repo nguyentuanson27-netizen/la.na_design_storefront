@@ -39,8 +39,8 @@ const CODE_ERROR: Readonly<Record<string, string>> = {
 };
 const GENERIC_ERROR = "Chưa cập nhật được ưu đãi. Nàng thử lại sau giây lát nhé.";
 
-export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initial: VoucherPickerModel; prefillCode?: string | null }>) {
-  const { previewDraft, commitDraft, applyCode } = useVoucherPickerActions();
+export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initial: VoucherPickerModel; linkOffered?: boolean }>) {
+  const { previewDraft, commitDraft, applyCode, applyLinkedCode } = useVoucherPickerActions();
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
@@ -55,8 +55,10 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // A code from a marketing link is offered, not applied: the shopper confirms it with "Áp dụng mã".
-  const [code, setCode] = useState(prefillCode ?? "");
+  // A code from a marketing link is OFFERED, never applied or even shown: it stays on the server, and "Dùng mã từ liên kết" asks the
+  // server to use it (the same verify, quote and consent as a typed code).
+  const [code, setCode] = useState("");
+  const [pendingLink, setPendingLink] = useState(false);
   // A valid code whose choice costs something the shopper has not agreed to: verified, shown, NOT saved. It is saved by the
   // same "Áp dụng" press that carries the consent (the server re-verifies the code and the quote then).
   const [pendingCode, setPendingCode] = useState<string | null>(null);
@@ -83,11 +85,12 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
   const close = () => {
     settleCodeApplied();
     setPendingCode(null);
+    setPendingLink(false);
     setOpen(false);
     setConfirming(false);
     setError(null);
     setMessage(null);
-    setCode(prefillCode ?? "");
+    setCode("");
     setModel(saved);
     setDraft(draftOf(saved));
   };
@@ -95,6 +98,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
   const choose = (key: "merchandise" | "shipping", voucherId: string | null) => {
     const next: Draft = { ...draft, [key]: { mode: "MANUAL", voucherId } };
     setPendingCode(null);
+    setPendingLink(false);
     setDraft(next);
     setConfirming(false);
     setError(null);
@@ -111,8 +115,9 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
   // shown for it, so it must not be sent for a different text. What the picker shows goes back to what is saved.
   const editCode = (value: string) => {
     setCode(value);
-    if (pendingCode !== null && value !== pendingCode) {
+    if ((pendingCode !== null && value !== pendingCode) || pendingLink) {
       setPendingCode(null);
+      setPendingLink(false);
       setConfirming(false);
       setMessage(null);
       setError(null);
@@ -155,6 +160,36 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
     });
   };
 
+  // The code a marketing link left on the server. The browser never has it: this asks the server to use it.
+  const submitLinked = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await applyLinkedCode({});
+      if (result.ok && result.picker) {
+        setSaved(result.picker);
+        setBaseVersion(result.picker.selectionVersion);
+        setModel(result.picker);
+        setDraft(draftOf(result.picker));
+        setPendingLink(false);
+        codeApplied.current = true;
+        setMessage("Đã áp dụng mã ưu đãi.");
+      } else if (result.ok) {
+        setPendingLink(false);
+        setConfirming(false);
+        codeApplied.current = true;
+        setMessage("Đã áp dụng mã ưu đãi. Giá dự kiến sẽ được cập nhật khi nàng đóng hộp thoại.");
+      } else if (!result.ok && (result.reason === "CONFIRMATION_REQUIRED" || result.reason === "QUOTE_CHANGED")) {
+        if (result.picker) {
+          setModel(result.picker);
+          setDraft(draftOf(result.picker));
+        }
+        setPendingLink(true);
+        setConfirming(result.reason === "CONFIRMATION_REQUIRED");
+        setMessage("Mã hợp lệ. Nàng xem ưu đãi và lưu ý bên dưới, rồi bấm xác nhận để áp dụng.");
+      } else setError(result.ok ? GENERIC_ERROR : (CODE_ERROR[result.reason] ?? GENERIC_ERROR));
+    });
+  };
+
   const apply = () => {
     const warned = model.warnings.giftLoss !== null || model.warnings.totalIncrease !== null;
     if (warned && !confirming) {
@@ -166,12 +201,15 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
       // The consent is the digest of the quote the shopper just read and a yes; the server recomputes what is lost.
       const consent = confirming && model.quoteDigest !== null ? { acknowledged: true as const, expectedQuoteDigest: model.quoteDigest } : undefined;
       // A verified code waiting for the shopper's yes is saved through the code path (the server re-verifies the code and the quote).
-      const result = pendingCode !== null
+      const result = pendingLink
+        ? await applyLinkedCode(consent ? { consent } : {})
+        : pendingCode !== null
         ? await applyCode(consent ? { code: pendingCode, consent } : { code: pendingCode })
         : await commitDraft({ ...draft, selection: baseVersion ?? "", ...(consent ? { consent } : {}) });
       if (result.ok && result.picker) {
-        if (pendingCode !== null) {
+        if (pendingCode !== null || pendingLink) {
           setPendingCode(null);
+          setPendingLink(false);
           setCode("");
           codeApplied.current = true;
         }
@@ -187,6 +225,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
         // Saved on the server, but the picker could not be re-read right now: not a failure, and not a promise about the price either.
         // Say so plainly and keep the dialog open; the page behind is refreshed when the shopper closes it.
         setPendingCode(null);
+        setPendingLink(false);
         setCode("");
         setConfirming(false);
         codeApplied.current = true;
@@ -196,6 +235,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
         // shopper choose again from it, instead of writing a stale half of the choice over the newer one.
         const fresh = (result as { picker?: VoucherPickerModel | null }).picker;
         setPendingCode(null);
+        setPendingLink(false);
         setConfirming(false);
         if (fresh) {
           setSaved(fresh);
@@ -209,7 +249,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
         setConfirming(false);
         setError("Giá hoặc ưu đãi vừa thay đổi. Nàng xem lại số tiền và quà bên dưới rồi xác nhận lại nhé.");
         const refused = (result as { picker?: VoucherPickerModel | null }).picker;
-        if (pendingCode !== null && refused) {
+        if ((pendingCode !== null || pendingLink) && refused) {
           setModel(refused);
           setDraft(draftOf(refused));
         } else {
@@ -257,7 +297,12 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
             {error ? <p role="alert" className="mt-3 border-l-2 border-black bg-black/5 p-3 text-sm">{error}</p> : null}
             {model.warnings.notices.map((notice) => <p key={notice} role="status" className="mt-3 text-sm text-black/80">{notice}</p>)}
 
-            {prefillCode ? <p className="mt-3 text-sm text-black/80">Nàng có mã ưu đãi từ liên kết. Bấm “Áp dụng mã” để dùng.</p> : null}
+            {linkOffered ? (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border border-black/20 p-3 text-sm">
+                <p>Nàng có mã ưu đãi từ liên kết.</p>
+                <button type="button" disabled={pending} onClick={submitLinked} className="min-h-11 border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Dùng mã từ liên kết</button>
+              </div>
+            ) : null}
 
             {model.groups.map((group, index) => {
               if (group.items.length === 0) return null;

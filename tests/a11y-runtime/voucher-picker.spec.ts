@@ -213,17 +213,22 @@ test("AC-40: a marketing link is redirected to a clean URL; the code is never in
   expect(requested.filter((url) => !url.includes("/voucher-link") && url !== `${BASE}/shop/${productSlug}?voucher=KOL70&utm_source=fb`).some((url) => /KOL70/i.test(url))).toBe(false);
   expect(await page.content()).not.toMatch(/KOL70/i);
   // The cart already existed, and still the link saved NOTHING: a GET is a navigation, not a confirmation. The code waits in an
-  // HttpOnly cookie and the cart only OFFERS it; the shopper applies it with "Áp dụng mã".
+  // HttpOnly cookie and the cart only OFFERS it; the shopper applies it with "Dùng mã từ liên kết".
   expect(JSON.stringify(await selection())).not.toMatch(/KOL70/i);
   expect((await selection())?.merchandiseVoucherId ?? null).not.toBe(ids.priv);
   expect((await context.cookies()).find((cookie) => cookie.name.includes("voucher"))?.httpOnly).toBe(true);
   await page.goto(`${BASE}/cart`);
+  // The code is on the server only: not in the cart's HTML, its RSC payload or its DOM, whether or not the dialog was ever opened.
+  const html = await (await page.request.get(`${BASE}/cart`)).text();
+  expect(html).not.toMatch(/KOL70/i);
+  expect(await page.content()).not.toMatch(/KOL70/i);
   await trigger(page).click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await expect(dialog.getByLabel("Nhập mã khuyến mãi")).toHaveValue(/KOL70/i);
-  await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
-  await expect(dialog.getByRole("radio", { name: /Giảm 70.000đ/ })).toBeChecked();
+  await expect(dialog.getByLabel("Nhập mã khuyến mãi")).toHaveValue("");
+  expect(await page.content()).not.toMatch(/KOL70/i);
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
   await expect.poll(async () => (await selection())?.merchandiseVoucherId).toBe(ids.priv);
+  expect(JSON.stringify(await selection())).not.toMatch(/KOL70/i);
 });
 
 test("AC-13 / V19: with no cart yet, the link's code waits in an HttpOnly cookie and the cart only OFFERS it", async ({ browser }) => {
