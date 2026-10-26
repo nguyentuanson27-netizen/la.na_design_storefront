@@ -9,6 +9,9 @@ import { createStorefrontCartRepository } from "../../src/commerce/storefront-ca
 import { createCartLineAuthorityResolver } from "../../src/commerce/cart-line-authority.ts";
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
+import { buildRenderedCheckoutQuoteFacts } from "../../src/commerce/checkout-quote.ts";
+import { issueRenderedQuoteProof, verifyRenderedQuoteProof } from "../../src/commerce/checkout-quote-proof.ts";
+import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
 import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
@@ -28,7 +31,7 @@ test.beforeEach(cleanup);
 test.afterEach(cleanup);
 test.after(() => prisma.$disconnect());
 
-async function seed(key: string, stock: number, policy?: { sellingMode: "PREORDER" | "STANDARD"; negativeStockLimit: number }) {
+async function seed(key: string, stock: number, policy?: { sellingMode: "PREORDER" | "OVERSELL" | "STANDARD"; negativeStockLimit: number }) {
   const product = await prisma.productMirror.create({ data: {
     pancakeShopId: shopId, pancakeProductId: `${prefix}-${key}`, slug: `${prefix}-${key}`,
     name: key, primaryImageUrl: "https://content.pancake.vn/web-media/1/2/3/parity.jpg",
@@ -141,6 +144,76 @@ test("real PDP merges two component products without borrowing policy; cart and 
   });
   assert.equal(checkout.ok, true);
   assert.equal(checkout.ok && checkout.verifiedFulfillmentStateByVariantId?.get(preorder.variant.id), "PREORDER");
+});
+
+const compositeProofSecret = "pr215-composite-checkout-proof-secret-at-least-32-characters";
+
+for (const scenario of [
+  { name: "PREORDER with no ready component stock", mode: "PREORDER", componentStock: 0, held: false, preorder: true },
+  { name: "OVERSELL with no ready component stock", mode: "OVERSELL", componentStock: 0, held: false, preorder: false },
+  { name: "PREORDER with the last ready component held by another order", mode: "PREORDER", componentStock: 1, held: true, preorder: true },
+] as const) test(`composite parent signed checkout and reservation: ${scenario.name}`, async () => {
+  const parent = await seed("parent", -20, { sellingMode: scenario.mode, negativeStockLimit: -20 });
+  const component = await seed("a", scenario.componentStock);
+  const other = await seed("b", 3);
+  await prisma.compositeComponentMirror.createMany({ data: [component, other].map((child) => ({
+    parentVariantId: parent.variant.id, componentVariantId: child.variant.id, quantity: 1, syncedAt: now,
+  })) });
+
+  const capacity = createCapacityReservationRepository(prisma);
+  if (scenario.held) {
+    const competingOrder = await prisma.orderMirror.create({ data: { publicCode: `${prefix}-competing-order` } });
+    const held = await capacity.reserveOrderCapacity({
+      orderId: competingOrder.id, lines: [{ variantId: component.variant.id, quantity: 1 }],
+    });
+    assert.equal(held.ok, true, "test fixture must really reserve the component");
+  }
+
+  const detail = await pdp.getProductBySlug({ shopId, slug: parent.product.slug, now });
+  const option = detail!.projection.options.find((item) => item.id === parent.variant.id)!;
+  assert.equal(option.purchasable, true);
+  assert.equal(option.isPreorderSale, scenario.preorder);
+
+  const cartId = `${prefix}-parent-checkout-cart`;
+  await prisma.cart.create({ data: { id: cartId, expiresAt: new Date("2026-11-01T00:00:00Z") } });
+  const added = await createAnonymousCartService(prisma).addItemUnit({
+    cartId, variantId: parent.variant.id, now,
+    resolveLine: createCartLineAuthorityResolver({ shopId, now, pdpSlug: parent.product.slug }),
+  });
+  assert.equal(added.ok, true, "buyer must be able to add the parent combo");
+
+  const lines = await createStorefrontCartRepository(prisma).getLines({
+    shopId, items: [{ variantId: parent.variant.id, quantity: 1 }], now,
+  });
+  assert.equal(lines[0]?.available, true);
+  assert.equal(lines[0]?.isPreorderSale, scenario.preorder);
+  const quote = buildRenderedCheckoutQuoteFacts(lines);
+  assert.ok(quote, "buyer must receive a valid composite quote");
+  const proof = issueRenderedQuoteProof({ quote, cartId, secret: compositeProofSecret });
+  assert.ok(proof, "buyer must receive a real signed quote proof");
+
+  const checkout = await createGuestCheckoutSnapshotService(prisma, {
+    checkoutInputValidated: true,
+    verifyRenderedQuote: (currentQuote) => verifyRenderedQuoteProof({
+      proof, cartId, currentQuote, secret: compositeProofSecret,
+    }),
+  }).create({
+    shopId, cartId, publicCode: `${prefix}-parent-checkout-order`, now,
+    checkoutInput: {
+      name: "Nguyen Van A", phone: "0901234567", provinceRef: "province-01",
+      districtRef: "district-01", communeRef: "commune-01", detail: "12 Duong A", note: "",
+    },
+  });
+  assert.equal(checkout.ok, true, checkout.ok ? "" : checkout.reason);
+  if (!checkout.ok) return;
+  const expectedFulfillmentState = scenario.preorder ? "PREORDER" : "READY";
+  assert.equal(checkout.verifiedFulfillmentStateByVariantId.get(parent.variant.id), expectedFulfillmentState);
+
+  const reserved = await capacity.reserveOrderCapacity({
+    orderId: checkout.order.id,
+    lines: [{ variantId: parent.variant.id, quantity: 1, expectedFulfillmentState }],
+  });
+  assert.equal(reserved.ok, true, reserved.ok ? "" : reserved.reason);
 });
 
 test("composite graph and hold reads stay batched as parent variant count grows", async () => {
