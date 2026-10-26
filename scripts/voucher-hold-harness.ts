@@ -175,7 +175,12 @@ async function proveOfficialArtifact(evidence: Record<string, unknown>): Promise
     const text = manifestText(official, manifest);
     if (text === null) continue;
     check(`official build: ${manifest} names no harness route`, !text.includes(ROUTE), "no occurrence");
-    check(`official build: ${manifest} names no hold action`, !text.includes(ACTION), "no occurrence");
+    if (manifest === "server/server-reference-manifest.json") {
+      // V18: the checkout panel is a production caller, so the action is registered here by design (the harness route is not).
+      check(`official build: ${manifest} registers the hold action for the checkout panel (V18)`, text.includes(ACTION), "registered");
+    } else {
+      check(`official build: ${manifest} names no hold action`, !text.includes(ACTION), "no occurrence");
+    }
   }
   const routeHits = occurrences(official, ROUTE);
   const actionHits = occurrences(official, ACTION);
