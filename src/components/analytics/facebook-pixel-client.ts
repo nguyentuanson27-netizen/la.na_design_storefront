@@ -45,7 +45,8 @@ export type FacebookPixelCustomParameters = Readonly<Record<string, string | num
  * callers still fire events unconditionally, and queueing them would hold data and a timer for a
  * page's whole life in the default configuration.
  */
-const PIXEL_CONFIGURED = (process.env.LA_BUILD_FACEBOOK_PIXEL_ID ?? "").length > 0;
+const PIXEL_ID = process.env.LA_BUILD_FACEBOOK_PIXEL_ID ?? "";
+const PIXEL_CONFIGURED = PIXEL_ID.length > 0;
 
 /** `fbq` in any form: the inline snippet's queueing stub, or the loaded library. */
 function readFbq(): Fbq | null {
@@ -294,4 +295,36 @@ function enqueueOrHand(call: PendingCall): void {
   // Anything still queued from before the snippet ran goes first, so order is preserved.
   flushCallsAwaitingFbq(fbq);
   handToPixel(fbq, call.method, call.eventName, call.parameters, call.eventId, call.onAccepted);
+}
+
+/**
+ * Manual advanced matching: hands Meta identifiers learned after the pixel was initialised.
+ *
+ * Meta applies them by a repeat `init` for the same pixel, which fires no event of its own. The
+ * snippet leaves what it initialised with on `window.laMetaPixelUserData` (`external_id`, when the
+ * first-party cookies are on) and that is the only thing carried into every update: each call is
+ * that base plus exactly the keys of the checkout it is for. Nothing from an earlier checkout in
+ * the same page session is kept, so a later shopper with no usable name never inherits a previous
+ * shopper's `fn`/`ln`. Callers pass values already hashed.
+ *
+ * Unlike an event this is not queued while `fbq` is missing: the shopper typed these seconds ago,
+ * so a pixel the page never loaded is not coming back for them.
+ */
+export function updateFacebookPixelUserData(userData: Readonly<Record<string, string>>): void {
+  if (!PIXEL_CONFIGURED) return;
+  if (typeof window === "undefined") return;
+
+  const fbq = readFbq();
+  if (fbq === null) return;
+
+  const base = (window as { laMetaPixelUserData?: Record<string, string> }).laMetaPixelUserData;
+  try {
+    (fbq as unknown as (method: "init", pixelId: string, userData: Record<string, string>) => void)(
+      "init",
+      PIXEL_ID,
+      { ...base, ...userData },
+    );
+  } catch {
+    // A tracking failure is never worth interrupting a shopper for.
+  }
 }
