@@ -209,9 +209,11 @@ async function main(): Promise<number> {
   check("test build: the harness route IS present (positive control)", routes.includes(`/${ROUTE}/page`), "app-path-routes-manifest.json lists it");
   check("test build: the hold action IS present (positive control)", occurrences(harness, ACTION) > 0, `${occurrences(harness, ACTION)} file(s)`);
   await serve(harness, TEST_PORT);
-
+  const references = JSON.parse(manifestText(harness, "server/server-reference-manifest.json") ?? "{}") as { node?: Record<string, { exportedName?: string }> };
+  const holdActionId = Object.entries(references.node ?? {}).find(([, entry]) => entry.exportedName === ACTION)?.[0] ?? "";
+  check("test build: the hold action has an id in the server reference manifest", /^[0-9a-f]{20,}$/.test(holdActionId), "found");
   if (process.env.HARNESS_SERVE_ONLY === "1") {
-    log(`serving the test artifact on http://127.0.0.1:${TEST_PORT} (Ctrl-C to stop)`);
+    log(`serving the test artifact on http://127.0.0.1:${TEST_PORT} (Ctrl-C to stop); HARNESS_HOLD_ACTION_ID=${holdActionId}`);
     await new Promise<void>((done) => { process.once("SIGINT", done); process.once("SIGTERM", done); });
     return 0;
   }
@@ -225,7 +227,7 @@ async function main(): Promise<number> {
     cwd: join(ROOT, "tests/a11y-runtime"),
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
-    env: { ...process.env, DATABASE_URL, PANCAKE_SHOP_ID: String(SHOP), BETTER_AUTH_SECRET: SECRET, LA_VOUCHER_ENABLED: "true", HARNESS_BASE_URL: `http://127.0.0.1:${TEST_PORT}`, HARNESS_SHOP: String(SHOP), HARNESS_EVIDENCE_PATH: evidencePath },
+    env: { ...process.env, DATABASE_URL, PANCAKE_SHOP_ID: String(SHOP), BETTER_AUTH_SECRET: SECRET, LA_VOUCHER_ENABLED: "true", HARNESS_BASE_URL: `http://127.0.0.1:${TEST_PORT}`, HARNESS_SHOP: String(SHOP), HARNESS_EVIDENCE_PATH: evidencePath, HARNESS_HOLD_ACTION_ID: holdActionId },
   });
   console.log(scrub(`${run.stdout ?? ""}${run.stderr ?? ""}`).slice(-20_000));
   check("playwright: every voucher-hold scenario passed", run.status === 0, `exit ${String(run.status)}`);

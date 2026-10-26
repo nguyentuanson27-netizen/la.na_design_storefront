@@ -18,6 +18,8 @@ import { createVoucherFixtures } from "../support/voucher-fixtures.ts";
 const BASE = process.env.HARNESS_BASE_URL ?? "";
 const SHOP = Number(process.env.HARNESS_SHOP ?? "940030");
 const EVIDENCE_PATH = process.env.HARNESS_EVIDENCE_PATH ?? "";
+/** The id of `holdStorefrontVouchers` in the built artifact (server-reference-manifest). The layout also calls read-only cart actions on every page; those are not holds. */
+const HOLD_ACTION_ID = process.env.HARNESS_HOLD_ACTION_ID ?? "";
 const P = "vhh";
 const CART_COOKIE = "la_cart";
 const PAST = new Date("2026-10-01T00:00:00.000Z");
@@ -27,7 +29,7 @@ const f = createVoucherFixtures(prisma, SHOP, P);
 const selection = createVoucherSelectionService(prisma, { shopId: SHOP, env: { LA_VOUCHER_ENABLED: "true" } });
 const evidence: Record<string, unknown> = {};
 
-type Net = Readonly<{ method: string; path: string; kind: "document" | "rsc-prefetch" | "rsc-nav" | "server-action" | "other"; status: number }>;
+type Net = Readonly<{ method: string; path: string; kind: "document" | "rsc-prefetch" | "rsc-nav" | "hold-action" | "other-action" | "other"; status: number }>;
 let sequence = 0;
 
 async function cleanup() {
@@ -81,15 +83,18 @@ function watch(page: Page, sink: Net[]) {
       const url = new URL(request.url());
       if (url.pathname.startsWith("/_next/static") || url.pathname.startsWith("/_next/image")) return;
       const headers = await request.allHeaders().catch(() => ({}) as Record<string, string>);
-      const kind: Net["kind"] = headers["next-action"] ? "server-action" : headers["rsc"] ? (headers["next-router-prefetch"] ? "rsc-prefetch" : "rsc-nav") : request.resourceType() === "document" ? "document" : "other";
+      const kind: Net["kind"] = headers["next-action"] ? (headers["next-action"] === HOLD_ACTION_ID ? "hold-action" : "other-action") : headers["rsc"] ? (headers["next-router-prefetch"] ? "rsc-prefetch" : "rsc-nav") : request.resourceType() === "document" ? "document" : "other";
       sink.push({ method: request.method(), path: url.pathname, kind, status: response.status() });
     })();
   });
 }
 const count = (sink: Net[], kind: Net["kind"], method?: string) => sink.filter((n) => n.kind === kind && (method === undefined || n.method === method)).length;
 const summary = (sink: Net[]) => ({
-  documents: count(sink, "document"), rscPrefetch: count(sink, "rsc-prefetch"), rscNavigation: count(sink, "rsc-nav"), serverActionPosts: count(sink, "server-action", "POST"),
-  nonGetRequestsOutsideServerActions: sink.filter((n) => n.method !== "GET" && n.kind !== "server-action").length,
+  documents: count(sink, "document"), rscPrefetch: count(sink, "rsc-prefetch"), rscNavigation: count(sink, "rsc-nav"),
+  holdActionPosts: count(sink, "hold-action", "POST"),
+  /** The layout's own read-only cart actions (a different action id): they hold nothing. */
+  otherServerActionPosts: count(sink, "other-action", "POST"),
+  postsThatAreNotServerActions: sink.filter((n) => n.method !== "GET" && n.kind !== "hold-action" && n.kind !== "other-action").length,
 });
 
 async function snapshot(campaignIds: string[]) {
@@ -110,10 +115,10 @@ async function shown(page: Page): Promise<Record<string, unknown>> {
 }
 /** Clicks and waits for the Server Action response to arrive (counted by the sanitized log). */
 async function click(page: Page, sink: Net[], testId: "hold" | "hold-ack" | "hold-stale", options: { clickCount?: number } = {}) {
-  const before = count(sink, "server-action", "POST");
+  const before = count(sink, "hold-action", "POST");
   const expected = options.clickCount ?? 1;
   await page.getByTestId(testId).click({ clickCount: expected });
-  await expect.poll(() => count(sink, "server-action", "POST")).toBe(before + expected);
+  await expect.poll(() => count(sink, "hold-action", "POST")).toBe(before + expected);
 }
 const loadHarness = async (page: Page) => {
   await page.goto(`${BASE}/voucher-hold-harness`);
@@ -146,8 +151,8 @@ test("AC-42: GET, RSC render, prefetch, hover, reload and back/forward never cre
   await page.waitForLoadState("networkidle");
 
   const after = await snapshot([m.id]);
-  expect(count(net, "server-action")).toBe(0);
-  expect(summary(net).nonGetRequestsOutsideServerActions).toBe(0);
+  expect(count(net, "hold-action")).toBe(0); // not one request carried the hold action id
+  expect(summary(net).postsThatAreNotServerActions).toBe(0);
   expect(after).toEqual(before); // holds, counters and the campaign row's updatedAt are byte-for-byte unchanged
   expect(after.holds).toHaveLength(0);
   evidence["AC-42"] = { network: summary(net), databaseBefore: before, databaseAfter: after, unchanged: true };
@@ -170,7 +175,7 @@ test("AC-43: one click POSTs once and holds once; double-click, a second tab, re
   expect(first).toMatchObject({ ok: true, state: "HELD", totalPayableVnd: 880_000 });
   expect(typeof first.proofLength === "number" && first.proofLength > 100).toBe(true);
   const afterOne = await snapshot([m.id]);
-  expect(count(net, "server-action", "POST")).toBe(1);
+  expect(count(net, "hold-action", "POST")).toBe(1);
   expect(afterOne.holds).toHaveLength(1);
   const hold = afterOne.holds[0]!;
   expect(hold).toMatchObject({ state: "HELD", kind: "MERCHANDISE", heldVnd: 50_000 });
@@ -193,7 +198,7 @@ test("AC-43: one click POSTs once and holds once; double-click, a second tab, re
   expect(await snapshot([m.id])).toEqual(afterOne);
 
   // Navigation never renews it.
-  const postsBefore = count(net, "server-action", "POST");
+  const postsBefore = count(net, "hold-action", "POST");
   await page.reload();
   await page.getByTestId("link-other").click();
   await expect(page.getByTestId("other")).toBeVisible();
@@ -201,7 +206,7 @@ test("AC-43: one click POSTs once and holds once; double-click, a second tab, re
   await page.goForward();
   await page.goBack();
   await expect(page.locator("[data-harness=voucher-hold]")).toBeVisible();
-  expect(count(net, "server-action", "POST")).toBe(postsBefore);
+  expect(count(net, "hold-action", "POST")).toBe(postsBefore);
   expect(await snapshot([m.id])).toEqual(afterOne);
 
   evidence["AC-43"] = {
@@ -216,8 +221,7 @@ test("AC-43 / CSRF: the same POST from another origin is refused by Next and hol
   const c = await cart([{ variantId: await product(450_000), quantity: 2 }]);
   const context = await buyer(browser, c.id);
   const page = await context.newPage();
-  let actionId = "";
-  page.on("request", (request) => { const id = request.headers()["next-action"]; if (id) actionId = id; });
+  const actionId = HOLD_ACTION_ID;
   const net: Net[] = [];
   watch(page, net);
   await loadHarness(page);
@@ -225,7 +229,7 @@ test("AC-43 / CSRF: the same POST from another origin is refused by Next and hol
   expect(digest).toMatch(/^[0-9a-f]{64}$/);
   await click(page, net, "hold-stale"); // a stale digest: harmless, and it tells us the action id
   expect(await shown(page)).toMatchObject({ ok: false, reason: "QUOTE_CHANGED" });
-  expect(actionId).not.toBe("");
+  expect(actionId).toMatch(/^[0-9a-f]{20,}$/);
   expect((await snapshot([m.id])).holds).toHaveLength(0);
 
   const post = (origin: string) =>
@@ -305,10 +309,11 @@ test("AC-34: a quote that raises the total needs consent: without it nothing is 
 });
 
 test("a proof that cannot be issued rolls the whole call back: the quota is not lost and the next buyer can take it", async ({ browser }) => {
-  // About 100 distinct paid lines with 128-character variation ids make the signed HELD proof exceed its 16 KiB envelope.
-  const m = await fixed(50_000, 600_000, { maxUses: 1 });
+  // A legitimate cart at the line limit: 50 products with long variation ids, 2 units each, and a voucher whose
+  // exact allocation leaves every line at two price segments => 100 signed lines, past the proof's 16 KiB envelope.
+  const m = await fixed(49_950, 600_000, { maxUses: 1 });
   const items: Array<{ variantId: string; quantity: number }> = [];
-  for (let i = 0; i < 100; i += 1) items.push({ variantId: await product(20_000, { variationId: `${P}-${i}-${"x".repeat(100)}` }), quantity: 1 });
+  for (let i = 0; i < 50; i += 1) items.push({ variantId: await product(20_000, { variationId: `${P}-${i}-${"x".repeat(100)}` }), quantity: 2 });
   const big = await cart(items);
   const small = await cart([{ variantId: await product(450_000), quantity: 2 }]);
 
@@ -335,7 +340,7 @@ test("a proof that cannot be issued rolls the whole call back: the quota is not 
   const afterOther = await snapshot([m.id]);
   expect(afterOther.holds).toHaveLength(1);
   expect(afterOther.campaigns[0]).toMatchObject({ reservedUses: 1 });
-  evidence["proof-failure"] = { reason: "PROOF_UNAVAILABLE", lines: items.length, databaseAfterFailure: afterFailure, databaseAfterNextBuyer: afterOther };
+  evidence["proof-failure"] = { reason: "PROOF_UNAVAILABLE", cartLines: items.length, signedProofLines: 100, databaseAfterFailure: afterFailure, databaseAfterNextBuyer: afterOther };
   await bigContext.close();
   await smallContext.close();
 });
