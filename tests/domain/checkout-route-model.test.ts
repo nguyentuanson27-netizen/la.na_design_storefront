@@ -196,3 +196,16 @@ test("a confirmed state with no code is not confirmed", () => {
   assert.equal(model.confirmed, false);
   assert.equal(model.orderCode, null);
 });
+
+test("the payment method is kept without the instructions, and only for a confirmed order", () => {
+  // The account or flag can change after the order: the order stays a transfer order regardless.
+  const confirmed = buildCheckoutSuccessViewModel({ orderCode: "LA-1234", confirmed: true, paymentMethod: "BANK_TRANSFER" });
+  assert.equal(confirmed.paymentMethod, "BANK_TRANSFER");
+  assert.equal(confirmed.bankTransfer, null);
+
+  assert.equal(buildCheckoutSuccessViewModel({ orderCode: "LA-1234", confirmed: true }).paymentMethod, "COD");
+  assert.equal(
+    buildCheckoutSuccessViewModel({ orderCode: "LA-1234", confirmed: false, paymentMethod: "BANK_TRANSFER" }).paymentMethod,
+    "COD",
+  );
+});

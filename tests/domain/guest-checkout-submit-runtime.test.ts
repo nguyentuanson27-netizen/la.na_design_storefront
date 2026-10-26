@@ -13,8 +13,9 @@ const checkoutInput = {
   communeRef: "commune-0001",
   detail: "12 Đường A",
   note: null,
+  paymentMethod: "COD",
   attribution: null,
-};
+} as const;
 
 function createReconciliationDouble(calls: string[]) {
   return () => ({

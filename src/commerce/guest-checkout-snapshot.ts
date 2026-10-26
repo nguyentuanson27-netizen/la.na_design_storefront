@@ -2,7 +2,11 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { resolveSellingPolicy, type ReservationState } from "./capacity-policy.ts";
 import { mergeReservationLines } from "./capacity-reservation.ts";
-import { deriveCompositeSellableStock } from "./composite-capacity.ts";
+import { readAdvisoryHeldQuantities, withoutOrderHolds } from "./capacity-advisory.ts";
+import {
+  deriveCompositeCapacitySnapshot,
+  deriveCompositeSellableStock,
+} from "./composite-capacity.ts";
 import {
   compositeSubSetAuthorityComponentSelection,
   resolveCompositeSubSetAuthorityFromRows,
@@ -414,22 +418,42 @@ export async function requiresFreshGuestCheckoutSnapshot(
   return !activeCheckout || isMutableDraft(activeCheckout);
 }
 
-function toStorefrontProduct(product: SelectedProduct, shopId: number) {
+function toStorefrontProduct(
+  product: SelectedProduct,
+  shopId: number,
+  heldByVariantId: ReadonlyMap<string, number>,
+) {
+  const sellingPolicy = resolveSellingPolicy(product.sellingPolicy);
   const variants = [];
   for (const variant of product.variants) {
     // Composite capacity is derived from component stock (ADR 0014, `deriveCompositeSellableStock`),
     // the same answer the cart and PDP give; the parent's own row is a verbatim Pancake mirror.
-    const sellableStock =
+    const componentInputs =
       variant.compositeComponents.length > 0
+        ? variant.compositeComponents.map((edge) => ({
+            requiredQuantity: edge.quantity,
+            activeReservedQuantity: heldByVariantId.get(edge.componentVariantId) ?? 0,
+            componentVariant: edge.componentVariant,
+          }))
+        : null;
+    const mirroredStock = componentInputs === null ? sumWarehouseStocks(variant.warehouseStocks) : null;
+    if (componentInputs === null && mirroredStock === null) return null;
+    const sellableStock =
+      componentInputs !== null
         ? deriveCompositeSellableStock({
             shopId,
-            components: variant.compositeComponents.map((edge) => ({
-              requiredQuantity: edge.quantity,
-              componentVariant: edge.componentVariant,
-            })),
+            components: componentInputs,
           })
-        : sumWarehouseStocks(variant.warehouseStocks);
-    if (sellableStock === null) return null;
+        : mirroredStock! - (heldByVariantId.get(variant.id) ?? 0);
+    const compositeCapacity =
+      componentInputs !== null
+        ? deriveCompositeCapacitySnapshot({
+            shopId,
+            components: componentInputs,
+            sellingMode: sellingPolicy.sellingMode,
+            negativeStockLimit: sellingPolicy.negativeStockLimit,
+          })
+        : undefined;
     variants.push({
       id: variant.id,
       pancakeVariationId: variant.pancakeVariationId,
@@ -453,6 +477,7 @@ function toStorefrontProduct(product: SelectedProduct, shopId: number) {
       color: variant.color,
       size: variant.size,
       sellableStock,
+      compositeCapacity,
       retailPrice: variant.pancakeRetailPrice,
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
     });
@@ -467,7 +492,7 @@ function toStorefrontProduct(product: SelectedProduct, shopId: number) {
     // The canonical capacity facts, carried so this path judges a line by the same policy the
     // shopper was shown. No PREORDER/OVERSELL special case is made here: the mode is data, and
     // `resolveSellingPolicy()` supplies the approved default when no row exists.
-    sellingPolicy: resolveSellingPolicy(product.sellingPolicy),
+    sellingPolicy,
     isComposite: product.variants.some((variant) => variant.compositeComponents.length > 0),
     variants,
   };
@@ -612,9 +637,22 @@ export function createGuestCheckoutSnapshotService(
           select: productSelection,
         });
 
+        // Match the cart's advisory projection: subtract capacity still held on component
+        // resources before classifying READY vs PREORDER in the buyer's signed quote.
+        const capacityResourceIds = products.flatMap((product) =>
+          product.variants.flatMap((variant) =>
+            variant.compositeComponents.length > 0
+              ? variant.compositeComponents.map((edge) => edge.componentVariantId)
+              : [variant.id],
+          ),
+        );
+        // A retrying DRAFT may already own capacity. Like POS quote reconciliation,
+        // do not make it consume its own last READY unit twice and invalidate its proof.
+        const advisoryClient = mutableDraft ? withoutOrderHolds(tx, mutableDraft.id) : tx;
+        const heldByVariantId = await readAdvisoryHeldQuantities(advisoryClient, capacityResourceIds);
         const storefrontProducts = [];
         for (const product of products) {
-          const storefrontProduct = toStorefrontProduct(product, safeShopId);
+          const storefrontProduct = toStorefrontProduct(product, safeShopId, heldByVariantId);
           if (!storefrontProduct) {
             return { ok: false, reason: "CART_LINE_UNAVAILABLE" };
           }
@@ -909,6 +947,7 @@ export function createGuestCheckoutSnapshotService(
           communeRef: parsedCheckout.value.communeRef,
           addressDetail: parsedCheckout.value.detail,
           note: composeOrderNote(parsedCheckout.value.note, parsedCheckout.value.attribution),
+          paymentMethod: parsedCheckout.value.paymentMethod,
           merchandiseSubtotalVnd: BigInt(merchandiseSubtotalVnd),
           shippingFeeVnd: BigInt(shippingFeeVnd),
           totalVnd: BigInt(totalVnd),

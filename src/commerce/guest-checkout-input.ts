@@ -1,4 +1,5 @@
 import { normalizeAdAttributionNote } from "./ad-attribution.ts";
+import { parsePaymentMethod, type PaymentMethod } from "./payment-method.ts";
 import { normalizeVietnamPhone } from "./vietnam-phone.ts";
 
 const MAX_GUEST_CHECKOUT_TEXT_LENGTH = 2_048;
@@ -16,6 +17,8 @@ type GuestCheckoutValue = {
   communeRef: string;
   detail: string;
   note: string | null;
+  /** `COD` unless the shopper picked bank transfer; the public action refuses it while it is off. */
+  paymentMethod: PaymentMethod;
   /**
    * The `[UTM] …` line for an order that came from an ad (see `ad-attribution.ts`). Never typed by
    * the shopper: the public action fills it from the `la_utm` cookie, and it is kept apart from
@@ -64,8 +67,9 @@ export function parseGuestCheckoutInput(input: unknown): GuestCheckoutInputResul
   const communeRef = parseRequiredText(input.communeRef);
   const detail = parseRequiredText(input.detail);
   const note = parseOptionalNote(input.note);
+  const paymentMethod = parsePaymentMethod(input.paymentMethod);
 
-  if (!name || !typedPhone || !provinceRef || !communeRef || !detail || !note.ok) {
+  if (!name || !typedPhone || !provinceRef || !communeRef || !detail || !note.ok || !paymentMethod) {
     return { ok: false, reason: "INVALID_INPUT" };
   }
   const phone = normalizeVietnamPhone(typedPhone);
@@ -83,6 +87,7 @@ export function parseGuestCheckoutInput(input: unknown): GuestCheckoutInputResul
       communeRef,
       detail,
       note: note.value,
+      paymentMethod,
       attribution: normalizeAdAttributionNote(input.attribution),
     },
   };

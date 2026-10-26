@@ -50,6 +50,8 @@ test("browser checkout uses the HttpOnly cart identity and forwards only allowli
       communeRef: "84_VN10105",
       detail: "12 Đường A",
       note: "Giao giờ hành chính",
+      // No payment field posted is forwarded as the absence; the parser reads that as COD.
+      paymentMethod: null,
     },
     // Absent from this form, and forwarded as the absence rather than silently defaulted: an
     // unproven submission has to reach the verifier and fail there, not be waved through here.
@@ -243,4 +245,54 @@ test("an ad visitor's UTM line comes from the server-side cookie reader, never f
 
   const attributions = submitted.map((input) => (input.checkoutInput as { attribution?: string }).attribution);
   assert.deepEqual(attributions, ["[UTM] source=facebook", undefined, undefined, undefined]);
+});
+
+test("bank transfer is refused before any attempt is spent while it is off", async () => {
+  let consumed = 0;
+  let submitted = 0;
+  const formData = makeFormData();
+  formData.set("paymentMethod", "BANK_TRANSFER");
+
+  for (const isBankTransferEnabled of [undefined, () => false]) {
+    const result = await submitGuestCheckoutPublicAction(
+      {
+        cartSession: { read: () => "server-cart-id", clear: () => undefined },
+        consumeAttempt: async () => {
+          consumed += 1;
+          return true;
+        },
+        submitCheckout: async () => {
+          submitted += 1;
+          return { ok: true as const, status: "CONFIRMED" as const, orderCode: "LA-001" };
+        },
+        ...(isBankTransferEnabled === undefined ? {} : { isBankTransferEnabled }),
+      },
+      formData,
+    );
+    assert.deepEqual(result, { ok: false, status: "RETRYABLE", reason: "INVALID_INPUT" });
+  }
+  assert.equal(consumed, 0);
+  assert.equal(submitted, 0);
+});
+
+test("bank transfer is forwarded to the checkout once it is enabled", async () => {
+  let submittedInput: { checkoutInput: { paymentMethod: unknown } } | undefined;
+  const formData = makeFormData();
+  formData.set("paymentMethod", "BANK_TRANSFER");
+
+  const result = await submitGuestCheckoutPublicAction(
+    {
+      cartSession: { read: () => "server-cart-id", clear: () => undefined },
+      consumeAttempt: allowAttempt,
+      isBankTransferEnabled: () => true,
+      submitCheckout: async (input) => {
+        submittedInput = input as typeof submittedInput;
+        return { ok: true as const, status: "CONFIRMED" as const, orderCode: "LA-001" };
+      },
+    },
+    formData,
+  );
+
+  assert.equal(submittedInput?.checkoutInput.paymentMethod, "BANK_TRANSFER");
+  assert.equal(result.ok, true);
 });

@@ -893,7 +893,9 @@ export function createPancakeOrderSubmissionService(
     }
 
     const orderMarker = `[ORDER:${order.publicCode}]`;
-    const noteWithMarker = order.note ? `${order.note} ${orderMarker}` : orderMarker;
+    // Staff read the note, not a payment field, to know an order is waiting on a transfer.
+    const markers = order.paymentMethod === "BANK_TRANSFER" ? `[CHUYỂN KHOẢN - chờ thanh toán] ${orderMarker}` : orderMarker;
+    const noteWithMarker = order.note ? `${order.note} ${markers}` : markers;
     const addressDetailWithMarker = `${contact.addressDetail} ${orderMarker}`;
 
     let geoNames: { provinceName: string; communeName: string } | undefined;
@@ -919,6 +921,7 @@ export function createPancakeOrderSubmissionService(
       communeRef: contact.communeRef,
       addressDetail: addressDetailWithMarker,
       note: noteWithMarker,
+      paymentMethod: order.paymentMethod,
       shippingFeeVnd,
       lines: requestLines,
     });
