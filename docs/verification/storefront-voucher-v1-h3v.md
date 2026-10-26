@@ -1,6 +1,6 @@
 # Voucher v1 — H3-V browser evidence (AC-42 / AC-43 / TG-12)
 
-- **Status:** **re-opened by the second H3-V review** (two P1 found in the flow logic, now fixed with regression tests); this document is being re-validated against the fixed code (see "Second review"). H3-V is **not** closed.
+- **Status:** the second H3-V review re-opened the gate (two P1 in the flow logic); both are fixed with regression tests, the browser evidence was re-run on the fixed code, and **CI is green on `37f6de3`** (the last commit with code changes). **H3-V waits only for the owner's sign-off.**
 - **Code under test:** commit `bc0229264a15962d41961b48277eac5025e22a50` (recorded in the evidence file; re-run after the second review fixes). Run 2026-10-26, Node 22, Chromium (Desktop Chrome profile), PostgreSQL 16, **no Pancake call**.
 - **Raw, sanitized evidence:** [`storefront-voucher-v1-h3v-browser-evidence.json`](./storefront-voucher-v1-h3v-browser-evidence.json). Re-run with `pnpm voucher:hold-harness` (needs `DATABASE_URL`, `BETTER_AUTH_SECRET`; CI job `voucher-hold-harness`).
 
@@ -52,13 +52,13 @@ The hold action is **not bundled at all** in the official build: nothing in `src
 
 ## CI
 
-GitHub Actions run `40268151627` on commit `05a031c0598482b688b6328cce3d88004585743b`: **19 of 19 check runs succeeded**, including the new `voucher-hold-harness` job (runner `ubuntu-latest`, PostgreSQL 16 service, `next build` ×2 + `next start`, Playwright Chromium), `verify`, `verify-runtime`, `verify-db-shard-2`, four `admin-a11y-runtime` shards and the container/QA workflows. The job's log shows every official-artifact check, the three positive controls and `playwright: every voucher-hold scenario passed — exit 0`, followed by the same sanitized evidence JSON (no cookie, proof or secret).
+GitHub Actions run `40270628144` on commit `37f6de37b94e9bf6ea1ec8641a797e8fa5a79ef9` (the last commit that changes code; later commits only touch documentation): **19 of 19 check runs succeeded**, including `voucher-hold-harness` (PostgreSQL 16 service, `next build` ×2 + `next start`, Playwright Chromium), `verify`, `verify-runtime`, the DB shard, all four `admin-a11y-runtime` shards and the container/QA workflows. The harness job's log shows every official-artifact check, the three positive controls and `playwright: every voucher-hold scenario passed — exit 0`, followed by the same sanitized evidence JSON.
 
-An earlier push (`0096cee`) never ran CI at all: its `ci.yml` was invalid (the `runner` context is not available in job-level `env`), so GitHub started no jobs. That is fixed in `05a031c`; the later commits only change documentation.
+History, for the record: an earlier push (`0096cee`) started no CI at all because my `ci.yml` was invalid (the `runner` context is not available in job-level `env`), fixed in `05a031c`. On the docs-only `5d3f357` the `voucher-picker` AC-13 browser test failed on both attempts; it was a real picker bug, not a flake (applying a private code refreshed the page, the re-keyed picker remounted and closed the open dialog) and was fixed in `37f6de3`.
 
 ## Closing H3-V
 
-H3-V closes when all of: (1) this evidence — **done**; (2) CI green on the head commit — **done on `05a031c`** (re-confirm on the final head if code changes again); (3) the owner signs off on the evidence — **pending**. Until the sign-off V13 stays blocked.
+H3-V closes when all of: (1) this evidence — **done**; (2) CI green on the head commit — **done on `37f6de3`** (re-confirm if code changes again); (3) the owner signs off on the evidence — **pending**. Until then V13 stays blocked.
 
 ## Second review (2026-10-26) — what changed and what was re-run
 
