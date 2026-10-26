@@ -99,6 +99,8 @@ test("warnings: a lost gift, and the manual choice that raises the total with it
     giftOutcome: (lines) => (lines.reduce((s, l) => s + l.quantity * l.unitPriceVnd, 0) >= 600_000 ? { entitledSlots: 1, retainedSelectedSlots: 1 } : { entitledSlots: 0, retainedSelectedSlots: 0 }),
   });
   assert.match(gift.view.warnings.giftLoss!, /làm mất 1 suất quà/);
+  // When a choice was made, the consent says what happens to it (AC-35): it is removed from the cart.
+  assert.match(gift.view.warnings.giftLoss!, /quà đã chọn sẽ được bỏ khỏi giỏ hàng/);
   assert.equal(gift.view.warnings.totalIncrease, null);
 
   const ex06 = model([fixed("m10", 10_000, 50_000)], [line("a", 1, 100_000)], {

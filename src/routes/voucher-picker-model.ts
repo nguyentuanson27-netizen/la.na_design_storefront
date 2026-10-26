@@ -161,7 +161,9 @@ export function buildVoucherPickerModel(input: Readonly<{
       giftLoss:
         giftLoss === null
           ? null
-          : `Lựa chọn này làm mất ${Math.max(giftLoss.selectedSlotsLost, giftLoss.entitledSlotsLost)} suất quà tặng. Bạn có thể đổi voucher để giữ quà.`,
+          : giftLoss.selectedSlotsLost > 0
+            ? `Lựa chọn này làm mất ${giftLoss.selectedSlotsLost} suất quà tặng. Nếu nàng tiếp tục, quà đã chọn sẽ được bỏ khỏi giỏ hàng. Nàng có thể đổi voucher để giữ quà.`
+            : `Lựa chọn này làm mất ${giftLoss.entitledSlotsLost} suất quà tặng. Nàng có thể đổi voucher để giữ quà.`,
       totalIncrease:
         quote.confirmation === null
           ? null

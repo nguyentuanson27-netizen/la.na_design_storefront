@@ -244,9 +244,15 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
        * to spend it with.
        */
       finalize?: (holds: readonly HeldVoucher[]) => VoucherHoldFailureReason | null;
+      /**
+       * Runs INSIDE the transaction after every hold exists (a reused hold counts) and before `finalize`, with the cart row
+       * still locked. This is where the buyer's explicit consent to lose a gift is carried out: the stored gift choice is
+       * repaired in the same transaction, so a refusal anywhere rolls the voucher AND the gift change back together.
+       */
+      afterGrant?: (tx: Prisma.TransactionClient, holds: readonly HeldVoucher[]) => Promise<VoucherHoldFailureReason | null>;
     }> = {},
   ): Promise<VoucherHoldResult> {
-    const { finalize, verifyUnderCartLock } = hooks;
+    const { finalize, verifyUnderCartLock, afterGrant } = hooks;
     if (!validRequest(request)) return { ok: false, reason: "INVALID_REQUEST", kind: null, campaignId: null };
     const releaseKinds = request.releaseKinds ?? [];
     const attemptKey = voucherAttemptKey(request.cartId, options.attemptSecret);
@@ -353,6 +359,10 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
           held.push(toHeld(inserted[0]!, false));
         }
         const sorted = held.sort((a, b) => a.kind.localeCompare(b.kind));
+        if (afterGrant) {
+          const afterRefusal = await afterGrant(tx, sorted);
+          if (afterRefusal !== null) throw fail(afterRefusal);
+        }
         const refusal = finalize ? finalize(sorted) : null;
         if (refusal !== null) throw fail(refusal);
         return { ok: true as const, holds: sorted, released };

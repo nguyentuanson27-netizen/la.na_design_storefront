@@ -386,7 +386,7 @@ test("holds released between the DRAFT and the POS write: the order is closed fo
   assert.equal((await lastOrder()).state, "REJECTED");
 });
 
-test("AC-08 / AC-35: a voucher that takes the cart below a gift threshold never silently removes the gift: the gift choice must be repaired first", async () => {
+test("AC-08 / AC-35: a voucher that takes the cart below a gift threshold never removes the gift until the buyer consents; the consent repairs the choice in the same transaction", async () => {
   await seed({ giftThreshold: 880_000 });
   await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
   await fixedVoucher(50_000, 600_000);
@@ -395,19 +395,49 @@ test("AC-08 / AC-35: a voucher that takes the cart below a gift threshold never 
   assert.ok(preview.enabled && preview.ok);
   const refused = await flow.hold({ cartId, expectedQuoteDigest: (preview.enabled && preview.ok ? preview.quoteDigest : "")!, acknowledged: false });
   assert.deepEqual(refused.ok === false && refused.reason, "CONFIRMATION_REQUIRED");
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "no consent: the saved choice is untouched");
+  assert.deepEqual(await holdsNow(), []);
+
   await hold(true);
-
-  // With the voucher held and the stored gift choice no longer earned, checkout refuses and shows the picker to repair.
+  // The consent carried out the change: the unearned choice is gone, the hold is the one the buyer agreed to, checkout works.
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0, "the choice the voucher made unearned was removed with the hold");
   const rendered = await render();
-  assert.equal(rendered.kind, "UNAVAILABLE");
-  assert.equal(rendered.kind === "UNAVAILABLE" && rendered.reason, "GIFT_SELECTION_INVALID");
-  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "the stored choice is left exactly as it is");
+  assert.equal(rendered.kind, "BENEFIT", JSON.stringify(rendered, (_k, v) => (typeof v === "bigint" ? String(v) : v instanceof Map ? [...v] : v)).slice(0, 300));
+  if (rendered.kind !== "BENEFIT") return;
+  assert.equal(rendered.facts.paidSubtotalVnd, 850_000);
+  assert.deepEqual(rendered.facts.lines.map((line) => line.role), ["PAID"]);
 
-  // The buyer drops the unearned gift; the hold is still the one they agreed to (the digest binds the retained slot count).
-  await prisma.cartGiftSelection.deleteMany({ where: { cartId } });
-  const repaired = await render();
-  assert.equal(repaired.kind, "BENEFIT");
-  if (repaired.kind !== "BENEFIT") return;
-  assert.equal(repaired.facts.paidSubtotalVnd, 850_000);
-  assert.deepEqual(repaired.facts.lines.map((line) => line.role), ["PAID"]);
+  // And the order can be placed from that very state, with no manual repair step in between.
+  const pancake = fakePancake();
+  const result = await submit(checkoutService(pancake, issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })));
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(items(pancake.calls.create[0]!), [[paid.variationId, 2, 425_000]]);
+});
+
+test("AC-35: fewer slots than were chosen reduces the choice (newest first) instead of removing it; unrelated choices stay", async () => {
+  await seed({ giftThreshold: 440_000 });
+  // 900.000đ = 2 slots; 850.000đ after the voucher = 1 slot.
+  await prisma.giftQuantityCampaign.update({ where: { id: `${P}-gift` }, data: { maxGiftsPerOrder: 2 } });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 2, campaignRevision: 1 } });
+  await fixedVoucher(50_000, 600_000);
+  await hold(true);
+  const rows = await prisma.cartGiftSelection.findMany({ where: { cartId } });
+  assert.deepEqual(rows.map((row) => row.quantity), [1], "two chosen, one earned after the voucher: reduced to one, not erased");
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") return;
+  assert.equal(rendered.facts.lines.filter((line) => line.role === "GIFT").reduce((sum, line) => sum + line.quantity, 0), 1);
+});
+
+test("AC-35: the gift change is atomic with the hold: a refusal after the repair rolls both back", async () => {
+  await seed({ giftThreshold: 880_000 });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  await fixedVoucher(50_000, 600_000);
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [] });
+  assert.ok(preview.enabled && preview.ok);
+  const failingProof = createVoucherHoldFlow(prisma, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: ENV, issueProof: () => { throw new Error("proof unavailable"); } });
+  const result = await failingProof.hold({ cartId, expectedQuoteDigest: (preview.enabled && preview.ok ? preview.quoteDigest : "")!, acknowledged: true });
+  assert.deepEqual(result.ok === false && result.reason, "PROOF_UNAVAILABLE");
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "the saved gift choice is exactly as it was");
+  assert.deepEqual(await holdsNow(), [], "and nothing is held");
 });

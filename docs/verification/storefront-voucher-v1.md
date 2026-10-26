@@ -36,7 +36,7 @@
 | 28 totals reconcile to the VND | verified | D `voucher-quote`, `voucher-picker-model`; B preview |
 | 29–30 shipping stacking per candidate (TG-10 B) | verified | D `voucher-shipping` (real campaign engine), `voucher-optimizer`; B preview (real engine) |
 | 31–34 self-held hold semantics | **pending V11/V12** | proof side done: D `voucher-quote-proof` (HELD/expiry/paidRevision ABA); DB clock guard in `voucher-schema` |
-| 35 gift-loss confirmation updates the saved gift | **pending V18** | picker shows the loss and asks for confirmation; saved gift choices are not edited here |
+| 35 gift-loss confirmation updates the saved gift | verified (database) | the acknowledged hold repairs the stored gift choice in the same transaction (removes or reduces what the voucher made unearned), see the H5 packet §9 |
 | 36 TG-09 tie-break keeps the gift | verified | D `voucher-optimizer` |
 | 37 ALL_SHOP+exclude / TARGETED OR / parent-child | verified | D `voucher-scope` |
 | 38 accepted order is immutable | verified (database) | B `voucher-schema` (money + quote rows frozen after acceptance, state still moves) |
@@ -101,7 +101,7 @@ build V14 and V18 · H4 UX review · V20 convergence run with approved POS · V2
 | Uneven discounts | 50.000đ over 3 units = two segments, each with the voucher step; POS lines sum to 1.300.000đ |
 | Holds that no longer describe the cart are not applied | cart changed: the render is the plain quote with `voucherStale`, the old proof is refused (`PRICE_CHANGED`), the hold is left to expire, nothing consumed |
 | Holds released before the POS write | the POS re-derivation sees no voucher → `BENEFIT_REQUOTE_REQUIRED`, order closed, nothing sent, nothing consumed |
-| Gift loss is never silent (AC-08/35) | hold without consent → `CONFIRMATION_REQUIRED`; with it, checkout shows `GIFT_SELECTION_INVALID` until the unearned choice is removed; the stored choice is not touched |
+| Gift loss is never silent (AC-08/35) | hold without consent → `CONFIRMATION_REQUIRED` and nothing touched; with it, the same transaction removes/reduces the unearned choice and checkout works (corrected after review, see the H5 packet §9) |
 
 Design notes. (1) A shipping voucher is a named waiver of the fee the shipping engine decided (`shippingWaivedVnd`), not a rewrite of that decision, so the order's shipping provenance stays the real campaign's. (2) Voucher checkout rides the existing benefit path, so it needs the same two switches as any quote-bearing order: the gift/tier gate and a line-level-pricing-verified shop (the H1-V shop). (3) Migration `20261026120000_order_quote_step_voucher` relaxes ONE check constraint to admit `VOUCHER` as a discount-step source; it rewrites nothing. **It, like the V13 migration, needs the owner's approval before any real database.**
 

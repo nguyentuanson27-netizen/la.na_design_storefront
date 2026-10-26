@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 import { canProjectExactMoney } from "./pancake-voucher-projection.ts";
 import { createVoucherHoldRateLimiter, type VoucherCodeRateLimiter } from "./voucher-code-rate-limit.ts";
+import { repairGiftSelectionsAfterVoucherConsent } from "./voucher-gift-repair.ts";
 import { canCheckoutHonorVouchers, canIssueNewVouchers, readVoucherVerifiedShopIds } from "./voucher-gate.ts";
 import { createVoucherHoldService, type HeldVoucher, type VoucherGroup, type VoucherHoldFailureReason, type VoucherHoldGrant } from "./voucher-hold-service.ts";
 import { readVoucherPreview, readVoucherPreviewWithin } from "./voucher-preview.ts";
@@ -76,6 +77,8 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
   env?: Readonly<Record<string, string | undefined>>;
   /** Test seams only: the production readers/issuers are `readVoucherPreview` and `issueVoucherQuoteProof`. */
   readPreview?: typeof readVoucherPreview;
+  /** Test seam: the gift repair that carries out an acknowledged gift loss inside the hold transaction. */
+  repairGift?: typeof repairGiftSelectionsAfterVoucherConsent;
   readPreviewWithin?: typeof readVoucherPreviewWithin;
   issueProof?: typeof issueVoucherQuoteProof;
   rateLimiter?: VoucherCodeRateLimiter;
@@ -83,6 +86,7 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
   const env = options.env ?? process.env;
   const readPreview = options.readPreview ?? readVoucherPreview;
   const readPreviewWithin = options.readPreviewWithin ?? readVoucherPreviewWithin;
+  const repairGift = options.repairGift ?? repairGiftSelectionsAfterVoucherConsent;
   const issueProof = options.issueProof ?? issueVoucherQuoteProof;
   const limiter = options.rateLimiter ?? createVoucherHoldRateLimiter(client);
   const holds = createVoucherHoldService(client, { attemptSecret: options.attemptSecret, env });
@@ -177,7 +181,16 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
       }
       return proof === null ? "PROOF_UNAVAILABLE" : null;
     };
-    const granted = await holds.hold({ shopId: options.shopId, cartId, paidRevision: Number(paidRevision), quoteDigest: facts.digest, grants, releaseKinds }, { verifyUnderCartLock, finalize });
+    // The buyer's explicit consent to lose gifts is carried out inside the hold transaction (AC-35): the stored choices the
+    // voucher makes unearned are removed or reduced there, so a refusal anywhere rolls the voucher and the gift change back together.
+    const loseGifts = input.acknowledged === true && (quote.giftLoss?.selectedSlotsLost ?? 0) > 0;
+    const afterGrant = loseGifts
+      ? async (tx: Prisma.TransactionClient): Promise<VoucherHoldFailureReason | null> => {
+          const repaired = await repairGift({ tx, cartId, shopId: options.shopId, now, env, attemptSecret: options.attemptSecret });
+          return repaired.ok ? null : repaired.reason;
+        }
+      : undefined;
+    const granted = await holds.hold({ shopId: options.shopId, cartId, paidRevision: Number(paidRevision), quoteDigest: facts.digest, grants, releaseKinds }, { verifyUnderCartLock, finalize, ...(afterGrant ? { afterGrant } : {}) });
     if (!granted.ok) return { ok: false, reason: granted.reason };
     if (proof === null) return { ok: false, reason: "PROOF_UNAVAILABLE" };
     return {
