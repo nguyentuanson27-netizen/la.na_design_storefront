@@ -120,7 +120,9 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
     }
     setError(null);
     startTransition(async () => {
-      const result = await commitDraft(draft);
+      // The consent is the digest of the quote the shopper just read and a yes; the server recomputes what is lost.
+      const consent = confirming && model.quoteDigest !== null ? { acknowledged: true as const, expectedQuoteDigest: model.quoteDigest } : undefined;
+      const result = await commitDraft(consent ? { ...draft, consent } : draft);
       if (result.ok && result.picker) {
         setSaved(result.picker);
         setModel(result.picker);
@@ -129,6 +131,12 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
         setConfirming(false);
         setMessage(null);
         settleCodeApplied();
+      } else if (!result.ok && (result.reason === "QUOTE_CHANGED" || result.reason === "CONFIRMATION_REQUIRED")) {
+        // Nothing was saved. Show what the server derives now and ask again.
+        setConfirming(false);
+        setError("Giá hoặc ưu đãi vừa thay đổi. Nàng xem lại số tiền và quà bên dưới rồi xác nhận lại nhé.");
+        const again = await previewDraft(draft);
+        if (again.ok) setModel(again.picker);
       } else setError(GENERIC_ERROR);
     });
   };
