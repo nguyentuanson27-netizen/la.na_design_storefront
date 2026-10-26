@@ -639,6 +639,42 @@ test("review beca608: a picker built on a choice another tab has changed since i
   void ship;
 });
 
+test("review 26f6d3a: the version a picker carries belongs to the SAME snapshot as the quote it shows, even if another tab saves right after that snapshot", async () => {
+  await seed();
+  const a = await fixedVoucher(50_000, 600_000);
+  await freeShipVoucher(600_000);
+  const read = () => createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV }).read(cartId);
+  const opened = await read(); // S0: both groups AUTO
+  const draft = (merchandiseId: string | null, shippingMode: "AUTO" | "MANUAL", shippingId: string | null) => ({
+    merchandise: { mode: "MANUAL" as const, voucherId: merchandiseId }, shipping: { mode: shippingMode, voucherId: shippingId },
+  });
+  const commit = (d: ReturnType<typeof draft>, expectedSelectionVersion: string | null) =>
+    commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, expectedSelectionVersion, draft: d });
+
+  // Tab B saves SHIPPING = none the instant after tab A's preview has read its snapshot and before anything else A does.
+  const racing = new Proxy(prisma, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target);
+      if (prop !== "$transaction") return typeof value === "function" ? value.bind(target) : value;
+      return async (...args: unknown[]) => {
+        const out = await (value as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+        assert.equal((await commit(draft(null, "MANUAL", null), selectionVersionOf(opened))).ok, true);
+        return out;
+      };
+    },
+  }) as typeof prisma;
+  const preview = await readVoucherPreview({ client: racing, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [] });
+  assert.ok(preview.enabled && preview.ok);
+  if (!preview.enabled || !preview.ok) return;
+  const savedNow = await read();
+  assert.notDeepEqual(savedNow, opened, "tab B's choice is now saved");
+  assert.equal(preview.savedSelectionVersion, selectionVersionOf(opened), "the version is the one of the choice in the quote's own snapshot");
+  assert.notEqual(preview.savedSelectionVersion, selectionVersionOf(savedNow));
+  // So a picker built from that preview is refused when it commits: it never saw tab B's choice.
+  assert.deepEqual(await commit(draft(a.id, "AUTO", null), preview.savedSelectionVersion), { ok: false, reason: "SELECTION_CHANGED" });
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).shippingMode, "MANUAL");
+});
+
 test("AC-35: fewer slots than were chosen reduces the choice (newest first) instead of removing it; unrelated choices stay", async () => {
   await seed({ giftThreshold: 440_000 });
   // 900.000đ = 2 slots; 850.000đ after the voucher = 1 slot.

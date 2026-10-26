@@ -13,7 +13,6 @@ import { readCartOwnVoucherHolds } from "./voucher-own-holds.ts";
 import { applyVoucherCode, commitVoucherDraft } from "./voucher-draft-commit.ts";
 import { readVoucherPreview } from "./voucher-preview.ts";
 import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
-import { selectionVersionOf } from "./voucher-selection-version.ts";
 
 /**
  * Voucher v1 (V15): the public mutations of the picker. Next Server Actions give POST-only, origin-checked
@@ -33,9 +32,9 @@ async function respond(selected: { ok: boolean }, cartId: string, selectionOverr
   // shopper needs) with it. The dialog refreshes the page itself when it is closed.
   if (!preview.enabled || !preview.ok) return { picker: null } as const;
   if (selected.ok && refreshPage) refresh();
-  // The version is of what is SAVED now (the preview may be of a draft): it is what the next "Áp dụng" must still match.
-  const saved = await createVoucherSelectionService(prisma, { shopId: readPancakeShopId() }).read(cartId);
-  return { picker: buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent, quoteDigest: preview.quoteDigest, selectionVersion: selectionVersionOf(saved) }) } as const;
+  // The version is of what was SAVED in the very snapshot this quote came from (the preview may be of a draft): it is what the next
+  // "Áp dụng" must still match. It is never read again afterwards: that read could see a newer choice than the quote on screen.
+  return { picker: buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent, quoteDigest: preview.quoteDigest, selectionVersion: preview.savedSelectionVersion }) } as const;
 }
 
 export async function setStorefrontVoucherSelection(input: unknown) {

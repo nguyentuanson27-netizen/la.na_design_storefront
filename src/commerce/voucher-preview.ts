@@ -18,6 +18,7 @@ import type { GiftOutcome, VoucherSelectionIntent } from "./voucher-optimizer.ts
 import { buildVoucherQuote, type VoucherCardState, type VoucherQuote } from "./voucher-quote.ts";
 import { buildVoucherQuoteFacts } from "./voucher-quote-facts.ts";
 import { selectionIntentFromRow } from "./voucher-selection-service.ts";
+import { selectionVersionOf } from "./voucher-selection-version.ts";
 
 /**
  * Voucher v1 (V08): reads one cart and answers "what do the vouchers do to it", read-only.
@@ -42,6 +43,11 @@ export type VoucherPreview =
       /** Shopper-safe facts per campaign plus its state in this quote, in the order the picker lists them. */
       entries: readonly Readonly<{ card: VoucherCard; state: VoucherCardState }>[];
       selectionIntent: VoucherSelectionIntent;
+      /**
+       * Version (`selectionVersionOf`) of the choice the cart had SAVED in the same snapshot this quote was derived from. The
+       * picker must carry THIS one: a version read again after the snapshot could belong to a newer choice than the quote shown.
+       */
+      savedSelectionVersion: string;
       campaigns: readonly VoucherCampaign[];
       lines: readonly VoucherPaidLine[];
       /** The cart's monotonic paid-line version, for the proof (ABA guard). */
@@ -240,7 +246,7 @@ export async function readVoucherPreviewWithin(
   const cardById = new Map(campaigns.map((campaign) => [campaign.id, toVoucherCard(campaign)]));
   const entries = quote.cards.map((state) => ({ card: cardById.get(state.campaignId)!, state }));
   return {
-    enabled: true, ok: true, quote, entries, selectionIntent, campaigns, lines, paidRevision: cart.paidRevision, variationOfLine,
+    enabled: true, ok: true, quote, entries, selectionIntent, savedSelectionVersion: selectionVersionOf(savedIntent), campaigns, lines, paidRevision: cart.paidRevision, variationOfLine,
     quoteDigest: buildVoucherQuoteFacts({ quote, campaigns, lines, variationOfLine, paidRevision: cart.paidRevision })?.digest ?? null,
     giftState,
     stackedGroups,

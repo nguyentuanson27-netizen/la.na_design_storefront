@@ -8,8 +8,6 @@ import { canGrantHonourableVoucherHolds, canIssueNewVouchers } from "./voucher-g
 import { VOUCHER_INTENT_COOKIE, readVoucherIntentCookie } from "./voucher-marketing-link.ts";
 import { readCartOwnVoucherHolds } from "./voucher-own-holds.ts";
 import { readVoucherPreview } from "./voucher-preview.ts";
-import { createVoucherSelectionService } from "./voucher-selection-service.ts";
-import { selectionVersionOf } from "./voucher-selection-version.ts";
 
 /**
  * The shopper's current voucher picker, or null when there is nothing to show: the feature is OFF, there is no cart,
@@ -27,8 +25,7 @@ export async function loadCurrentVoucherPicker(now: Date = new Date()): Promise<
     const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now, ownHolds: await readCartOwnVoucherHolds(prisma, cartId) });
     // An empty list still renders the picker: a private code can only be entered, never listed.
     if (!preview.enabled || !preview.ok) return null;
-    const saved = await createVoucherSelectionService(prisma, { shopId: readPancakeShopId() }).read(cartId, now);
-    return buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent, quoteDigest: preview.quoteDigest, selectionVersion: selectionVersionOf(saved) });
+    return buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent, quoteDigest: preview.quoteDigest, selectionVersion: preview.savedSelectionVersion });
   } catch {
     return null;
   }
