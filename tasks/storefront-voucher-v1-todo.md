@@ -99,9 +99,9 @@
 - [ ] **V20 — AC/TG convergence test evidence** _(deps: V07, V09, V13, V14, V16–V19)_
   - [ ] AC-01..47/TG-01..12 and H1-V/H3-V evidence includes impossible POS money no-hold, stock failure no-consume, Admin grant race and code/NONE persistence.
   - [ ] Run pnpm test:domain, pnpm test, pnpm test:db, prisma:validate/generate, typecheck, lint, build; browser a11y and authorized POS checks.
-- [ ] **V21 — Rollback/runbook (H5 afterwards)** _(deps: V20)_ — _partial: migration rollback/roll-forward dry run on a scratch DB done 2026-10-26, see the verification doc; the runbook and packet wait for V13/V14/V18_
-  - [ ] Runbook stops new holds without breaking valid existing holds, reconciles unknown/refunds, audits counters.
-  - [ ] Assemble CI/security/rollback packet FOR later H5 owner go/no-go; do not auto-enable/deploy.
+- [ ] **V21 — Rollback/runbook (H5 afterwards)** _(deps: V20)_ — _documents written 2026-10-26: [runbook](../docs/operations/storefront-voucher-runbook.md) and [H5 readiness packet](../docs/verification/storefront-voucher-v1-h5-packet.md); **stays open** because V20 (live convergence run) is not done and the packet lists items only a person can supply (migration approval, V20 authorisation, scheduled refund sweep, H4, H5)_
+  - [x] Runbook stops new holds without breaking valid existing holds, reconciles unknown/refunds, audits counters. _(switches, staged rollout, ledger queries run on a scratch DB, smallest-first rollback, refund/reconcile table, release checklist; gaps named: no scheduled refund sweep, no `ADMIN_CANCEL` caller, flag-flip-in-flight untested)_
+  - [x] Assemble CI/security/rollback packet FOR later H5 owner go/no-go; do not auto-enable/deploy. _(packet claims no release permission; local gates: 3630 tests / 0 fail, 137/137 voucher DB tests, lint clean on changed files; CI for the newest commits must be read from GitHub)_
 
 ## Milestone checkpoints
 

@@ -151,3 +151,7 @@ Open from the same review (not fixed): the cart page shows two different totals 
 Scratch PostgreSQL 16 database, never a real one. `prisma migrate deploy` applied every migration including `20261025100000_voucher_v1_additive` (5 tables, 9 triggers, 4 functions, 10 types). The migration's own commented rollback list was then run in one transaction: **0 voucher objects remained**. On that rolled-back schema the older order/checkout database tests (`benefit-checkout-snapshot`, `guest-checkout-submit`; 60 tests) passed unchanged, i.e. old code and historical orders do not depend on the new objects. Re-applying the migration file (roll forward) succeeded and `voucher-schema` plus `voucher-hold` (27 tests) passed again.
 
 Limits: this proves the schema round trip on an empty ledger. The rollback list is only safe while no accepted order references the tables (the migration header says so); a rollback after real redemptions would need a data decision, not this script. Nothing was applied to any real database.
+
+## V21 — runbook and H5 packet (2026-10-26)
+
+[Operations runbook](../operations/storefront-voucher-runbook.md) rewritten for the built system and the [H5 readiness packet](./storefront-voucher-v1-h5-packet.md) assembled. The packet also carries a refreshed acceptance table for the rows above that still read "pending V11/V12/V13/V14/V18". Nothing was enabled or deployed; the runbook's SQL was run only against a scratch database (syntax and columns; the ledger was empty, so the drift queries were not exercised on real data).
