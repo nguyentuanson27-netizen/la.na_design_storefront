@@ -22,6 +22,19 @@ const SUPPORTED_BANKS: Readonly<Record<string, Readonly<{ name: string; bin: str
   MB: Object.freeze({ name: "MBBank", bin: "970422" }),
 });
 
+/**
+ * The row for a bank code, or `null`. Looked up as an own key only: on a plain object a code such as
+ * `constructor` or `__proto__` would otherwise return a member inherited from `Object.prototype`,
+ * which is truthy but has no name or BIN. The row is also checked to be complete, so a bad entry in
+ * the table itself turns the method off instead of printing half an account.
+ */
+function findSupportedBank(code: string | undefined): Readonly<{ name: string; bin: string }> | null {
+  if (code === undefined || !Object.hasOwn(SUPPORTED_BANKS, code)) return null;
+  const row = SUPPORTED_BANKS[code];
+  if (!row || typeof row.name !== "string" || row.name.length === 0 || !/^[0-9]{6}$/.test(row.bin)) return null;
+  return row;
+}
+
 export type BankTransferConfig = Readonly<{
   bankName: string;
   accountNumber: string;
@@ -50,7 +63,7 @@ const WORST_CASE_FACTS = Object.freeze({ orderId: "9".repeat(16), publicCode: "L
  */
 export function readBankTransferConfig(env: Environment = process.env): BankTransferConfig | null {
   if (env.BANK_TRANSFER_ENABLED !== "true") return null;
-  const bank = SUPPORTED_BANKS[env.BANK_TRANSFER_BANK?.trim() ?? ""];
+  const bank = findSupportedBank(env.BANK_TRANSFER_BANK?.trim());
   const accountNumber = env.BANK_TRANSFER_ACCOUNT_NUMBER?.trim();
   const accountHolder = env.BANK_TRANSFER_ACCOUNT_HOLDER?.trim();
   if (!bank || !accountNumber || !accountHolder) return null;

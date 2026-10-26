@@ -139,3 +139,10 @@ test("content that does not fit the QR still shows as text without one", () => {
   assert.equal(instructions?.content, "LANA DESIGN DON LA-ABCD2345");
   assert.equal(instructions?.qr, null);
 });
+
+test("a bank code that is not in the table never matches an inherited object key", () => {
+  // `SUPPORTED_BANKS[code]` on a plain object would hand back Object.prototype members for these.
+  for (const code of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf", "isPrototypeOf"]) {
+    assert.equal(readBankTransferConfig({ ...account, BANK_TRANSFER_BANK: code }), null, code);
+  }
+});
