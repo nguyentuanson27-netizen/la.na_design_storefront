@@ -375,6 +375,17 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
     return rows.map((row) => ({ kind: row.kind, campaignId: row.campaignId, campaignRevision: row.campaignRevision, heldDiscountVnd: Number(row.heldDiscountVnd) }));
   }
 
+  /** The same live holds with the facts a checkout must verify them against (what each promised and until when). */
+  async function readOwnLiveHoldFactsIn(db: Pick<PrismaClient, "$queryRaw">, cartId: string): Promise<readonly Readonly<{
+    kind: VoucherGroup; campaignId: string; campaignRevision: number; heldDiscountVnd: number; quoteDigest: string; paidRevision: bigint; expiresAt: Date;
+  }>[]> {
+    const attemptKey = voucherAttemptKey(cartId, options.attemptSecret);
+    const rows = await db.$queryRaw<HoldRow[]>`
+      SELECT "id", "campaignId", "campaignRevision", "kind", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
+      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "state" = 'HELD' AND "expiresAt" > clock_timestamp() ORDER BY "kind"::text`;
+    return rows.map((row) => ({ kind: row.kind, campaignId: row.campaignId, campaignRevision: row.campaignRevision, heldDiscountVnd: Number(row.heldDiscountVnd), quoteDigest: row.quoteDigest, paidRevision: BigInt(row.paidRevision), expiresAt: row.expiresAt }));
+  }
+
   /**
    * Convenience sweeper: expires due holds so the table stays small. Correctness never depends on it (every
    * grant expires lazily under the campaign lock). Settle-like, so it ignores the feature gate. Returns the
@@ -414,7 +425,7 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
 
   const readOwnLiveHolds = (cartId: string) => readOwnLiveHoldsIn(client, cartId);
 
-  return { hold, sweepExpired, findHonourableHold, readOwnLiveHolds, readOwnLiveHoldsIn };
+  return { hold, sweepExpired, findHonourableHold, readOwnLiveHolds, readOwnLiveHoldsIn, readOwnLiveHoldFactsIn };
 }
 
 export type VoucherHoldService = ReturnType<typeof createVoucherHoldService>;

@@ -90,6 +90,23 @@ build V14 and V18 · H4 UX review · V20 convergence run with approved POS · V2
 
 **Not done here, on purpose:** nothing writes the declaration yet, so no real order carries one and every real order takes the untouched plain path. V18 must write it in the snapshot transaction and teach the benefit-order re-derivation in `submitBenefitOrder` (which recomputes the quote without vouchers) about the voucher segments; until then a voucher-priced order would be closed there, not accepted. `LA_VOUCHER_ENABLED` stays unset in production.
 
+## V18 server core — vouchers in the checkout quote, DRAFT, acceptance and POS lines (2026-10-26)
+
+`voucher-checkout-quote.ts` plus the voucher part of `resolveBenefitCheckoutQuote` (the one function the checkout render, the DRAFT step and the POS submit already share, so they cannot disagree). Real PostgreSQL, real snapshot/submission/capacity/acceptance services and a recording Pancake double: `voucher-checkout.test.ts` (6). Existing order, gift, shipping and voucher suites: 566 passed together; domain 3360/0.
+
+| Criterion | Evidence |
+| --- | --- |
+| The held vouchers are in the quote the buyer proves | rendered facts: paid 850.000đ, fee waived to 0, total 850.000đ, the line carries a `VOUCHER` step 450.000 → 425.000đ; the proof binds exactly those lines |
+| DRAFT, acceptance and POS agree to the VND | EX-01: order 850.000/0/850.000, POS lines `2 x 425.000đ`, `shipping_fee` 0, acceptance + two redemptions, counters reserved → redeemed, declaration stored |
+| Uneven discounts | 50.000đ over 3 units = two segments, each with the voucher step; POS lines sum to 1.300.000đ |
+| Holds that no longer describe the cart are not applied | cart changed: the render is the plain quote with `voucherStale`, the old proof is refused (`PRICE_CHANGED`), the hold is left to expire, nothing consumed |
+| Holds released before the POS write | the POS re-derivation sees no voucher → `BENEFIT_REQUOTE_REQUIRED`, order closed, nothing sent, nothing consumed |
+| Gift loss is never silent (AC-08/35) | hold without consent → `CONFIRMATION_REQUIRED`; with it, checkout shows `GIFT_SELECTION_INVALID` until the unearned choice is removed; the stored choice is not touched |
+
+Design notes. (1) A shipping voucher is a named waiver of the fee the shipping engine decided (`shippingWaivedVnd`), not a rewrite of that decision, so the order's shipping provenance stays the real campaign's. (2) Voucher checkout rides the existing benefit path, so it needs the same two switches as any quote-bearing order: the gift/tier gate and a line-level-pricing-verified shop (the H1-V shop). (3) Migration `20261026120000_order_quote_step_voucher` relaxes ONE check constraint to admit `VOUCHER` as a discount-step source; it rewrites nothing. **It, like the V13 migration, needs the owner's approval before any real database.**
+
+**Not done:** the checkout page itself (voucher lines, held-until time, hold button, consent, expiry and over-16-KiB-proof UX), the cart-page totals, and the browser tests of all of it.
+
 ## V14 — trusted cancel, reject and refund once (2026-10-26)
 
 `src/commerce/voucher-redemption-service.ts`; hooks in the submit service (Pancake 4xx on create), the SYNC_UNKNOWN reconciliation (confirmed absence) and the status reconciliation (stored status 7); `pnpm voucher:refund:sweep` for anything a lost hook left. Real PostgreSQL: `voucher-redemption-refund.test.ts` (10), plus the existing order, checkout and voucher suites (231 passed together), domain 3360/0.

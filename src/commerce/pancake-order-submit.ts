@@ -260,6 +260,8 @@ export type PancakeOrderSubmissionOptions = {
    * outcome, and a periodic sweep settles any REJECTED order whose hook was lost.
    */
   onRejectedAfterAcceptance?: (order: Readonly<{ id: string }>) => Promise<void>;
+  /** V18: apply the vouchers the order's cart holds when its benefit quote is re-derived (the secret only finds the cart's own holds). */
+  voucher?: Readonly<{ attemptSecret: string }>;
 };
 
 /** Thrown inside the boundary transaction to roll it back when the website cannot accept the order. */
@@ -763,6 +765,8 @@ export function createPancakeOrderSubmissionService(
       shippingQuote?: ShippingQuote;
       shippingPaidItems?: readonly { variantId: string; quantity: number }[];
       shippingHasOtherPromotions?: boolean;
+      /** V18: the fee a held shipping voucher waives; the engine's own fee is still what is re-asked at the boundary. */
+      shippingVoucherWaivedVnd?: number;
       requoteShipping?: () => Promise<PancakeOrderSubmissionResult>;
       requestLines: ReadonlyArray<{ pancakeVariationId: string; quantity: number; unitPriceVnd: number }>;
       /**
@@ -801,6 +805,7 @@ export function createPancakeOrderSubmissionService(
       shippingQuote: providedShippingQuote,
       shippingPaidItems = freshLines,
       shippingHasOtherPromotions = freshLines.some((line) => line.pricing.isDiscounted),
+      shippingVoucherWaivedVnd = 0,
       requoteShipping,
       requestLines,
       verifyCreatedOrder,
@@ -850,7 +855,8 @@ export function createPancakeOrderSubmissionService(
         policy: readGuestShippingPolicy(options.env),
       }));
     } catch { return resetValidation(); }
-    const shippingFeeVnd = shippingQuote.feeVnd;
+    const shippingFeeVnd = shippingQuote.feeVnd - shippingVoucherWaivedVnd;
+    if (!Number.isSafeInteger(shippingFeeVnd) || shippingFeeVnd < 0) return reject("LOCAL_ORDER_INVALID");
     // A campaign ending or changing is a legitimate quote change, not a corrupt order.
     // The benefit path has already compared its complete fresh quote above; legacy needs this check.
     if (providedShippingQuote === undefined && order.shippingFeeVnd !== BigInt(shippingFeeVnd)) {
@@ -929,7 +935,7 @@ export function createPancakeOrderSubmissionService(
           client: tx, shopId: contact.persistedShopId, now: readNow(), paidItems: shippingPaidItems,
           hasOtherPromotions: shippingHasOtherPromotions, policy: readGuestShippingPolicy(options.env),
         });
-        if (currentShipping.feeVnd !== shippingFeeVnd) return "SHIPPING_CHANGED" as const;
+        if (currentShipping.feeVnd - shippingVoucherWaivedVnd !== shippingFeeVnd) return "SHIPPING_CHANGED" as const;
         if (beforeExternalWrite && !(await beforeExternalWrite())) return "CAPACITY_REFUSED" as const;
         const moved = await tx.orderMirror.updateMany({
           where: { id: order.id, state: "VALIDATING" },
@@ -1369,6 +1375,7 @@ export function createPancakeOrderSubmissionService(
                 now,
                 excludeOrderHolds: order.id,
                 ...(options.env === undefined ? {} : { env: options.env }),
+                ...(options.voucher === undefined ? {} : { voucher: options.voucher }),
               }),
             );
           } catch {
@@ -1391,7 +1398,8 @@ export function createPancakeOrderSubmissionService(
         totalQuantity: snapshot.paidQuantity,
         shippingQuote: benefitFresh?.kind === "BENEFIT" ? benefitFresh.shippingQuote : undefined,
         shippingPaidItems: benefitFresh?.kind === "BENEFIT" ? benefitFresh.paid : [],
-        shippingHasOtherPromotions: benefitFresh?.kind === "BENEFIT" && (benefitFresh.gifts.length > 0 || benefitFresh.facts.lines.some((line) => line.discountSteps.some((step) => step.outputPriceVnd < step.inputPriceVnd))),
+        shippingHasOtherPromotions: benefitFresh?.kind === "BENEFIT" && benefitFresh.shippingHasOtherPromotions,
+        shippingVoucherWaivedVnd: benefitFresh?.kind === "BENEFIT" ? benefitFresh.voucher?.shippingWaivedVnd ?? 0 : 0,
         requoteShipping: () => requoteBenefitOrder(mirrorRefresh),
         requestLines: projection.lines,
         verifyCreatedOrder: async (pancakeOrderId) => {

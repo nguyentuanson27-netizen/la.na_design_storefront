@@ -86,9 +86,10 @@
 - [x] **V17 — PDP/cart entry points** _(deps: V15, V16)_
   - [x] PDP/cart use same V15 selection state as checkout, no fake eligibility or holds on render. _Cart block + PDP teaser use the same server selection; no hold on render (spec + DB)._
   - [x] Product/cart domain + browser responsive and sticky checkout tests. _Browser: teaser axe clean, no hold created. Mobile sticky-CTA regression and desktop not exercised._
-- [ ] **V18 — Checkout selection and gift-loss consent** _(deps: V08, V12, V13, V15, V16, H3-V)_
-  - [ ] Checkout preserves COD fields and V15 selection, confirms gift-loss/ship price, never holds candidate without H1-V/H3-V.
-  - [ ] Checkout domain/a11y tests for submit/reprice/expired hold.
+- [ ] **V18 — Checkout selection and gift-loss consent** _(deps: V08, V12, V13, V15, V16, H3-V)_ — **server core built 2026-10-26** (`voucher-checkout-quote.ts`, voucher part of `resolveBenefitCheckoutQuote`, snapshot declaration, voucher-aware POS re-derivation and shipping recheck, `VOUCHER` discount-step source with migration `20261026120000_order_quote_step_voucher`; `tests/database/voucher-checkout.test.ts` 6). **Still open: the checkout page and its browser tests, the cart-page totals (P2), the hold button/expiry UX, the >16 KiB proof UX.**
+  - [x] Server: a cart's HELD vouchers are applied to the checkout quote, the proof, the DRAFT (lines, quote rows with a `VOUCHER` step, declaration), the POS re-derivation and the vendor lines; stale or released holds are never applied. _EX-01 to the VND (merchandise + free shipping), uneven discount as two segments, stale holds priced without the voucher with the proof refused, holds released before the POS write close the order, gift loss refuses until the unearned choice is repaired. Mutations on the staleness check, the waiver, the declaration and the re-derivation each fail a test._
+  - [ ] Checkout page preserves COD fields and V15 selection, shows the voucher lines and the held-until time, confirms gift-loss/ship price, never holds a candidate without H1-V/H3-V.
+  - [ ] Checkout domain/a11y/browser tests for submit/reprice/expired hold.
 - [x] **V19 — Safe KOL/private-code links** _(deps: V05, V15, V17)_
   - [x] Marketing deep link uses same V15 validated CODE selection, sanitizes referrer/analytics URL, no duplicated state. _`voucher-marketing-link.ts`, proxy hook, `/voucher-link`, pending-code cookie offered (not applied) on the cart._
   - [x] Integration/referrer/network tests and shop/privacy/rate-limit security review. _Browser: clean URL, `no-referrer`/`no-store`, no code in page. Found and fixed the global Referrer-Policy override._

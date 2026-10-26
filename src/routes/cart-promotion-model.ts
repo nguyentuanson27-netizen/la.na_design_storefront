@@ -62,7 +62,7 @@ type StepGroup = Readonly<{
   steps?: readonly StepLike[];
   discountSteps?: readonly StepLike[];
 }>;
-type StepLike = Pick<StackStep, "campaignId" | "source" | "inputPriceVnd" | "outputPriceVnd">;
+type StepLike = Pick<StackStep, "campaignId" | "inputPriceVnd" | "outputPriceVnd"> & Readonly<{ source: StackStep["source"] | "VOUCHER" }>;
 
 /**
  * The per-unit price a group is measured against: the price its line is listed at once only per-product

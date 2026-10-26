@@ -99,3 +99,9 @@ Where the migration made a choice this ADR left open:
 - **Plain orders** (no declaration) pass through untouched and never read the secret; a declared order is either consumed or refused, never accepted as plain.
 - **Consistency link:** acceptance recomputes the PREVIEW digest from the order's frozen quote rows and compares it with the digest every hold stored. It covers paid segments, the number of gift slots (not the gift variation), money, vouchers and `paidRevision`.
 - **Held entitlements survive campaign edits (TG-05 A):** the hold's own campaign revision and amount are consumed, whatever the campaign says now; the flag and verified-shop list are never read.
+
+## Implementation notes (V18 server core, migration `20261026120000_order_quote_step_voucher`)
+
+- **One derivation.** Checkout applies exactly the live holds of the cart's own attempt, inside `resolveBenefitCheckoutQuote`, which the checkout render, the DRAFT step and the POS re-derivation already share. Holds whose promise (voucher ids and revisions, amounts, quote digest, `paidRevision`, shipping fee) no longer matches the freshly derived quote are never applied; the cart is priced without them and flagged `voucherStale`.
+- **Representation.** A merchandise voucher is the last step (`source: VOUCHER`) of each paid line it touched, so the stored ledger still walks base price to paid price and the vendor projection needs no new code. The gifts and entitlements are evaluated again on the post-voucher groups by the same authority the cart uses. A shipping voucher is `shippingWaivedVnd`, applied after the shipping engine's decision.
+- **Schema.** One check constraint (`OrderQuoteDiscountStep_source_check`) now admits `VOUCHER`. Rollback is only safe while no such step exists.

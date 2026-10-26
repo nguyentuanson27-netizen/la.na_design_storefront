@@ -25,6 +25,7 @@ import { resolveBenefitCheckoutQuote, toOrderQuoteSnapshotInput } from "./benefi
 import { summarizeBenefitQuote, type BenefitQuoteSummary } from "./benefit-quote-summary.ts";
 import { clearOrderQuoteSnapshot, replaceOrderQuoteSnapshot, validateOrderQuoteSnapshot } from "./order-quote-snapshot.ts";
 import { removeCartGiftSelection } from "./cart-gift-selection-repository.ts";
+import { recordVoucherOrderSnapshot } from "./voucher-order-acceptance.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import { projectBenefitQuoteForVendor } from "./pancake-gift-projection.ts";
 import type { PromotionCampaignKind, PromotionPricingResult } from "./promotion-pricing.ts";
@@ -172,6 +173,8 @@ type GuestCheckoutSnapshotServiceOptions = Readonly<{
   benefits?: BenefitQuoteAuthority;
   /** The environment the feature gate is read from; defaults to `process.env`. */
   env?: Readonly<Record<string, string | undefined>>;
+  /** V18: apply the vouchers this cart holds (the secret only derives the attempt key that finds its own holds). */
+  voucher?: Readonly<{ attemptSecret: string }>;
 }>;
 
 const snapshotOrderSelection = {
@@ -688,6 +691,7 @@ export function createGuestCheckoutSnapshotService(
           now,
           env: benefitEnv,
           lines,
+          ...(options.voucher === undefined ? {} : { voucher: options.voucher }),
         });
         if (resolution.kind === "UNAVAILABLE") return { ok: false, reason: "BENEFIT_CHECKOUT_UNAVAILABLE" };
         if (resolution.kind === "GIFT_SELECTION_INVALID") return { ok: false, reason: "GIFT_SELECTION_INVALID" };
@@ -933,11 +937,17 @@ export function createGuestCheckoutSnapshotService(
             });
 
         let persisted = order;
+        // V18: a refreshed DRAFT drops its previous declaration with its previous quote rows; the declaration is
+        // written again only when THIS quote carries held vouchers (the trigger allows both while the order is a DRAFT).
+        if (mutableDraft) await tx.orderVoucherSnapshot.deleteMany({ where: { orderId: order.id } });
         if (benefitQuoteWrite !== null) {
           const written = await replaceOrderQuoteSnapshot(tx, order.id, benefitQuoteWrite);
           // Validated above, so a refusal here is a defect; throwing rolls the whole attempt back
           // rather than leaving an order whose quote rows are missing.
           if (!written.ok) throw new Error(`Benefit quote snapshot refused: ${written.issue}`);
+          if (resolution.kind === "BENEFIT" && resolution.voucher !== null) {
+            await recordVoucherOrderSnapshot(tx, { orderId: order.id, snapshot: resolution.voucher.declaration });
+          }
           // The gifts live in the quote rows just written; read the order back so the reservation
           // lines include them.
           persisted = await tx.orderMirror.findUniqueOrThrow({ where: { id: order.id }, select: snapshotOrderSelection });

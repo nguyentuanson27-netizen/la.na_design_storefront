@@ -22,6 +22,8 @@ export function createPancakeOrderSubmissionRuntime(config: PancakeConfig) {
   // feature flag or the verified-shop list; an order with no bound hold passes through without writing.
   const voucherAcceptance = createVoucherOrderAcceptance({ readAttemptSecret: () => readAuthServerConfig().secret });
   return createPancakeOrderSubmissionService(prisma, gateway, {
+    // V18: the order's own holds are re-applied when its quote is re-derived; plain carts are unaffected.
+    voucher: { get attemptSecret() { return readAuthServerConfig().secret; } },
     onEvent: writePancakeOrderSubmissionEvent,
     orderSourceId: config.orderSourceId,
     async acceptAtWriteBoundary(tx, order) { return (await voucherAcceptance.acceptWithin(tx, { orderId: order.id })).ok; },

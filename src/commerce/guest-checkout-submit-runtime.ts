@@ -41,6 +41,8 @@ type SnapshotAuthority = Readonly<{
   ) => ReturnType<typeof verifyRenderedQuoteProof>;
   /** GQ17 -- how a cart with gifts or tier segments is proven; the same cart-bound secret. */
   benefits: BenefitQuoteAuthority;
+  /** V18: lets the snapshot find and apply the vouchers this cart holds; the secret never enters a quote. */
+  voucher: Readonly<{ attemptSecret: string }>;
 }>;
 
 type GuestCheckoutSubmitRuntimeDependencies = Readonly<{
@@ -187,6 +189,7 @@ export function createGuestCheckoutSubmitRuntime(
     const quoteProofSecret = readQuoteProofSecret();
     const snapshot = createSnapshot({
       checkoutInputValidated,
+      voucher: { attemptSecret: quoteProofSecret },
       verifyRenderedQuote: (currentQuote) =>
         verifyRenderedQuoteProof({
           proof: quoteProof,

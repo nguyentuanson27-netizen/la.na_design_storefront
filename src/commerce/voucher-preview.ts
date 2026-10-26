@@ -50,6 +50,9 @@ export type VoucherPreview =
       variationOfLine: ReadonlyMap<string, string>;
       /** Digest of this exact quote (what a buyer consents to and a hold stores); null if it cannot be expressed as proof facts. */
       quoteDigest: string | null;
+      /** The pre-voucher stacked groups and gift authority this quote was built on; null when the gift/tier gate is OFF. Checkout (V18) builds the order from the same objects. */
+      giftState: Awaited<ReturnType<typeof readCartGiftState>> | null;
+      stackedGroups: readonly StackedGroup[];
     }>;
 
 /** A live hold of THIS checkout attempt: its entitlement is its own, so it neither counts against nor is lost to the caps. */
@@ -89,7 +92,11 @@ export async function readVoucherPreview(input: Readonly<{
  */
 export async function readVoucherPreviewWithin(
   tx: Prisma.TransactionClient,
-  { cartId, shopId, now, env, selectionOverride, ownHolds }: Readonly<{ cartId: string; shopId: number; now: Date; env: Readonly<Record<string, string | undefined>>; selectionOverride: VoucherSelectionIntent | undefined; ownHolds: readonly OwnVoucherHold[] }>,
+  { cartId, shopId, now, env, selectionOverride, ownHolds, giftState: providedGiftState }: Readonly<{
+    cartId: string; shopId: number; now: Date; env: Readonly<Record<string, string | undefined>>; selectionOverride: VoucherSelectionIntent | undefined; ownHolds: readonly OwnVoucherHold[];
+    /** Checkout already read the gift authority in this transaction; reusing it keeps both on one snapshot. */
+    giftState?: Awaited<ReturnType<typeof readCartGiftState>>;
+  }>,
 ): Promise<VoucherPreview> {
   const cart = await tx.cart.findFirst({
     where: { id: cartId, userId: null, expiresAt: { gt: now } },
@@ -106,7 +113,7 @@ export async function readVoucherPreviewWithin(
   let giftState: Awaited<ReturnType<typeof readCartGiftState>> | null = null;
 
   if (isGiftQuantityPromotionsEnabled(env)) {
-    giftState = await readCartGiftState(tx, cartId, shopId, now, env);
+    giftState = providedGiftState ?? await readCartGiftState(tx, cartId, shopId, now, env);
     const benefits = giftState.quote.benefits;
     if (!benefits.enabled || !benefits.ok) return { enabled: true, ok: false, reason: "QUOTE_UNAVAILABLE" };
     stackedGroups = benefits.groups;
@@ -227,5 +234,7 @@ export async function readVoucherPreviewWithin(
   return {
     enabled: true, ok: true, quote, entries, selectionIntent, campaigns, lines, paidRevision: cart.paidRevision, variationOfLine,
     quoteDigest: buildVoucherQuoteFacts({ quote, campaigns, lines, variationOfLine, paidRevision: cart.paidRevision })?.digest ?? null,
+    giftState,
+    stackedGroups,
   };
 }
