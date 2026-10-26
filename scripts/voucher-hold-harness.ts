@@ -17,6 +17,9 @@ import { setTimeout as delay } from "node:timers/promises";
  * Needs: DATABASE_URL (a disposable PostgreSQL with the migrations applied) and BETTER_AUTH_SECRET (>= 32 chars).
  * No Pancake call is made. Nothing sensitive is printed: server output is scrubbed and only its tail is shown on failure.
  * Set HARNESS_EVIDENCE_OUT=<path> to write the sanitized evidence JSON.
+ *
+ * Developer aids (never used by CI): HARNESS_SKIP_OFFICIAL=1 skips the official-artifact proof;
+ * HARNESS_SERVE_ONLY=1 builds and serves the test artifact and waits (Ctrl-C ends it) so the spec can be re-run by hand.
  */
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -134,12 +137,19 @@ function manifestText(dir: string, relative: string): string | null {
   const file = join(distOf(dir), relative);
   return existsSync(file) ? readFileSync(file, "utf8") : null;
 }
-function occurrences(dir: string, needle: string): number {
+/**
+ * Files of the build output that mention `needle`. `.nft.json` files are Node File Trace lists: bare paths of
+ * repository files a route MAY need if the app is packaged as `output: standalone`. They also list every file
+ * under tests/, docs/ and tasks/ (a pre-existing consequence of dynamic `process.cwd()` paths), carry no code, and
+ * are not what `next start` runs, so they are counted apart from the executable output.
+ */
+function occurrences(dir: string, needle: string, traces = false): number {
   let hits = 0;
   for (const sub of ["server", "static"]) {
     const root = join(distOf(dir), sub);
     if (!existsSync(root)) continue;
     walk(root, (file) => {
+      if (file.endsWith(".nft.json") !== traces) return;
       if (!/\.(js|json|html|rsc|body|meta|txt|map)$/.test(file)) return;
       if (readFileSync(file, "utf8").includes(needle)) hits += 1;
     });
@@ -152,14 +162,8 @@ async function status(port: number, path: string): Promise<number> {
   return (await fetch(`http://127.0.0.1:${port}${path}`, { redirect: "manual" })).status;
 }
 
-async function main(): Promise<number> {
-  const commit = spawnSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).stdout.trim();
-  const dirty = spawnSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: ROOT, encoding: "utf8" }).stdout.trim();
-  if (dirty) throw new Error("Tracked files have uncommitted changes. The evidence names a commit, so build exactly that commit: commit or stash first.");
-  log(`commit ${commit}`);
-  const evidence: Record<string, unknown> = { commit, node: process.version, startedAt: new Date().toISOString() };
-
-  // 1. The official artifact: built from the clean commit, exactly as production is.
+/** 1. The official artifact: built from the clean commit, exactly as production is, and proved free of the harness. */
+async function proveOfficialArtifact(evidence: Record<string, unknown>): Promise<void> {
   const official = prepareTree("official");
   build(official, "official", CLEAN_PORT);
   check("official build: no harness route directory", !existsSync(join(distOf(official), "server/app", ROUTE)), `${DIST}/server/app/${ROUTE} absent`);
@@ -171,13 +175,31 @@ async function main(): Promise<number> {
   }
   const routeHits = occurrences(official, ROUTE);
   const actionHits = occurrences(official, ACTION);
-  check("official build: no output file mentions the harness route", routeHits === 0, `${routeHits} file(s)`);
-  check("official build: no output file mentions the hold Server Action", actionHits === 0, `${actionHits} file(s) — the action is not reachable from any production page`);
+  const traceHits = occurrences(official, ROUTE, true);
+  const traceActionHits = occurrences(official, ACTION, true);
+  check("official build: no executable output file mentions the harness route", routeHits === 0, `${routeHits} file(s)`);
+  check("official build: no executable output file mentions the hold Server Action", actionHits === 0, `${actionHits} file(s) — the action is not reachable from any production page`);
+  check("official build: no file trace mentions the hold Server Action", traceActionHits === 0, `${traceActionHits} file(s)`);
+  log(`info: ${traceHits} .nft.json file trace(s) list the harness SOURCE FILES by path, like every file under tests/; the production image copies only .next, package.json, next.config.mjs, public and the Prisma client, and .dockerignore excludes tests/`);
   await serve(official, CLEAN_PORT, { LA_VOUCHER_TEST_HARNESS: "true" }); // someone sets a test variable by mistake
-  const officialStatuses = { harness: await status(CLEAN_PORT, `/${ROUTE}`), other: await status(CLEAN_PORT, `/${ROUTE}/other`), cart: await status(CLEAN_PORT, "/cart") };
-  check("official server with LA_VOUCHER_TEST_HARNESS=true: harness URL is 404", officialStatuses.harness === 404 && officialStatuses.other === 404, `GET /${ROUTE} → ${officialStatuses.harness}, /${ROUTE}/other → ${officialStatuses.other}`);
-  check("official server answers a real page", officialStatuses.cart === 200, `GET /cart → ${officialStatuses.cart}`);
-  evidence.officialArtifact = { routeFileHits: routeHits, actionFileHits: actionHits, statuses: officialStatuses, manifestsChecked: MANIFESTS.filter((m) => manifestText(official, m) !== null) };
+  const statuses = { harness: await status(CLEAN_PORT, `/${ROUTE}`), other: await status(CLEAN_PORT, `/${ROUTE}/other`), cart: await status(CLEAN_PORT, "/cart") };
+  check("official server with LA_VOUCHER_TEST_HARNESS=true: harness URL is 404", statuses.harness === 404 && statuses.other === 404, `GET /${ROUTE} → ${statuses.harness}, /${ROUTE}/other → ${statuses.other}`);
+  check("official server answers a real page", statuses.cart === 200, `GET /cart → ${statuses.cart}`);
+  evidence.officialArtifact = {
+    executableOutputFilesNamingHarnessRoute: routeHits, executableOutputFilesNamingHoldAction: actionHits,
+    fileTraceListsNamingHarnessSourcePaths: traceHits, fileTraceListsNamingHoldAction: traceActionHits,
+    statusesWithTestEnvVariableSet: statuses, manifestsChecked: MANIFESTS.filter((m) => manifestText(official, m) !== null),
+  };
+}
+
+async function main(): Promise<number> {
+  const commit = spawnSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).stdout.trim();
+  const dirty = spawnSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: ROOT, encoding: "utf8" }).stdout.trim();
+  if (dirty) throw new Error("Tracked files have uncommitted changes. The evidence names a commit, so build exactly that commit: commit or stash first.");
+  log(`commit ${commit}`);
+  const evidence: Record<string, unknown> = { commit, node: process.version, startedAt: new Date().toISOString() };
+
+  if (process.env.HARNESS_SKIP_OFFICIAL !== "1") await proveOfficialArtifact(evidence);
 
   // 2. The test artifact: the same commit plus the fixture route.
   const harness = prepareTree("harness");
@@ -187,6 +209,12 @@ async function main(): Promise<number> {
   check("test build: the harness route IS present (positive control)", routes.includes(`/${ROUTE}/page`), "app-path-routes-manifest.json lists it");
   check("test build: the hold action IS present (positive control)", occurrences(harness, ACTION) > 0, `${occurrences(harness, ACTION)} file(s)`);
   await serve(harness, TEST_PORT);
+
+  if (process.env.HARNESS_SERVE_ONLY === "1") {
+    log(`serving the test artifact on http://127.0.0.1:${TEST_PORT} (Ctrl-C to stop)`);
+    await new Promise<void>((done) => { process.once("SIGINT", done); process.once("SIGTERM", done); });
+    return 0;
+  }
 
   // 3. Playwright against the real Server Action.
   const evidencePath = join(work, "spec-evidence.json");
@@ -199,7 +227,7 @@ async function main(): Promise<number> {
     maxBuffer: 64 * 1024 * 1024,
     env: { ...process.env, DATABASE_URL, PANCAKE_SHOP_ID: String(SHOP), BETTER_AUTH_SECRET: SECRET, LA_VOUCHER_ENABLED: "true", HARNESS_BASE_URL: `http://127.0.0.1:${TEST_PORT}`, HARNESS_SHOP: String(SHOP), HARNESS_EVIDENCE_PATH: evidencePath },
   });
-  console.log(scrub(`${run.stdout ?? ""}${run.stderr ?? ""}`).slice(-6000));
+  console.log(scrub(`${run.stdout ?? ""}${run.stderr ?? ""}`).slice(-20_000));
   check("playwright: every voucher-hold scenario passed", run.status === 0, `exit ${String(run.status)}`);
   evidence.scenarios = existsSync(evidencePath) ? JSON.parse(readFileSync(evidencePath, "utf8")) : null;
   evidence.checks = checks;

@@ -27,7 +27,7 @@ export default async function VoucherHoldHarnessPage() {
   const quote = preview !== null && preview.enabled && preview.ok ? preview.quote : null;
   const digest = preview !== null && preview.enabled && preview.ok ? preview.quoteDigest ?? "" : "";
   return (
-    <main data-harness="voucher-hold">
+    <main data-harness="voucher-hold" data-digest={digest}>
       <h1>Voucher hold harness</h1>
       <p data-testid="total">{quote === null ? "none" : String(quote.totalPayableVnd)}</p>
       <p data-testid="selection">{quote === null ? "" : JSON.stringify(quote.selection)}</p>
