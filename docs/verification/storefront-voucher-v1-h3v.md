@@ -1,6 +1,6 @@
 # Voucher v1 — H3-V browser evidence (AC-42 / AC-43 / TG-12)
 
-- **Status:** the second H3-V review re-opened the gate (two P1 in the flow logic); both are fixed with regression tests, the browser evidence was re-run on the fixed code, and **CI is green on `37f6de3`** (the last commit with code changes). **H3-V waits only for the owner's sign-off.**
+- **Status:** the second H3-V review re-opened the gate (two P1 in the flow logic); both are fixed with regression tests, the browser evidence was re-run on the fixed code, and **CI is green on `37f6de3`** (the last commit with code changes). **the owner approved H3-V on 2026-10-26.**
 - **Code under test:** commit `bc0229264a15962d41961b48277eac5025e22a50` (recorded in the evidence file; re-run after the second review fixes). Run 2026-10-26, Node 22, Chromium (Desktop Chrome profile), PostgreSQL 16, **no Pancake call**.
 - **Raw, sanitized evidence:** [`storefront-voucher-v1-h3v-browser-evidence.json`](./storefront-voucher-v1-h3v-browser-evidence.json). Re-run with `pnpm voucher:hold-harness` (needs `DATABASE_URL`, `BETTER_AUTH_SECRET`; CI job `voucher-hold-harness`).
 
@@ -58,7 +58,7 @@ History, for the record: an earlier push (`0096cee`) started no CI at all becaus
 
 ## Closing H3-V
 
-H3-V closes when all of: (1) this evidence — **done**; (2) CI green on the head commit — **done on `37f6de3`** (re-confirm if code changes again); (3) the owner signs off on the evidence — **pending**. Until then V13 stays blocked.
+**Closed 2026-10-26: approved by the owner ("duyệt h3v").** All three conditions are met: (1) this evidence; (2) CI green on the head commit — `37f6de3` (19/19), and again on `6e75c2a` (19/19) after the last test-robustness fix; (3) the owner's sign-off. The approval covers V11–V12 and AC-42/43 only. It does **not** approve V13, V18, merging PR #214 or enabling vouchers / a verified shop in production. Gates that stay with the later tasks: V13 must prove the voucher HELD proof and the checkout/gift proof stay consistent (gift A→B at the same count), accepted/consume once and stock-failure rollback; V18 must run this script's browser scenarios on the real cart/checkout and handle the UX of a voucher that is offered but whose proof would exceed 16 KiB.
 
 ## Second review (2026-10-26) — what changed and what was re-run
 

@@ -100,7 +100,7 @@ Real-database tests, not mocks: quota = 1 with two simultaneous grants → exact
 - **What a hold's `quoteDigest` is:** the digest of the PREVIEW facts (the same facts without hold ids). A hold cannot name itself, and a submit recomputes the same PREVIEW facts to compare.
 - **Gifts in the proof:** the proof binds the retained gift slot COUNT (a synthetic `gift-slots` GIFT line), not the chosen gift variation. **V13 must prove the voucher proof and the checkout/gift proof stay consistent**, including a buyer switching gift A to gift B at the same count, so an acknowledgement for the old gift is never reused.
 - **Not covered by the hold:** a catalog price change that does not move the cart's `paidRevision` is caught at submit by recomputation (V13), not by the hold; the hold guarantees the voucher entitlement, not the price base (D-3).
-- **H3-V browser evidence (AC-42/43):** done with a test-only harness that exists only in a temporary worktree built from the commit under test (`tests/fixtures/voucher-hold-harness`, `pnpm voucher:hold-harness`); the official build is proved free of the route and of the hold action. See `docs/verification/storefront-voucher-v1-h3v.md`. **CI is green on `37f6de3`; H3-V closes on the owner's sign-off.**
+- **H3-V browser evidence (AC-42/43):** done with a test-only harness that exists only in a temporary worktree built from the commit under test (`tests/fixtures/voucher-hold-harness`, `pnpm voucher:hold-harness`); the official build is proved free of the route and of the hold action. See `docs/verification/storefront-voucher-v1-h3v.md`. **CI is green (`37f6de3`, `6e75c2a`); H3-V was approved by the owner on 2026-10-26.**
 
 ### Second H3-V review (2026-10-26): two more P1, one P2
 
