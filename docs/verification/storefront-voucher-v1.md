@@ -90,6 +90,12 @@ build V14 and V18 · H4 UX review · V20 convergence run with approved POS · V2
 
 **Not done here, on purpose:** nothing writes the declaration yet, so no real order carries one and every real order takes the untouched plain path. V18 must write it in the snapshot transaction and teach the benefit-order re-derivation in `submitBenefitOrder` (which recomputes the quote without vouchers) about the voucher segments; until then a voucher-priced order would be closed there, not accepted. `LA_VOUCHER_ENABLED` stays unset in production.
 
+## Review fix — PRIVATE vouchers and ids (PR #214, 2026-10-26)
+
+A review of `5414e67` found that `setGroup` and `applyBoth` accepted any active PRIVATE campaign by id, so a cart that never entered the code could lock it if it knew the id (an id is not a credential). Fixed in `voucher-selection-service.ts`: a PRIVATE voucher is accepted by id only when the cart's own saved selection already names it. `tests/database/voucher-selection.test.ts` gained a two-cart test (B refused through both entry points even knowing both ids; a mixed PUBLIC+PRIVATE draft is refused whole and writes nothing; A keeps using its unlocked voucher; the unlock is per voucher and ends when the lock is dropped); removing the check in either entry point fails it. Voucher DB suite 119/119, picker browser spec against a production build 8/8, `test:domain` 3360/0.
+
+Open from the same review (not fixed): the cart page shows two different totals while the voucher preview is on (picker vs "Tổng thanh toán"/mobile CTA). Tracked in the todo as a P2 that blocks exposing the feature; it belongs to V18.
+
 ## Migration rollback dry run (V21, partial) — 2026-10-26
 
 Scratch PostgreSQL 16 database, never a real one. `prisma migrate deploy` applied every migration including `20261025100000_voucher_v1_additive` (5 tables, 9 triggers, 4 functions, 10 types). The migration's own commented rollback list was then run in one transaction: **0 voucher objects remained**. On that rolled-back schema the older order/checkout database tests (`benefit-checkout-snapshot`, `guest-checkout-submit`; 60 tests) passed unchanged, i.e. old code and historical orders do not depend on the new objects. Re-applying the migration file (roll forward) succeeded and `voucher-schema` plus `voucher-hold` (27 tests) passed again.

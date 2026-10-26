@@ -195,3 +195,41 @@ test("Áp dụng commits both groups in one transaction; if either is refused, n
   const off = createVoucherSelectionService(prisma, { shopId: SHOP, env: {} });
   assert.deepEqual(await off.applyBoth({ cartId: c.id, merchandise: { mode: "AUTO", voucherId: null }, shipping: { mode: "AUTO", voucherId: null } }), { ok: false, reason: "FEATURE_DISABLED" });
 });
+
+test("P1 PRIVATE: an id is not a credential -- only the cart that entered the code can select the voucher by id", async () => {
+  const a = await cart();
+  const b = await cart();
+  const pub = await f.campaign();
+  const priv = await f.campaign({ issuance: "CODE", visibility: "PRIVATE", code: "KOL50" });
+  const privShip = await f.shippingCampaign({ issuance: "CODE", visibility: "PRIVATE", code: "SHIPKOL" });
+
+  // Cart A enters the code; cart B knows the ids (a link, a log, another shopper) but never entered a code.
+  assert.equal((await service.applyCode({ cartId: a.id, rawCode: "KOL50" })).ok, true);
+  const refused = { ok: false, reason: "NOT_AVAILABLE" } as const;
+  assert.deepEqual(await service.setGroup({ cartId: b.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: priv.id }), refused);
+  assert.deepEqual(
+    await service.applyBoth({ cartId: b.id, merchandise: { mode: "MANUAL", voucherId: priv.id }, shipping: { mode: "MANUAL", voucherId: privShip.id } }),
+    refused,
+  );
+  // A mixed draft is refused as a whole: the PUBLIC half is not written either.
+  assert.deepEqual(
+    await service.applyBoth({ cartId: b.id, merchandise: { mode: "MANUAL", voucherId: pub.id }, shipping: { mode: "MANUAL", voucherId: privShip.id } }),
+    refused,
+  );
+  assert.deepEqual(await service.read(b.id), { merchandise: { mode: "AUTO" }, shipping: { mode: "AUTO" } }, "nothing was written for B");
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId: b.id } }), 0);
+
+  // A keeps using what it unlocked: re-saving it, committing the picker draft, and a PUBLIC voucher is unaffected.
+  assert.equal((await service.setGroup({ cartId: a.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: priv.id })).ok, true);
+  assert.equal((await service.applyBoth({ cartId: a.id, merchandise: { mode: "MANUAL", voucherId: priv.id }, shipping: { mode: "AUTO", voucherId: null } })).ok, true);
+  assert.equal((await service.setGroup({ cartId: b.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: pub.id })).ok, true);
+  assert.deepEqual((await service.read(a.id)).merchandise, { mode: "MANUAL", voucherId: priv.id });
+
+  // Unlocking is per voucher: A's private merchandise code does not unlock the private shipping voucher.
+  assert.deepEqual(await service.setGroup({ cartId: a.id, group: "SHIPPING_FREE", mode: "MANUAL", voucherId: privShip.id }), refused);
+
+  // Dropping the lock drops the unlock: the code has to be entered again (the id alone never works).
+  assert.equal((await service.setGroup({ cartId: a.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: null })).ok, true);
+  assert.deepEqual(await service.setGroup({ cartId: a.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: priv.id }), refused);
+  assert.equal((await service.applyCode({ cartId: a.id, rawCode: "KOL50" })).ok, true);
+});

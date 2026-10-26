@@ -90,9 +90,22 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
   }
 
   /**
+   * The PRIVATE voucher ids this cart has already unlocked: exactly those its saved (unexpired) selection names.
+   * A saved id can only have got there through `applyCode` (the server verified the code for THIS cart, under the
+   * rate limit) or through this same rule, so the set is closed under the writes below. An id is not a credential:
+   * knowing it, from another cart, a link or a log, unlocks nothing.
+   */
+  async function unlockedPrivateIds(tx: Prisma.TransactionClient, cartId: string, now: Date): Promise<ReadonlySet<string>> {
+    const intent = selectionIntentFromRow(await tx.cartVoucherSelection.findUnique({ where: { cartId } }), now);
+    const ids = [intent.merchandise, intent.shipping].flatMap((group) => (group.mode === "MANUAL" && group.voucherId !== null ? [group.voucherId] : []));
+    return new Set(ids);
+  }
+
+  /**
    * AUTO, a manual voucher, or an explicit NONE (`voucherId: null`) for one group. A manual voucher must be an
-   * active campaign of this shop and of that group; PRIVATE ones are accepted only here because the shopper
-   * entered the code earlier (the id is not a secret, the code is). No quota, budget or hold is touched.
+   * active campaign of this shop and of that group. A PRIVATE one is accepted here only if this cart already
+   * unlocked it by entering its code (`unlockedPrivateIds`); otherwise it answers NOT_AVAILABLE exactly like an
+   * id that does not exist. No quota, budget or hold is touched.
    */
   async function setGroup(input: Readonly<{ cartId: string; group: VoucherGroup; mode: "AUTO" | "MANUAL"; voucherId?: string | null; now?: Date }>): Promise<VoucherSelectionResult> {
     const now = input.now ?? new Date();
@@ -105,6 +118,7 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
       if (mode === "MANUAL" && voucherId !== null) {
         const found = await readSelectedVouchers({ client: tx, shopId, ids: [voucherId], now, env });
         if (found.length !== 1 || found[0]!.kind !== group) return { ok: false, reason: "NOT_AVAILABLE" };
+        if (found[0]!.visibility === "PRIVATE" && !(await unlockedPrivateIds(tx, cart.id, now)).has(voucherId)) return { ok: false, reason: "NOT_AVAILABLE" };
       }
       return { ok: true, selection: await save(tx, cart, group, mode, voucherId) };
     });
@@ -127,8 +141,11 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
     const result = await withCart<VoucherSelectionResult>(input.cartId, now, async (tx, cart) => {
       const ids = drafts.flatMap(([, draft]) => (draft.mode === "MANUAL" && draft.voucherId !== null ? [draft.voucherId] : []));
       const found = ids.length === 0 ? [] : await readSelectedVouchers({ client: tx, shopId, ids, now, env });
+      const unlocked = found.some((campaign) => campaign.visibility === "PRIVATE") ? await unlockedPrivateIds(tx, cart.id, now) : new Set<string>();
       for (const [group, draft] of drafts) {
-        if (draft.mode === "MANUAL" && draft.voucherId !== null && found.find((campaign) => campaign.id === draft.voucherId)?.kind !== group) return { ok: false, reason: "NOT_AVAILABLE" };
+        if (draft.mode !== "MANUAL" || draft.voucherId === null) continue;
+        const campaign = found.find((candidate) => candidate.id === draft.voucherId);
+        if (campaign?.kind !== group || (campaign.visibility === "PRIVATE" && !unlocked.has(campaign.id))) return { ok: false, reason: "NOT_AVAILABLE" };
       }
       const row = await tx.cartVoucherSelection.upsert({
         where: { cartId: cart.id },
