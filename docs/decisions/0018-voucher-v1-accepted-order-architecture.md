@@ -91,3 +91,11 @@ Where the migration made a choice this ADR left open:
 - **Selection (D-5):** `CartVoucherSelection`, one row per cart, `ON DELETE CASCADE`, voucher ids deliberately not foreign keys.
 - **Campaign rows are complete at rest.** The CHECKs require a fully valid configuration even for an inactive draft (as `ShippingPromotionCampaign` does); the Admin form validates before saving, so an unfinished form is not persisted.
 - **Rollback:** the `DROP` list at the top of the migration; safe only while no accepted order references the tables.
+
+## Implementation notes (V13, migration `20261026100000_voucher_order_snapshot`)
+
+- **Where step 3 runs:** inside the existing write-boundary transaction of the submission service (`acceptAtWriteBoundary`), after the order is `POS_SUBMITTING` and as its last statement, not before. The shipping provenance columns are written by that same update and are part of what freezes, so acceptance cannot come earlier. A refusal throws to roll the transaction back; the order is then closed `REJECTED` with `VOUCHER_REQUOTE_REQUIRED` and its reservations released (nothing was sent).
+- **Step 3d, "voucher snapshot (already written)":** the first migration had no storage for it. `OrderVoucherSnapshot` (insert-only, DRAFT-only, immutable from acceptance) holds the V10 snapshot and is the order's declaration of what it carries. A HELD hold cannot be bound to an order (`VoucherHold_state_check` requires `orderId` NULL until CONSUMED), so the declaration lives on the order side; acceptance matches it to the attempt's live holds by campaign, revision and amount.
+- **Plain orders** (no declaration) pass through untouched and never read the secret; a declared order is either consumed or refused, never accepted as plain.
+- **Consistency link:** acceptance recomputes the PREVIEW digest from the order's frozen quote rows and compares it with the digest every hold stored. It covers paid segments, the number of gift slots (not the gift variation), money, vouchers and `paidRevision`.
+- **Held entitlements survive campaign edits (TG-05 A):** the hold's own campaign revision and amount are consumed, whatever the campaign says now; the flag and verified-shop list are never read.

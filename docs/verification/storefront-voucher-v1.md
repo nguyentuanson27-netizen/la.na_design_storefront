@@ -1,6 +1,6 @@
 # Voucher v1 — verification status
 
-- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. V09 now has its H1-V live evidence ([POS probe](./storefront-voucher-v1-pos-probe.md), 2026-10-26, 4/4 PASS); V07 (Admin browser/axe) still lacks one piece of evidence. **Not built** (blocked by gates that need a person): V11–V14 (holds, V11 and V12 built (see rows 14–16, 20, 31–34, 43, 45); H3-V review and V13/V14/V18 remain, accepted order, consume, cancel/refund), V18 (checkout exposure), V20/V21 completion, H3-V, H4, H5.
+- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. V09 now has its H1-V live evidence ([POS probe](./storefront-voucher-v1-pos-probe.md), 2026-10-26, 4/4 PASS); V07 (Admin browser/axe) still lacks one piece of evidence. **Not built** (blocked by gates that need a person): V11–V14 (V11, V12 and V13 are built — see the V13 section; V14 cancel/refund and V18 remain), V18 (checkout exposure), V20/V21 completion, H3-V, H4, H5.
 - **Rule used here:** a row is "verified" only when a named test exercises it against real code (and, where the criterion is about the database, a real PostgreSQL). Anything else is "pending" with the reason. Nothing is marked done from code presence.
 - Spec: [`../specs/storefront-voucher-v1.md`](../specs/storefront-voucher-v1.md). Plan: [`../../tasks/storefront-voucher-v1-plan.md`](../../tasks/storefront-voucher-v1-plan.md).
 
@@ -70,7 +70,25 @@ Not covered: desktop viewport, a production build, real devices, the Admin scree
 
 ## What a person still has to do
 
-build V11–V14 and V18 · H4 UX review · V20 convergence run with approved POS · V21 rollback dry run · H5 go/no-go. **Keep `LA_VOUCHER_ENABLED` unset in production until V18 ships.**
+build V14 and V18 · H4 UX review · V20 convergence run with approved POS · V21 rollback dry run · H5 go/no-go. **Keep `LA_VOUCHER_ENABLED` unset in production until V18 ships.**
+
+## V13 — accepted order and once-only consume (2026-10-26)
+
+`src/commerce/voucher-order-acceptance.ts`, wired through `acceptAtWriteBoundary` in `pancake-order-submit.ts` and `pancake-order-submit-runtime.ts`. Real PostgreSQL 16 tests: `voucher-order-acceptance.test.ts` (13) and `voucher-order-acceptance-boundary.test.ts` (4, the real submission service with a recording gateway); the guest-checkout submit domain tests gained the new reason (15). Whole `tests/database` suite: 1112 / 1113, the one failure is `auth-runtime` and is identical without this work.
+
+| Criterion | Evidence |
+| --- | --- |
+| Accepted marker + voucher consume are one transaction, after stock reservation | acceptance is the last statement of the write-boundary transaction, after `reserveOrderCapacity` and the SUBMITTING claim; EX-01 (both vouchers: marker digest = the order's own quote digest, holds CONSUMED with the order, two redemptions, reserved → redeemed, order frozen afterwards) |
+| Stock / acceptance failure ⇒ no marker, no consume, no POS write | refused and throwing acceptors: nothing reaches the gateway, the acceptor's writes roll back, order REJECTED `VOUCHER_REQUOTE_REQUIRED`, reservations released; crash after the acceptor but before commit: marker 0, holds HELD, counters unchanged, a retry then accepts |
+| Retry / double click / 2 tabs consume once | 4 parallel acceptances: one winner, 1 marker, 2 redemptions, counters redeemed 1; later call answers `replayed` |
+| ABA / expiry / quote | cart `paidRevision` moved ⇒ `CART_CHANGED`; hold past `expiresAt` by the DB clock ⇒ refused; mutated price, shipping, or voucher not applied in the order ⇒ `QUOTE_MISMATCH`; a declaration naming another campaign or revision ⇒ refused |
+| Voucher proof ↔ checkout/gift proof consistent (gate from the H3-V review) | the digest the holds stored (a function of paid segments, the NUMBER of gift slots, money, vouchers, `paidRevision`) is recomputed from the order's frozen quote rows: gift A → B at the same count is accepted; two gifts, no gift, or a gift the voucher quote never promised are refused |
+| A voucher order is never accepted as a plain one | the declaration row exists ⇒ either consumed or refused: released hold, expired hold, swapped hold all refuse; only an order with no declaration passes through untouched (and needs no secret) |
+| POS UNKNOWN does not refund | `SYNC_UNKNOWN` after acceptance: redemptions unrefunded, counters unchanged; refund exists only as V14's trusted-signal path |
+
+**Design choice that needs the owner's eye.** The H2-approved migration has no place for the order's voucher declaration (V10's `VoucherOrderSnapshot`), and a HELD hold cannot carry an order id (`VoucherHold_state_check`). Without a declaration, acceptance could not tell a voucher-priced order from a plain one and would risk accepting the former without consuming. Migration `20261026100000_voucher_order_snapshot` therefore adds, additively: table `OrderVoucherSnapshot` (insert-only, DRAFT-only, locked once accepted), index `VoucherHold_orderId_idx`, and its own rollback header. It was applied only to the scratch database; `prisma migrate diff` against the schema shows no drift from it.
+
+**Not done here, on purpose:** nothing writes the declaration yet, so no real order carries one and every real order takes the untouched plain path. V18 must write it in the snapshot transaction and teach the benefit-order re-derivation in `submitBenefitOrder` (which recomputes the quote without vouchers) about the voucher segments; until then a voucher-priced order would be closed there, not accepted. `LA_VOUCHER_ENABLED` stays unset in production.
 
 ## Migration rollback dry run (V21, partial) — 2026-10-26
 

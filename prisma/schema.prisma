@@ -792,6 +792,7 @@ model OrderMirror {
   preorderSnapshot       OrderPreorderSnapshot?
   quoteSnapshot          OrderQuoteSnapshot?
   voucherAcceptance      OrderAcceptance?
+  voucherSnapshot        OrderVoucherSnapshot?
   voucherRedemptions     VoucherRedemption[]
   voucherHolds           VoucherHold[]
 
@@ -1342,6 +1343,7 @@ model VoucherHold {
 
   @@index([campaignId, state, expiresAt])
   @@index([attemptKey, kind, state])
+  @@index([orderId])
 }
 
 /// One consumed voucher of one accepted order (spec §5.2). Insert-only apart from the one-way refund
@@ -1377,6 +1379,16 @@ model OrderAcceptance {
   acceptedAt  DateTime    @db.Timestamptz(3)
   createdAt   DateTime    @default(now()) @db.Timestamptz(3)
   order       OrderMirror @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+/// The voucher part of an order, declared before submission (V13, ADR 0018 D-3 step 3d): the V10 `VoucherOrderSnapshot`
+/// as versioned JSON. Insert-only and written only while the order is a DRAFT; acceptance consumes exactly these vouchers.
+model OrderVoucherSnapshot {
+  id        String      @id @default(cuid())
+  orderId   String      @unique
+  snapshot  Json
+  createdAt DateTime    @default(now()) @db.Timestamptz(3)
+  order     OrderMirror @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 }
 
 /// Cart-bound voucher intent (ADR 0018 D-5): which voucher the shopper locked per group, or an explicit NONE
