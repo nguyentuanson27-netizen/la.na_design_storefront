@@ -129,6 +129,14 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
         setPendingCode(null);
         codeApplied.current = true;
         setMessage("Đã áp dụng mã ưu đãi.");
+      } else if (result.ok) {
+        // Saved on the server, but the picker could not be re-read right now: it is NOT a failure. Say what happened and let the
+        // page behind the dialog show the server's numbers when the dialog closes.
+        setCode("");
+        setPendingCode(null);
+        setConfirming(false);
+        codeApplied.current = true;
+        setMessage("Đã áp dụng mã ưu đãi. Giá dự kiến sẽ được cập nhật khi nàng đóng hộp thoại.");
       } else if (!result.ok && (result.reason === "CONFIRMATION_REQUIRED" || result.reason === "QUOTE_CHANGED")) {
         // The code is valid but nothing is saved yet: show what the server derives for it and ask for the shopper's yes.
         if (result.picker) {
@@ -168,6 +176,16 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
         setOpen(false);
         setConfirming(false);
         setMessage(null);
+        settleCodeApplied();
+      } else if (result.ok) {
+        // Saved on the server, but the picker could not be re-read right now: not a failure and not a reason to show an error
+        // for a choice that did change. Close, and let the page show what the server derives.
+        setPendingCode(null);
+        setCode("");
+        setOpen(false);
+        setConfirming(false);
+        setMessage(null);
+        codeApplied.current = true;
         settleCodeApplied();
       } else if (!result.ok && (result.reason === "QUOTE_CHANGED" || result.reason === "CONFIRMATION_REQUIRED")) {
         // Nothing was saved. Show what the server derives now and ask again.

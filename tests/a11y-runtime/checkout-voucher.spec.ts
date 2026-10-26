@@ -327,6 +327,32 @@ test("review 8bdb2f0: editing the code box abandons a code waiting for the shopp
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
 });
 
+test("review 8bdb2f0: a choice that WAS saved but cannot be re-read right now is never shown as a failure", async ({ page }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL72", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 72K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/cart`);
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  // Deterministic injection: the moment the selection is written the cart is emptied in the same transaction, so the quote the
+  // server derives AFTER the save (to answer the picker) is unavailable while the save itself stands.
+  await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION vchr_co_empty_cart() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN DELETE FROM "CartItem" WHERE "cartId" = NEW."cartId"; RETURN NULL; END $$`);
+  await prisma.$executeRawUnsafe(`CREATE TRIGGER vchr_co_empty_cart_t AFTER INSERT OR UPDATE ON "CartVoucherSelection" FOR EACH ROW EXECUTE FUNCTION vchr_co_empty_cart()`);
+  try {
+    await dialog.getByLabel("Nhập mã khuyến mãi").fill("kol72");
+    await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
+    await expect(dialog).toContainText("Đã áp dụng mã ưu đãi");
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
+    const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
+    expect(row.merchandiseMode).toBe("MANUAL");
+    expect(row.merchandiseVoucherId).not.toBeNull();
+  } finally {
+    await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS vchr_co_empty_cart_t ON "CartVoucherSelection"`);
+    await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS vchr_co_empty_cart()`);
+  }
+});
+
 test("a voucher that costs a gift needs the shopper's own consent before it can be held", async ({ page }) => {
   const gift = await prisma.productMirror.create({
     data: { pancakeShopId: SHOP, pancakeProductId: `${PREFIX}gift`, slug: `${PREFIX}gift`, name: "Khăn quà", isActive: true, isPresent: true, syncedAt: new Date(),
