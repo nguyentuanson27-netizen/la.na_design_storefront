@@ -35,6 +35,7 @@ const CODE_ERROR: Readonly<Record<string, string>> = {
   RATE_LIMITED: "Nàng đã thử mã quá nhiều lần. Vui lòng thử lại sau ít phút.",
   FEATURE_DISABLED: "Ưu đãi tạm thời chưa khả dụng.",
   CART_UNAVAILABLE: "Giỏ hàng không còn khả dụng. Nàng tải lại trang nhé.",
+  QUOTE_UNAVAILABLE: "Chưa tính được giá cho ưu đãi này lúc này, nên chưa áp dụng. Nàng thử lại sau giây lát nhé.",
 };
 const GENERIC_ERROR = "Chưa cập nhật được ưu đãi. Nàng thử lại sau giây lát nhé.";
 
@@ -102,6 +103,20 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
     });
   };
 
+  // Editing the box abandons a code that was waiting for the shopper's yes: the confirmation belongs to THAT code and the quote
+  // shown for it, so it must not be sent for a different text. What the picker shows goes back to what is saved.
+  const editCode = (value: string) => {
+    setCode(value);
+    if (pendingCode !== null && value !== pendingCode) {
+      setPendingCode(null);
+      setConfirming(false);
+      setMessage(null);
+      setError(null);
+      setModel(saved);
+      setDraft(draftOf(saved));
+    }
+  };
+
   const submitCode = () => {
     setError(null);
     startTransition(async () => {
@@ -166,7 +181,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
           const again = await previewDraft(draft);
           if (again.ok) setModel(again.picker);
         }
-      } else setError(GENERIC_ERROR);
+      } else setError(!result.ok && result.reason === "QUOTE_UNAVAILABLE" ? CODE_ERROR.QUOTE_UNAVAILABLE! : GENERIC_ERROR);
     });
   };
 
@@ -200,7 +215,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
               onSubmit={(event) => { event.preventDefault(); if (code.trim()) submitCode(); }}
             >
               <label className="sr-only" htmlFor={`${titleId}-code`}>Nhập mã khuyến mãi</label>
-              <input id={`${titleId}-code`} value={code} onChange={(event) => setCode(event.target.value)} maxLength={64} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Nhập mã khuyến mãi" className="min-h-11 min-w-0 flex-1 border border-black/30 bg-transparent px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2" />
+              <input id={`${titleId}-code`} value={code} onChange={(event) => editCode(event.target.value)} maxLength={64} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Nhập mã khuyến mãi" className="min-h-11 min-w-0 flex-1 border border-black/30 bg-transparent px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2" />
               <button type="submit" disabled={pending || code.trim() === ""} className="min-h-11 border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Áp dụng mã</button>
             </form>
 

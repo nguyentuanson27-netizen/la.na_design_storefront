@@ -529,6 +529,83 @@ test("review 5a62d20 / EX-06: a typed CODE that raises the total needs consent t
   assert.deepEqual(wrong.ok === false && wrong.reason, "INVALID_CODE");
 });
 
+/** A server that cannot read its shipping policy cannot derive a quote: the preview is unavailable, not free. */
+const NO_QUOTE_ENV = { ...ENV, LA_SHIPPING_FEE_VND: "not-a-number" } as const;
+
+test("review 8bdb2f0 / P1: when the server cannot derive a quote nothing that could cost is saved, a digest does not open the gate, and the shopper can still drop a voucher", async () => {
+  await seed({ giftThreshold: 880_000 });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  const m = await fixedVoucher(50_000, 600_000);
+  const priv = await fixedVoucher(50_000, 600_000, { issuance: "CODE", visibility: "PRIVATE", code: "KOL50" });
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "AUTO" } } });
+  assert.ok(preview.enabled && preview.ok);
+  const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
+  const draftWith = (consentDigest: string | null, env: Readonly<Record<string, string | undefined>>) => commitVoucherDraft({
+    client: prisma, cartId, shopId: SHOP, env, attemptSecret: SECRET, consentDigest,
+    draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "AUTO", voucherId: null } },
+  });
+
+  // The picker's draft, with and without the digest the picker showed: neither is saved while no quote can be derived.
+  assert.deepEqual(await draftWith(null, NO_QUOTE_ENV), { ok: false, reason: "QUOTE_UNAVAILABLE" });
+  assert.deepEqual(await draftWith(digest, NO_QUOTE_ENV), { ok: false, reason: "QUOTE_UNAVAILABLE" });
+  // The typed code (rate-counted, verified) is refused outright; nothing is pending because there is nothing to show.
+  await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "voucher-code-" } } });
+  const typed = await applyVoucherCode({ client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, rawCode: "kol50", consentDigest: digest });
+  assert.deepEqual(typed, { ok: false, reason: "QUOTE_UNAVAILABLE" });
+  // The one-group action keeps the other group as saved and meets the same rule.
+  const oneGroup = await commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: null } });
+  assert.deepEqual(oneGroup, { ok: false, reason: "QUOTE_UNAVAILABLE" });
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0, "no write at all");
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "the gift choice is untouched");
+
+  // Retry once the authority is back: the same consent is judged against a quote the server can derive, and carried out.
+  assert.deepEqual(await draftWith(null, ENV), { ok: false, reason: "CONFIRMATION_REQUIRED" });
+  assert.equal((await draftWith(digest, ENV)).ok, true);
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0);
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, m.id);
+
+  // While no quote can be derived the shopper can still drop the voucher (a choice that only removes cannot cost a gift) ...
+  const dropped = await commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: null }, shipping: { mode: "AUTO", voucherId: null } } });
+  assert.equal(dropped.ok, true, JSON.stringify(dropped));
+  const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
+  assert.deepEqual([row.merchandiseMode, row.merchandiseVoucherId], ["MANUAL", null]);
+  // ... but not swap it for another one.
+  const swapped = await commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: priv.id }, shipping: { mode: "AUTO", voucherId: null } } });
+  assert.equal(swapped.ok, false);
+});
+
+test("review 8bdb2f0 / P2: the one-group action keeps the other group as saved UNDER the cart lock: a change another tab saves while it waits is not overwritten", async () => {
+  await seed();
+  const m = await fixedVoucher(50_000, 600_000);
+  let locked!: () => void;
+  const hasLock = new Promise<void>((resolve) => { locked = resolve; });
+  let release!: () => void;
+  const mayCommit = new Promise<void>((resolve) => { release = resolve; });
+  // Tab B holds the cart lock and is about to save SHIPPING = "no voucher".
+  const tabB = prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Cart" WHERE "id" = ${cartId} FOR UPDATE`;
+    locked();
+    await mayCommit;
+    await tx.cartVoucherSelection.upsert({
+      where: { cartId },
+      create: { cartId, expiresAt: new Date(Date.now() + 86_400_000), shippingMode: "MANUAL", shippingVoucherId: null },
+      update: { shippingMode: "MANUAL", shippingVoucherId: null },
+    });
+  });
+  await hasLock;
+  // Tab A changes MERCHANDISE only; it must wait for the lock, then read SHIPPING as tab B left it.
+  const tabA = commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: null } });
+  const early = await Promise.race([tabA.then(() => "finished"), new Promise((resolve) => setTimeout(() => resolve("waiting"), 400))]);
+  assert.equal(early, "waiting", "tab A is blocked on the cart lock, so its read of the other group cannot precede tab B's write");
+  release();
+  await tabB;
+  const result = await tabA;
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
+  assert.deepEqual([row.merchandiseMode, row.merchandiseVoucherId], ["MANUAL", m.id]);
+  assert.deepEqual([row.shippingMode, row.shippingVoucherId], ["MANUAL", null], "tab B's choice survived");
+});
+
 test("AC-35: fewer slots than were chosen reduces the choice (newest first) instead of removing it; unrelated choices stay", async () => {
   await seed({ giftThreshold: 440_000 });
   // 900.000đ = 2 slots; 850.000đ after the voucher = 1 slot.

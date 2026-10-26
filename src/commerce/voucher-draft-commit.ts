@@ -3,7 +3,7 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { giftsAfterVoucher } from "./voucher-checkout-quote.ts";
 import { applyGiftEntitlementsToSelections, countingKeys } from "./voucher-gift-repair.ts";
 import { createVoucherHoldService } from "./voucher-hold-service.ts";
-import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
+import type { GroupSelection, VoucherSelectionIntent } from "./voucher-optimizer.ts";
 import { readVoucherPreviewWithin } from "./voucher-preview.ts";
 import {
   createVoucherSelectionService,
@@ -25,14 +25,24 @@ import {
  *    (`CONFIRMATION_REQUIRED`, nothing written);
  *  - with the consent for the current quote, the voucher intent AND the gift change are written together: the choices the
  *    voucher makes unearned are removed or reduced in the same transaction.
+ * With no quote the server cannot derive, nothing that could change money or gifts is written (`QUOTE_UNAVAILABLE`): a
+ * consent digest cannot be checked against a quote that does not exist, so a digest does not open the gate. What is always
+ * allowed is a choice that cannot add cost: every group "no voucher" or exactly what is already saved, so a shopper can
+ * still drop a code while pricing is down.
  * The consent is a digest and a yes, never a price or a list of gifts. The shopper's own live holds are read INSIDE the
  * transaction after the lock: a snapshot taken before it could credit a hold that has since been released or has expired.
  */
 
 const intentOf = (draft: VoucherGroupDraft) => (draft.mode === "AUTO" ? ({ mode: "AUTO" } as const) : ({ mode: "MANUAL", voucherId: draft.voucherId } as const));
 
-type Refusal = Readonly<{ reason: "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED" }>;
+type Refusal = Readonly<{ reason: "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED" | "QUOTE_UNAVAILABLE" }>;
 type GiftRepair = Readonly<{ entitlements: readonly { campaignId: string; entitled: number }[]; counting: ReadonlySet<string> }>;
+
+const isNone = (group: GroupSelection) => group.mode === "MANUAL" && group.voucherId === null;
+const isAsSaved = (group: GroupSelection, saved: GroupSelection) => group.mode === saved.mode && (group.mode === "AUTO" || (saved.mode === "MANUAL" && group.voucherId === saved.voucherId));
+/** True when the choice can only remove a voucher or leave it as it is: it cannot cost a gift or raise a total by being saved. */
+const cannotCostAnything = (next: VoucherSelectionIntent, saved: VoucherSelectionIntent) =>
+  (isNone(next.merchandise) || isAsSaved(next.merchandise, saved.merchandise)) && (isNone(next.shipping) || isAsSaved(next.shipping, saved.shipping));
 
 /** The gate, run in `tx` with the cart row already locked. `repair` is what to apply after the choice is saved. */
 async function consentGate(tx: Prisma.TransactionClient, input: Readonly<{
@@ -42,15 +52,19 @@ async function consentGate(tx: Prisma.TransactionClient, input: Readonly<{
   now: Date;
   attemptSecret: string;
   override: VoucherSelectionIntent;
+  /** The choice saved right now (read under the same lock), to tell a choice that changes nothing or only clears. */
+  saved: VoucherSelectionIntent;
   consentDigest: string | null;
   /** The one PRIVATE campaign a code just verified, so it can be previewed before it is saved. */
   verifiedPrivateIds?: readonly string[];
 }>): Promise<Readonly<{ refusal: Refusal | null; repair: GiftRepair | null }>> {
   const { cartId, shopId, env, now, consentDigest } = input;
   const ownHolds = await createVoucherHoldService(tx as never, { attemptSecret: input.attemptSecret, env }).readOwnLiveHoldsIn(tx as never, cartId);
-  const preview = await readVoucherPreviewWithin(tx, { cartId, shopId, now, env, ownHolds, selectionOverride: input.override, verifiedPrivateIds: input.verifiedPrivateIds });
-  // A preview that cannot be derived keeps the old behaviour: the intent is saved and the hold flow judges it.
-  if (!preview.enabled || !preview.ok) return { refusal: null, repair: null };
+  const preview = await readVoucherPreviewWithin(tx, { cartId, shopId, now, env, ownHolds, selectionOverride: input.override, verifiedPrivateIds: input.verifiedPrivateIds })
+    // A read that throws (an unreadable shipping policy, say) is "no quote", never "no cost".
+    .catch(() => ({ enabled: true, ok: false }) as const);
+  // No quote, no commit: the later hold/checkout layers are a second line, not a reason to save a choice whose price is unknown.
+  if (!preview.enabled || !preview.ok) return { refusal: cannotCostAnything(input.override, input.saved) ? null : { reason: "QUOTE_UNAVAILABLE" }, repair: null };
   if (consentDigest !== null && preview.quoteDigest !== consentDigest) return { refusal: { reason: "QUOTE_CHANGED" }, repair: null };
   const giftLost = (preview.quote.giftLoss?.selectedSlotsLost ?? 0) > 0;
   // What costs the shopper something needs their explicit yes BEFORE it is saved: a chosen gift lost, or a total that rises
@@ -69,7 +83,8 @@ export async function commitVoucherDraft(input: Readonly<{
   shopId: number;
   env?: Readonly<Record<string, string | undefined>>;
   now?: Date;
-  draft: Readonly<{ merchandise: VoucherGroupDraft; shipping: VoucherGroupDraft }>;
+  /** A group passed as `null` is kept as saved, read under the cart lock (never from a snapshot taken before it). */
+  draft: Readonly<{ merchandise: VoucherGroupDraft | null; shipping: VoucherGroupDraft | null }>;
   /** The digest of the quote the shopper explicitly confirmed, or null when they confirmed nothing. */
   consentDigest: string | null;
   attemptSecret: string;
@@ -83,10 +98,10 @@ export async function commitVoucherDraft(input: Readonly<{
     cartId,
     ...draft,
     now,
-    async beforeSave(tx) {
+    async beforeSave(tx, resolved) {
       const gate = await consentGate(tx, {
-        cartId, shopId, env, now, attemptSecret, consentDigest,
-        override: { merchandise: intentOf(draft.merchandise), shipping: intentOf(draft.shipping) },
+        cartId, shopId, env, now, attemptSecret, consentDigest, saved: resolved.saved,
+        override: { merchandise: intentOf(resolved.merchandise), shipping: intentOf(resolved.shipping) },
       });
       if (gate.refusal !== null) return { ok: false, reason: gate.refusal.reason } as const;
       repair = gate.repair;
@@ -126,7 +141,7 @@ export async function applyVoucherCode(input: Readonly<{
       const saved = selectionIntentFromRow(await tx.cartVoucherSelection.findUnique({ where: { cartId } }), now);
       const chosen = { mode: "MANUAL", voucherId: verified.campaignId } as const;
       const override: VoucherSelectionIntent = verified.group === "MERCHANDISE" ? { merchandise: chosen, shipping: saved.shipping } : { merchandise: saved.merchandise, shipping: chosen };
-      const gate = await consentGate(tx, { cartId, shopId, env, now, attemptSecret, consentDigest, override, verifiedPrivateIds: [verified.campaignId] });
+      const gate = await consentGate(tx, { cartId, shopId, env, now, attemptSecret, consentDigest, override, saved, verifiedPrivateIds: [verified.campaignId] });
       if (gate.refusal !== null) return gate.refusal;
       repair = gate.repair;
       return null;

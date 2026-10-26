@@ -24,11 +24,11 @@ export type VoucherGroupDraft = Readonly<{ mode: "AUTO" | "MANUAL"; voucherId: s
 
 export type VoucherSelectionResult =
   | Readonly<{ ok: true; selection: VoucherSelectionIntent }>
-  | Readonly<{ ok: false; reason: "FEATURE_DISABLED" | "CART_UNAVAILABLE" | "INVALID_INPUT" | "NOT_AVAILABLE" | "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED" }>;
+  | Readonly<{ ok: false; reason: "FEATURE_DISABLED" | "CART_UNAVAILABLE" | "INVALID_INPUT" | "NOT_AVAILABLE" | "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED" | "QUOTE_UNAVAILABLE" }>;
 
 export type VoucherCodeResult =
   | Readonly<{ ok: true; selection: VoucherSelectionIntent; card: VoucherCard; group: VoucherGroup }>
-  | Readonly<{ ok: false; reason: "FEATURE_DISABLED" | "CART_UNAVAILABLE" | "INVALID_CODE" | "VOUCHER_UNAVAILABLE" | "RATE_LIMITED" }>
+  | Readonly<{ ok: false; reason: "FEATURE_DISABLED" | "CART_UNAVAILABLE" | "INVALID_CODE" | "VOUCHER_UNAVAILABLE" | "RATE_LIMITED" | "QUOTE_UNAVAILABLE" }>
   /** A valid code whose choice costs the shopper something they have not agreed to: nothing was saved. */
   | Readonly<{ ok: false; reason: "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED"; pending: Readonly<{ campaignId: string; group: VoucherGroup }> }>;
 
@@ -130,45 +130,57 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
   /**
    * Commits the picker's "Áp dụng": both groups at once, in one transaction, so a shopper never ends up with half a
    * choice. Each manual voucher is validated exactly like `setGroup`; if either is refused nothing is written.
+   *
+   * A group passed as `null` is KEPT as saved: it is read here, under the cart lock, in the same transaction that writes, so a
+   * change another tab saved a moment ago cannot be overwritten from a snapshot taken before the lock. A kept group is not
+   * re-validated (it is not being chosen now; the quote drops a stale one with a notice).
    */
   async function applyBoth(input: Readonly<{
     cartId: string;
-    merchandise: VoucherGroupDraft;
-    shipping: VoucherGroupDraft;
+    merchandise: VoucherGroupDraft | null;
+    shipping: VoucherGroupDraft | null;
     now?: Date;
     /**
      * Runs INSIDE the transaction, under the cart lock, after the vouchers are validated and BEFORE anything is written. A
      * refusal writes nothing. This is where the picker's consent to lose gifts is verified against the server's own quote.
+     * It receives both groups as they would be saved (a kept group already resolved) and the intent saved right now.
      */
-    beforeSave?: (tx: Prisma.TransactionClient) => Promise<Extract<VoucherSelectionResult, { ok: false }> | null>;
+    beforeSave?: (tx: Prisma.TransactionClient, resolved: Readonly<{ merchandise: VoucherGroupDraft; shipping: VoucherGroupDraft; saved: VoucherSelectionIntent }>) => Promise<Extract<VoucherSelectionResult, { ok: false }> | null>;
     /** Runs INSIDE the same transaction right after the selection is written: the gift change the consent bought. */
     afterSave?: (tx: Prisma.TransactionClient) => Promise<void>;
   }>): Promise<VoucherSelectionResult> {
     const now = input.now ?? new Date();
     if (!canIssueNewVouchers(env)) return { ok: false, reason: "FEATURE_DISABLED" };
-    const drafts: Array<[VoucherGroup, VoucherGroupDraft]> = [["MERCHANDISE", input.merchandise], ["SHIPPING_FREE", input.shipping]];
-    for (const [, draft] of drafts) {
+    const requested: Array<[VoucherGroup, VoucherGroupDraft | null]> = [["MERCHANDISE", input.merchandise], ["SHIPPING_FREE", input.shipping]];
+    for (const [, draft] of requested) {
+      if (draft === null) continue;
       if ((draft.mode !== "AUTO" && draft.mode !== "MANUAL") || (draft.mode === "AUTO" ? draft.voucherId !== null : draft.voucherId !== null && !ID_PATTERN.test(draft.voucherId))) {
         return { ok: false, reason: "INVALID_INPUT" };
       }
     }
     const result = await withCart<VoucherSelectionResult>(input.cartId, now, async (tx, cart) => {
-      const ids = drafts.flatMap(([, draft]) => (draft.mode === "MANUAL" && draft.voucherId !== null ? [draft.voucherId] : []));
+      const saved = selectionIntentFromRow(await tx.cartVoucherSelection.findUnique({ where: { cartId: cart.id } }), now);
+      const keep = (group: GroupSelection): VoucherGroupDraft => (group.mode === "MANUAL" ? { mode: "MANUAL", voucherId: group.voucherId } : { mode: "AUTO", voucherId: null });
+      const merchandise = input.merchandise ?? keep(saved.merchandise);
+      const shipping = input.shipping ?? keep(saved.shipping);
+      const drafts: Array<[VoucherGroup, VoucherGroupDraft, boolean]> = [["MERCHANDISE", merchandise, input.merchandise === null], ["SHIPPING_FREE", shipping, input.shipping === null]];
+      const ids = drafts.flatMap(([, draft, kept]) => (!kept && draft.mode === "MANUAL" && draft.voucherId !== null ? [draft.voucherId] : []));
       const found = ids.length === 0 ? [] : await readSelectedVouchers({ client: tx, shopId, ids, now, env });
       const unlocked = found.some((campaign) => campaign.visibility === "PRIVATE") ? await unlockedPrivateIds(tx, cart.id, now) : new Set<string>();
-      for (const [group, draft] of drafts) {
-        if (draft.mode !== "MANUAL" || draft.voucherId === null) continue;
+      for (const [group, draft, kept] of drafts) {
+        if (kept || draft.mode !== "MANUAL" || draft.voucherId === null) continue;
         const campaign = found.find((candidate) => candidate.id === draft.voucherId);
         if (campaign?.kind !== group || (campaign.visibility === "PRIVATE" && !unlocked.has(campaign.id))) return { ok: false, reason: "NOT_AVAILABLE" };
       }
       if (input.beforeSave) {
-        const refusal = await input.beforeSave(tx);
+        const refusal = await input.beforeSave(tx, { merchandise, shipping, saved });
         if (refusal !== null) return refusal;
       }
+      const data = { ...columns("MERCHANDISE", merchandise.mode, merchandise.voucherId), ...columns("SHIPPING_FREE", shipping.mode, shipping.voucherId) };
       const row = await tx.cartVoucherSelection.upsert({
         where: { cartId: cart.id },
-        create: { cartId: cart.id, expiresAt: cart.expiresAt, ...columns("MERCHANDISE", input.merchandise.mode, input.merchandise.voucherId), ...columns("SHIPPING_FREE", input.shipping.mode, input.shipping.voucherId) },
-        update: { expiresAt: cart.expiresAt, ...columns("MERCHANDISE", input.merchandise.mode, input.merchandise.voucherId), ...columns("SHIPPING_FREE", input.shipping.mode, input.shipping.voucherId) },
+        create: { cartId: cart.id, expiresAt: cart.expiresAt, ...data },
+        update: { expiresAt: cart.expiresAt, ...data },
       });
       if (input.afterSave) await input.afterSave(tx);
       return { ok: true, selection: selectionIntentFromRow(row, new Date(0)) };
@@ -190,7 +202,7 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
      * written. A refusal writes nothing: the verified code is not saved, so a choice that costs a gift or raises the total
      * waits for the shopper's explicit consent exactly like a draft does.
      */
-    beforeSave?: (tx: Prisma.TransactionClient, verified: Readonly<{ campaignId: string; group: VoucherGroup }>) => Promise<Readonly<{ reason: "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED" }> | null>;
+    beforeSave?: (tx: Prisma.TransactionClient, verified: Readonly<{ campaignId: string; group: VoucherGroup }>) => Promise<Readonly<{ reason: "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED" | "QUOTE_UNAVAILABLE" }> | null>;
     afterSave?: (tx: Prisma.TransactionClient) => Promise<void>;
   }>): Promise<VoucherCodeResult> {
     const now = input.now ?? new Date();
@@ -203,7 +215,11 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
       const group: VoucherGroup = lookup.campaign.kind;
       if (input.beforeSave) {
         const refusal = await input.beforeSave(tx, { campaignId: lookup.campaign.id, group });
-        if (refusal !== null) return { ok: false, reason: refusal.reason, pending: { campaignId: lookup.campaign.id, group } };
+        if (refusal !== null) {
+          // With no quote at all there is nothing to show or to confirm: the code is refused outright and nothing is pending.
+          if (refusal.reason === "QUOTE_UNAVAILABLE") return { ok: false, reason: "QUOTE_UNAVAILABLE" };
+          return { ok: false, reason: refusal.reason, pending: { campaignId: lookup.campaign.id, group } };
+        }
       }
       const selection = await save(tx, cart, group, "MANUAL", lookup.campaign.id);
       if (input.afterSave) await input.afterSave(tx);
