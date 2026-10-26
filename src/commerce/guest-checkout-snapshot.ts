@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { resolveSellingPolicy, type ReservationState } from "./capacity-policy.ts";
 import { mergeReservationLines } from "./capacity-reservation.ts";
+import { readAdvisoryHeldQuantities } from "./capacity-advisory.ts";
 import {
   deriveCompositeCapacitySnapshot,
   deriveCompositeSellableStock,
@@ -414,7 +415,11 @@ export async function requiresFreshGuestCheckoutSnapshot(
   return !activeCheckout || isMutableDraft(activeCheckout);
 }
 
-function toStorefrontProduct(product: SelectedProduct, shopId: number) {
+function toStorefrontProduct(
+  product: SelectedProduct,
+  shopId: number,
+  heldByVariantId: ReadonlyMap<string, number>,
+) {
   const sellingPolicy = resolveSellingPolicy(product.sellingPolicy);
   const variants = [];
   for (const variant of product.variants) {
@@ -424,6 +429,7 @@ function toStorefrontProduct(product: SelectedProduct, shopId: number) {
       variant.compositeComponents.length > 0
         ? variant.compositeComponents.map((edge) => ({
             requiredQuantity: edge.quantity,
+            activeReservedQuantity: heldByVariantId.get(edge.componentVariantId) ?? 0,
             componentVariant: edge.componentVariant,
           }))
         : null;
@@ -433,7 +439,7 @@ function toStorefrontProduct(product: SelectedProduct, shopId: number) {
             shopId,
             components: componentInputs,
           })
-        : sumWarehouseStocks(variant.warehouseStocks);
+        : (sumWarehouseStocks(variant.warehouseStocks) ?? Number.NaN) - (heldByVariantId.get(variant.id) ?? 0);
     if (sellableStock === null) return null;
     const compositeCapacity =
       componentInputs !== null
@@ -627,9 +633,19 @@ export function createGuestCheckoutSnapshotService(
           select: productSelection,
         });
 
+        // Match the cart's advisory projection: subtract capacity still held on component
+        // resources before classifying READY vs PREORDER in the buyer's signed quote.
+        const capacityResourceIds = products.flatMap((product) =>
+          product.variants.flatMap((variant) =>
+            variant.compositeComponents.length > 0
+              ? variant.compositeComponents.map((edge) => edge.componentVariantId)
+              : [variant.id],
+          ),
+        );
+        const heldByVariantId = await readAdvisoryHeldQuantities(tx, capacityResourceIds);
         const storefrontProducts = [];
         for (const product of products) {
-          const storefrontProduct = toStorefrontProduct(product, safeShopId);
+          const storefrontProduct = toStorefrontProduct(product, safeShopId, heldByVariantId);
           if (!storefrontProduct) {
             return { ok: false, reason: "CART_LINE_UNAVAILABLE" };
           }
