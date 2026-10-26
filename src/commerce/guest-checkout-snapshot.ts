@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { resolveSellingPolicy, type ReservationState } from "./capacity-policy.ts";
 import { mergeReservationLines } from "./capacity-reservation.ts";
-import { readAdvisoryHeldQuantities } from "./capacity-advisory.ts";
+import { readAdvisoryHeldQuantities, withoutOrderHolds } from "./capacity-advisory.ts";
 import {
   deriveCompositeCapacitySnapshot,
   deriveCompositeSellableStock,
@@ -643,7 +643,10 @@ export function createGuestCheckoutSnapshotService(
               : [variant.id],
           ),
         );
-        const heldByVariantId = await readAdvisoryHeldQuantities(tx, capacityResourceIds);
+        // A retrying DRAFT may already own capacity. Like POS quote reconciliation,
+        // do not make it consume its own last READY unit twice and invalidate its proof.
+        const advisoryClient = mutableDraft ? withoutOrderHolds(tx, mutableDraft.id) : tx;
+        const heldByVariantId = await readAdvisoryHeldQuantities(advisoryClient, capacityResourceIds);
         const storefrontProducts = [];
         for (const product of products) {
           const storefrontProduct = toStorefrontProduct(product, safeShopId, heldByVariantId);
