@@ -1,0 +1,164 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page } from "@playwright/test";
+import { prisma } from "../../src/db/prisma.ts";
+import { VIDEO_A, VIDEO_POSTER } from "../fixtures/pancake-video.ts";
+import { BUYER_AXE_TAGS } from "./axe-tags";
+import { OPTIMIZED_IMAGE_ROUTE } from "./image-routes";
+import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
+
+const ROOT = resolve(import.meta.dirname, "../..");
+const BASE = "http://127.0.0.1:3366";
+const SHOP = 920_216;
+const run = `${Date.now()}-${process.pid}`;
+const slug = `pdp-video-${run}`;
+const externalId = `pdp-video-${run}`;
+const productName = "Sản phẩm video thử nghiệm";
+const mp4 = readFileSync(resolve(import.meta.dirname, "fixtures/product-video.mp4"));
+const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
+let server: ChildProcess | undefined;
+let output = "";
+
+async function start(enabled: boolean) {
+  output = "";
+  server = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), NEXT_SERVER_COMMAND, "--hostname", "127.0.0.1", "--port", "3366"], {
+    cwd: ROOT, env: { ...process.env, ...nextServerEnv(".next-test/pdp-pancake-video"), PANCAKE_SHOP_ID: String(SHOP), LA_PDP_PANCAKE_VIDEO_ENABLED: String(enabled), BETTER_AUTH_URL: BASE, NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"],
+  });
+  server.stdout?.on("data", (b) => { output = (output + b.toString()).slice(-20000); });
+  server.stderr?.on("data", (b) => { output = (output + b.toString()).slice(-20000); });
+  for (let i = 0; i < 100; i++) {
+    if (server.exitCode !== null) throw new Error(`Video test server exited\n${output}`);
+    try { const response = await fetch(`${BASE}/shop/${slug}`); if (response.ok && (await response.text()).includes(productName)) return; } catch { /* compiling */ }
+    await delay(500);
+  }
+  throw new Error(`Video test server timed out\n${output}`);
+}
+async function stop() {
+  if (!server || server.exitCode !== null) return;
+  server.kill("SIGTERM");
+  if (!(await Promise.race([once(server, "exit").then(() => true), delay(5000).then(() => false)]))) server.kill("SIGKILL");
+  server = undefined;
+}
+async function cleanup() { await prisma.promotionCampaign.deleteMany({ where: { id: externalId } }); await prisma.productMirror.deleteMany({ where: { pancakeProductId: externalId } }); }
+async function state(pancakeVideoSyncState: "READY" | "UNKNOWN" | "NONE" | "CONFLICT" | "UNSUPPORTED", pancakeVideoUrl: string | null = VIDEO_A) {
+  await prisma.productMirror.update({ where: { pancakeProductId: externalId }, data: { pancakeVideoSyncState, pancakeVideoUrl } });
+}
+async function images(page: Page) {
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => route.fulfill({ contentType: "image/png", body: image }));
+  await page.route("https://content.pancake.vn/**/*.jpg", (route) => route.fulfill({ contentType: "image/png", body: image }));
+}
+
+test.beforeAll(async () => {
+  await cleanup();
+  const product = await prisma.productMirror.create({ data: {
+    pancakeShopId: SHOP, pancakeProductId: externalId, slug, name: productName, syncedAt: new Date(), primaryImageUrl: VIDEO_POSTER,
+    pancakeVideoSyncState: "READY", pancakeVideoUrl: VIDEO_A,
+    variants: { create: ["M", "L"].map((size, i) => ({ pancakeVariationId: `${externalId}-${i}`, color: "Đen", size, pancakeRetailPrice: 500000, pancakeRetailPriceAfterDiscount: 500000, syncedAt: new Date(), pancakeImageUrls: [VIDEO_POSTER, VIDEO_POSTER.replace("a.jpg", "detail.jpg"), VIDEO_POSTER.replace("a.jpg", "back.jpg")], warehouseStocks: { create: { pancakeWarehouseId: "video-fixture-wh", quantity: 5, syncedAt: new Date() } } })) },
+  } });
+  await prisma.promotionCampaign.create({ data: { id: externalId, kind: "FLASH_SALE", name: "Video layout fixture", discountType: "PERCENTAGE", percentageValue: 10, isEnabled: true, enabledAt: new Date(), startsAt: new Date(Date.now() - 60000), endsAt: new Date(Date.now() + 3600000), targets: { create: { productId: product.id } } } });
+  await start(true);
+});
+test.beforeEach(async ({ page }) => { await state("READY"); await images(page); });
+test.afterAll(async () => { await stop(); await cleanup(); await prisma.$disconnect(); });
+
+for (const width of [320, 390, 768, 1024, 1440]) {
+  test(`one overlay, photo count, collision-free layout and no media network at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const requests: string[] = [];
+    page.on("request", (r) => { if (/\.(mp4|mov)(?:[?#]|$)/.test(r.url())) requests.push(r.url()); });
+    await page.goto(`${BASE}/shop/${slug}`);
+    const tile = page.getByRole("button", { name: "Xem video", exact: true });
+    await expect(tile).toHaveCount(1);
+    await expect(tile).toBeVisible();
+    await expect(page.locator("video, source")).toHaveCount(0);
+    const counter = page.locator(width < 1024 ? ".pdp-mobile-gallery__counter" : ".pdp-stage__counter");
+    await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
+    const t = (await tile.boundingBox())!;
+    const c = (await counter.boundingBox())!;
+    expect(t.y + t.height).toBeLessThanOrEqual(c.y);
+    const flash = (await page.locator(".pdp-flash-tag").boundingBox())!;
+    expect(flash.x + flash.width <= t.x || flash.y >= t.y + t.height).toBeTruthy();
+    expect(t.width).toBeGreaterThanOrEqual(44);
+    expect(t.x + t.width).toBeLessThanOrEqual(width);
+    await page.waitForTimeout(200);
+    expect(requests).toEqual([]);
+    await tile.click();
+    const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator("video")).toHaveAttribute("preload", "none");
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible();
+    await expect(tile).toBeFocused();
+    await expect(page.locator("video, source")).toHaveCount(0);
+    await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
+  });
+}
+
+test("explicit play fetches/decodes fixture MP4, seeks, closes and reopens accessibly", async ({ page }) => {
+  let mediaRequests = 0;
+  await page.route(VIDEO_A, (route) => {
+    mediaRequests++;
+    const range = route.request().headers().range;
+    const start = Number(range?.match(/bytes=(\d+)-/)?.[1] ?? 0);
+    return route.fulfill({ status: range ? 206 : 200, contentType: "video/mp4", headers: { "Accept-Ranges": "bytes", ...(range ? { "Content-Range": `bytes ${start}-${mp4.length - 1}/${mp4.length}` } : {}) }, body: mp4.subarray(start) });
+  });
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  await tile.click();
+  const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
+  const video = dialog.locator("video");
+  expect(mediaRequests).toBe(0);
+  await video.evaluate((element: HTMLVideoElement) => element.play());
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
+  await video.evaluate((element: HTMLVideoElement) => { element.currentTime = 2; });
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThanOrEqual(2);
+  expect(mediaRequests).toBeGreaterThan(0);
+  const axe = await new AxeBuilder({ page }).include("dialog[open]").withTags(BUYER_AXE_TAGS).analyze();
+  expect(axe.violations).toEqual([]);
+  await dialog.getByRole("button", { name: "Đóng", exact: true }).click();
+  await expect(tile).toBeFocused();
+  await expect(page.locator("video, source")).toHaveCount(0);
+  await tile.click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tile).toBeFocused();
+});
+
+test("playback failure retains photos and size selection", async ({ page }) => {
+  await page.route(VIDEO_A, (route) => route.abort());
+  await page.goto(`${BASE}/shop/${slug}`);
+  const size = page.getByRole("radio", { name: "L", exact: true });
+  await page.getByRole("region", { name: "Mua sản phẩm" }).getByRole("group", { name: /^Kích cỡ/ }).getByText("L", { exact: true }).click();
+  await page.getByRole("button", { name: "Xem video", exact: true }).click();
+  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+  await expect(page.getByRole("alert").filter({ hasText: "Chưa phát được video" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(size).toBeChecked();
+  await expect(page.locator(".pdp-mobile-gallery__counter")).toHaveText("1/3");
+  await expect(page.getByRole("button", { name: "Thêm vào giỏ", exact: false }).first()).toBeEnabled();
+});
+
+test("non-READY retained URLs and invalid READY URLs never reach HTML/JSON or render a tile", async ({ page }) => {
+  for (const status of ["UNKNOWN", "NONE", "CONFLICT", "UNSUPPORTED"] as const) {
+    await state(status);
+    const response = await page.goto(`${BASE}/shop/${slug}`);
+    expect(await response!.text()).not.toContain("a.mp4");
+    await expect(page.getByRole("button", { name: "Xem video", exact: true })).toHaveCount(0);
+  }
+  await state("READY", "https://evil.test/private.mp4");
+  const response = await page.goto(`${BASE}/shop/${slug}`);
+  expect(await response!.text()).not.toContain("https://evil.test/private.mp4");
+  await expect(page.getByRole("button", { name: "Xem video", exact: true })).toHaveCount(0);
+});
+
+test("flag OFF suppresses even READY source in rendered response", async ({ page }) => {
+  await stop();
+  await start(false);
+  const response = await page.goto(`${BASE}/shop/${slug}`);
+  expect(await response!.text()).not.toContain("a.mp4");
+  await expect(page.getByRole("button", { name: "Xem video", exact: true })).toHaveCount(0);
+});

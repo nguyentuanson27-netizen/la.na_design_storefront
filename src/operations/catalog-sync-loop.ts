@@ -1,3 +1,5 @@
+import { formatPancakeVideoSyncCounts, type PancakeVideoSyncCounts } from "../integrations/pancake/catalog-video.ts";
+
 /**
  * The scheduled Pancake catalog sync.
  *
@@ -42,6 +44,7 @@ export type CatalogSyncLoopOptions = Readonly<{
       variations: number;
       capacityHandedOff?: number;
       compositeQuarantined?: number;
+      videoSyncCounts?: PancakeVideoSyncCounts;
     }>
   >;
   intervalMs: number;
@@ -81,7 +84,7 @@ export async function runCatalogSyncLoop(options: CatalogSyncLoopOptions): Promi
         ? `, ${result.compositeQuarantined} incomplete combos quarantined`
         : "";
       options.log(
-        `${finishedAt.toISOString()} catalog sync ok: ${result.products} products, ${result.variations} variations${handedOff}${quarantined}`,
+        `${finishedAt.toISOString()} catalog sync ok: ${result.products} products, ${result.variations} variations${handedOff}${quarantined}${formatPancakeVideoSyncCounts(result.videoSyncCounts)}`,
       );
       // Outside the sync's own failure handling on purpose: a heartbeat that cannot be written must
       // not turn a good sync into a counted failure, and the health check will report it as stale.

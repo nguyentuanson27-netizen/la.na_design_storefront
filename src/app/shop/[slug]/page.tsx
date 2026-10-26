@@ -254,6 +254,7 @@ function render(data: ProductRouteData) {
           colorDimensionLabel: data.colorDimensionLabel,
         }}
         media={data.media}
+        video={data.video}
         productName={data.name}
         galleryIndexByVariantId={data.galleryIndexByVariantId}
         sizeGuide={editorial.sizeGuide}

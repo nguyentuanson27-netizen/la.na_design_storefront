@@ -87,6 +87,7 @@ test("catalog contract maps reviewed storefront fields, pagination, and all-ware
           { id: "field-size", keyValue: "size", name: "Size", value: "M" },
         ],
         imageUrls: ["https://example.test/product-1.jpg"],
+        videoEvidence: { kind: "UNKNOWN", reason: "missing" },
         isHidden: false,
         isLocked: false,
         retailPrice: 500_000,
@@ -273,4 +274,19 @@ test("reviewed Pancake allowlists are configured with the live-discovered catalo
   for (const requiredKey of ["data", "success", "id", "name", "allow_create_order"]) {
     assert.equal(REVIEWED_PANCAKE_CONTRACT_KEYS.warehouses.includes(requiredKey), true);
   }
+});
+
+
+test("optional variation videos never block valid commerce and ignore nested product videos", () => {
+  for (const videos of [null, [], ["https://content.pancake.vn/videos/2026/10/26/a.mp4"], "wrong", [null], Array(9).fill("bad")]) {
+    const payload = structuredClone(productVariationsPayload);
+    Object.assign(payload.data[0]!, { videos });
+    const parsed = parsePancakeCatalogVariations(payload).variations[0]!;
+    assert.equal(parsed.retailPrice, 500_000);
+    assert.equal(parsed.sellableStock, 7);
+    assert.ok(parsed.videoEvidence);
+  }
+  const payload = structuredClone(productVariationsPayload);
+  Object.assign(payload.data[0]!.product, { videos: ["https://content.pancake.vn/videos/2026/10/26/a.mp4"] });
+  assert.deepEqual(parsePancakeCatalogVariations(payload).variations[0]!.videoEvidence, { kind: "UNKNOWN", reason: "missing" });
 });

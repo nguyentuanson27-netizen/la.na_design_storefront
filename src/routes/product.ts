@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { isApprovedSizeGuideId } from "@/brand";
 import { readProductFeedback } from "@/commerce/feedback-repository";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
+import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
 import type { ProductPromotionOffer } from "@/commerce/product-promotion-offers";
 import { readProductPromotionOffers } from "@/commerce/product-promotion-offers-runtime";
 import { createSizeGuideMediaRepository } from "@/commerce/size-guide-media";
@@ -66,6 +67,7 @@ export type ProductRouteData = ProductViewModel &
      * exactly what it rendered before try-on existed.
      */
     tryOn: Awaited<ReturnType<typeof resolveProductTryOn>>;
+    video: PancakePdpVideo | null;
     /** Canonical A5 policy projections; the PDP does not restate shipping/returns facts. */
     shipping: ShippingViewModel;
     returns: ReturnsViewModel;
@@ -166,6 +168,7 @@ export async function loadProductRoute({
       }),
       commerceTrackingEnabled: isCommerceTrackingEnabled(),
       tryOn,
+      video: product.video,
       relatedListEvent: relatedTracking.listEvent,
       shipping: buildShippingViewModel({ policy: shippingPolicy }),
       returns: buildReturnsViewModel(),
