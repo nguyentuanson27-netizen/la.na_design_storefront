@@ -4,7 +4,6 @@ import { POLICY_CONTENT, type PolicyContentSection } from "../brand/policy.confi
 import type { SizeChart } from "../brand/schema.ts";
 import {
   describeGuestShippingPromotion,
-  describeGuestShippingPromotionHeadline,
   type GuestShippingPolicy,
 } from "../commerce/guest-shipping-policy.ts";
 import {
@@ -208,7 +207,7 @@ export function buildPurchaseAssuranceViewModel(
     }),
     Object.freeze({
       key: "free-shipping",
-      label: describeGuestShippingPromotionHeadline(input.policy),
+      label: "Miễn phí vận chuyển từ 2 set",
       href: "/shipping",
     }),
   ] satisfies PurchaseAssuranceItem[]);

@@ -32,6 +32,8 @@ import { reminderSubmitDecision } from "@/components/headless/checkout-gift-remi
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 import { CheckoutUpsell } from "./checkout-upsell";
 import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
+import { OrderTrustLine } from "@/components/brand/order-trust-line";
+import { ORDER_TRUST_SHORT } from "@/brand";
 import type { CheckoutUpsellBanner } from "@/routes/checkout-model";
 
 const EMPTY_GIFT_PICKER: CartGiftPickerModel = { campaigns: [], selections: [], invalid: false, stackConflict: false };
@@ -769,13 +771,14 @@ export function GuestCheckoutForm({
       >
         {isSubmitting ? "Đang đặt hàng…" : paymentMethod === "BANK_TRANSFER" ? "Đặt hàng và chuyển khoản" : "Đặt hàng COD"}
       </button>
+      <OrderTrustLine />
 
       {/* Room for the bottom bar, so it never sits over the last of the page. */}
       {totalText ? <div aria-hidden="true" className="h-24 lg:hidden" /> : null}
       </div>
       </div>
       {totalText ? (
-        <MobileStickyCta targetId={SUBMIT_BUTTON_ID} totalText={totalText} suppressed={reminder.state === "open"} note={submitLockReason}>
+        <MobileStickyCta targetId={SUBMIT_BUTTON_ID} totalText={totalText} suppressed={reminder.state === "open"} note={submitLockReason} footnote={ORDER_TRUST_SHORT}>
           {/* Not a second submit: it asks the form to submit, so validation, the reminder and the single
               order all run through `handleSubmit` exactly as the primary button does. */}
           {/* Named apart from the primary button so assistive tech and tests can tell the two apart. */}

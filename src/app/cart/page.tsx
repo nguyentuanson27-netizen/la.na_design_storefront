@@ -1,14 +1,16 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { BRAND } from "@/brand";
+import { BRAND, ORDER_TRUST_SHORT } from "@/brand";
 import { BrandCartLineControls } from "@/components/brand/cart-line-controls";
 import { BrandCartGiftPicker } from "@/components/brand/cart-gift-picker";
 import { CartLineJumpLink } from "@/components/brand/cart-line-jump-link";
+import { CartLineUrgency } from "@/components/brand/cart-line-urgency";
 import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
+import { OrderTrustLine } from "@/components/brand/order-trust-line";
 import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { loadCartRoute, type CartRouteProps } from "@/routes/cart";
@@ -157,6 +159,7 @@ function render(data: CartViewModel) {
                     />
                   </p>
                   {line.paidSegments ? <p className="mt-1 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
+                  <CartLineUrgency className="mt-1.5" flashRemainingMs={line.flashRemainingMs} lowStockText={line.lowStockText} />
                   {line.available ? null : (
                     <p className="mt-1.5 text-xs font-semibold uppercase tracking-[0.12em]" data-line-problem="">
                       {`Cần xử lý: ${line.availabilityLabel}`}
@@ -223,6 +226,9 @@ function render(data: CartViewModel) {
             >
               Tiến hành đặt hàng
             </Link>
+          ) : null}
+          {data.canCheckout ? (
+            <OrderTrustLine className="mt-3" />
           ) : problemLines.length === 0 ? (
             <p className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6 text-black/75">
               {data.benefitsNotice ?? "Hãy xử lý các dòng chưa khả dụng trước khi thanh toán."}
@@ -255,6 +261,7 @@ function render(data: CartViewModel) {
             targetId={CHECKOUT_CTA_ID}
             totalText={data.summary?.totalText ?? data.subtotalText}
             totalLabel={data.summary ? "Tổng thanh toán" : "Tạm tính"}
+            footnote={ORDER_TRUST_SHORT}
           >
             <Link className="btn btn--primary px-4" href="/checkout">Thanh toán</Link>
           </MobileStickyCta>

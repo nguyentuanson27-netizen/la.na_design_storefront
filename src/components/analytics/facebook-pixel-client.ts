@@ -30,6 +30,13 @@ export type FacebookPixelEventParameters = Readonly<{
 }>;
 
 /**
+ * A storefront-UX signal sent with `trackCustom` (browser only, no Conversions API twin). Flat
+ * primitives only: it describes what the shopper did on the page, never who they are or what they
+ * paid, so nothing here may carry an identity, a price or free text from an input.
+ */
+export type FacebookPixelCustomParameters = Readonly<Record<string, string | number | boolean>>;
+
+/**
  * Whether this build ships a pixel at all.
  *
  * next.config.mjs declares this in `env`, so it is a literal here — the same one the pixel
@@ -74,8 +81,9 @@ function isPixelLibraryLoaded(): boolean {
  *     even if the browser's one-shot `load`/`error` event happened before the subscriber existed.
  */
 type PendingCall = {
+  method: "track" | "trackCustom";
   eventName: string;
-  parameters: FacebookPixelEventParameters | undefined;
+  parameters: FacebookPixelEventParameters | FacebookPixelCustomParameters | undefined;
   eventId: string | undefined;
   onAccepted: (() => void) | undefined;
 };
@@ -120,7 +128,7 @@ function flushCallsAwaitingFbq(fbq: Fbq): void {
   const queued = callsAwaitingFbq;
   callsAwaitingFbq = [];
   for (const call of queued) {
-    handToPixel(fbq, call.eventName, call.parameters, call.eventId, call.onAccepted);
+    handToPixel(fbq, call.method, call.eventName, call.parameters, call.eventId, call.onAccepted);
   }
 }
 
@@ -209,16 +217,17 @@ function startPolling(): void {
 
 function handToPixel(
   fbq: Fbq,
+  method: "track" | "trackCustom",
   eventName: string,
-  parameters: FacebookPixelEventParameters | undefined,
+  parameters: FacebookPixelEventParameters | FacebookPixelCustomParameters | undefined,
   eventId: string | undefined,
   onAccepted: (() => void) | undefined,
 ): void {
   try {
     if (eventId === undefined) {
-      fbq("track", eventName, parameters as Record<string, unknown> | undefined);
+      fbq(method, eventName, parameters as Record<string, unknown> | undefined);
     } else {
-      fbq("track", eventName, parameters as Record<string, unknown> | undefined, {
+      fbq(method, eventName, parameters as Record<string, unknown> | undefined, {
         eventID: eventId,
       });
     }
@@ -262,13 +271,27 @@ export function trackFacebookPixelEvent(
   if (!PIXEL_CONFIGURED) return;
   if (typeof window === "undefined") return;
 
+  enqueueOrHand({ method: "track", eventName, parameters, eventId, onAccepted });
+}
+
+/**
+ * Reports one custom storefront-UX event (`fbq("trackCustom", ...)`), with the same queueing as
+ * {@link trackFacebookPixelEvent}. It has no Conversions API twin, so it carries no event id.
+ */
+export function trackFacebookPixelCustomEvent(eventName: string, parameters: FacebookPixelCustomParameters): void {
+  if (!PIXEL_CONFIGURED) return;
+  if (typeof window === "undefined") return;
+  enqueueOrHand({ method: "trackCustom", eventName, parameters, eventId: undefined, onAccepted: undefined });
+}
+
+function enqueueOrHand(call: PendingCall): void {
   const fbq = readFbq();
   if (fbq === null) {
-    callsAwaitingFbq.push({ eventName, parameters, eventId, onAccepted });
+    callsAwaitingFbq.push(call);
     startPolling();
     return;
   }
   // Anything still queued from before the snippet ran goes first, so order is preserved.
   flushCallsAwaitingFbq(fbq);
-  handToPixel(fbq, eventName, parameters, eventId, onAccepted);
+  handToPixel(fbq, call.method, call.eventName, call.parameters, call.eventId, call.onAccepted);
 }

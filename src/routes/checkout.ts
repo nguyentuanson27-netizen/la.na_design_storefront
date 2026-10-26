@@ -18,6 +18,7 @@ import {
   buildBenefitCheckoutViewModel,
   buildBenefitUnavailableCheckoutViewModel,
   buildCheckoutViewModel,
+  benefitCheckoutPixelParameters,
   checkoutPixelContentIds,
   type CheckoutViewModel,
 } from "./checkout-model.ts";
@@ -61,15 +62,18 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
       benefitRender.kind === "BENEFIT"
         ? buildBenefitCheckoutViewModel({ lines, render: benefitRender })
         : buildBenefitUnavailableCheckoutViewModel(benefitRender, lines);
-    // The funnel and pixel events price one unit per variation, which a split-price or gift order
-    // cannot say truthfully, so a benefit checkout reports neither rather than a number that disagrees
-    // with the page. (The purchase itself is reported from the order, money paid only -- GQ22.)
+    // The dataLayer funnel prices one unit per variation, which a split-price or gift order cannot say
+    // truthfully, so a benefit checkout publishes no `begin_checkout`. Meta's InitiateCheckout is still
+    // reported, with the order total and paid units the page shows and no per-item prices, so the
+    // cart → checkout step stays measurable while a gift campaign runs. (The purchase itself is
+    // reported from the order, money paid only -- GQ22.)
+    const benefitPixel = benefitRender.kind === "BENEFIT" ? benefitCheckoutPixelParameters(data, lines) : null;
     return sealRoute({
       data: { ...await withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
       refreshAfterMs: 60_000,
       trackingEvent: null,
       structuredData: [],
-      pixelEvents: [],
+      pixelEvents: benefitPixel ? [{ name: "InitiateCheckout", capiPath: "/checkout", parameters: benefitPixel }] : [],
     });
   }
 
