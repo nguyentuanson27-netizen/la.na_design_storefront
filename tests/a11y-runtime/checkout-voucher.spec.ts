@@ -454,11 +454,44 @@ test("review 54cb476: a marketing link to a code that would cost a chosen gift s
   expect(await page.content()).not.toMatch(/KOL73/i);
   expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
-  // Declining (closing the picker) keeps everything as it was.
+  // Declining (closing the picker) keeps everything as it was, and the code is still on offer.
   await dialog.getByRole("button", { name: "Quay lại, giữ lựa chọn cũ" }).click();
   await expect(dialog).toBeHidden();
   expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
+  expect((await page.context().cookies()).some((cookie) => cookie.name === "la_voucher_code")).toBe(true);
+  // Now the shopper agrees: the code, the removal of the gift and the end of the offer all follow from that one yes.
+  await page.locator("[data-voucher-picker] > button").click();
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await expect(dialog).toContainText("quà đã chọn sẽ được bỏ khỏi giỏ hàng");
+  await dialog.getByRole("button", { name: /Tiếp tục với voucher này/ }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(async () => (await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).not.toBeNull();
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+  await expect.poll(async () => (await page.context().cookies()).some((cookie) => cookie.name === "la_voucher_code")).toBe(false);
+});
+
+test("review 04dea8b: the linked code applied while pricing cannot be re-read is a success the shopper is told about, not a closed dialog", async ({ page, context }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL74", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 74K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  await context.addCookies([{ name: "la_voucher_code", value: "KOL74", url: BASE, httpOnly: true, sameSite: "Lax" }]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/cart`);
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION vchr_co_empty_cart() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN DELETE FROM "CartItem" WHERE "cartId" = NEW."cartId"; RETURN NULL; END $$`);
+  await prisma.$executeRawUnsafe(`CREATE TRIGGER vchr_co_empty_cart_t AFTER INSERT OR UPDATE ON "CartVoucherSelection" FOR EACH ROW EXECUTE FUNCTION vchr_co_empty_cart()`);
+  try {
+    await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+    await expect(dialog).toContainText("Đã áp dụng mã ưu đãi");
+    await expect(dialog.locator("p[role='alert']")).toHaveCount(0);
+    expect((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).not.toBeNull();
+    await expect(dialog).toBeVisible();
+  } finally {
+    await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS vchr_co_empty_cart_t ON "CartVoucherSelection"`);
+    await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS vchr_co_empty_cart()`);
+  }
 });
 
 test("a voucher that costs a gift needs the shopper's own consent before it can be held", async ({ page }) => {

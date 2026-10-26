@@ -2,6 +2,7 @@
 
 import {
   applyStorefrontLinkedVoucherCode,
+  dismissStorefrontLinkedVoucherOffer,
   applyStorefrontVoucherCode,
   commitStorefrontVoucherDraft,
   previewStorefrontVoucherDraft,
@@ -22,5 +23,7 @@ export function useVoucherPickerActions() {
     applyCode: applyStorefrontVoucherCode,
     /** The code a marketing link left on the server (never sent by the browser): same verify, quote and consent as a typed one. */
     applyLinkedCode: applyStorefrontLinkedVoucherCode,
+    /** Stop offering the linked code once it has been used (a cookie change re-renders the page, so only after the dialog closes). */
+    dismissLinkedOffer: dismissStorefrontLinkedVoucherOffer,
   } as const;
 }

@@ -89,7 +89,7 @@ export async function applyStorefrontVoucherCode(input: unknown) {
 /**
  * "Dùng mã từ liên kết": the code a marketing link left in the HttpOnly cookie, read HERE on the server. The browser never receives
  * it (a prop to a Client Component would be serialized into the page, where analytics scripts run); it sends only a yes and the
- * digest it was shown. The same gate as a typed code. Once it is used, the cookie is cleared.
+ * digest it was shown. The same gate as a typed code.
  */
 export async function applyStorefrontLinkedVoucherCode(input: unknown) {
   const parsed = parseVoucherLinkedCommitInput(input);
@@ -99,9 +99,15 @@ export async function applyStorefrontLinkedVoucherCode(input: unknown) {
   if (cartId === null) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
   const code = readVoucherIntentCookie(jar.get(VOUCHER_INTENT_COOKIE)?.value);
   if (code === null) return { ok: false, reason: "INVALID_CODE" } as const;
-  const result = await applyCodeFor(cartId, code, parsed.consentDigest);
-  if (result.ok) jar.delete(VOUCHER_INTENT_COOKIE);
-  return result;
+  // The cookie is NOT cleared here: deleting a cookie in a Server Action re-renders the page, which would remount the picker and close the
+  // dialog the shopper is reading the result in. `dismissStorefrontLinkedVoucherOffer` clears it after the dialog is closed.
+  return applyCodeFor(cartId, code, parsed.consentDigest);
+}
+
+/** The offered code has been used: stop offering it. Called when the picker closes, never while the shopper is looking at the result. */
+export async function dismissStorefrontLinkedVoucherOffer() {
+  (await cookies()).delete(VOUCHER_INTENT_COOKIE);
+  return { ok: true } as const;
 }
 
 /** Resolve an ambiguous write by reading the cookie-owned cart; never repeat the write. */

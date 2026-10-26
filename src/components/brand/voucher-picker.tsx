@@ -40,7 +40,7 @@ const CODE_ERROR: Readonly<Record<string, string>> = {
 const GENERIC_ERROR = "Chưa cập nhật được ưu đãi. Nàng thử lại sau giây lát nhé.";
 
 export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initial: VoucherPickerModel; linkOffered?: boolean }>) {
-  const { previewDraft, commitDraft, applyCode, applyLinkedCode } = useVoucherPickerActions();
+  const { previewDraft, commitDraft, applyCode, applyLinkedCode, dismissLinkedOffer } = useVoucherPickerActions();
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
@@ -59,6 +59,10 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
   // server to use it (the same verify, quote and consent as a typed code).
   const [code, setCode] = useState("");
   const [pendingLink, setPendingLink] = useState(false);
+  // Once the linked code is used the offer disappears from the dialog at once; the server-side cookie is cleared when the dialog closes.
+  const [linkVisible, setLinkVisible] = useState(linkOffered);
+  const linkApplied = useRef(false);
+  const markLinkUsed = () => { linkApplied.current = true; setLinkVisible(false); };
   // A valid code whose choice costs something the shopper has not agreed to: verified, shown, NOT saved. It is saved by the
   // same "Áp dụng" press that carries the consent (the server re-verifies the code and the quote then).
   const [pendingCode, setPendingCode] = useState<string | null>(null);
@@ -77,6 +81,13 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
   const router = useRouter();
   const codeApplied = useRef(false);
   const settleCodeApplied = () => {
+    if (linkApplied.current) {
+      // The dialog is closed now, so clearing the cookie (which re-renders the page) costs the shopper nothing.
+      linkApplied.current = false;
+      codeApplied.current = false;
+      void dismissLinkedOffer().then(() => router.refresh());
+      return;
+    }
     if (!codeApplied.current) return;
     codeApplied.current = false;
     router.refresh();
@@ -172,11 +183,13 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
         setDraft(draftOf(result.picker));
         setPendingLink(false);
         codeApplied.current = true;
+        markLinkUsed();
         setMessage("Đã áp dụng mã ưu đãi.");
       } else if (result.ok) {
         setPendingLink(false);
         setConfirming(false);
         codeApplied.current = true;
+        markLinkUsed();
         setMessage("Đã áp dụng mã ưu đãi. Giá dự kiến sẽ được cập nhật khi nàng đóng hộp thoại.");
       } else if (!result.ok && (result.reason === "CONFIRMATION_REQUIRED" || result.reason === "QUOTE_CHANGED")) {
         if (result.picker) {
@@ -208,6 +221,7 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
         : await commitDraft({ ...draft, selection: baseVersion ?? "", ...(consent ? { consent } : {}) });
       if (result.ok && result.picker) {
         if (pendingCode !== null || pendingLink) {
+          if (pendingLink) markLinkUsed();
           setPendingCode(null);
           setPendingLink(false);
           setCode("");
@@ -224,6 +238,7 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
       } else if (result.ok) {
         // Saved on the server, but the picker could not be re-read right now: not a failure, and not a promise about the price either.
         // Say so plainly and keep the dialog open; the page behind is refreshed when the shopper closes it.
+        if (pendingLink) markLinkUsed();
         setPendingCode(null);
         setPendingLink(false);
         setCode("");
@@ -297,7 +312,7 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
             {error ? <p role="alert" className="mt-3 border-l-2 border-black bg-black/5 p-3 text-sm">{error}</p> : null}
             {model.warnings.notices.map((notice) => <p key={notice} role="status" className="mt-3 text-sm text-black/80">{notice}</p>)}
 
-            {linkOffered ? (
+            {linkVisible ? (
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border border-black/20 p-3 text-sm">
                 <p>Nàng có mã ưu đãi từ liên kết.</p>
                 <button type="button" disabled={pending} onClick={submitLinked} className="min-h-11 border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Dùng mã từ liên kết</button>

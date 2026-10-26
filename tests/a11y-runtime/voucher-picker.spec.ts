@@ -229,6 +229,17 @@ test("AC-40: a marketing link is redirected to a clean URL; the code is never in
   await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
   await expect.poll(async () => (await selection())?.merchandiseVoucherId).toBe(ids.priv);
   expect(JSON.stringify(await selection())).not.toMatch(/KOL70/i);
+  // The shopper is still looking at the result: the dialog stays open with the confirmation and the new choice, the offer is gone, and the
+  // cookie is still there (clearing it re-renders the page, so it waits until the dialog is closed).
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Đã áp dụng mã ưu đãi");
+  await expect(dialog.getByRole("radio", { name: /Giảm 70.000đ/ })).toBeChecked();
+  await expect(dialog.getByRole("button", { name: "Dùng mã từ liên kết" })).toHaveCount(0);
+  expect((await context.cookies()).some((cookie) => cookie.name === "la_voucher_code")).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect.poll(async () => (await context.cookies()).some((cookie) => cookie.name === "la_voucher_code")).toBe(false);
+  await expect(trigger(page)).toContainText("Đang dùng");
 });
 
 test("AC-13 / V19: with no cart yet, the link's code waits in an HttpOnly cookie and the cart only OFFERS it", async ({ browser }) => {
