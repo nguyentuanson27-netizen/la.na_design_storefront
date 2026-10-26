@@ -24,6 +24,7 @@ async function main(): Promise<void> {
       return;
     }
     for (const row of result.redemptions) console.log(`  ${row.kind} ${row.amountVnd}đ ${row.alreadyRefunded ? "already refunded" : "in use"}`);
+    if (result.applied) console.log("reminder: this was a manual override; the order must really be cancelled in Pancake, and the evidence you gave is stored with the refund");
     console.log(result.applied ? `voucher admin cancel: ${result.refunded} redemptions refunded for order ${result.orderId}` : "dry run: nothing changed (add --apply to refund)");
   } catch {
     console.error("voucher admin cancel failed");

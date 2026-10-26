@@ -56,6 +56,11 @@ test("a canceled order, or one that is not the order and shop that were asked ab
   assert.deepEqual(compareOrderReadBack(expected, ok, IDENTITY), { kind: "MATCH" });
   // Status 7 is canceled (the code cancelOrder writes and reads back); the money still matches exactly.
   assert.equal(compareOrderReadBack(expected, { ...ok, status: 7 }, IDENTITY).kind, "DRIFT");
+  // Status 6 ("Đã hủy") is what Pancake reports when STAFF cancel in its UI: with the money and lines exactly right it is still not an
+  // order to confirm (a cancel can land between the create and the read-back).
+  assert.equal(compareOrderReadBack(expected, { ...ok, status: 6 }, IDENTITY).kind, "DRIFT");
+  // Statuses without evidence keep their contract: a known live code with matching money still matches.
+  for (const live of [0, 1, 2, 3, 8, 17]) assert.equal(compareOrderReadBack(expected, { ...ok, status: live }, IDENTITY).kind, "MATCH", `status ${live}`);
   // Identity must be reported and be the requested one.
   assert.equal(compareOrderReadBack(expected, { ...ok, orderId: "800002" }, IDENTITY).kind, "UNAVAILABLE");
   assert.equal(compareOrderReadBack(expected, { ...ok, shopId: 1 }, IDENTITY).kind, "UNAVAILABLE");

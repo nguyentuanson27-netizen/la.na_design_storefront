@@ -1429,9 +1429,11 @@ test("review3 P1: a READY promise is judged against the fresh Pancake stock, not
   assert.equal(healthy.calls.create.length, 1);
 });
 
-test("review3 P1: a canceled order, or one that is not the requested order and shop, is never CONFIRMED on a money match", async () => {
+test("review3 P1: a canceled order (7, or 6 by staff), or one that is not the requested order and shop, is never CONFIRMED on a money match", async () => {
   const cases: ReadonlyArray<readonly [string, Partial<Pick<PancakeOrderReadBack, "orderId" | "shopId" | "status">>]> = [
     ["canceled (status 7)", { status: 7 }],
+    // What Pancake reports when staff cancel in its UI: a cancel can land between the create and the read-back.
+    ["canceled by staff (status 6)", { status: 6 }],
     ["another order id", { orderId: "999" }],
     ["another shop", { shopId: SHOP + 1 }],
     ["no status", { status: null }],

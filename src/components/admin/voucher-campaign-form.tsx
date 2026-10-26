@@ -59,6 +59,15 @@ export function VoucherCampaignForm({ initial, categories, included = [], exclud
       <input name="name" required maxLength={120} defaultValue={initial?.name ?? ""} className={inputClass} />
     </label>
 
+    {/* A voucher that has run keeps its identity: the controls are not shown, so the identity travels as hidden inputs OUTSIDE the
+        disabled fieldset (a disabled control is never submitted). The server still compares them with the stored campaign and refuses a
+        change (IDENTITY_LOCKED); these only let a legitimate edit of the economics pass validation. */}
+    {identityLocked && initial ? <>
+      <input type="hidden" name="kind" value={initial.kind} />
+      <input type="hidden" name="issuance" value={initial.issuance} />
+      <input type="hidden" name="visibility" value={initial.visibility} />
+      {initial.code ? <input type="hidden" name="code" value={initial.code} /> : null}
+    </> : null}
     <fieldset className="border-t border-black/20 pt-5" disabled={identityLocked}>
       <legend className="text-sm font-semibold">{"Loại voucher"}</legend>
       {identityLocked ? <p className="mt-2 text-sm text-black/65">{"Đã bật nên loại, cách phát hành, hiển thị và mã không đổi được. Hãy sao chép thành voucher mới."}</p> : null}

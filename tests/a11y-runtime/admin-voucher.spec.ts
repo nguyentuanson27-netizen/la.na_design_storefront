@@ -224,6 +224,33 @@ test("V07 'Bật' is the only thing that activates a voucher; a stale revision i
   expect(accessibility.violations).toEqual([]);
 });
 
+test("V07 a voucher that is already running can be edited (economics), keeps its identity, and a forged identity is refused", async ({ page, context }) => {
+  await context.addCookies(adminCookies);
+  const running = await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: `V07-RUN-${runId.slice(-6)}`, discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: `V07 Running ${runId}`, fixedAmountVnd: BigInt(40_000), minEligibleSubtotalVnd: BigInt(500_000), maxUses: 10, maxBudgetVnd: BigInt(400_000) },
+  });
+  await page.goto(`${PAGE}?edit=${encodeURIComponent(running.id)}`, { waitUntil: "networkidle" });
+  await expect(page.getByText("Đã bật nên loại, cách phát hành, hiển thị và mã không đổi được")).toBeVisible();
+  await page.getByLabel("Tổng số lượt dùng (tuỳ chọn)").fill("40");
+  await page.getByLabel("Ngân sách tối đa (đồng, tuỳ chọn)").fill("1600000");
+  await page.getByLabel("Số tiền giảm (đồng)").fill("45000");
+  await page.getByRole("button", { name: "Lưu voucher" }).click();
+  await expect(page.getByRole("status")).toContainText("Đã lưu");
+  const saved = await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: running.id } });
+  expect([saved.maxUses, saved.maxBudgetVnd, saved.fixedAmountVnd]).toEqual([40, BigInt(1_600_000), BigInt(45_000)]);
+  expect(saved.revision).toBeGreaterThan(running.revision);
+  expect([saved.kind, saved.issuance, saved.visibility, saved.code, saved.isEnabled]).toEqual(["MERCHANDISE", "CODE", "PRIVATE", running.code, true]);
+
+  // A forged identity (the hidden mirror edited in the browser) is refused by the server and nothing is written.
+  await page.goto(`${PAGE}?edit=${encodeURIComponent(running.id)}`, { waitUntil: "networkidle" });
+  await page.locator('input[type="hidden"][name="kind"]').evaluate((input: HTMLInputElement) => { input.value = "SHIPPING_FREE"; });
+  await page.getByLabel("Tổng số lượt dùng (tuỳ chọn)").fill("99");
+  await page.getByRole("button", { name: "Lưu voucher" }).click();
+  await expect(page.locator("p[role='alert']")).toContainText("Loại voucher, cách phát hành, hiển thị và mã không đổi được");
+  const after = await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: running.id } });
+  expect([after.kind, after.maxUses, after.revision]).toEqual(["MERCHANDISE", 40, saved.revision]);
+});
+
 test("V07 a hand-edited URL reason is never echoed and falls back to one generic sentence", async ({ page, context }) => {
   await context.addCookies(adminCookies);
   await page.goto(`${PAGE}?reason=STALE_REVISION`, { waitUntil: "networkidle" });
