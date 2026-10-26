@@ -98,7 +98,7 @@
 - [ ] **V20 — AC/TG convergence test evidence** _(deps: V07, V09, V13, V14, V16–V19)_
   - [ ] AC-01..47/TG-01..12 and H1-V/H3-V evidence includes impossible POS money no-hold, stock failure no-consume, Admin grant race and code/NONE persistence.
   - [ ] Run pnpm test:domain, pnpm test, pnpm test:db, prisma:validate/generate, typecheck, lint, build; browser a11y and authorized POS checks.
-- [ ] **V21 — Rollback/runbook (H5 afterwards)** _(deps: V20)_
+- [ ] **V21 — Rollback/runbook (H5 afterwards)** _(deps: V20)_ — _partial: migration rollback/roll-forward dry run on a scratch DB done 2026-10-26, see the verification doc; the runbook and packet wait for V13/V14/V18_
   - [ ] Runbook stops new holds without breaking valid existing holds, reconciles unknown/refunds, audits counters.
   - [ ] Assemble CI/security/rollback packet FOR later H5 owner go/no-go; do not auto-enable/deploy.
 

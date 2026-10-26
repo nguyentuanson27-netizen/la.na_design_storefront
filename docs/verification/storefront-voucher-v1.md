@@ -71,3 +71,9 @@ Not covered: desktop viewport, a production build, real devices, the Admin scree
 ## What a person still has to do
 
 build V11–V14 and V18 · H4 UX review · V20 convergence run with approved POS · V21 rollback dry run · H5 go/no-go. **Keep `LA_VOUCHER_ENABLED` unset in production until V18 ships.**
+
+## Migration rollback dry run (V21, partial) — 2026-10-26
+
+Scratch PostgreSQL 16 database, never a real one. `prisma migrate deploy` applied every migration including `20261025100000_voucher_v1_additive` (5 tables, 9 triggers, 4 functions, 10 types). The migration's own commented rollback list was then run in one transaction: **0 voucher objects remained**. On that rolled-back schema the older order/checkout database tests (`benefit-checkout-snapshot`, `guest-checkout-submit`; 60 tests) passed unchanged, i.e. old code and historical orders do not depend on the new objects. Re-applying the migration file (roll forward) succeeded and `voucher-schema` plus `voucher-hold` (27 tests) passed again.
+
+Limits: this proves the schema round trip on an empty ledger. The rollback list is only safe while no accepted order references the tables (the migration header says so); a rollback after real redemptions would need a data decision, not this script. Nothing was applied to any real database.
