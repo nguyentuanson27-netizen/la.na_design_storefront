@@ -17,6 +17,8 @@ import { createVoucherHoldService } from "../../src/commerce/voucher-hold-servic
 import { createVoucherOrderAcceptance } from "../../src/commerce/voucher-order-acceptance.ts";
 import { applyVoucherCode, commitVoucherDraft } from "../../src/commerce/voucher-draft-commit.ts";
 import { readVoucherPreview } from "../../src/commerce/voucher-preview.ts";
+import { createVoucherSelectionService } from "../../src/commerce/voucher-selection-service.ts";
+import { selectionVersionOf } from "../../src/commerce/voucher-selection-version.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
 import type { PancakeCreateOrderRequest } from "../../src/integrations/pancake/order-create.ts";
@@ -421,7 +423,7 @@ async function pickerCommit(voucherId: string, consent: "none" | "current" | "st
   assert.ok(preview.enabled && preview.ok);
   const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
   return commitVoucherDraft({
-    client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET,
+    client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, expectedSelectionVersion: null,
     draft: { merchandise: { mode: "MANUAL", voucherId }, shipping: { mode: "AUTO", voucherId: null } },
     consentDigest: consent === "none" ? null : consent === "current" ? digest : "0".repeat(64),
   });
@@ -541,7 +543,7 @@ test("review 8bdb2f0 / P1: when the server cannot derive a quote nothing that co
   assert.ok(preview.enabled && preview.ok);
   const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
   const draftWith = (consentDigest: string | null, env: Readonly<Record<string, string | undefined>>) => commitVoucherDraft({
-    client: prisma, cartId, shopId: SHOP, env, attemptSecret: SECRET, consentDigest,
+    expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env, attemptSecret: SECRET, consentDigest,
     draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "AUTO", voucherId: null } },
   });
 
@@ -553,7 +555,7 @@ test("review 8bdb2f0 / P1: when the server cannot derive a quote nothing that co
   const typed = await applyVoucherCode({ client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, rawCode: "kol50", consentDigest: digest });
   assert.deepEqual(typed, { ok: false, reason: "QUOTE_UNAVAILABLE" });
   // The one-group action keeps the other group as saved and meets the same rule.
-  const oneGroup = await commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: null } });
+  const oneGroup = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: null } });
   assert.deepEqual(oneGroup, { ok: false, reason: "QUOTE_UNAVAILABLE" });
   assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0, "no write at all");
   assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "the gift choice is untouched");
@@ -565,12 +567,12 @@ test("review 8bdb2f0 / P1: when the server cannot derive a quote nothing that co
   assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, m.id);
 
   // While no quote can be derived the shopper can still drop the voucher (a choice that only removes cannot cost a gift) ...
-  const dropped = await commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: null }, shipping: { mode: "AUTO", voucherId: null } } });
+  const dropped = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: null }, shipping: { mode: "AUTO", voucherId: null } } });
   assert.equal(dropped.ok, true, JSON.stringify(dropped));
   const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
   assert.deepEqual([row.merchandiseMode, row.merchandiseVoucherId], ["MANUAL", null]);
   // ... but not swap it for another one.
-  const swapped = await commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: priv.id }, shipping: { mode: "AUTO", voucherId: null } } });
+  const swapped = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: priv.id }, shipping: { mode: "AUTO", voucherId: null } } });
   assert.equal(swapped.ok, false);
 });
 
@@ -594,7 +596,7 @@ test("review 8bdb2f0 / P2: the one-group action keeps the other group as saved U
   });
   await hasLock;
   // Tab A changes MERCHANDISE only; it must wait for the lock, then read SHIPPING as tab B left it.
-  const tabA = commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: null } });
+  const tabA = commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: null } });
   const early = await Promise.race([tabA.then(() => "finished"), new Promise((resolve) => setTimeout(() => resolve("waiting"), 400))]);
   assert.equal(early, "waiting", "tab A is blocked on the cart lock, so its read of the other group cannot precede tab B's write");
   release();
@@ -604,6 +606,37 @@ test("review 8bdb2f0 / P2: the one-group action keeps the other group as saved U
   const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
   assert.deepEqual([row.merchandiseMode, row.merchandiseVoucherId], ["MANUAL", m.id]);
   assert.deepEqual([row.shippingMode, row.shippingVoucherId], ["MANUAL", null], "tab B's choice survived");
+});
+
+test("review beca608: a picker built on a choice another tab has changed since is refused whole; a version is a choice, not a price", async () => {
+  await seed();
+  const a = await fixedVoucher(50_000, 600_000);
+  const b = await fixedVoucher(50_000, 600_000); // the same saving: a price-only check could not tell them apart
+  const ship = await freeShipVoucher(600_000);
+  const read = () => createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV }).read(cartId);
+  const versionOpened = selectionVersionOf(await read()); // both tabs open the picker here: nothing saved, both groups AUTO
+  assert.notEqual(selectionVersionOf({ merchandise: { mode: "MANUAL", voucherId: a.id }, shipping: { mode: "AUTO" } }), selectionVersionOf({ merchandise: { mode: "MANUAL", voucherId: b.id }, shipping: { mode: "AUTO" } }));
+
+  const draft = (merchandiseId: string | null, shippingMode: "AUTO" | "MANUAL", shippingId: string | null) => ({
+    merchandise: { mode: "MANUAL" as const, voucherId: merchandiseId }, shipping: { mode: shippingMode, voucherId: shippingId },
+  });
+  const commit = (d: ReturnType<typeof draft>, expectedSelectionVersion: string | null) =>
+    commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, expectedSelectionVersion, draft: d });
+
+  // Tab B chooses "no free-shipping voucher" and applies: saved (it was built on what was saved).
+  assert.equal((await commit(draft(null, "MANUAL", null), versionOpened)).ok, true);
+  // Tab A, opened before that, picks a merchandise voucher; its draft still says shipping AUTO. It is refused, whole.
+  assert.deepEqual(await commit(draft(a.id, "AUTO", null), versionOpened), { ok: false, reason: "SELECTION_CHANGED" });
+  const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
+  assert.deepEqual([row.merchandiseMode, row.merchandiseVoucherId, row.shippingMode, row.shippingVoucherId], ["MANUAL", null, "MANUAL", null], "tab B's choice is untouched, including the half tab A did not mean to change");
+  // Tab A is shown what is saved, chooses again from it, and now it saves.
+  const versionNow = selectionVersionOf(await read());
+  assert.notEqual(versionNow, versionOpened);
+  assert.equal((await commit(draft(a.id, "MANUAL", null), versionNow)).ok, true);
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, a.id);
+  // The same stale version cannot be replayed after it has been used.
+  assert.deepEqual(await commit(draft(b.id, "MANUAL", null), versionNow), { ok: false, reason: "SELECTION_CHANGED" });
+  void ship;
 });
 
 test("AC-35: fewer slots than were chosen reduces the choice (newest first) instead of removing it; unrelated choices stay", async () => {

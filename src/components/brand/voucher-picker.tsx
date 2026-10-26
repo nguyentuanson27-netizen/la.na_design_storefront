@@ -45,6 +45,10 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
   const [saved, setSaved] = useState(initial);
+  // The version of the SAVED choice this picker was built on. It only moves when the picker learns what is saved (a commit, an
+  // applied code, a refusal that returns the saved model): never from a preview of a draft, which would hide that another tab
+  // changed the choice underneath this one. "Áp dụng" sends it back so a stale picker is refused instead of overwriting.
+  const [baseVersion, setBaseVersion] = useState<string | null>(initial.selectionVersion);
   const [model, setModel] = useState(initial);
   const [draft, setDraft] = useState<Draft>(() => draftOf(initial));
   const [open, setOpen] = useState(false);
@@ -123,6 +127,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
       const result = await applyCode({ code });
       if (result.ok && result.picker) {
         setSaved(result.picker);
+        setBaseVersion(result.picker.selectionVersion);
         setModel(result.picker);
         setDraft(draftOf(result.picker));
         setCode("");
@@ -163,7 +168,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
       // A verified code waiting for the shopper's yes is saved through the code path (the server re-verifies the code and the quote).
       const result = pendingCode !== null
         ? await applyCode(consent ? { code: pendingCode, consent } : { code: pendingCode })
-        : await commitDraft(consent ? { ...draft, consent } : draft);
+        : await commitDraft({ ...draft, selection: baseVersion ?? "", ...(consent ? { consent } : {}) });
       if (result.ok && result.picker) {
         if (pendingCode !== null) {
           setPendingCode(null);
@@ -171,6 +176,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
           codeApplied.current = true;
         }
         setSaved(result.picker);
+        setBaseVersion(result.picker.selectionVersion);
         setModel(result.picker);
         setDraft(draftOf(result.picker));
         setOpen(false);
@@ -178,15 +184,26 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
         setMessage(null);
         settleCodeApplied();
       } else if (result.ok) {
-        // Saved on the server, but the picker could not be re-read right now: not a failure and not a reason to show an error
-        // for a choice that did change. Close, and let the page show what the server derives.
+        // Saved on the server, but the picker could not be re-read right now: not a failure, and not a promise about the price either.
+        // Say so plainly and keep the dialog open; the page behind is refreshed when the shopper closes it.
         setPendingCode(null);
         setCode("");
-        setOpen(false);
         setConfirming(false);
-        setMessage(null);
         codeApplied.current = true;
-        settleCodeApplied();
+        setMessage("Đã lưu lựa chọn ưu đãi. Hiện chưa tính được giá, nên giá cuối cùng sẽ được báo lại trước khi nàng đặt hàng.");
+      } else if (!result.ok && result.reason === "SELECTION_CHANGED") {
+        // Another page changed the choice this one was built on. Nothing was written. Take what is saved now (the server sends it) and let the
+        // shopper choose again from it, instead of writing a stale half of the choice over the newer one.
+        const fresh = (result as { picker?: VoucherPickerModel | null }).picker;
+        setPendingCode(null);
+        setConfirming(false);
+        if (fresh) {
+          setSaved(fresh);
+          setBaseVersion(fresh.selectionVersion);
+          setModel(fresh);
+          setDraft(draftOf(fresh));
+          setError("Ưu đãi vừa được thay đổi ở một trang khác. Nàng xem lại lựa chọn bên dưới rồi bấm Áp dụng nhé.");
+        } else setError(GENERIC_ERROR);
       } else if (!result.ok && (result.reason === "QUOTE_CHANGED" || result.reason === "CONFIRMATION_REQUIRED")) {
         // Nothing was saved. Show what the server derives now and ask again.
         setConfirming(false);

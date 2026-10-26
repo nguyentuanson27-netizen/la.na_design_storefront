@@ -5,6 +5,7 @@ import { applyGiftEntitlementsToSelections, countingKeys } from "./voucher-gift-
 import { createVoucherHoldService } from "./voucher-hold-service.ts";
 import type { GroupSelection, VoucherSelectionIntent } from "./voucher-optimizer.ts";
 import { readVoucherPreviewWithin } from "./voucher-preview.ts";
+import { selectionVersionOf } from "./voucher-selection-version.ts";
 import {
   createVoucherSelectionService,
   selectionIntentFromRow,
@@ -83,13 +84,20 @@ export async function commitVoucherDraft(input: Readonly<{
   shopId: number;
   env?: Readonly<Record<string, string | undefined>>;
   now?: Date;
+  /**
+   * The version of the saved choice the shopper's draft was built on (`selectionVersionOf`, handed out with the picker model).
+   * Compared with the saved choice under the cart lock BEFORE anything else: a draft built on a choice another tab has changed
+   * since is refused whole (`SELECTION_CHANGED`). null skips the check, for a caller that keeps the other group as saved
+   * (`null` groups below) and so has no stale half to write.
+   */
+  expectedSelectionVersion: string | null;
   /** A group passed as `null` is kept as saved, read under the cart lock (never from a snapshot taken before it). */
   draft: Readonly<{ merchandise: VoucherGroupDraft | null; shipping: VoucherGroupDraft | null }>;
   /** The digest of the quote the shopper explicitly confirmed, or null when they confirmed nothing. */
   consentDigest: string | null;
   attemptSecret: string;
 }>): Promise<VoucherSelectionResult> {
-  const { client, cartId, shopId, draft, consentDigest, attemptSecret } = input;
+  const { client, cartId, shopId, draft, consentDigest, attemptSecret, expectedSelectionVersion } = input;
   const env = input.env ?? process.env;
   const now = input.now ?? new Date();
   let repair: GiftRepair | null = null;
@@ -99,6 +107,8 @@ export async function commitVoucherDraft(input: Readonly<{
     ...draft,
     now,
     async beforeSave(tx, resolved) {
+      // First, before any quote is derived: is this still the choice the shopper was looking at?
+      if (expectedSelectionVersion !== null && selectionVersionOf(resolved.saved) !== expectedSelectionVersion) return { ok: false, reason: "SELECTION_CHANGED" } as const;
       const gate = await consentGate(tx, {
         cartId, shopId, env, now, attemptSecret, consentDigest, saved: resolved.saved,
         override: { merchandise: intentOf(resolved.merchandise), shipping: intentOf(resolved.shipping) },

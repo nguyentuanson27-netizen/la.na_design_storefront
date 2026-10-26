@@ -56,19 +56,22 @@ export function parseVoucherDraftInput(input: unknown): VoucherDraftInput | null
 const DIGEST = /^[0-9a-f]{64}$/;
 
 /**
- * "Áp dụng" of the picker: the draft, plus -- only when the shopper explicitly confirmed losing gifts -- the digest of the
- * quote they confirmed. The consent is a digest and a yes, never a price or a list of gifts: the server recomputes what is lost.
+ * "Áp dụng" of the picker: the draft, the version of the saved choice it was built on (the server handed it out with the model;
+ * a draft built on a choice another tab changed since is refused), plus -- only when the shopper explicitly confirmed losing gifts
+ * -- the digest of the quote they confirmed. The consent is a digest and a yes, never a price or a list of gifts: the server
+ * recomputes what is lost.
  */
-export function parseVoucherCommitInput(input: unknown): Readonly<{ draft: VoucherDraftInput; consentDigest: string | null }> | null {
-  if (!exact(input, ["merchandise", "shipping", "consent"])) return null;
+export function parseVoucherCommitInput(input: unknown): Readonly<{ draft: VoucherDraftInput; consentDigest: string | null; selectionVersion: string }> | null {
+  if (!exact(input, ["merchandise", "shipping", "selection", "consent"])) return null;
   const draft = parseVoucherDraftInput({ merchandise: (input as { merchandise?: unknown }).merchandise, shipping: (input as { shipping?: unknown }).shipping });
   if (draft === null) return null;
-  const { consent } = input as { consent?: unknown };
-  if (consent === undefined) return { draft, consentDigest: null };
+  const { selection, consent } = input as { selection?: unknown; consent?: unknown };
+  if (typeof selection !== "string" || !DIGEST.test(selection)) return null;
+  if (consent === undefined) return { draft, consentDigest: null, selectionVersion: selection };
   if (!exact(consent, ["acknowledged", "expectedQuoteDigest"])) return null;
   const { acknowledged, expectedQuoteDigest } = consent as { acknowledged?: unknown; expectedQuoteDigest?: unknown };
   if (acknowledged !== true || typeof expectedQuoteDigest !== "string" || !DIGEST.test(expectedQuoteDigest)) return null;
-  return { draft, consentDigest: expectedQuoteDigest };
+  return { draft, consentDigest: expectedQuoteDigest, selectionVersion: selection };
 }
 
 /**

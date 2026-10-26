@@ -38,15 +38,21 @@ test("the picker draft is one intent per group and nothing else", () => {
   }
 });
 
-test("the picker's commit carries a consent only as a digest and an explicit yes", async () => {
+test("the picker's commit carries the version of the saved choice it was built on, and a consent only as a digest and an explicit yes", async () => {
   const { parseVoucherCommitInput } = await import("../../src/commerce/voucher-selection-input.ts");
   const draft = { merchandise: { mode: "MANUAL", voucherId: "m1" }, shipping: { mode: "AUTO", voucherId: null } };
   const digest = "a".repeat(64);
-  assert.deepEqual(parseVoucherCommitInput(draft), { draft, consentDigest: null });
-  assert.deepEqual(parseVoucherCommitInput({ ...draft, consent: { acknowledged: true, expectedQuoteDigest: digest } }), { draft, consentDigest: digest });
+  const version = "c".repeat(64);
+  assert.deepEqual(parseVoucherCommitInput({ ...draft, selection: version }), { draft, consentDigest: null, selectionVersion: version });
+  assert.deepEqual(parseVoucherCommitInput({ ...draft, selection: version, consent: { acknowledged: true, expectedQuoteDigest: digest } }), { draft, consentDigest: digest, selectionVersion: version });
+  // A commit without the version it was built on (or with a malformed one) is refused whole: it could overwrite a newer choice.
+  for (const selection of [undefined, "", "abc", "C".repeat(64), 5, null]) {
+    assert.equal(parseVoucherCommitInput({ ...draft, selection }), null, String(selection));
+  }
+  assert.equal(parseVoucherCommitInput(draft), null);
   // Anything else is refused whole: a "no", a short digest, an extra key, a price or a list of gifts.
   for (const consent of [{ acknowledged: false, expectedQuoteDigest: digest }, { acknowledged: true, expectedQuoteDigest: "abc" }, { acknowledged: true }, { acknowledged: true, expectedQuoteDigest: digest, gifts: [] }, "yes", null]) {
-    assert.equal(parseVoucherCommitInput({ ...draft, consent }), null, JSON.stringify(consent));
+    assert.equal(parseVoucherCommitInput({ ...draft, selection: version, consent }), null, JSON.stringify(consent));
   }
-  assert.equal(parseVoucherCommitInput({ ...draft, totalVnd: 1 }), null);
+  assert.equal(parseVoucherCommitInput({ ...draft, selection: version, totalVnd: 1 }), null);
 });

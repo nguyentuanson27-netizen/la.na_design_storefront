@@ -353,6 +353,59 @@ test("review 8bdb2f0: a choice that WAS saved but cannot be re-read right now is
   }
 });
 
+test("review beca608: a picker left open on an old choice is refused when another page has changed it; it is shown what is saved and chooses again", async ({ page }) => {
+  // 60K is the best saving, so "automatic" already means 60K; the other page deliberately locks the LOWER one (50K).
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "AUTO", visibility: "PUBLIC", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "Giảm 60K", fixedAmountVnd: BigInt(60_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  const fifty = await prisma.voucherCampaign.findFirstOrThrow({ where: { pancakeShopId: SHOP, name: "Giảm 50K" } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const other = await page.context().newPage();
+  await other.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/cart`);
+  await other.goto(`${BASE}/cart`);
+  await page.locator("[data-voucher-picker] > button").click();
+  await other.locator("[data-voucher-picker] > button").click();
+  const dialogA = page.getByRole("dialog", { name: "Ưu đãi" });
+  const dialogB = other.getByRole("dialog", { name: "Ưu đãi" });
+  await expect(dialogA).toBeVisible();
+  await expect(dialogB).toBeVisible();
+
+  // The other page locks 50K and applies: saved.
+  await dialogB.getByRole("radio", { name: /Giảm 50\.000đ/ }).click();
+  await expect(dialogB.getByRole("radio", { name: /Giảm 50\.000đ/ })).toBeChecked();
+  await dialogB.getByRole("button", { name: /Áp dụng • 1 ưu đãi/ }).click();
+  await expect(dialogB).toBeHidden();
+  await expect.poll(async () => (await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).toBe(fifty.id);
+
+  // This page still thinks nothing was chosen; it picks "no voucher" and applies. It must NOT overwrite what the other page saved.
+  await dialogA.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ }).click();
+  await expect(dialogA.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ })).toBeChecked();
+  await dialogA.getByRole("button", { name: "Bỏ qua ưu đãi và tiếp tục" }).click();
+  await expect(dialogA.getByRole("alert")).toContainText("vừa được thay đổi ở một trang khác");
+  expect((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).toBe(fifty.id);
+  // It now shows what is saved, and applying from there works.
+  await expect(dialogA.getByRole("radio", { name: /Giảm 50\.000đ/ })).toBeChecked();
+  await dialogA.getByRole("button", { name: /Áp dụng • 1 ưu đãi/ }).click();
+  await expect(dialogA).toBeHidden();
+});
+
+test("review beca608: dropping a voucher while the price cannot be derived is saved, and the shopper is told the price is not known", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/cart`);
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await dialog.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ }).click();
+  await expect(dialog.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ })).toBeChecked();
+  // Pricing goes away before the shopper presses "Áp dụng": the server cannot derive a quote for the commit.
+  await prisma.cartItem.deleteMany({ where: { cartId } });
+  await dialog.getByRole("button", { name: "Bỏ qua ưu đãi và tiếp tục" }).click();
+  await expect(dialog).toContainText("Hiện chưa tính được giá");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
+  expect([row.merchandiseMode, row.merchandiseVoucherId]).toEqual(["MANUAL", null]);
+});
+
 test("a voucher that costs a gift needs the shopper's own consent before it can be held", async ({ page }) => {
   const gift = await prisma.productMirror.create({
     data: { pancakeShopId: SHOP, pancakeProductId: `${PREFIX}gift`, slug: `${PREFIX}gift`, name: "Khăn quà", isActive: true, isPresent: true, syncedAt: new Date(),

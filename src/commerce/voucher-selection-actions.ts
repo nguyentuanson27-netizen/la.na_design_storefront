@@ -13,6 +13,7 @@ import { readCartOwnVoucherHolds } from "./voucher-own-holds.ts";
 import { applyVoucherCode, commitVoucherDraft } from "./voucher-draft-commit.ts";
 import { readVoucherPreview } from "./voucher-preview.ts";
 import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
+import { selectionVersionOf } from "./voucher-selection-version.ts";
 
 /**
  * Voucher v1 (V15): the public mutations of the picker. Next Server Actions give POST-only, origin-checked
@@ -28,9 +29,13 @@ import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
  */
 async function respond(selected: { ok: boolean }, cartId: string, selectionOverride?: VoucherSelectionIntent, refreshPage = true, verifiedPrivateIds?: readonly string[]) {
   const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now: new Date(), ownHolds: await readCartOwnVoucherHolds(prisma, cartId), ...(selectionOverride ? { selectionOverride } : {}), ...(verifiedPrivateIds ? { verifiedPrivateIds } : {}) });
-  if (selected.ok && refreshPage) refresh();
+  // No refresh when there is no model to hand back: the page behind would drop the picker and the dialog (and the message the
+  // shopper needs) with it. The dialog refreshes the page itself when it is closed.
   if (!preview.enabled || !preview.ok) return { picker: null } as const;
-  return { picker: buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent, quoteDigest: preview.quoteDigest }) } as const;
+  if (selected.ok && refreshPage) refresh();
+  // The version is of what is SAVED now (the preview may be of a draft): it is what the next "Áp dụng" must still match.
+  const saved = await createVoucherSelectionService(prisma, { shopId: readPancakeShopId() }).read(cartId);
+  return { picker: buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent, quoteDigest: preview.quoteDigest, selectionVersion: selectionVersionOf(saved) }) } as const;
 }
 
 export async function setStorefrontVoucherSelection(input: unknown) {
@@ -44,7 +49,7 @@ export async function setStorefrontVoucherSelection(input: unknown) {
   // total needs the explicit consent only the picker's commit carries.
   const next = { mode: parsed.mode, voucherId: parsed.voucherId };
   const result = await commitVoucherDraft({
-    client: prisma, cartId, shopId, consentDigest: null, attemptSecret: readAuthServerConfig().secret,
+    client: prisma, cartId, shopId, consentDigest: null, attemptSecret: readAuthServerConfig().secret, expectedSelectionVersion: null,
     draft: {
       merchandise: parsed.group === "MERCHANDISE" ? next : null,
       shipping: parsed.group === "SHIPPING_FREE" ? next : null,
@@ -115,8 +120,14 @@ export async function commitStorefrontVoucherDraft(input: unknown) {
   if (cartId === null) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
   const result = await commitVoucherDraft({
     client: prisma, cartId, shopId: readPancakeShopId(), draft: parsed.draft, consentDigest: parsed.consentDigest,
-    attemptSecret: readAuthServerConfig().secret,
+    attemptSecret: readAuthServerConfig().secret, expectedSelectionVersion: parsed.selectionVersion,
   });
+  if (!result.ok && result.reason === "SELECTION_CHANGED") {
+    // Another tab changed the choice this draft was built on: nothing was written. Answer with what is saved now so the shopper
+    // sees it and chooses again.
+    const { picker } = await respond({ ok: false }, cartId);
+    return { ok: false, reason: result.reason, picker } as const;
+  }
   if (!result.ok) return { ok: false, reason: result.reason } as const;
   return { ok: true, ...(await respond(result, cartId)) } as const;
 }

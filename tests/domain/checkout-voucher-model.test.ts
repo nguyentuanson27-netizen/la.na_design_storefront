@@ -98,6 +98,7 @@ const picker = (overrides: Partial<VoucherPickerModel> = {}): VoucherPickerModel
   summary: { paidBeforeText: "900.000đ", merchandiseDiscountText: "-50.000đ", shippingFeeText: "30.000đ", shippingDiscountText: null, totalText: "880.000đ", totalVnd: 880_000 },
   footer: { label: "Áp dụng • 1 ưu đãi", count: 1 },
   quoteDigest: "a".repeat(64),
+  selectionVersion: "b".repeat(64),
   warnings: { giftLoss: null, totalIncrease: null, notices: [] },
   ...overrides,
 });

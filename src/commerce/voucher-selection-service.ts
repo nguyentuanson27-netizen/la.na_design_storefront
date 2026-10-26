@@ -24,7 +24,7 @@ export type VoucherGroupDraft = Readonly<{ mode: "AUTO" | "MANUAL"; voucherId: s
 
 export type VoucherSelectionResult =
   | Readonly<{ ok: true; selection: VoucherSelectionIntent }>
-  | Readonly<{ ok: false; reason: "FEATURE_DISABLED" | "CART_UNAVAILABLE" | "INVALID_INPUT" | "NOT_AVAILABLE" | "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED" | "QUOTE_UNAVAILABLE" }>;
+  | Readonly<{ ok: false; reason: "FEATURE_DISABLED" | "CART_UNAVAILABLE" | "INVALID_INPUT" | "NOT_AVAILABLE" | "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED" | "QUOTE_UNAVAILABLE" | "SELECTION_CHANGED" }>;
 
 export type VoucherCodeResult =
   | Readonly<{ ok: true; selection: VoucherSelectionIntent; card: VoucherCard; group: VoucherGroup }>
