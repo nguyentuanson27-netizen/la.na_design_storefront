@@ -5,7 +5,7 @@ import {
   isCanonicalPancakeOrderId,
   type PancakeOrderStatus,
 } from "../integrations/pancake/order-status.ts";
-import { PANCAKE_ORDER_CANCELED_STATUS } from "../integrations/pancake/order-readback.ts";
+import { isPancakeOrderCancelledStatus } from "../integrations/pancake/order-readback.ts";
 
 const MAX_LOCAL_ORDER_ID_LENGTH = 128;
 const MAX_CAS_ATTEMPTS = 4;
@@ -137,7 +137,7 @@ export function createPancakeOrderStatusReconciliationService(
         // The stored record is the authority, not the remote answer: only a complete, shop-verified mirror at the
         // cancelled code is a signal, and the refund re-checks it under the order lock.
         const stored = await client.orderMirror.findUnique({ where: { id: input.orderId }, select: { pancakeStatus: true } });
-        if (stored?.pancakeStatus === PANCAKE_ORDER_CANCELED_STATUS) await options.onTrustedCancel({ orderId: input.orderId });
+        if (isPancakeOrderCancelledStatus(stored?.pancakeStatus)) await options.onTrustedCancel({ orderId: input.orderId });
       } catch {
         // Retried by the next status read; never a reason to fail the reconcile.
       }

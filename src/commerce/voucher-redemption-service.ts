@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
-import { PANCAKE_ORDER_CANCELED_STATUS } from "../integrations/pancake/order-readback.ts";
+import { PANCAKE_ORDER_CANCELLED_STATUSES, isPancakeOrderCancelledStatus } from "../integrations/pancake/order-readback.ts";
 
 /**
  * Voucher v1 (V14, ADR 0018 D-4): a redemption is refunded once, from a trusted signal only.
@@ -15,9 +15,10 @@ import { PANCAKE_ORDER_CANCELED_STATUS } from "../integrations/pancake/order-rea
  *
  *  - `POS_REJECTED`  the local order is `REJECTED`. After the website accepted an order that can only be a definitive
  *                    refusal (a 4xx on create) or reconciliation's confirmed absence of the marker in Pancake.
- *  - `POS_CANCELLED` the order's mirrored Pancake status is the cancelled code (7) with a complete, shop-verified
- *                    status record written by the status reconciliation. Proven for the cancel we issue ourselves;
- *                    other terminal codes (returned, removed...) are NOT mapped and therefore never refund.
+ *  - `POS_CANCELLED` the order's mirrored Pancake status is a cancelled code (7: the cancel we issue ourselves through the
+ *                    API; 6 "Đã hủy": a cancel by staff in the Pancake UI, observed 2026-10-26) with a complete, shop-verified
+ *                    status record written by the status reconciliation. Other terminal codes (returned, removed...) are
+ *                    NOT mapped and therefore never refund.
  *  - `ADMIN_CANCEL`  an authenticated Admin cancel; the caller supplies the audit evidence (no screen exists yet).
  *
  * `SYNC_UNKNOWN`, a timeout, a network error or an unmapped status is not a signal. Like every settle path this never
@@ -55,7 +56,7 @@ export function createVoucherRedemptionService(client: PrismaClient) {
         evidence = `local-state:REJECTED`;
       } else if (reason === "POS_CANCELLED") {
         const complete = order.pancakeOrderId !== null && order.pancakeShopId !== null && order.pancakeSystemId !== null && order.pancakeStatusUpdatedAt !== null;
-        if (!complete || order.pancakeStatus !== PANCAKE_ORDER_CANCELED_STATUS) return { ok: false, reason: "NOT_A_TRUSTED_SIGNAL" };
+        if (!complete || !isPancakeOrderCancelledStatus(order.pancakeStatus)) return { ok: false, reason: "NOT_A_TRUSTED_SIGNAL" };
         evidence = `pancake:shop=${order.pancakeShopId};order=${order.pancakeOrderId};status=${order.pancakeStatus};updatedAt=${order.pancakeStatusUpdatedAt}`;
       } else {
         evidence = `admin:${input.evidence!.trim()}`;
@@ -115,7 +116,7 @@ export function createVoucherRedemptionService(client: PrismaClient) {
     const limit = Math.max(1, Math.min(options.limit ?? 50, 500));
     const orders = await client.$queryRaw<Array<{ id: string }>>`
       SELECT DISTINCT o."id" FROM "OrderMirror" o JOIN "VoucherRedemption" r ON r."orderId" = o."id"
-      WHERE o."pancakeStatus" = ${PANCAKE_ORDER_CANCELED_STATUS} AND o."state" <> 'REJECTED' AND r."refundedAt" IS NULL
+      WHERE o."pancakeStatus" = ANY(${[...PANCAKE_ORDER_CANCELLED_STATUSES]}) AND o."state" <> 'REJECTED' AND r."refundedAt" IS NULL
         AND o."pancakeOrderId" IS NOT NULL AND o."pancakeShopId" IS NOT NULL AND o."pancakeSystemId" IS NOT NULL AND o."pancakeStatusUpdatedAt" IS NOT NULL
       ORDER BY o."id" LIMIT ${limit}`;
     let refunded = 0;

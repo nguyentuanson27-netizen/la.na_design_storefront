@@ -124,9 +124,9 @@ test("AC-18: SYNC_UNKNOWN, CONFIRMED and in-flight orders are NOT a signal: noth
   }
 });
 
-test("AC-19: only the cancelled status (7) on a complete, shop-verified mirror refunds; other statuses and half records never do; duplicates once", async () => {
+test("AC-19: only a cancelled status (7 API cancel, 6 staff cancel in the Pancake UI) on a complete, shop-verified mirror refunds; other statuses and half records never do; duplicates once", async () => {
   // Other Pancake status codes, including ones that look terminal, are not mapped.
-  for (const status of [0, 1, 2, 3, 4, 5, 6, 8, 15, 16]) {
+  for (const status of [0, 1, 2, 3, 4, 5, 8, 9, 11, 12, 13, 15, 16, 17, 20]) {
     await cleanup();
     const { order, m } = await acceptedOrder();
     await setState(order.id, "CONFIRMED", { pancakeShopId: SHOP });
@@ -134,7 +134,7 @@ test("AC-19: only the cancelled status (7) on a complete, shop-verified mirror r
     assert.deepEqual(await refunds.refundOrder({ orderId: order.id, reason: "POS_CANCELLED" }), { ok: false, reason: "NOT_A_TRUSTED_SIGNAL" }, `status ${status}`);
     assert.deepEqual(await counters(m.id), [1, BigInt(50_000), 0, BigInt(0)]);
   }
-  // A half record (no revision / system id) is not evidence, even at 7.
+  // A half record (no revision / system id) is not evidence, even at 7 or 6.
   await cleanup();
   const half = await acceptedOrder();
   await prisma.orderMirror.update({ where: { id: half.order.id }, data: { pancakeOrderId: "8800124", pancakeStatus: 7 } });
@@ -150,6 +150,22 @@ test("AC-19: only the cancelled status (7) on a complete, shop-verified mirror r
   assert.deepEqual(await counters(m.id), [0, BigInt(0), 0, BigInt(0)]);
   assert.deepEqual(await counters(s!.id), [0, BigInt(0), 0, BigInt(0)]);
   assert.match((await redemptionsOf(order.id))[0]!.refundEvidence!, /^pancake:shop=940015;order=8800123;status=7;updatedAt=/);
+
+  // Status 6 ("Đã hủy") is what Pancake reports when STAFF cancel in its UI (observed 2026-10-26): the same trust, the same once.
+  await cleanup();
+  const staff = await acceptedOrder({ shipping: true });
+  await setState(staff.order.id, "CONFIRMED");
+  await mirrorStatus(staff.order.id, 6);
+  const staffResults = await Promise.all([1, 2, 3].map(() => refunds.refundOrder({ orderId: staff.order.id, reason: "POS_CANCELLED" })));
+  assert.equal(staffResults.reduce((sum, r) => sum + (r.ok ? r.refunded : 0), 0), 2);
+  assert.deepEqual(await counters(staff.m.id), [0, BigInt(0), 0, BigInt(0)]);
+  assert.deepEqual(await counters(staff.s!.id), [0, BigInt(0), 0, BigInt(0)]);
+  assert.match((await redemptionsOf(staff.order.id))[0]!.refundEvidence!, /^pancake:shop=940015;order=8800123;status=6;updatedAt=/);
+  // ... and a half record at 6 is no more evidence than one at 7.
+  await cleanup();
+  const half6 = await acceptedOrder();
+  await prisma.orderMirror.update({ where: { id: half6.order.id }, data: { pancakeOrderId: "8800125", pancakeStatus: 6 } });
+  assert.deepEqual(await refunds.refundOrder({ orderId: half6.order.id, reason: "POS_CANCELLED" }), { ok: false, reason: "NOT_A_TRUSTED_SIGNAL" });
 });
 
 test("AC-27: refund after the campaign expired or was disabled returns the counters and does NOT reactivate it", async () => {
@@ -205,8 +221,14 @@ test("the sweep also settles an order whose cancelled status (7) was stored but 
   const unknown = await acceptedOrder();
   await setState(unknown.order.id, "SYNC_UNKNOWN");
 
+  // A lost hook after a STAFF cancel (status 6) is settled the same way.
+  const staffLost = await acceptedOrder();
+  await setState(staffLost.order.id, "CONFIRMED");
+  await mirrorStatus(staffLost.order.id, 6, "8800300");
+
   const first = await refunds.sweepCancelledOrders();
-  assert.equal(first.refunded, 2, "the two redemptions of the lost order");
+  assert.equal(first.refunded, 3, "the two redemptions of the lost order and the one of the staff-cancelled order");
+  assert.deepEqual(await counters(staffLost.m.id), [0, BigInt(0), 0, BigInt(0)]);
   assert.deepEqual(await counters(lost.m.id), [0, BigInt(0), 0, BigInt(0)]);
   assert.deepEqual(await counters(lost.s!.id), [0, BigInt(0), 0, BigInt(0)]);
   assert.match((await redemptionsOf(lost.order.id))[0]!.refundEvidence!, /^pancake:shop=940015;order=8800123;status=7;/);
@@ -291,6 +313,24 @@ test("status reconciliation: a status read that fails or is unusable is not a si
   assert.deepEqual(await otherShop.reconcile({ orderId: order.id }), { ok: false, reason: "STATUS_UNAVAILABLE" });
   assert.equal(hook, 0);
   assert.deepEqual(await counters(m.id), [1, BigInt(50_000), 0, BigInt(0)]);
+});
+
+test("status reconciliation: a cancel by STAFF in the Pancake UI (status 6) refunds through the real services, once; status 3 never does", async () => {
+  const { order, m } = await acceptedOrder();
+  await setState(order.id, "CONFIRMED");
+  await prisma.orderMirror.update({ where: { id: order.id }, data: { pancakeOrderId: "8800123" } });
+  const service = (status: number, updatedAt: string) =>
+    createPancakeOrderStatusReconciliationService(prisma, { async fetchOrderStatus() { return upstream(status, updatedAt); } }, {
+      shopId: SHOP,
+      async onTrustedCancel({ orderId }) { await refunds.refundOrder({ orderId, reason: "POS_CANCELLED" }); },
+    });
+  await service(3, "2026-10-26T09:30:00Z").reconcile({ orderId: order.id });
+  assert.deepEqual(await counters(m.id), [1, BigInt(50_000), 0, BigInt(0)], "a delivered order is not a cancel");
+  assert.deepEqual(await service(6, "2026-10-26T10:00:00Z").reconcile({ orderId: order.id }), { ok: true, outcome: "UPDATED" });
+  assert.deepEqual(await counters(m.id), [0, BigInt(0), 0, BigInt(0)]);
+  const stamp = (await redemptionsOf(order.id))[0]!.refundedAt!.toISOString();
+  await service(6, "2026-10-26T10:05:00Z").reconcile({ orderId: order.id });
+  assert.equal((await redemptionsOf(order.id))[0]!.refundedAt!.toISOString(), stamp, "a second read refunds nothing more");
 });
 
 test("the create-rejected path calls the refund hook after REJECTED; an ambiguous create (timeout) never does", async () => {

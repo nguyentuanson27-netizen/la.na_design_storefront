@@ -136,7 +136,7 @@ Regression run of the neighbouring specs on the same build (`voucher-picker`, `c
 | Retry safety | a failed hook is retried by the next UNCHANGED status read; the sweep settles REJECTED orders once and leaves other states alone |
 | Settle paths ignore the flag | nothing in the refund path reads `LA_VOUCHER_ENABLED` or the verified-shop list |
 
-**Still open (evidence, not code):** only the cancel we issue ourselves is known to read status 7. A cancel made by staff in the Pancake UI, and any code for returned or shipped-then-returned orders, are unmapped and therefore stay pending. The sweep must be scheduled by the V21 runbook. There is no Admin screen for an Admin cancel yet; the service accepts it with audit evidence.
+**Staff cancel (observed 2026-10-26, shop 715077776, order `11`):** a cancel by staff in the Pancake UI reads status **6** ("Đã hủy"), the cancel the website issues through the API reads 7. The owner decided to treat both as cancelled: `isPancakeOrderCancelledStatus` (6, 7) is used by the refund, the sweep and the status reconciliation hook; every other code, terminal-looking ones included, still refunds nothing. Real order `11`: the sweep returned both redemptions once (`POS_CANCELLED`, evidence `status=6`), a following reconciliation refunded nothing more. Still open: codes for returns (4, 5, 15) are not mapped.
 
 ## Review fix — PRIVATE vouchers and ids (PR #214, 2026-10-26)
 
