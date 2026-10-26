@@ -1,5 +1,6 @@
 "use server";
 
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { VOUCHER_INTENT_COOKIE, readVoucherIntentCookie } from "./voucher-marketing-link.ts";
 import { refresh } from "next/cache";
@@ -8,7 +9,7 @@ import { readAuthServerConfig } from "../auth/config.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
 import { buildVoucherPickerModel } from "../routes/voucher-picker-model.ts";
 import { readAnonymousCartCookie } from "./anonymous-cart-cookie.ts";
-import { parseVoucherCodeCommitInput, parseVoucherCommitInput, parseVoucherLinkedCommitInput, parseVoucherDraftInput, parseVoucherSelectionInput } from "./voucher-selection-input.ts";
+import { parseVoucherCodeCommitInput, parseVoucherCommitInput, parseVoucherLinkedCommitInput, parseVoucherLinkedDismissInput, parseVoucherDraftInput, parseVoucherSelectionInput } from "./voucher-selection-input.ts";
 import { createVoucherSelectionService } from "./voucher-selection-service.ts";
 import { readCartOwnVoucherHolds } from "./voucher-own-holds.ts";
 import { applyVoucherCode, commitVoucherDraft } from "./voucher-draft-commit.ts";
@@ -59,6 +60,14 @@ export async function setStorefrontVoucherSelection(input: unknown) {
   return { ok: true, ...(await respond(result, cartId)) } as const;
 }
 
+/**
+ * An opaque handle on "the offer I used": an HMAC of the code under the server's secret, never the code. The picker hands it back when it
+ * closes, so the cookie is cleared only if it still holds THAT offer (another tab may have replaced it with a newer link since).
+ */
+function offerToken(code: string): string {
+  return createHmac("sha256", readAuthServerConfig().secret).update(`voucher-offer:${code}`).digest("hex").slice(0, 32);
+}
+
 /** Verify, quote, ask for consent and save one code for this cart; what answers the picker is the same for a typed and a linked code. */
 async function applyCodeFor(cartId: string, rawCode: string, consentDigest: string | null) {
   const shopId = readPancakeShopId();
@@ -101,13 +110,26 @@ export async function applyStorefrontLinkedVoucherCode(input: unknown) {
   if (code === null) return { ok: false, reason: "INVALID_CODE" } as const;
   // The cookie is NOT cleared here: deleting a cookie in a Server Action re-renders the page, which would remount the picker and close the
   // dialog the shopper is reading the result in. `dismissStorefrontLinkedVoucherOffer` clears it after the dialog is closed.
-  return applyCodeFor(cartId, code, parsed.consentDigest);
+  const result = await applyCodeFor(cartId, code, parsed.consentDigest);
+  return result.ok ? ({ ...result, offerToken: offerToken(code) } as const) : result;
 }
 
-/** The offered code has been used: stop offering it. Called when the picker closes, never while the shopper is looking at the result. */
-export async function dismissStorefrontLinkedVoucherOffer() {
-  (await cookies()).delete(VOUCHER_INTENT_COOKIE);
-  return { ok: true } as const;
+/**
+ * The offered code has been used: stop offering it. Called when the picker closes, never while the shopper is looking at the result.
+ * Compare-and-clear: the cookie is shared by every tab and a newer marketing link replaces it, so it is cleared only if it still holds
+ * the offer this picker used (the token); otherwise the newer offer is left alone.
+ */
+export async function dismissStorefrontLinkedVoucherOffer(input: unknown) {
+  const parsed = parseVoucherLinkedDismissInput(input);
+  if (parsed === null) return { ok: false, cleared: false } as const;
+  const jar = await cookies();
+  const code = readVoucherIntentCookie(jar.get(VOUCHER_INTENT_COOKIE)?.value);
+  if (code === null) return { ok: true, cleared: false } as const;
+  const current = Buffer.from(offerToken(code));
+  const used = Buffer.from(parsed.offerToken);
+  if (current.length !== used.length || !timingSafeEqual(current, used)) return { ok: true, cleared: false } as const;
+  jar.delete(VOUCHER_INTENT_COOKIE);
+  return { ok: true, cleared: true } as const;
 }
 
 /** Resolve an ambiguous write by reading the cookie-owned cart; never repeat the write. */

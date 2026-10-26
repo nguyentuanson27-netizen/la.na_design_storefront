@@ -62,7 +62,13 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
   // Once the linked code is used the offer disappears from the dialog at once; the server-side cookie is cleared when the dialog closes.
   const [linkVisible, setLinkVisible] = useState(linkOffered);
   const linkApplied = useRef(false);
-  const markLinkUsed = () => { linkApplied.current = true; setLinkVisible(false); };
+  const linkToken = useRef<string | null>(null);
+  // The token is an opaque handle the server gave back for the offer just used (never the code): it lets the close clear THAT offer only.
+  const markLinkUsed = (result: unknown) => {
+    linkApplied.current = true;
+    linkToken.current = (result as { offerToken?: string }).offerToken ?? null;
+    setLinkVisible(false);
+  };
   // A valid code whose choice costs something the shopper has not agreed to: verified, shown, NOT saved. It is saved by the
   // same "Áp dụng" press that carries the consent (the server re-verifies the code and the quote then).
   const [pendingCode, setPendingCode] = useState<string | null>(null);
@@ -85,7 +91,9 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
       // The dialog is closed now, so clearing the cookie (which re-renders the page) costs the shopper nothing.
       linkApplied.current = false;
       codeApplied.current = false;
-      void dismissLinkedOffer().then(() => router.refresh());
+      const token = linkToken.current;
+      linkToken.current = null;
+      void (token === null ? Promise.resolve() : dismissLinkedOffer({ offerToken: token })).then(() => router.refresh());
       return;
     }
     if (!codeApplied.current) return;
@@ -183,13 +191,13 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
         setDraft(draftOf(result.picker));
         setPendingLink(false);
         codeApplied.current = true;
-        markLinkUsed();
+        markLinkUsed(result);
         setMessage("Đã áp dụng mã ưu đãi.");
       } else if (result.ok) {
         setPendingLink(false);
         setConfirming(false);
         codeApplied.current = true;
-        markLinkUsed();
+        markLinkUsed(result);
         setMessage("Đã áp dụng mã ưu đãi. Giá dự kiến sẽ được cập nhật khi nàng đóng hộp thoại.");
       } else if (!result.ok && (result.reason === "CONFIRMATION_REQUIRED" || result.reason === "QUOTE_CHANGED")) {
         if (result.picker) {
@@ -221,7 +229,7 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
         : await commitDraft({ ...draft, selection: baseVersion ?? "", ...(consent ? { consent } : {}) });
       if (result.ok && result.picker) {
         if (pendingCode !== null || pendingLink) {
-          if (pendingLink) markLinkUsed();
+          if (pendingLink) markLinkUsed(result);
           setPendingCode(null);
           setPendingLink(false);
           setCode("");
@@ -238,7 +246,7 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
       } else if (result.ok) {
         // Saved on the server, but the picker could not be re-read right now: not a failure, and not a promise about the price either.
         // Say so plainly and keep the dialog open; the page behind is refreshed when the shopper closes it.
-        if (pendingLink) markLinkUsed();
+        if (pendingLink) markLinkUsed(result);
         setPendingCode(null);
         setPendingLink(false);
         setCode("");

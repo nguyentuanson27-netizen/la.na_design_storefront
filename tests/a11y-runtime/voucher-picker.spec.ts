@@ -242,6 +242,36 @@ test("AC-40: a marketing link is redirected to a clean URL; the code is never in
   await expect(trigger(page)).toContainText("Đang dùng");
 });
 
+test("review e0166b2: closing one tab's dialog clears only the offer that tab used, never a newer link another tab opened", async ({ page, context }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL80", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 80K", fixedAmountVnd: BigInt(80_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  const pendingCookie = async () => (await context.cookies()).find((cookie) => cookie.name === "la_voucher_code")?.value ?? null;
+  // Tab A follows the KOL70 link, uses the offer, and is still reading the result.
+  await page.goto(`${BASE}/shop/${productSlug}?voucher=KOL70`);
+  expect(await pendingCookie()).toBe("KOL70");
+  await page.goto(`${BASE}/cart`);
+  await trigger(page).click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await expect(dialog).toContainText("Đã áp dụng mã ưu đãi");
+  // Tab B (same browser) opens a NEWER link: the shared cookie now holds KOL80.
+  const other = await context.newPage();
+  await other.goto(`${BASE}/shop/${productSlug}?voucher=KOL80`);
+  expect(await pendingCookie()).toBe("KOL80");
+  // Tab A closes its dialog: its dismissal must not remove the offer it never used.
+  const dismissed = page.waitForResponse((response) => response.request().method() === "POST" && response.url().includes("/cart"));
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await dismissed;
+  await page.waitForLoadState("networkidle");
+  expect(await pendingCookie()).toBe("KOL80");
+  await other.goto(`${BASE}/cart`);
+  await other.locator("[data-voucher-picker] > button").click();
+  await expect(other.getByRole("dialog", { name: "Ưu đãi" }).getByRole("button", { name: "Dùng mã từ liên kết" })).toBeVisible();
+  await other.close();
+});
+
 test("AC-13 / V19: with no cart yet, the link's code waits in an HttpOnly cookie and the cart only OFFERS it", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();

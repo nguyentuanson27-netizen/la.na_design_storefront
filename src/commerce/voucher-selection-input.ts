@@ -103,3 +103,10 @@ export function parseVoucherLinkedCommitInput(input: unknown): Readonly<{ consen
   if (acknowledged !== true || typeof expectedQuoteDigest !== "string" || !DIGEST.test(expectedQuoteDigest)) return null;
   return { consentDigest: expectedQuoteDigest };
 }
+
+/** "Stop offering the linked code I just used": an opaque token the server gave back (never the code), 32 lowercase hex, nothing else. */
+export function parseVoucherLinkedDismissInput(input: unknown): Readonly<{ offerToken: string }> | null {
+  if (!exact(input, ["offerToken"])) return null;
+  const { offerToken } = input as { offerToken?: unknown };
+  return typeof offerToken === "string" && /^[0-9a-f]{32}$/.test(offerToken) ? { offerToken } : null;
+}

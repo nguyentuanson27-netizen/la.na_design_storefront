@@ -67,3 +67,12 @@ test("the linked code's apply carries no code at all, only a consent as a digest
     assert.equal(parseVoucherLinkedCommitInput(bad), null, JSON.stringify(bad));
   }
 });
+
+test("the linked offer's dismissal carries only an opaque token, never a code", async () => {
+  const { parseVoucherLinkedDismissInput } = await import("../../src/commerce/voucher-selection-input.ts");
+  const token = "0123456789abcdef0123456789abcdef";
+  assert.deepEqual(parseVoucherLinkedDismissInput({ offerToken: token }), { offerToken: token });
+  for (const bad of [{}, { offerToken: "KOL70" }, { offerToken: token.toUpperCase() }, { offerToken: `${token}0` }, { offerToken: token, code: "KOL70" }, { code: "KOL70" }, null, token, []]) {
+    assert.equal(parseVoucherLinkedDismissInput(bad), null, JSON.stringify(bad));
+  }
+});
