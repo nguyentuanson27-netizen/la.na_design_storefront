@@ -4,7 +4,7 @@ import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
 import { buildVoucherPickerModel, type VoucherPickerModel } from "../routes/voucher-picker-model.ts";
 import { readAnonymousCartCookie } from "./anonymous-cart-cookie.ts";
-import { canIssueNewVouchers } from "./voucher-gate.ts";
+import { canGrantHonourableVoucherHolds, canIssueNewVouchers } from "./voucher-gate.ts";
 import { VOUCHER_INTENT_COOKIE, readVoucherIntentCookie } from "./voucher-marketing-link.ts";
 import { readCartOwnVoucherHolds } from "./voucher-own-holds.ts";
 import { readVoucherPreview } from "./voucher-preview.ts";
@@ -16,8 +16,10 @@ import { readVoucherPreview } from "./voucher-preview.ts";
  * cart simply keeps its own, voucher-free totals). Read-only: no hold, no selection write.
  */
 export async function loadCurrentVoucherPicker(now: Date = new Date()): Promise<VoucherPickerModel | null> {
-  if (!canIssueNewVouchers()) return null;
+  // A NEW offer is only made where checkout could hold and honour it (voucher gates, POS-verified shop, gift/quantity gate,
+  // line-level pricing). Otherwise the cart says nothing about vouchers rather than promise a saving checkout will not give.
   try {
+    if (!canGrantHonourableVoucherHolds(readPancakeShopId())) return null;
     const cartId = readAnonymousCartCookie(await cookies());
     if (cartId === null) return null;
     const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now, ownHolds: await readCartOwnVoucherHolds(prisma, cartId) });

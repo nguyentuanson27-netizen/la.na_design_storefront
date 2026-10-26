@@ -74,12 +74,14 @@ export async function readVoucherPreview(input: Readonly<{
   selectionOverride?: VoucherSelectionIntent;
   /** Live holds of this cart's own attempt (TG-05 A / AC-31 / AC-33): kept in play even if the campaign has since ended or filled. */
   ownHolds?: readonly OwnVoucherHold[];
+  /** See `readVoucherPreviewWithin`: PRIVATE ids the server verified in this request. */
+  verifiedPrivateIds?: readonly string[];
 }>): Promise<VoucherPreview> {
   const { client, cartId, shopId, now } = input;
   const env = input.env ?? process.env;
   if (!canIssueNewVouchers(env)) return { enabled: false };
   try {
-    return await client.$transaction((tx) => readVoucherPreviewWithin(tx, { cartId, shopId, now, env, selectionOverride: input.selectionOverride, ownHolds: input.ownHolds ?? [] }), { isolationLevel: "RepeatableRead" });
+    return await client.$transaction((tx) => readVoucherPreviewWithin(tx, { cartId, shopId, now, env, selectionOverride: input.selectionOverride, ownHolds: input.ownHolds ?? [], verifiedPrivateIds: input.verifiedPrivateIds }), { isolationLevel: "RepeatableRead" });
   } catch {
     // A read that cannot complete is "unavailable", never "no voucher": the caller keeps the plain cart and says so.
     return { enabled: true, ok: false, reason: "QUOTE_UNAVAILABLE" };
@@ -92,10 +94,16 @@ export async function readVoucherPreview(input: Readonly<{
  */
 export async function readVoucherPreviewWithin(
   tx: Prisma.TransactionClient,
-  { cartId, shopId, now, env, selectionOverride, ownHolds, giftState: providedGiftState }: Readonly<{
+  { cartId, shopId, now, env, selectionOverride, ownHolds, giftState: providedGiftState, verifiedPrivateIds = [] }: Readonly<{
     cartId: string; shopId: number; now: Date; env: Readonly<Record<string, string | undefined>>; selectionOverride: VoucherSelectionIntent | undefined; ownHolds: readonly OwnVoucherHold[];
     /** Checkout already read the gift authority in this transaction; reusing it keeps both on one snapshot. */
     giftState?: Awaited<ReturnType<typeof readCartGiftState>>;
+    /**
+     * PRIVATE campaigns the SERVER has just verified for this cart in this very request (a valid code being applied). Never
+     * browser input: a draft's id is only unlocked by a saved selection, and this lets the one verified code be previewed
+     * before the shopper has agreed to save it.
+     */
+    verifiedPrivateIds?: readonly string[];
   }>,
 ): Promise<VoucherPreview> {
   const cart = await tx.cart.findFirst({
@@ -185,7 +193,7 @@ export async function readVoucherPreviewWithin(
   // A draft is unsaved, unverified input: it may name a PRIVATE campaign only if this cart's own saved selection
   // already does (that is how `applyCode` unlocked it). Any other PRIVATE id is simply not found, exactly like an
   // id that does not exist, so no card, price or condition of it can reach the response.
-  const unlockedPrivate = new Set([savedIntent.merchandise, savedIntent.shipping].flatMap((group) => (group.mode === "MANUAL" && group.voucherId !== null ? [group.voucherId] : [])));
+  const unlockedPrivate = new Set([...[savedIntent.merchandise, savedIntent.shipping].flatMap((group) => (group.mode === "MANUAL" && group.voucherId !== null ? [group.voucherId] : [])), ...verifiedPrivateIds]);
   const wantedIds = [selectionIntent.merchandise, selectionIntent.shipping].flatMap((group) => (group.mode === "MANUAL" && group.voucherId !== null ? [group.voucherId] : []));
   const [publicCampaigns, savedCampaigns] = await Promise.all([
     readPublicVoucherCandidates({ client: tx, shopId, now, env }),

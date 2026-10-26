@@ -108,13 +108,16 @@ export function createVoucherRedemptionService(client: PrismaClient) {
    * Settles redemptions of orders Pancake has cancelled whose refund a crash or a lost hook left undone: the status
    * reconciliation stores status 7 first and refunds second, and nothing re-reads an unchanged status. Only a candidate
    * list: `refundOrder` re-checks the trust (complete, shop-verified record at the cancelled code) under the order lock,
-   * so `SYNC_UNKNOWN`, a half record or any other code is never refunded here.
+   * so `SYNC_UNKNOWN`, a half record or any other code is never refunded here. The candidate query already requires the
+   * complete record, so incomplete rows can never fill the bounded batch and starve a valid cancelled order.
    */
   async function sweepCancelledOrders(options: Readonly<{ limit?: number }> = {}): Promise<Readonly<{ scanned: number; refunded: number }>> {
     const limit = Math.max(1, Math.min(options.limit ?? 50, 500));
     const orders = await client.$queryRaw<Array<{ id: string }>>`
       SELECT DISTINCT o."id" FROM "OrderMirror" o JOIN "VoucherRedemption" r ON r."orderId" = o."id"
-      WHERE o."pancakeStatus" = ${PANCAKE_ORDER_CANCELED_STATUS} AND o."state" <> 'REJECTED' AND r."refundedAt" IS NULL LIMIT ${limit}`;
+      WHERE o."pancakeStatus" = ${PANCAKE_ORDER_CANCELED_STATUS} AND o."state" <> 'REJECTED' AND r."refundedAt" IS NULL
+        AND o."pancakeOrderId" IS NOT NULL AND o."pancakeShopId" IS NOT NULL AND o."pancakeSystemId" IS NOT NULL AND o."pancakeStatusUpdatedAt" IS NOT NULL
+      ORDER BY o."id" LIMIT ${limit}`;
     let refunded = 0;
     for (const order of orders) {
       const result = await refundOrder({ orderId: order.id, reason: "POS_CANCELLED" });

@@ -45,6 +45,10 @@ async function startServer(): Promise<ChildProcess> {
       ...process.env,
       PANCAKE_SHOP_ID: String(SHOP),
       LA_VOUCHER_ENABLED: "true",
+      // A cart offer needs the same readiness as a hold: POS-verified shop, gift/quantity gate, line-level pricing.
+      LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS: String(SHOP),
+      LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true",
+      LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP),
       LA_TRACKING_MODE: "preview",
       LA_GTM_CONTAINER_ID: "GTM-VCHRTST",
       BETTER_AUTH_URL: BASE,

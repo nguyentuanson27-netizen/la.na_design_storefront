@@ -28,7 +28,9 @@ export type VoucherSelectionResult =
 
 export type VoucherCodeResult =
   | Readonly<{ ok: true; selection: VoucherSelectionIntent; card: VoucherCard; group: VoucherGroup }>
-  | Readonly<{ ok: false; reason: "FEATURE_DISABLED" | "CART_UNAVAILABLE" | "INVALID_CODE" | "VOUCHER_UNAVAILABLE" | "RATE_LIMITED" }>;
+  | Readonly<{ ok: false; reason: "FEATURE_DISABLED" | "CART_UNAVAILABLE" | "INVALID_CODE" | "VOUCHER_UNAVAILABLE" | "RATE_LIMITED" }>
+  /** A valid code whose choice costs the shopper something they have not agreed to: nothing was saved. */
+  | Readonly<{ ok: false; reason: "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED"; pending: Readonly<{ campaignId: string; group: VoucherGroup }> }>;
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 export const AUTO_INTENT: VoucherSelectionIntent = Object.freeze({
@@ -179,7 +181,18 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
    * choice (spec §4.2: a valid entered code is a manual lock). Throttled before the lookup; every failure of a
    * private code answers INVALID_CODE (see the candidate repository). Grants nothing.
    */
-  async function applyCode(input: Readonly<{ cartId: string; rawCode: unknown; now?: Date }>): Promise<VoucherCodeResult> {
+  async function applyCode(input: Readonly<{
+    cartId: string;
+    rawCode: unknown;
+    now?: Date;
+    /**
+     * Runs INSIDE the transaction, under the cart lock, once the code is verified (and rate-counted) and BEFORE the choice is
+     * written. A refusal writes nothing: the verified code is not saved, so a choice that costs a gift or raises the total
+     * waits for the shopper's explicit consent exactly like a draft does.
+     */
+    beforeSave?: (tx: Prisma.TransactionClient, verified: Readonly<{ campaignId: string; group: VoucherGroup }>) => Promise<Readonly<{ reason: "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED" }> | null>;
+    afterSave?: (tx: Prisma.TransactionClient) => Promise<void>;
+  }>): Promise<VoucherCodeResult> {
     const now = input.now ?? new Date();
     if (!canIssueNewVouchers(env)) return { ok: false, reason: "FEATURE_DISABLED" };
     const result = await withCart<VoucherCodeResult>(input.cartId, now, async (tx, cart) => {
@@ -188,7 +201,12 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
       const lookup = await lookupVoucherCode({ client: tx, shopId, rawCode: input.rawCode, now, env });
       if (!lookup.ok) return { ok: false, reason: lookup.reason };
       const group: VoucherGroup = lookup.campaign.kind;
+      if (input.beforeSave) {
+        const refusal = await input.beforeSave(tx, { campaignId: lookup.campaign.id, group });
+        if (refusal !== null) return { ok: false, reason: refusal.reason, pending: { campaignId: lookup.campaign.id, group } };
+      }
       const selection = await save(tx, cart, group, "MANUAL", lookup.campaign.id);
+      if (input.afterSave) await input.afterSave(tx);
       return { ok: true, selection, card: toVoucherCard(lookup.campaign), group };
     });
     return result ?? { ok: false, reason: "CART_UNAVAILABLE" };

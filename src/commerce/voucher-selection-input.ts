@@ -70,3 +70,19 @@ export function parseVoucherCommitInput(input: unknown): Readonly<{ draft: Vouch
   if (acknowledged !== true || typeof expectedQuoteDigest !== "string" || !DIGEST.test(expectedQuoteDigest)) return null;
   return { draft, consentDigest: expectedQuoteDigest };
 }
+
+/**
+ * A typed code, plus -- only when the shopper explicitly confirmed what the code's choice costs them -- the digest of the quote
+ * they confirmed (the same consent as a draft's commit). Anything else, extra keys included, is refused whole.
+ */
+export function parseVoucherCodeCommitInput(input: unknown): Readonly<{ code: string; consentDigest: string | null }> | null {
+  if (!exact(input, ["code", "consent"])) return null;
+  const code = parseVoucherCodeInput({ code: (input as { code?: unknown }).code });
+  if (code === null) return null;
+  const { consent } = input as { consent?: unknown };
+  if (consent === undefined) return { code, consentDigest: null };
+  if (!exact(consent, ["acknowledged", "expectedQuoteDigest"])) return null;
+  const { acknowledged, expectedQuoteDigest } = consent as { acknowledged?: unknown; expectedQuoteDigest?: unknown };
+  if (acknowledged !== true || typeof expectedQuoteDigest !== "string" || !DIGEST.test(expectedQuoteDigest)) return null;
+  return { code, consentDigest: expectedQuoteDigest };
+}

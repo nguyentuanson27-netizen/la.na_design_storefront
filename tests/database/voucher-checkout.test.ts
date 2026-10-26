@@ -15,7 +15,7 @@ import { createStorefrontCartRepository } from "../../src/commerce/storefront-ca
 import { createVoucherHoldFlow } from "../../src/commerce/voucher-hold-flow.ts";
 import { createVoucherHoldService } from "../../src/commerce/voucher-hold-service.ts";
 import { createVoucherOrderAcceptance } from "../../src/commerce/voucher-order-acceptance.ts";
-import { commitVoucherDraft } from "../../src/commerce/voucher-draft-commit.ts";
+import { applyVoucherCode, commitVoucherDraft } from "../../src/commerce/voucher-draft-commit.ts";
 import { readVoucherPreview } from "../../src/commerce/voucher-preview.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
@@ -421,7 +421,7 @@ async function pickerCommit(voucherId: string, consent: "none" | "current" | "st
   assert.ok(preview.enabled && preview.ok);
   const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
   return commitVoucherDraft({
-    client: prisma, cartId, shopId: SHOP, env: ENV, ownHolds: [],
+    client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET,
     draft: { merchandise: { mode: "MANUAL", voucherId }, shipping: { mode: "AUTO", voucherId: null } },
     consentDigest: consent === "none" ? null : consent === "current" ? digest : "0".repeat(64),
   });
@@ -478,6 +478,55 @@ test("a consent for a quote that is no longer the server's is refused even when 
   assert.deepEqual(await pickerCommit(m.id, "stale"), { ok: false, reason: "QUOTE_CHANGED" });
   assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0);
   assert.equal((await pickerCommit(m.id, "none")).ok, true, "and with no consent offered, a draft that costs nothing is saved as before");
+});
+
+/** A typed code, with the digest of the quote the picker showed for the verified voucher (it is previewable for this request only). */
+async function codeCommit(campaignId: string, consent: "none" | "current" | "stale") {
+  await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "voucher-code-" } } });
+  const preview = await readVoucherPreview({
+    client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], verifiedPrivateIds: [campaignId],
+    selectionOverride: { merchandise: { mode: "MANUAL", voucherId: campaignId }, shipping: { mode: "AUTO" } },
+  });
+  assert.ok(preview.enabled && preview.ok);
+  const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
+  return applyVoucherCode({
+    client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, rawCode: "kol50",
+    consentDigest: consent === "none" ? null : consent === "current" ? digest : "0".repeat(64),
+  });
+}
+
+test("review 5a62d20 / AC-35: a typed CODE that costs a chosen gift is verified but NOT saved without consent; with the current consent the voucher and the gift change are written together", async () => {
+  await seed({ giftThreshold: 880_000 });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  const priv = await fixedVoucher(50_000, 600_000, { issuance: "CODE", visibility: "PRIVATE", code: "KOL50" });
+
+  const refused = await codeCommit(priv.id, "none");
+  assert.deepEqual(refused.ok === false && [refused.reason, "pending" in refused ? refused.pending : null], ["CONFIRMATION_REQUIRED", { campaignId: priv.id, group: "MERCHANDISE" }]);
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0, "a valid code is not saved before the consent");
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "and the gift choice is untouched");
+  const stale = await codeCommit(priv.id, "stale");
+  assert.equal(stale.ok === false && stale.reason, "QUOTE_CHANGED");
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0);
+
+  const saved = await codeCommit(priv.id, "current");
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0, "the confirmed loss was carried out with the code");
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, priv.id);
+});
+
+test("review 5a62d20 / EX-06: a typed CODE that raises the total needs consent too, and an unknown code still answers INVALID_CODE", async () => {
+  await seed();
+  const variant = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paid.variantId }, select: { productId: true } });
+  await prisma.productCategoryMembership.create({ data: { productId: variant.productId, categoryKey: "vayDam" } });
+  await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: SHOP, name: "Freeship vay", isEnabled: true, enabledAt: PAST, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] } });
+  const priv = await fixedVoucher(10_000, 600_000, { issuance: "CODE", visibility: "PRIVATE", code: "KOL50" });
+  assert.equal((await codeCommit(priv.id, "none")).ok, false);
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0);
+  assert.equal((await codeCommit(priv.id, "current")).ok, true);
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, priv.id);
+  await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "voucher-code-" } } });
+  const wrong = await applyVoucherCode({ client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, rawCode: "nope1234", consentDigest: null });
+  assert.deepEqual(wrong.ok === false && wrong.reason, "INVALID_CODE");
 });
 
 test("AC-35: fewer slots than were chosen reduces the choice (newest first) instead of removing it; unrelated choices stay", async () => {

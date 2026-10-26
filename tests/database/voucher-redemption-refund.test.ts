@@ -221,6 +221,25 @@ test("the sweep also settles an order whose cancelled status (7) was stored but 
   assert.deepEqual(await counters(lost.m.id), [0, BigInt(0), 0, BigInt(0)]);
 });
 
+test("the cancelled-order sweep cannot be starved: 60 half records at status 7 never take the batch from one valid cancelled order", async () => {
+  const valid = await acceptedOrder();
+  await setState(valid.order.id, "CONFIRMED");
+  await mirrorStatus(valid.order.id, 7, "8800500");
+  // Sixty orders whose status 7 was stored without a complete record (no system id / revision): not evidence, and numerous
+  // enough to fill a limit of 50 if the candidate query did not already exclude them.
+  const halves = [];
+  for (let n = 0; n < 60; n += 1) {
+    const half = await acceptedOrder();
+    await setState(half.order.id, "CONFIRMED");
+    await prisma.orderMirror.update({ where: { id: half.order.id }, data: { pancakeOrderId: `88006${String(n).padStart(2, "0")}`, pancakeStatus: 7 } });
+    halves.push(half);
+  }
+  const swept = await refunds.sweepCancelledOrders({ limit: 50 });
+  assert.deepEqual(swept, { scanned: 1, refunded: 1 }, "only the valid order was a candidate, and it was settled in the first pass");
+  assert.deepEqual(await counters(valid.m.id), [0, BigInt(0), 0, BigInt(0)]);
+  assert.deepEqual(await counters(halves[0]!.m.id), [1, BigInt(50_000), 0, BigInt(0)], "a half record is never refunded");
+});
+
 // ---- the signals reach the refund through the real services ------------------------------------------------------
 
 const upstream = (status: number, updatedAt: string): PancakeOrderStatus =>

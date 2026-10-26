@@ -3,13 +3,14 @@
 import { cookies } from "next/headers";
 import { refresh } from "next/cache";
 import { prisma } from "../db/prisma.ts";
+import { readAuthServerConfig } from "../auth/config.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
 import { buildVoucherPickerModel } from "../routes/voucher-picker-model.ts";
 import { readAnonymousCartCookie } from "./anonymous-cart-cookie.ts";
-import { parseVoucherCodeInput, parseVoucherCommitInput, parseVoucherDraftInput, parseVoucherSelectionInput } from "./voucher-selection-input.ts";
+import { parseVoucherCodeCommitInput, parseVoucherCommitInput, parseVoucherDraftInput, parseVoucherSelectionInput } from "./voucher-selection-input.ts";
 import { createVoucherSelectionService } from "./voucher-selection-service.ts";
 import { readCartOwnVoucherHolds } from "./voucher-own-holds.ts";
-import { commitVoucherDraft } from "./voucher-draft-commit.ts";
+import { applyVoucherCode, commitVoucherDraft } from "./voucher-draft-commit.ts";
 import { readVoucherPreview } from "./voucher-preview.ts";
 import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
 
@@ -25,8 +26,8 @@ import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
  * (`voucherPickerKey`), which would remount it and close the dialog the shopper is looking at. The picker already
  * holds the model the server just answered with, so nothing is lost by not refreshing behind it.
  */
-async function respond(selected: { ok: boolean }, cartId: string, selectionOverride?: VoucherSelectionIntent, refreshPage = true) {
-  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now: new Date(), ownHolds: await readCartOwnVoucherHolds(prisma, cartId), ...(selectionOverride ? { selectionOverride } : {}) });
+async function respond(selected: { ok: boolean }, cartId: string, selectionOverride?: VoucherSelectionIntent, refreshPage = true, verifiedPrivateIds?: readonly string[]) {
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now: new Date(), ownHolds: await readCartOwnVoucherHolds(prisma, cartId), ...(selectionOverride ? { selectionOverride } : {}), ...(verifiedPrivateIds ? { verifiedPrivateIds } : {}) });
   if (selected.ok && refreshPage) refresh();
   if (!preview.enabled || !preview.ok) return { picker: null } as const;
   return { picker: buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent, quoteDigest: preview.quoteDigest }) } as const;
@@ -44,7 +45,7 @@ export async function setStorefrontVoucherSelection(input: unknown) {
   const keep = (group: { mode: "AUTO" } | { mode: "MANUAL"; voucherId: string | null }) => ({ mode: group.mode, voucherId: group.mode === "MANUAL" ? group.voucherId : null });
   const next = { mode: parsed.mode, voucherId: parsed.voucherId };
   const result = await commitVoucherDraft({
-    client: prisma, cartId, shopId, consentDigest: null, ownHolds: await readCartOwnVoucherHolds(prisma, cartId),
+    client: prisma, cartId, shopId, consentDigest: null, attemptSecret: readAuthServerConfig().secret,
     draft: {
       merchandise: parsed.group === "MERCHANDISE" ? next : keep(current.merchandise),
       shipping: parsed.group === "SHIPPING_FREE" ? next : keep(current.shipping),
@@ -55,11 +56,22 @@ export async function setStorefrontVoucherSelection(input: unknown) {
 }
 
 export async function applyStorefrontVoucherCode(input: unknown) {
-  const code = parseVoucherCodeInput(input);
+  const parsed = parseVoucherCodeCommitInput(input);
   const cartId = readAnonymousCartCookie(await cookies());
-  if (code === null) return { ok: false, reason: "INVALID_CODE" } as const;
+  if (parsed === null) return { ok: false, reason: "INVALID_CODE" } as const;
   if (cartId === null) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
-  const result = await createVoucherSelectionService(prisma, { shopId: readPancakeShopId() }).applyCode({ cartId, rawCode: code });
+  const shopId = readPancakeShopId();
+  const result = await applyVoucherCode({ client: prisma, cartId, shopId, rawCode: parsed.code, consentDigest: parsed.consentDigest, attemptSecret: readAuthServerConfig().secret });
+  if (!result.ok && (result.reason === "CONFIRMATION_REQUIRED" || result.reason === "QUOTE_CHANGED")) {
+    // The code is valid but its choice costs something the shopper has not agreed to; nothing was saved. Show what the server
+    // derives for it (the one verified campaign is previewable for this request only) so they can decide, and ask again.
+    const { pending } = result;
+    const saved = await createVoucherSelectionService(prisma, { shopId }).read(cartId);
+    const chosen = { mode: "MANUAL", voucherId: pending.campaignId } as const;
+    const override: VoucherSelectionIntent = pending.group === "MERCHANDISE" ? { merchandise: chosen, shipping: saved.shipping } : { merchandise: saved.merchandise, shipping: chosen };
+    const { picker } = await respond({ ok: false }, cartId, override, false, [pending.campaignId]);
+    return { ok: false, reason: result.reason, picker } as const;
+  }
   if (!result.ok) return { ok: false, reason: result.reason } as const;
   // The dialog stays open on the checked voucher: no page refresh (it would remount the picker and close it).
   return { ok: true, group: result.group, ...(await respond(result, cartId, undefined, false)) } as const;
@@ -104,7 +116,7 @@ export async function commitStorefrontVoucherDraft(input: unknown) {
   if (cartId === null) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
   const result = await commitVoucherDraft({
     client: prisma, cartId, shopId: readPancakeShopId(), draft: parsed.draft, consentDigest: parsed.consentDigest,
-    ownHolds: await readCartOwnVoucherHolds(prisma, cartId),
+    attemptSecret: readAuthServerConfig().secret,
   });
   if (!result.ok) return { ok: false, reason: result.reason } as const;
   return { ok: true, ...(await respond(result, cartId)) } as const;
