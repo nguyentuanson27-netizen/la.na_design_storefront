@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
+import { CheckoutVoucherPanel } from "@/components/brand/checkout-voucher-panel";
 import { PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
@@ -190,6 +191,8 @@ function render(data: CheckoutViewModel) {
           totalsSlot={totalsContent}
           preorderSlot={preorderNoticeFor("mobile")}
           desktopPreorderSlot={preorderNoticeFor("desktop")}
+          voucherSlot={data.vouchers ? <CheckoutVoucherPanel view={data.vouchers} /> : null}
+          submitBlockedReason={data.vouchers?.state === "OFFERED" ? "Nàng xác nhận ưu đãi ở trên (hoặc bỏ chọn ưu đãi trong giỏ hàng) trước khi đặt hàng nhé." : null}
         />
 
 

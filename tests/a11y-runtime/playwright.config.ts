@@ -21,6 +21,7 @@ export default defineConfig({
     "checkout.spec.ts",
     "promotion-upsell.spec.ts",
     "checkout-benefit.spec.ts",
+    "checkout-voucher.spec.ts",
     "cart-gift-picker.spec.ts",
     "cart-drawer-exit.spec.ts",
     "collection-breadcrumb.spec.ts",

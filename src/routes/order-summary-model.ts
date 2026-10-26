@@ -27,6 +27,8 @@ export type OrderSummaryView = Readonly<{
   giftQuantity: number;
   /** "Miễn phí" or the fee. */
   shippingText: string;
+  /** A shipping voucher that took the fee down: its name and what it waived. The fee above is already net of it. */
+  shippingVoucher: Readonly<{ label: string; amountText: string }> | null;
   /** Tổng thanh toán. */
   totalText: string;
 }>;
@@ -41,6 +43,8 @@ export function buildOrderSummary(input: Readonly<{
   expectedTotalVnd?: number;
   /** An authoritative "Tổng giá trị đơn hàng" (the lines at their listed prices); a mismatch returns `null`. */
   expectedValueVnd?: number;
+  /** V18: the fee a held shipping voucher waived. It is shown beside the (already reduced) shipping line, never added to the value. */
+  shippingVoucher?: Readonly<{ label: string; waivedVnd: number }>;
 }>): OrderSummaryView | null {
   const { goodsAfterDiscountsVnd, discounts, shippingFeeVnd } = input;
   if (![goodsAfterDiscountsVnd, shippingFeeVnd].every((value) => Number.isSafeInteger(value) && value >= 0)) return null;
@@ -50,11 +54,13 @@ export function buildOrderSummary(input: Readonly<{
   if (!Number.isSafeInteger(valueVnd) || !Number.isSafeInteger(totalVnd)) return null;
   if (input.expectedTotalVnd !== undefined && input.expectedTotalVnd !== totalVnd) return null;
   if (input.expectedValueVnd !== undefined && input.expectedValueVnd !== valueVnd) return null;
+  if (input.shippingVoucher !== undefined && !(Number.isSafeInteger(input.shippingVoucher.waivedVnd) && input.shippingVoucher.waivedVnd >= 1)) return null;
   return Object.freeze({
     valueText: currency.format(valueVnd),
     discounts: Object.freeze(discounts.map((row) => Object.freeze({ id: row.id, label: row.label, amountText: `−${row.amountText}` }))),
     giftQuantity: input.giftQuantity ?? 0,
     shippingText: shippingFeeVnd === 0 ? "Miễn phí" : currency.format(shippingFeeVnd),
+    shippingVoucher: input.shippingVoucher === undefined ? null : Object.freeze({ label: input.shippingVoucher.label, amountText: `−${currency.format(input.shippingVoucher.waivedVnd)}` }),
     totalText: currency.format(totalVnd),
   });
 }

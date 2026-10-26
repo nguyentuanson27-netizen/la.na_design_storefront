@@ -16,3 +16,13 @@ export async function readCartOwnVoucherHolds(client: PrismaClient, cartId: stri
     return [];
   }
 }
+
+/** When the earliest of this cart's live holds expires (database clock), for the checkout's "held until"; null when none or unreadable. */
+export async function readCartHeldUntilMs(client: PrismaClient, cartId: string): Promise<number | null> {
+  try {
+    const holds = await createVoucherHoldService(client, { attemptSecret: readAuthServerConfig().secret }).readOwnLiveHoldFactsIn(client, cartId);
+    return holds.length === 0 ? null : Math.min(...holds.map((hold) => hold.expiresAt.getTime()));
+  } catch {
+    return null;
+  }
+}
