@@ -52,6 +52,9 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
   const [error, setError] = useState<string | null>(null);
   // A code from a marketing link is offered, not applied: the shopper confirms it with "Áp dụng mã".
   const [code, setCode] = useState(prefillCode ?? "");
+  // A valid code whose choice costs something the shopper has not agreed to: verified, shown, NOT saved. It is saved by the
+  // same "Áp dụng" press that carries the consent (the server re-verifies the code and the quote then).
+  const [pendingCode, setPendingCode] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -74,6 +77,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
 
   const close = () => {
     settleCodeApplied();
+    setPendingCode(null);
     setOpen(false);
     setConfirming(false);
     setError(null);
@@ -85,6 +89,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
 
   const choose = (key: "merchandise" | "shipping", voucherId: string | null) => {
     const next: Draft = { ...draft, [key]: { mode: "MANUAL", voucherId } };
+    setPendingCode(null);
     setDraft(next);
     setConfirming(false);
     setError(null);
@@ -106,8 +111,18 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
         setModel(result.picker);
         setDraft(draftOf(result.picker));
         setCode("");
+        setPendingCode(null);
         codeApplied.current = true;
         setMessage("Đã áp dụng mã ưu đãi.");
+      } else if (!result.ok && (result.reason === "CONFIRMATION_REQUIRED" || result.reason === "QUOTE_CHANGED")) {
+        // The code is valid but nothing is saved yet: show what the server derives for it and ask for the shopper's yes.
+        if (result.picker) {
+          setModel(result.picker);
+          setDraft(draftOf(result.picker));
+        }
+        setPendingCode(code);
+        setConfirming(result.reason === "CONFIRMATION_REQUIRED");
+        setMessage("Mã hợp lệ. Nàng xem ưu đãi và lưu ý bên dưới, rồi bấm xác nhận để áp dụng.");
       } else setError(result.ok ? GENERIC_ERROR : (CODE_ERROR[result.reason] ?? GENERIC_ERROR));
     });
   };
@@ -122,8 +137,16 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
     startTransition(async () => {
       // The consent is the digest of the quote the shopper just read and a yes; the server recomputes what is lost.
       const consent = confirming && model.quoteDigest !== null ? { acknowledged: true as const, expectedQuoteDigest: model.quoteDigest } : undefined;
-      const result = await commitDraft(consent ? { ...draft, consent } : draft);
+      // A verified code waiting for the shopper's yes is saved through the code path (the server re-verifies the code and the quote).
+      const result = pendingCode !== null
+        ? await applyCode(consent ? { code: pendingCode, consent } : { code: pendingCode })
+        : await commitDraft(consent ? { ...draft, consent } : draft);
       if (result.ok && result.picker) {
+        if (pendingCode !== null) {
+          setPendingCode(null);
+          setCode("");
+          codeApplied.current = true;
+        }
         setSaved(result.picker);
         setModel(result.picker);
         setDraft(draftOf(result.picker));
@@ -135,8 +158,14 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
         // Nothing was saved. Show what the server derives now and ask again.
         setConfirming(false);
         setError("Giá hoặc ưu đãi vừa thay đổi. Nàng xem lại số tiền và quà bên dưới rồi xác nhận lại nhé.");
-        const again = await previewDraft(draft);
-        if (again.ok) setModel(again.picker);
+        const refused = (result as { picker?: VoucherPickerModel | null }).picker;
+        if (pendingCode !== null && refused) {
+          setModel(refused);
+          setDraft(draftOf(refused));
+        } else {
+          const again = await previewDraft(draft);
+          if (again.ok) setModel(again.picker);
+        }
       } else setError(GENERIC_ERROR);
     });
   };
