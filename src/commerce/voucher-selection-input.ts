@@ -91,17 +91,19 @@ export function parseVoucherCodeCommitInput(input: unknown): Readonly<{ code: st
 }
 
 /**
- * "Dùng mã từ liên kết": the code is NOT sent by the browser (the server reads it from the HttpOnly cookie a marketing link left),
- * so the only thing that may cross the wire is the consent, exactly as for a typed code. Anything else is refused whole.
+ * "Dùng mã từ liên kết": the code is NOT sent by the browser (the server reads it from the HttpOnly cookie a marketing link left), so what
+ * crosses the wire is the opaque handle of the offer the shopper was SHOWN (32 hex, bound when the cart rendered) and, only when they
+ * confirmed what it costs, the consent as a digest and a yes. Anything else is refused whole.
  */
-export function parseVoucherLinkedCommitInput(input: unknown): Readonly<{ consentDigest: string | null }> | null {
-  if (!exact(input, ["consent"])) return null;
-  const { consent } = input as { consent?: unknown };
-  if (consent === undefined) return { consentDigest: null };
+export function parseVoucherLinkedCommitInput(input: unknown): Readonly<{ offerToken: string; consentDigest: string | null }> | null {
+  if (!exact(input, ["offerToken", "consent"])) return null;
+  const { offerToken, consent } = input as { offerToken?: unknown; consent?: unknown };
+  if (typeof offerToken !== "string" || !/^[0-9a-f]{32}$/.test(offerToken)) return null;
+  if (consent === undefined) return { offerToken, consentDigest: null };
   if (!exact(consent, ["acknowledged", "expectedQuoteDigest"])) return null;
   const { acknowledged, expectedQuoteDigest } = consent as { acknowledged?: unknown; expectedQuoteDigest?: unknown };
   if (acknowledged !== true || typeof expectedQuoteDigest !== "string" || !DIGEST.test(expectedQuoteDigest)) return null;
-  return { consentDigest: expectedQuoteDigest };
+  return { offerToken, consentDigest: expectedQuoteDigest };
 }
 
 /** "Stop offering the linked code I just used": an opaque token the server gave back (never the code), 32 lowercase hex, nothing else. */

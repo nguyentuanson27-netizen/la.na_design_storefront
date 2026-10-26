@@ -57,13 +57,15 @@ test("the picker's commit carries the version of the saved choice it was built o
   assert.equal(parseVoucherCommitInput({ ...draft, selection: version, totalVnd: 1 }), null);
 });
 
-test("the linked code's apply carries no code at all, only a consent as a digest and an explicit yes", async () => {
+test("the linked code's apply carries no code at all, only the handle of the offer shown and a consent as a digest and an explicit yes", async () => {
   const { parseVoucherLinkedCommitInput } = await import("../../src/commerce/voucher-selection-input.ts");
   const digest = "a".repeat(64);
-  assert.deepEqual(parseVoucherLinkedCommitInput({}), { consentDigest: null });
-  assert.deepEqual(parseVoucherLinkedCommitInput({ consent: { acknowledged: true, expectedQuoteDigest: digest } }), { consentDigest: digest });
-  // The browser has no code to send: a code, a price, a gift list or a malformed consent is refused whole.
-  for (const bad of [{ code: "KOL70" }, { consent: { acknowledged: false, expectedQuoteDigest: digest } }, { consent: { acknowledged: true, expectedQuoteDigest: "abc" } }, { consent: "yes" }, { totalVnd: 1 }, null, "KOL70", []]) {
+  const offerToken = "b".repeat(32);
+  assert.deepEqual(parseVoucherLinkedCommitInput({ offerToken }), { offerToken, consentDigest: null });
+  assert.deepEqual(parseVoucherLinkedCommitInput({ offerToken, consent: { acknowledged: true, expectedQuoteDigest: digest } }), { offerToken, consentDigest: digest });
+  // The offer handle is required (an apply that names no offer would apply whatever the cookie holds now), and nothing else rides along:
+  // a code, a price, a gift list or a malformed consent is refused whole.
+  for (const bad of [{}, { consent: { acknowledged: true, expectedQuoteDigest: digest } }, { offerToken: "KOL70" }, { offerToken: "B".repeat(32) }, { offerToken: "b".repeat(31) }, { offerToken, code: "KOL70" }, { offerToken, consent: { acknowledged: false, expectedQuoteDigest: digest } }, { offerToken, consent: { acknowledged: true, expectedQuoteDigest: "abc" } }, { offerToken, consent: "yes" }, { offerToken, totalVnd: 1 }, null, "KOL70", []]) {
     assert.equal(parseVoucherLinkedCommitInput(bad), null, JSON.stringify(bad));
   }
 });

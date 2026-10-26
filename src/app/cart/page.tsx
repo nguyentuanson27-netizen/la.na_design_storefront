@@ -189,7 +189,7 @@ function render(data: CartRouteViewModel) {
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
           {data.vouchers ? (
             <section aria-label="Ưu đãi" className="mb-6" data-cart-vouchers>
-              <VoucherPicker key={voucherPickerKey(data.vouchers)} initial={data.vouchers} linkOffered={data.voucherLinkOffered} />
+              <VoucherPicker key={voucherPickerKey(data.vouchers)} initial={data.vouchers} linkOffer={data.voucherLinkOffer} />
               <p className="mt-2 text-xs leading-5 text-black/65">Ưu đãi được xác nhận lại khi nàng đặt hàng.</p>
             </section>
           ) : null}

@@ -1,8 +1,9 @@
 "use server";
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { VOUCHER_INTENT_COOKIE, readVoucherIntentCookie } from "./voucher-marketing-link.ts";
+import { voucherOfferToken } from "./voucher-offer-token.ts";
 import { refresh } from "next/cache";
 import { prisma } from "../db/prisma.ts";
 import { readAuthServerConfig } from "../auth/config.ts";
@@ -60,13 +61,7 @@ export async function setStorefrontVoucherSelection(input: unknown) {
   return { ok: true, ...(await respond(result, cartId)) } as const;
 }
 
-/**
- * An opaque handle on "the offer I used": an HMAC of the code under the server's secret, never the code. The picker hands it back when it
- * closes, so the cookie is cleared only if it still holds THAT offer (another tab may have replaced it with a newer link since).
- */
-function offerToken(code: string): string {
-  return createHmac("sha256", readAuthServerConfig().secret).update(`voucher-offer:${code}`).digest("hex").slice(0, 32);
-}
+const sameToken = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 /** Verify, quote, ask for consent and save one code for this cart; what answers the picker is the same for a typed and a linked code. */
 async function applyCodeFor(cartId: string, rawCode: string, consentDigest: string | null) {
@@ -108,10 +103,13 @@ export async function applyStorefrontLinkedVoucherCode(input: unknown) {
   if (cartId === null) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
   const code = readVoucherIntentCookie(jar.get(VOUCHER_INTENT_COOKIE)?.value);
   if (code === null) return { ok: false, reason: "INVALID_CODE" } as const;
+  // The click applies the offer the shopper was SHOWN. The cookie is shared by every tab and a newer link replaces it: if it no longer
+  // is the offer this page rendered, nothing is applied and the shopper is asked to look again (fail closed, never apply the other one).
+  if (!sameToken(voucherOfferToken(code), parsed.offerToken)) return { ok: false, reason: "OFFER_CHANGED" } as const;
   // The cookie is NOT cleared here: deleting a cookie in a Server Action re-renders the page, which would remount the picker and close the
   // dialog the shopper is reading the result in. `dismissStorefrontLinkedVoucherOffer` clears it after the dialog is closed.
   const result = await applyCodeFor(cartId, code, parsed.consentDigest);
-  return result.ok ? ({ ...result, offerToken: offerToken(code) } as const) : result;
+  return result.ok ? ({ ...result, offerToken: parsed.offerToken } as const) : result;
 }
 
 /**
@@ -125,9 +123,7 @@ export async function dismissStorefrontLinkedVoucherOffer(input: unknown) {
   const jar = await cookies();
   const code = readVoucherIntentCookie(jar.get(VOUCHER_INTENT_COOKIE)?.value);
   if (code === null) return { ok: true, cleared: false } as const;
-  const current = Buffer.from(offerToken(code));
-  const used = Buffer.from(parsed.offerToken);
-  if (current.length !== used.length || !timingSafeEqual(current, used)) return { ok: true, cleared: false } as const;
+  if (!sameToken(voucherOfferToken(code), parsed.offerToken)) return { ok: true, cleared: false } as const;
   jar.delete(VOUCHER_INTENT_COOKIE);
   return { ok: true, cleared: true } as const;
 }

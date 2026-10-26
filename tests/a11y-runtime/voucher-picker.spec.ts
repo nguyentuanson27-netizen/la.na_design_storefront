@@ -272,6 +272,36 @@ test("review e0166b2: closing one tab's dialog clears only the offer that tab us
   await other.close();
 });
 
+test("review 846d645: a tab applies only the offer it SHOWED -- A views KOL70, B opens KOL80, A's click applies nothing", async ({ page, context }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL80", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 80K", fixedAmountVnd: BigInt(80_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  const kol80 = await prisma.voucherCampaign.findFirstOrThrow({ where: { code: "KOL80" }, select: { id: true } });
+  const pendingCookie = async () => (await context.cookies()).find((cookie) => cookie.name === "la_voucher_code")?.value ?? null;
+  // Tab A follows the KOL70 link and has the cart open with the offer showing.
+  await page.goto(`${BASE}/shop/${productSlug}?voucher=KOL70`);
+  await page.goto(`${BASE}/cart`);
+  await trigger(page).click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await expect(dialog.getByRole("button", { name: "Dùng mã từ liên kết" })).toBeVisible();
+  // Tab B (same browser) opens a NEWER link before A clicks: the shared cookie now holds KOL80, a different (bigger) discount.
+  const other = await context.newPage();
+  await other.goto(`${BASE}/shop/${productSlug}?voucher=KOL80`);
+  expect(await pendingCookie()).toBe("KOL80");
+  await other.close();
+  // A's click is for the offer A showed. It must NOT save KOL80, and it must say why.
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await expect(dialog).toContainText("vừa được thay bằng một mã khác");
+  const saved = await selection();
+  expect(saved?.merchandiseVoucherId ?? null).not.toBe(kol80.id);
+  expect(saved?.merchandiseVoucherId ?? null).not.toBe(ids.priv);
+  expect(await pendingCookie()).toBe("KOL80");
+  // A is shown what is on offer now; a second, deliberate click on THAT offer applies it.
+  await expect(dialog.getByRole("button", { name: "Dùng mã từ liên kết" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await expect.poll(async () => (await selection())?.merchandiseVoucherId).toBe(kol80.id);
+});
+
 test("AC-13 / V19: with no cart yet, the link's code waits in an HttpOnly cookie and the cart only OFFERS it", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();

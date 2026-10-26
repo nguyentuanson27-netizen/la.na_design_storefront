@@ -36,10 +36,11 @@ const CODE_ERROR: Readonly<Record<string, string>> = {
   FEATURE_DISABLED: "Ưu đãi tạm thời chưa khả dụng.",
   CART_UNAVAILABLE: "Giỏ hàng không còn khả dụng. Nàng tải lại trang nhé.",
   QUOTE_UNAVAILABLE: "Chưa tính được giá cho ưu đãi này lúc này, nên chưa áp dụng. Nàng thử lại sau giây lát nhé.",
+  OFFER_CHANGED: "Mã ưu đãi từ liên kết vừa được thay bằng một mã khác ở trang khác, nên chưa áp dụng. Nàng xem lại mã đang được đề nghị rồi bấm lại nhé.",
 };
 const GENERIC_ERROR = "Chưa cập nhật được ưu đãi. Nàng thử lại sau giây lát nhé.";
 
-export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initial: VoucherPickerModel; linkOffered?: boolean }>) {
+export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial: VoucherPickerModel; linkOffer?: string | null }>) {
   const { previewDraft, commitDraft, applyCode, applyLinkedCode, dismissLinkedOffer } = useVoucherPickerActions();
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -60,14 +61,16 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
   const [code, setCode] = useState("");
   const [pendingLink, setPendingLink] = useState(false);
   // Once the linked code is used the offer disappears from the dialog at once; the server-side cookie is cleared when the dialog closes.
-  const [linkVisible, setLinkVisible] = useState(linkOffered);
+  const [linkUsed, setLinkUsed] = useState(false);
+  // The opaque handle of the offer this page SHOWED; it goes back with the click so only that offer can be applied.
+  const linkVisible = linkOffer !== null && !linkUsed;
   const linkApplied = useRef(false);
   const linkToken = useRef<string | null>(null);
   // The token is an opaque handle the server gave back for the offer just used (never the code): it lets the close clear THAT offer only.
   const markLinkUsed = (result: unknown) => {
     linkApplied.current = true;
     linkToken.current = (result as { offerToken?: string }).offerToken ?? null;
-    setLinkVisible(false);
+    setLinkUsed(true);
   };
   // A valid code whose choice costs something the shopper has not agreed to: verified, shown, NOT saved. It is saved by the
   // same "Áp dụng" press that carries the consent (the server re-verifies the code and the quote then).
@@ -183,7 +186,7 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
   const submitLinked = () => {
     setError(null);
     startTransition(async () => {
-      const result = await applyLinkedCode({});
+      const result = await applyLinkedCode({ offerToken: linkOffer });
       if (result.ok && result.picker) {
         setSaved(result.picker);
         setBaseVersion(result.picker.selectionVersion);
@@ -207,6 +210,10 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
         setPendingLink(true);
         setConfirming(result.reason === "CONFIRMATION_REQUIRED");
         setMessage("Mã hợp lệ. Nàng xem ưu đãi và lưu ý bên dưới, rồi bấm xác nhận để áp dụng.");
+      } else if (!result.ok && result.reason === "OFFER_CHANGED") {
+        // Another tab opened a newer link since this page showed its offer. Nothing was applied; show what is on offer now.
+        setError(CODE_ERROR.OFFER_CHANGED!);
+        router.refresh();
       } else setError(result.ok ? GENERIC_ERROR : (CODE_ERROR[result.reason] ?? GENERIC_ERROR));
     });
   };
@@ -223,7 +230,7 @@ export function VoucherPicker({ initial, linkOffered = false }: Readonly<{ initi
       const consent = confirming && model.quoteDigest !== null ? { acknowledged: true as const, expectedQuoteDigest: model.quoteDigest } : undefined;
       // A verified code waiting for the shopper's yes is saved through the code path (the server re-verifies the code and the quote).
       const result = pendingLink
-        ? await applyLinkedCode(consent ? { consent } : {})
+        ? await applyLinkedCode(consent ? { offerToken: linkOffer, consent } : { offerToken: linkOffer })
         : pendingCode !== null
         ? await applyCode(consent ? { code: pendingCode, consent } : { code: pendingCode })
         : await commitDraft({ ...draft, selection: baseVersion ?? "", ...(consent ? { consent } : {}) });

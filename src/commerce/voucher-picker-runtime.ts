@@ -7,6 +7,7 @@ import { readAnonymousCartCookie } from "./anonymous-cart-cookie.ts";
 import { canGrantHonourableVoucherHolds, canIssueNewVouchers } from "./voucher-gate.ts";
 import { VOUCHER_INTENT_COOKIE, readVoucherIntentCookie } from "./voucher-marketing-link.ts";
 import { readCartOwnVoucherHolds } from "./voucher-own-holds.ts";
+import { voucherOfferToken } from "./voucher-offer-token.ts";
 import { readVoucherPreview } from "./voucher-preview.ts";
 
 /**
@@ -32,15 +33,17 @@ export async function loadCurrentVoucherPicker(now: Date = new Date()): Promise<
 }
 
 /**
- * Whether a visitor arrived through a marketing link with a code waiting for them (V19). ONLY the fact crosses to the page: the
- * code stays on the server (the HttpOnly cookie), because anything handed to a Client Component is serialized into the page's HTML
- * and RSC payload, where scripts on the page (GTM, Meta) can read it. It is applied by a Server Action that reads the cookie itself.
+ * The handle of the marketing-link offer waiting for this visitor, or null (V19). ONLY an opaque handle crosses to the page: the code
+ * stays on the server (the HttpOnly cookie), because anything handed to a Client Component is serialized into the page's HTML and RSC
+ * payload, where scripts on the page (GTM, Meta) can read it. The handle is what "Dùng mã từ liên kết" sends back, so the click applies the
+ * offer that was shown and never one a newer link in another tab has since put in the cookie.
  */
-export async function hasPendingVoucherCode(): Promise<boolean> {
-  if (!canIssueNewVouchers()) return false;
+export async function readPendingVoucherOfferToken(): Promise<string | null> {
+  if (!canIssueNewVouchers()) return null;
   try {
-    return readVoucherIntentCookie((await cookies()).get(VOUCHER_INTENT_COOKIE)?.value) !== null;
+    const code = readVoucherIntentCookie((await cookies()).get(VOUCHER_INTENT_COOKIE)?.value);
+    return code === null ? null : voucherOfferToken(code);
   } catch {
-    return false;
+    return null;
   }
 }
