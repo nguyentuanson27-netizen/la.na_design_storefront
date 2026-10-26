@@ -433,14 +433,15 @@ function toStorefrontProduct(
             componentVariant: edge.componentVariant,
           }))
         : null;
+    const mirroredStock = componentInputs === null ? sumWarehouseStocks(variant.warehouseStocks) : null;
+    if (componentInputs === null && mirroredStock === null) return null;
     const sellableStock =
       componentInputs !== null
         ? deriveCompositeSellableStock({
             shopId,
             components: componentInputs,
           })
-        : (sumWarehouseStocks(variant.warehouseStocks) ?? Number.NaN) - (heldByVariantId.get(variant.id) ?? 0);
-    if (sellableStock === null) return null;
+        : mirroredStock! - (heldByVariantId.get(variant.id) ?? 0);
     const compositeCapacity =
       componentInputs !== null
         ? deriveCompositeCapacitySnapshot({
