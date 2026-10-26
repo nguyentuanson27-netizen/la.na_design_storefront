@@ -173,13 +173,19 @@ export async function readVoucherPreviewWithin(
 
   // 5. Candidates (public + any saved manual choice, which may be a private one) and the saved intent.
   const saved = await tx.cartVoucherSelection.findUnique({ where: { cartId } });
-  const selectionIntent = selectionOverride ?? selectionIntentFromRow(saved, now);
+  const savedIntent = selectionIntentFromRow(saved, now);
+  const selectionIntent = selectionOverride ?? savedIntent;
+  // A draft is unsaved, unverified input: it may name a PRIVATE campaign only if this cart's own saved selection
+  // already does (that is how `applyCode` unlocked it). Any other PRIVATE id is simply not found, exactly like an
+  // id that does not exist, so no card, price or condition of it can reach the response.
+  const unlockedPrivate = new Set([savedIntent.merchandise, savedIntent.shipping].flatMap((group) => (group.mode === "MANUAL" && group.voucherId !== null ? [group.voucherId] : [])));
   const wantedIds = [selectionIntent.merchandise, selectionIntent.shipping].flatMap((group) => (group.mode === "MANUAL" && group.voucherId !== null ? [group.voucherId] : []));
   const [publicCampaigns, savedCampaigns] = await Promise.all([
     readPublicVoucherCandidates({ client: tx, shopId, now, env }),
     readSelectedVouchers({ client: tx, shopId, ids: wantedIds, now, env }),
   ]);
-  const byId = new Map([...publicCampaigns, ...savedCampaigns].map((campaign) => [campaign.id, campaign]));
+  const unlockedCampaigns = savedCampaigns.filter((campaign) => campaign.visibility === "PUBLIC" || unlockedPrivate.has(campaign.id));
+  const byId = new Map([...publicCampaigns, ...unlockedCampaigns].map((campaign) => [campaign.id, campaign]));
   if (ownHolds.length > 0) {
     // An entitlement this attempt already holds stays in play although the campaign has since ended, been
     // switched off or filled up (TG-05 A): load it whatever its lifecycle, and credit back the use and VND the
@@ -191,7 +197,7 @@ export async function readVoucherPreviewWithin(
       let campaign = byId.get(row.id);
       if (campaign === undefined) {
         const chosen = [selectionIntent.merchandise, selectionIntent.shipping].some((group) => group.mode === "MANUAL" && group.voucherId === row.id);
-        if (row.revision !== hold.campaignRevision || (row.visibility === "PRIVATE" && !chosen)) continue;
+        if (row.revision !== hold.campaignRevision || (row.visibility === "PRIVATE" && !(chosen && unlockedPrivate.has(row.id)))) continue;
         try { campaign = toVoucherCampaign(row); } catch { continue; }
       }
       byId.set(row.id, { ...campaign, reservedUses: Math.max(0, campaign.reservedUses - 1), reservedVnd: Math.max(0, campaign.reservedVnd - hold.heldDiscountVnd) });
