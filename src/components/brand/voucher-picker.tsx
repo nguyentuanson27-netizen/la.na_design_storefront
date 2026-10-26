@@ -182,6 +182,19 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
     });
   };
 
+  // The offer this page showed is no longer the one the server holds (another tab opened a newer link, or used it). Nothing was applied.
+  // Whichever step noticed -- the first click or the consent -- drops the old offer's pending step AND its quote and warnings, so the
+  // shopper is not left confirming a code that can no longer be applied, then re-renders the page to show what is on offer now.
+  const offerGone = (reason: "OFFER_CHANGED" | "INVALID_CODE") => {
+    setPendingLink(false);
+    setConfirming(false);
+    setModel(saved);
+    setDraft(draftOf(saved));
+    setMessage(null);
+    setError(CODE_ERROR[reason]!);
+    router.refresh();
+  };
+
   // The code a marketing link left on the server. The browser never has it: this asks the server to use it.
   const submitLinked = () => {
     setError(null);
@@ -211,9 +224,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         setConfirming(result.reason === "CONFIRMATION_REQUIRED");
         setMessage("Mã hợp lệ. Nàng xem ưu đãi và lưu ý bên dưới, rồi bấm xác nhận để áp dụng.");
       } else if (!result.ok && result.reason === "OFFER_CHANGED") {
-        // Another tab opened a newer link since this page showed its offer. Nothing was applied; show what is on offer now.
-        setError(CODE_ERROR.OFFER_CHANGED!);
-        router.refresh();
+        offerGone("OFFER_CHANGED");
       } else setError(result.ok ? GENERIC_ERROR : (CODE_ERROR[result.reason] ?? GENERIC_ERROR));
     });
   };
@@ -260,6 +271,8 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         setConfirming(false);
         codeApplied.current = true;
         setMessage("Đã lưu lựa chọn ưu đãi. Hiện chưa tính được giá, nên giá cuối cùng sẽ được báo lại trước khi nàng đặt hàng.");
+      } else if (pendingLink && !result.ok && (result.reason === "OFFER_CHANGED" || result.reason === "INVALID_CODE")) {
+        offerGone(result.reason);
       } else if (!result.ok && result.reason === "SELECTION_CHANGED") {
         // Another page changed the choice this one was built on. Nothing was written. Take what is saved now (the server sends it) and let the
         // shopper choose again from it, instead of writing a stale half of the choice over the newer one.

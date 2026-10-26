@@ -416,7 +416,8 @@ test("review beca608: dropping a voucher while the price cannot be derived is sa
   expect([row.merchandiseMode, row.merchandiseVoucherId]).toEqual(["MANUAL", null]);
 });
 
-test("review 54cb476: a marketing link to a code that would cost a chosen gift saves nothing; the picker offers it and only the shopper's consent applies it", async ({ page }) => {
+/** A cart holding a chosen gift (earned at 880K), and a private code that would cost it: the shopper has to say yes before it is saved. */
+async function seedCodeThatCostsAGift(code: string) {
   const gift = await prisma.productMirror.create({
     data: { pancakeShopId: SHOP, pancakeProductId: `${PREFIX}gift5`, slug: `${PREFIX}gift5`, name: "Khăn quà", isActive: true, isPresent: true, syncedAt: new Date(),
       variants: { create: { pancakeVariationId: `${PREFIX}gift5-var`, color: "Trắng", size: "M", isActive: true, isPresent: true, syncedAt: new Date(), pancakeRetailPrice: 100_000, pancakeRetailPriceAfterDiscount: 100_000,
@@ -433,9 +434,13 @@ test("review 54cb476: a marketing link to a code that would cost a chosen gift s
   });
   await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: gift.variants[0]!.id, quantity: 1, campaignRevision: 1 } });
   await prisma.voucherCampaign.create({
-    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL73", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 73K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code, discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: code, fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
   });
   await prisma.cartVoucherSelection.deleteMany({ where: { cartId } });
+}
+
+test("review 54cb476: a marketing link to a code that would cost a chosen gift saves nothing; the picker offers it and only the shopper's consent applies it", async ({ page }) => {
+  await seedCodeThatCostsAGift("KOL73");
   await page.setViewportSize({ width: 390, height: 844 });
   // The shopper has a cart with the gift chosen and follows the link. The GET must not touch the choice or the gift.
   await page.goto(`${BASE}/shop/${PREFIX}dress?voucher=KOL73`);
@@ -469,6 +474,48 @@ test("review 54cb476: a marketing link to a code that would cost a chosen gift s
   await expect.poll(async () => (await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).not.toBeNull();
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
   await expect.poll(async () => (await page.context().cookies()).some((cookie) => cookie.name === "la_voucher_code")).toBe(false);
+});
+
+test("review b948f0e: the consent step notices a replaced offer too -- A confirms KOL73's cost, B opens another link, A's yes saves nothing and the old confirmation is dropped", async ({ page, context }) => {
+  await seedCodeThatCostsAGift("KOL73");
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL74", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 74K", fixedAmountVnd: BigInt(60_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/shop/${PREFIX}dress?voucher=KOL73`);
+  await page.goto(`${BASE}/cart`);
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  // A's first click: the code is valid but costs the gift, so A is asked to confirm it. Nothing is saved.
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await expect(dialog).toContainText("quà đã chọn sẽ được bỏ khỏi giỏ hàng");
+  // B (same browser) opens a newer link: the shared cookie now holds KOL74.
+  const other = await context.newPage();
+  await other.goto(`${BASE}/shop/${PREFIX}dress?voucher=KOL74`);
+  expect((await context.cookies()).find((cookie) => cookie.name === "la_voucher_code")?.value).toBe("KOL74");
+  await other.close();
+  // A says yes to what A was shown. The server refuses (the offer is not that one any more): nothing saved, gift kept.
+  await dialog.getByRole("button", { name: /Tiếp tục với voucher này/ }).click();
+  await expect(dialog).toContainText("vừa được thay bằng một mã khác");
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
+  // The old offer's confirmation is gone: the dialog shows what is SAVED again (the cart's own automatic 50K choice, not the 70K code that
+  // was being confirmed), there is no confirm button for the old offer, and the current offer is shown instead.
+  await expect(dialog.getByRole("radio", { name: /Giảm 50.000đ/ })).toBeChecked();
+  await expect(dialog).not.toContainText("Giảm 70.000đ");
+  await expect(dialog.getByRole("button", { name: /Tiếp tục với voucher này/ })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Dùng mã từ liên kết" })).toBeVisible();
+  // The page re-renders in the background with the new offer's handle; wait for it before the deliberate second click.
+  await page.waitForLoadState("networkidle");
+  // A may now choose to apply the new offer (KOL74 also costs the gift, so it asks again), and only then is anything saved.
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await expect(dialog).toContainText("Mã hợp lệ. Nàng xem ưu đãi");
+  await expect(dialog.getByRole("radio", { name: /Giảm 60.000đ/ })).toBeChecked();
+  await expect(dialog).toContainText("quà đã chọn sẽ được bỏ khỏi giỏ hàng");
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
+  await dialog.getByRole("button", { name: /Tiếp tục với voucher này/ }).click();
+  await expect.poll(async () => (await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).not.toBeNull();
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
 });
 
 test("review 04dea8b: the linked code applied while pricing cannot be re-read is a success the shopper is told about, not a closed dialog", async ({ page, context }) => {
