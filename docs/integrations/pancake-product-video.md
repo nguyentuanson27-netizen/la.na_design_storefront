@@ -1,6 +1,9 @@
 # Pancake product video on the PDP
 
-Implements [spec v0.3](../specs/pancake-product-video-overlay-v0.3.md) from PR #216.
+Implements [spec v0.3](../specs/pancake-product-video-overlay-v0.3.md) from PR #216
+with the owner's [v0.4 selection revision](../specs/pancake-product-video-overlay-v0.4.md)
+in PR #217: one video from the current product's own variations, independent of
+child/component videos and sibling coverage.
 The runtime flag `LA_PDP_PANCAKE_VIDEO_ENABLED` defaults OFF. This implementation
 and its fixture tests do not authorize production activation.
 
@@ -13,17 +16,24 @@ characters, normalizes/deduplicates URLs, and uses the reviewed HTTPS Pancake
 origin/path checks. MOV is recognized as source evidence only: the playable media
 allowlist remains MP4. No media bytes are downloaded by sync.
 
-`validateCatalogSnapshot` aggregates every variation, including hidden, locked and
-out-of-stock variations, before any storefront filtering. A known mismatch wins
-over unrelated unknown evidence. URL and state are written in the existing
+`validateCatalogSnapshot` groups observations by the exact canonical product ID,
+including hidden, locked and out-of-stock own variations, before storefront
+filtering. It never follows component edges for video. For a composite parent,
+only graph-identified parent variations supply video; a component SKU sharing the
+same product ID is excluded too. Parent-role ownership survives inventory
+quarantine and parser-prequarantined snapshots, including missing parents whose
+product ownership is retained in quarantine metadata. Any trusted own MP4 makes
+the product READY; empty/unknown sibling SKUs and component videos do not veto it.
+Multiple candidates resolve to the smallest normalized MP4 URL by code-unit
+comparison, independent of input order. URL and state are written in the existing
 snapshot transaction on create, update, legacy slug healing and reactivation:
 
 | State | URL write | Display |
 | --- | --- | --- |
-| READY | Set the one MP4 shared by every variation | Eligible with flag ON and trusted photo |
+| READY | Set one deterministic MP4 from this product's own variations | Eligible with flag ON and trusted photo |
 | UNKNOWN | Omit URL update, preserving the old value | Hidden; retained URL never enters client props |
 | NONE | Clear | Hidden |
-| CONFLICT | Clear | Hidden |
+| CONFLICT (legacy) | Not emitted by v0.4; next full sync reclassifies | Hidden |
 | UNSUPPORTED | Clear | Hidden |
 
 The additive migration starts existing rows at UNKNOWN with a null URL. A failed
@@ -60,7 +70,7 @@ transcoding or new polling job is needed.
 | Contract | Evidence |
 | --- | --- |
 | Optional parsing, bounds, hostile URLs, MOV and nested-field rejection | `tests/domain/pancake-catalog-video.test.ts`, `pancake-catalog-contract.test.ts` |
-| Coverage, mismatch precedence, URL normalization and API order independence | `tests/domain/pancake-catalog-video.test.ts` |
+| Partial own-SKU coverage allowed, deterministic MP4 selection, component isolation and API order independence | `tests/domain/pancake-catalog-video.test.ts` |
 | Defaults, transitions, atomic rollback, idempotence, shop ownership, hidden/locked/zero-stock variants, reactivation and unchanged commerce/editorial facts | `tests/database/pancake-product-video.test.ts` |
 | Failed/incomplete pagination leaves READY unchanged | `tests/database/pancake-product-video.test.ts`, `tests/integrations/catalog-sync.test.ts` |
 | Flag/state/MP4/photo gate; UNKNOWN retention suppressed | Domain, database and rendered-browser tests |
@@ -86,7 +96,7 @@ Before setting the flag to true in a deployed environment:
 
 - Review the [owner-provided CDN sample evidence](../audits/pancake-video-playback-evidence-2026-10-26.md): actual first/tail Range requests passed, but the MP4-suffixed file is QuickTime/HEVC and Linux Chromium discarded its video track. Real-device gates remain open.
 - Reproduce sanitized live variation video field/type/coverage evidence; identify
-  a partially covered product if one exists. The original reported scan was not
+  a partially covered product to exercise v0.4 if one exists. The original reported scan was not
   independently repeated by this implementation.
 - Verify a bounded real CDN Range request, 206 seeking and actual MP4 playback on
   iOS Safari and Android Chrome. Synthetic Chromium evidence does not close this.

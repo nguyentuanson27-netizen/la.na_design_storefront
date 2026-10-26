@@ -31,25 +31,38 @@ export function parsePancakeVariationVideo(record: Record<string, unknown>): Pan
   return { kind: "URLS", urls: [...urls].sort() };
 }
 
-/** Call only with every variation from a complete validated snapshot, before visibility filtering. */
+/**
+ * Owner revision v0.4: choose one MP4 from this product's own variations in a complete snapshot.
+ * The caller groups by productId; composite/component products are never candidates here.
+ * Empty/unknown sibling SKUs do not veto an observed valid MP4. Choose the smallest normalized
+ * URL by code-unit order, in one pass, so API/array order and stock cannot change the selection.
+ */
 export function resolvePancakeProductVideo(observations: readonly PancakeVariationVideo[]): PancakeProductVideo {
-  const urls = new Set<string>();
   const unknown = new Set<PancakeVideoReason>();
+  let selected: string | null = null;
+  let multipleMp4 = false;
+  let hasMov = false;
   let hasEmpty = false;
   for (const observation of observations) {
     if (observation.kind === "EMPTY") hasEmpty = true;
     else if (observation.kind === "UNKNOWN") unknown.add(observation.reason);
-    else for (const url of observation.urls) urls.add(url);
+    else for (const url of observation.urls) {
+      const mp4 = parseTrustedProductVideoUrl(url);
+      if (!mp4) { hasMov = true; continue; } // The source parser already restricts this to MP4/MOV.
+      if (selected === null) selected = mp4;
+      else if (mp4 !== selected) {
+        multipleMp4 = true;
+        if (mp4 < selected) selected = mp4;
+      }
+    }
   }
-  if (urls.size > 1) return { state: "CONFLICT", url: null, reasons: ["multi_url"] };
-  if (urls.size && hasEmpty) return { state: "CONFLICT", url: null, reasons: ["partial_coverage"] };
+  if (selected !== null) return { state: "READY", url: selected, reasons: multipleMp4 ? ["multi_url"] : [] };
   if (unknown.size || observations.length === 0) {
     return { state: "UNKNOWN", reasons: unknown.size ? [...unknown].sort() : ["missing"] };
   }
+  if (hasMov) return { state: "UNSUPPORTED", url: null, reasons: ["mov_only"] };
   if (hasEmpty) return { state: "NONE", url: null, reasons: [] };
-  const url = [...urls][0];
-  if (url && parseTrustedProductVideoUrl(url)) return { state: "READY", url, reasons: [] };
-  return { state: "UNSUPPORTED", url: null, reasons: ["mov_only"] };
+  return { state: "UNKNOWN", reasons: ["missing"] };
 }
 
 export function countPancakeProductVideos(videos: Iterable<PancakeProductVideo>) {

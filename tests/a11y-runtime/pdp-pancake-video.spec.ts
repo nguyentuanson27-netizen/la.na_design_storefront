@@ -5,9 +5,11 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { createCatalogMirrorRepository } from "../../src/commerce/catalog-mirror-repository.ts";
+import { parsePancakeCatalogVariations } from "../../src/integrations/pancake/catalog-contract.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { summarizePdpVideoPlaybackLogs } from "../../src/operations/pdp-video-playback-summary.ts";
-import { VIDEO_A, VIDEO_POSTER } from "../fixtures/pancake-video.ts";
+import { VIDEO_A, VIDEO_POSTER, videoPage, videoVariation } from "../fixtures/pancake-video.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { OPTIMIZED_IMAGE_ROUTE } from "./image-routes";
 import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
@@ -45,7 +47,7 @@ async function stop() {
   if (!(await Promise.race([once(server, "exit").then(() => true), delay(5000).then(() => false)]))) server.kill("SIGKILL");
   server = undefined;
 }
-async function cleanup() { await prisma.promotionCampaign.deleteMany({ where: { id: externalId } }); await prisma.productMirror.deleteMany({ where: { pancakeProductId: externalId } }); }
+async function cleanup() { await prisma.promotionCampaign.deleteMany({ where: { id: externalId } }); await prisma.productMirror.deleteMany({ where: { pancakeProductId: externalId } }); await prisma.catalogSyncState.deleteMany({ where: { pancakeShopId: SHOP } }); }
 async function state(pancakeVideoSyncState: "READY" | "UNKNOWN" | "NONE" | "CONFLICT" | "UNSUPPORTED", pancakeVideoUrl: string | null = VIDEO_A) {
   await prisma.productMirror.update({ where: { pancakeProductId: externalId }, data: { pancakeVideoSyncState, pancakeVideoUrl } });
 }
@@ -254,6 +256,34 @@ test("telemetry sends only fixed fields without cookies/referrer and collection 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Xem video", exact: true })).toBeFocused();
   expect(collectedPlayback().attempts).toBe(0);
+});
+
+test("one own parent variation video renders the tile when another SKU has no video", async ({ page }) => {
+  const raw = ["M", "L"].map((size, i) => ({
+    ...videoVariation(`${externalId}-${i}`, externalId, i === 0 ? [VIDEO_A] : null),
+    fields: [
+      { id: "video-color", keyValue: "color", name: "Color", value: "Đen" },
+      { id: "video-size", keyValue: "size", name: "Size", value: size },
+    ],
+    images: [VIDEO_POSTER, VIDEO_POSTER.replace("a.jpg", "detail.jpg"), VIDEO_POSTER.replace("a.jpg", "back.jpg")],
+    retail_price_after_discount: 500000,
+    product: { id: externalId, name: productName, image: VIDEO_POSTER },
+    variations_warehouses: [{ warehouse_id: "video-fixture-wh", remain_quantity: 5 }],
+  }));
+  const variations = parsePancakeCatalogVariations(videoPage(raw)).variations;
+  const repository = createCatalogMirrorRepository(prisma);
+  await repository.syncSnapshot({ shopId: SHOP, syncedAt: new Date(), variations });
+  await repository.syncSnapshot({ shopId: SHOP, syncedAt: new Date(), variations: [...variations].reverse() });
+  const response = await page.goto(`${BASE}/shop/${slug}`);
+  expect(response?.status()).toBe(200);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  await expect(tile).toHaveCount(1);
+  await expect(tile).toBeVisible();
+  await expect(page.locator("video, source")).toHaveCount(0);
+  await tile.click();
+  await expect(page.locator("video source")).toHaveAttribute("src", VIDEO_A);
+  await page.keyboard.press("Escape");
+  await expect(tile).toBeFocused();
 });
 
 test("collector enforces server origin, strict schema and actual byte bounds over HTTP", async ({ request }) => {

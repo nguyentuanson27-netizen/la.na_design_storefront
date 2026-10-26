@@ -28,13 +28,16 @@ const cases = [
   [[ [A], [A], [A] ], "READY", A, null],
   [[ [A] ], "READY", A, null],
   [[ null, [], null ], "NONE", null, null],
-  [[ [A], null ], "CONFLICT", null, "partial_coverage"],
-  [[ [A], [B] ], "CONFLICT", null, "multi_url"],
-  [[ [A, B] ], "CONFLICT", null, "multi_url"],
-  [[ [A], undefined ], "UNKNOWN", undefined, "malformed"],
-  [[ [A], [A, null] ], "UNKNOWN", undefined, "malformed"],
-  [[ [A], null, undefined ], "CONFLICT", null, "partial_coverage"],
-  [[ [A], [B], undefined ], "CONFLICT", null, "multi_url"],
+  [[ [A], null ], "READY", A, null],
+  [[ [A], [B] ], "READY", A, "multi_url"],
+  [[ [A, B] ], "READY", A, "multi_url"],
+  [[ [A], undefined ], "READY", A, null],
+  [[ [A], [A, null] ], "READY", A, null],
+  [[ [A], null, undefined ], "READY", A, null],
+  [[ [A], [B], undefined ], "READY", A, "multi_url"],
+  [[ [MOV, A], null ], "READY", A, null],
+  [[ null, [MOV] ], "UNSUPPORTED", null, "mov_only"],
+  [[ [B], [A, B] ], "READY", A, "multi_url"],
   [[ [MOV], [MOV] ], "UNSUPPORTED", null, "mov_only"],
   [[ [MOV], undefined ], "UNKNOWN", undefined, "malformed"],
   [[ null, null, undefined ], "UNKNOWN", undefined, "malformed"],
@@ -67,10 +70,10 @@ test("PDP gate requires opt-in, READY, trusted MP4 and trusted photo", () => {
 test("sync diagnostics contain aggregate state/reason counts without source URLs", () => {
   const videos = cases.map(([raw]) => resolvePancakeProductVideo(raw.map(evidence)));
   const counts = countPancakeProductVideos(videos);
-  assert.deepEqual(counts.states, { READY: 2, NONE: 1, CONFLICT: 5, UNKNOWN: 4, UNSUPPORTED: 1 });
-  assert.deepEqual(counts.reasons, { partial_coverage: 2, multi_url: 3, mov_only: 1, missing: 0, malformed: 4, untrusted: 0 });
+  assert.deepEqual(counts.states, { READY: 11, NONE: 1, CONFLICT: 0, UNKNOWN: 2, UNSUPPORTED: 2 });
+  assert.deepEqual(counts.reasons, { partial_coverage: 0, multi_url: 4, mov_only: 2, missing: 0, malformed: 2, untrusted: 0 });
   const log = formatPancakeVideoSyncCounts(counts);
-  assert.ok(log.includes('"partial_coverage":2'));
+  assert.ok(log.includes('"multi_url":4'));
   assert.ok(!log.includes("https:") && !log.includes("pancake.vn"));
   assert.equal(formatPancakeVideoSyncCounts(undefined), "");
   assert.deepEqual(parsePancakeVariationVideo(Object.create({ videos: [A] })), { kind: "UNKNOWN", reason: "missing" });

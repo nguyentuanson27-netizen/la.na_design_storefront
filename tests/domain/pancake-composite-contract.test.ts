@@ -373,3 +373,23 @@ test("quarantine never softens the strict checks: a quarantined parent listed as
     /composite contract/i,
   );
 });
+
+
+test("quarantine preserves known parent product identity through parser and catalog absence", () => {
+  const parsed = parsePancakeCompositeSnapshot({ shopId: 47, parentEntries: [parentRow({ edges: [] })], childEntries: [] });
+  assert.deepEqual(parsed.quarantinedParentIdentities, [{ variationId: "set-m", productId: "set-product" }]);
+  assert.equal(quarantineCompositesOutsideCatalog(parsed, () => false), parsed);
+  const complete = parsePancakeCompositeSnapshot({ shopId: 47, parentEntries: [parentRow()], childEntries: validChildren() });
+  const quarantined = quarantineCompositesOutsideCatalog(complete, (id) => id !== "set-m");
+  assert.deepEqual(quarantined.parentIdentities, []);
+  assert.deepEqual(quarantined.quarantinedParentIdentities, [{ variationId: "set-m", productId: "set-product" }]);
+});
+
+
+test("catalog quarantine cannot erase contradictory retained parent ownership", () => {
+  const complete = parsePancakeCompositeSnapshot({ shopId: 47, parentEntries: [parentRow()], childEntries: validChildren() });
+  assert.throws(() => quarantineCompositesOutsideCatalog({
+    ...complete,
+    quarantinedParentIdentities: [{ variationId: "set-m", productId: "contradictory-product" }],
+  }, (id) => id !== "set-m"), /malformed/);
+});

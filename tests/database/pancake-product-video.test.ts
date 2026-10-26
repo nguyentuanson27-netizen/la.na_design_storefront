@@ -5,6 +5,7 @@ import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import { createCatalogMirrorRepository } from "../../src/commerce/catalog-mirror-repository.ts";
 import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
 import { syncPancakeCatalog } from "../../src/commerce/catalog-sync.ts";
+import { parsePancakeCompositeSnapshot } from "../../src/integrations/pancake/composite-contract.ts";
 import { parsePancakeCatalogVariations } from "../../src/integrations/pancake/catalog-contract.ts";
 import { VIDEO_A, VIDEO_B, VIDEO_POSTER, videoVariation, videoPage } from "../fixtures/pancake-video.ts";
 
@@ -36,14 +37,14 @@ test("new mirror defaults UNKNOWN; complete snapshots atomically set, preserve, 
   assert.equal((await read()).pancakeVideoUrl, null);
   for (const [videos, state, url] of [
     [[[VIDEO_A], [VIDEO_A]], "READY", VIDEO_A],
-    [[[VIDEO_A], undefined], "UNKNOWN", VIDEO_A],
+    [[undefined, undefined], "UNKNOWN", VIDEO_A],
     [[[VIDEO_A], [VIDEO_A]], "READY", VIDEO_A],
     [[null, []], "NONE", null],
     [[[VIDEO_A], [VIDEO_A]], "READY", VIDEO_A],
-    [[[VIDEO_A], null], "CONFLICT", null],
+    [[[VIDEO_A], null], "READY", VIDEO_A],
     [[[VIDEO_A], [VIDEO_A]], "READY", VIDEO_A],
-    [[[VIDEO_A], [VIDEO_B]], "CONFLICT", null],
-    [[[VIDEO_A], [VIDEO_A]], "READY", VIDEO_A],
+    [[[VIDEO_A], [VIDEO_B]], "READY", VIDEO_A],
+    [[[VIDEO_B], null], "READY", VIDEO_B],
     [[[VIDEO_A.replace(".mp4", ".mov")], [VIDEO_A.replace(".mp4", ".mov")]], "UNSUPPORTED", null],
   ] as const) {
     const result = await sync([...videos]);
@@ -62,13 +63,13 @@ test("new mirror defaults UNKNOWN; complete snapshots atomically set, preserve, 
 test("hidden/locked/out-of-stock variations participate, and reactivation updates video", async () => {
   await sync([[VIDEO_A], [VIDEO_A]]);
   const variations = snapshot([[VIDEO_A], null]);
-  variations[1]!.isHidden = true;
-  variations[1]!.isLocked = true;
-  variations[1]!.warehouseStocks[0]!.remainQuantity = 0;
-  variations[1]!.sellableStock = 0;
+  variations[0]!.isHidden = true;
+  variations[0]!.isLocked = true;
+  variations[0]!.warehouseStocks[0]!.remainQuantity = 0;
+  variations[0]!.sellableStock = 0;
   await repository.syncSnapshot({ shopId, syncedAt: now, variations });
-  assert.equal((await read()).pancakeVideoSyncState, "CONFLICT");
-  assert.equal((await read()).pancakeVideoUrl, null);
+  assert.equal((await read()).pancakeVideoSyncState, "READY");
+  assert.equal((await read()).pancakeVideoUrl, VIDEO_A);
   await repository.syncSnapshot({ shopId, syncedAt: now, variations: [] });
   assert.equal((await read()).isPresent, false);
   await sync([[VIDEO_A], [VIDEO_A]]);
@@ -122,3 +123,97 @@ test("a different shop cannot take over a product video or its commerce rows", a
   assert.equal((await read()).pancakeShopId, shopId);
   assert.equal((await read()).pancakeVideoUrl, VIDEO_A);
 });
+
+
+test("parent video ignores component SKU videos and missing sibling coverage; child video is never a fallback", async () => {
+  const childProductId = "video-db-child";
+  const childVariationId = "video-db-child-v0";
+  const compositeSnapshot = {
+    parentVariationIds: ["video-db-v0"],
+    componentVariationIds: [childVariationId],
+    parentIdentities: [{ variationId: "video-db-v0", productId }],
+    componentIdentities: [{ variationId: childVariationId, productId: childProductId }],
+    edges: [{ parentVariationId: "video-db-v0", componentVariationId: childVariationId, quantity: 1 }],
+  };
+  async function syncFamily(parentVideos: unknown[], childVideo: unknown, reverse = false) {
+    const child = parsePancakeCatalogVariations(videoPage([videoVariation(childVariationId, childProductId, childVideo)])).variations;
+    const variations = [...snapshot(parentVideos), ...child];
+    return repository.syncSnapshot({ shopId, syncedAt: now, compositeSnapshot, variations: reverse ? variations.reverse() : variations });
+  }
+  await syncFamily([[VIDEO_B], null], [VIDEO_A]);
+  assert.equal((await read()).pancakeVideoUrl, VIDEO_B, "the child's lexically earlier video is not a candidate");
+  assert.equal((await read()).pancakeVideoSyncState, "READY");
+  await syncFamily([[VIDEO_B], undefined], null, true);
+  assert.equal((await read()).pancakeVideoUrl, VIDEO_B, "empty child and unknown sibling do not veto the parent video");
+  await syncFamily([null, []], [VIDEO_A]);
+  assert.equal((await read()).pancakeVideoSyncState, "NONE");
+  assert.equal((await read()).pancakeVideoUrl, null, "a component video cannot fill an empty parent");
+  const child = await prisma.productMirror.findUniqueOrThrow({ where: { pancakeProductId: childProductId } });
+  assert.equal(child.pancakeVideoSyncState, "READY");
+  assert.equal(child.pancakeVideoUrl, VIDEO_A, "the child keeps its own video only");
+});
+
+
+test("same-product component SKUs cannot replace the explicit composite parent variation video", async () => {
+  const compositeSnapshot = {
+    parentVariationIds: ["video-db-v0"], componentVariationIds: ["video-db-v1"],
+    parentIdentities: [{ variationId: "video-db-v0", productId }],
+    componentIdentities: [{ variationId: "video-db-v1", productId }],
+    edges: [{ parentVariationId: "video-db-v0", componentVariationId: "video-db-v1", quantity: 1 }],
+  };
+  await repository.syncSnapshot({ shopId, syncedAt: now, compositeSnapshot, variations: snapshot([[VIDEO_B], [VIDEO_A]]) });
+  assert.equal((await read()).pancakeVideoUrl, VIDEO_B, "a component's earlier URL cannot beat the parent variation");
+  await repository.syncSnapshot({ shopId, syncedAt: now, compositeSnapshot, variations: snapshot([null, [VIDEO_A]]) });
+  assert.equal((await read()).pancakeVideoSyncState, "NONE");
+  assert.equal((await read()).pancakeVideoUrl, null, "even a same-product child cannot supply the parent video");
+});
+
+for (const preparsed of [false, true]) {
+  test(`quarantined parent retains video ownership (${preparsed ? "parser quarantine" : "missing catalog component"})`, async () => {
+    const compositeSnapshot = preparsed ? {
+      parentVariationIds: [], componentVariationIds: [], parentIdentities: [], componentIdentities: [], edges: [],
+      quarantinedParentVariationIds: ["video-db-v0"],
+    } : {
+      parentVariationIds: ["video-db-v0"], componentVariationIds: ["video-db-v1", "video-db-missing"],
+      parentIdentities: [{ variationId: "video-db-v0", productId }],
+      componentIdentities: [{ variationId: "video-db-v1", productId }, { variationId: "video-db-missing", productId: "video-missing-product" }],
+      edges: [
+        { parentVariationId: "video-db-v0", componentVariationId: "video-db-v1", quantity: 1 },
+        { parentVariationId: "video-db-v0", componentVariationId: "video-db-missing", quantity: 1 },
+      ],
+    };
+    const write = (parentVideo: unknown) => repository.syncSnapshot({
+      shopId, syncedAt: now, compositeSnapshot, variations: snapshot([parentVideo, [VIDEO_A]]),
+    });
+    await write(null);
+    assert.equal((await read()).pancakeVideoSyncState, "NONE");
+    assert.equal((await read()).pancakeVideoUrl, null, "quarantine cannot enable component fallback");
+    await write([VIDEO_B]);
+    assert.equal((await read()).pancakeVideoSyncState, "READY");
+    assert.equal((await read()).pancakeVideoUrl, VIDEO_B, "the quarantined parent's own video is still the source");
+    await write(undefined);
+    assert.equal((await read()).pancakeVideoSyncState, "UNKNOWN");
+    assert.equal((await read()).pancakeVideoUrl, VIDEO_B, "unknown parent video stays hidden instead of using a child");
+  });
+}
+
+
+for (const preparsed of [false, true]) {
+  test(`absent parent cannot inherit a same-product component video (${preparsed ? "parser quarantine" : "catalog quarantine"})`, async () => {
+    const parentId = "video-db-absent-parent";
+    const componentId = "video-db-v0";
+    const compositeSnapshot = preparsed ? parsePancakeCompositeSnapshot({
+      shopId,
+      parentEntries: [{ id: parentId, product_id: productId, is_composite: true, composite_products: [] }],
+      childEntries: [{ id: componentId, product_id: productId, is_composite: false, composite_products: [] }],
+    }) : {
+      parentVariationIds: [parentId], componentVariationIds: [componentId],
+      parentIdentities: [{ variationId: parentId, productId }],
+      componentIdentities: [{ variationId: componentId, productId }],
+      edges: [{ parentVariationId: parentId, componentVariationId: componentId, quantity: 1 }],
+    };
+    await repository.syncSnapshot({ shopId, syncedAt: now, compositeSnapshot, variations: snapshot([[VIDEO_A]]) });
+    assert.equal((await read()).pancakeVideoSyncState, "UNKNOWN");
+    assert.equal((await read()).pancakeVideoUrl, null, "the remaining component must never become parent video");
+  });
+}

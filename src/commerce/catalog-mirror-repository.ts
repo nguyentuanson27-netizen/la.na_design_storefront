@@ -81,6 +81,7 @@ export function validateCatalogSnapshot(variations: readonly PancakeParsedCatalo
       throw new Error("Catalog mirror snapshot contains inconsistent canonical product identity");
     }
 
+    // Video belongs only to this exact product. Never follow composite/component edges for it.
     const evidence = videoEvidenceByProduct.get(variation.productId) ?? [];
     evidence.push(variation.videoEvidence ?? { kind: "UNKNOWN", reason: "missing" });
     videoEvidenceByProduct.set(variation.productId, evidence);
@@ -228,6 +229,20 @@ function validateCompositeSnapshotAgainstCatalog(
 
   for (const id of snapshot.quarantinedParentVariationIds ?? []) {
     if (!isBoundedCompositeIdentity(id) || parents.has(id) || components.has(id)) fail();
+  }
+
+  const quarantinedIds = new Set(snapshot.quarantinedParentVariationIds ?? []);
+  const quarantinedIdentities = snapshot.quarantinedParentIdentities ?? [];
+  if (!Array.isArray(quarantinedIdentities) || quarantinedIdentities.length > MAX_COMPOSITE_ENTRIES) fail();
+  const validatedQuarantined = new Set<string>();
+  for (const identity of quarantinedIdentities) {
+    if (
+      identity === null || typeof identity !== "object" ||
+      !isBoundedCompositeIdentity(identity.variationId) || !isBoundedCompositeIdentity(identity.productId) ||
+      !quarantinedIds.has(identity.variationId) || validatedQuarantined.has(identity.variationId) ||
+      (productIdByVariationId.has(identity.variationId) && productIdByVariationId.get(identity.variationId) !== identity.productId)
+    ) fail();
+    validatedQuarantined.add(identity.variationId);
   }
 
   const pairs = new Set<string>();
@@ -404,6 +419,37 @@ export function createCatalogMirrorRepository(
         : quarantineCompositesOutsideCatalog(compositeSnapshot, (id) => productIdByVariationId.has(id));
     if (resolvedComposite !== undefined) {
       validateCompositeSnapshotAgainstCatalog(resolvedComposite, productIdByVariationId);
+    }
+    // A composite parent may even share a product ID with component SKUs. When the graph
+    // identifies parent variations, only those variations may supply that parent's video.
+    if (resolvedComposite) {
+      // Quarantine drops parent identities/edges for inventory, but must not erase video ownership.
+      // Pre-quarantined parser output also keeps only IDs; recover the product from the catalog.
+      const parentVariationIds = new Set([
+        ...resolvedComposite.parentVariationIds,
+        ...(resolvedComposite.quarantinedParentVariationIds ?? []),
+      ]);
+      const parentProducts = new Set<string>();
+      // Missing parents have no flat-catalog row, so carry their product identity through quarantine.
+      for (const identity of resolvedComposite.quarantinedParentIdentities ?? []) {
+        if (productByExternalId.has(identity.productId)) parentProducts.add(identity.productId);
+      }
+      for (const parentId of parentVariationIds) {
+        const productId = productIdByVariationId.get(parentId);
+        if (productId !== undefined) parentProducts.add(productId);
+      }
+      const parentVideos = new Map<string, PancakeVariationVideo[]>(
+        [...parentProducts].map((productId) => [productId, []]),
+      );
+      for (const variation of variations) {
+        if (!parentProducts.has(variation.productId) || !parentVariationIds.has(variation.id)) continue;
+        const evidence = parentVideos.get(variation.productId) ?? [];
+        evidence.push(variation.videoEvidence ?? { kind: "UNKNOWN", reason: "missing" });
+        parentVideos.set(variation.productId, evidence);
+      }
+      for (const [productId, evidence] of parentVideos) {
+        videoByProductId.set(productId, resolvePancakeProductVideo(evidence));
+      }
     }
     const productIds = [...productByExternalId.keys()];
     const variationIdList = [...variationIds];
