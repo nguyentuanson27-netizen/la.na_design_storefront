@@ -2,7 +2,10 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { resolveSellingPolicy, type ReservationState } from "./capacity-policy.ts";
 import { mergeReservationLines } from "./capacity-reservation.ts";
-import { deriveCompositeSellableStock } from "./composite-capacity.ts";
+import {
+  deriveCompositeCapacitySnapshot,
+  deriveCompositeSellableStock,
+} from "./composite-capacity.ts";
 import {
   compositeSubSetAuthorityComponentSelection,
   resolveCompositeSubSetAuthorityFromRows,
@@ -412,21 +415,35 @@ export async function requiresFreshGuestCheckoutSnapshot(
 }
 
 function toStorefrontProduct(product: SelectedProduct, shopId: number) {
+  const sellingPolicy = resolveSellingPolicy(product.sellingPolicy);
   const variants = [];
   for (const variant of product.variants) {
     // Composite capacity is derived from component stock (ADR 0014, `deriveCompositeSellableStock`),
     // the same answer the cart and PDP give; the parent's own row is a verbatim Pancake mirror.
-    const sellableStock =
+    const componentInputs =
       variant.compositeComponents.length > 0
+        ? variant.compositeComponents.map((edge) => ({
+            requiredQuantity: edge.quantity,
+            componentVariant: edge.componentVariant,
+          }))
+        : null;
+    const sellableStock =
+      componentInputs !== null
         ? deriveCompositeSellableStock({
             shopId,
-            components: variant.compositeComponents.map((edge) => ({
-              requiredQuantity: edge.quantity,
-              componentVariant: edge.componentVariant,
-            })),
+            components: componentInputs,
           })
         : sumWarehouseStocks(variant.warehouseStocks);
     if (sellableStock === null) return null;
+    const compositeCapacity =
+      componentInputs !== null
+        ? deriveCompositeCapacitySnapshot({
+            shopId,
+            components: componentInputs,
+            sellingMode: sellingPolicy.sellingMode,
+            negativeStockLimit: sellingPolicy.negativeStockLimit,
+          })
+        : undefined;
     variants.push({
       id: variant.id,
       pancakeVariationId: variant.pancakeVariationId,
@@ -450,6 +467,7 @@ function toStorefrontProduct(product: SelectedProduct, shopId: number) {
       color: variant.color,
       size: variant.size,
       sellableStock,
+      compositeCapacity,
       retailPrice: variant.pancakeRetailPrice,
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
     });
@@ -464,7 +482,7 @@ function toStorefrontProduct(product: SelectedProduct, shopId: number) {
     // The canonical capacity facts, carried so this path judges a line by the same policy the
     // shopper was shown. No PREORDER/OVERSELL special case is made here: the mode is data, and
     // `resolveSellingPolicy()` supplies the approved default when no row exists.
-    sellingPolicy: resolveSellingPolicy(product.sellingPolicy),
+    sellingPolicy,
     isComposite: product.variants.some((variant) => variant.compositeComponents.length > 0),
     variants,
   };
