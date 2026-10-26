@@ -22,11 +22,11 @@ No mock of the action, no CSRF bypass, no gate bypass, no rate-limit bypass, rea
 | --- | --- |
 | `server/app/voucher-hold-harness` exists in the official build | no |
 | Harness route or `holdStorefrontVouchers` named in any of 7 manifests (`app-path-routes`, `routes`, `app-paths`, `build`, `prerender`, `server-reference`, `required-server-files`) | no occurrence |
-| Executable output files (`.js/.json/.html/.rsc/…`, excluding file traces) naming the harness route / the hold action | 0 / 0 |
+| Executable output files (`.js/.json/.html/.rsc/…`, excluding file traces) naming the harness route / the hold action | 0 / 0 **at the time of H3-V** (see the V18 note below) |
 | `GET /voucher-hold-harness` and `/voucher-hold-harness/other` on the official server **with `LA_VOUCHER_TEST_HARNESS=true` in its environment** | **404 / 404** (and `/cart` → 200) |
 | Positive controls on the test artifact: route in `app-path-routes-manifest.json`, hold action present with an id in `server-reference-manifest.json` | present (so the absences above are meaningful) |
 
-The hold action is **not bundled at all** in the official build: nothing in `src/` imports it yet, so it is not even a callable action there. The first production reference will come with V18.
+The hold action was **not bundled at all** in the official build when H3-V was recorded: nothing in `src/` imported it. **V18 (2026-10-26) adds the first production caller, the checkout panel's hold button**, so the official build now contains the action by design and the harness check was changed from "action absent" to a positive control "action present for checkout". The harness route is still absent (404 even with `LA_VOUCHER_TEST_HARNESS=true`), and a hold still needs one deliberate POST: `checkout-voucher.spec.ts` shows no hold row exists until the button is pressed.
 
 **Finding, disclosed rather than hidden:** three `.nft.json` *file-trace* lists (`api/try-on`, `api/product-image`, `shop/[slug]`) contain the harness **source file paths**. They list roughly 640 files under `tests/` plus docs, scripts and tasks — a pre-existing effect of dynamic `process.cwd()` paths — hold only paths (no code), and are not used by `next start`. The production image copies only `.next`, `package.json`, `next.config.mjs`, `public` and the Prisma client, and `.dockerignore` excludes `tests/`. The runner therefore reports them as information, not as a failure. If you want the paths gone too, adding `outputFileTracingExcludes` for `tests/**`, `docs/**`, `tasks/**` to `next.config.mjs` would do it; I have not changed production config.
 

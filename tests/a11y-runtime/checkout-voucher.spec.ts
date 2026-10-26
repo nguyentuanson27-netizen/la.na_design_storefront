@@ -190,6 +190,31 @@ test("the cart says its total is before vouchers and shows the expected total af
   expect((await new AxeBuilder({ page }).include("[data-cart-voucher-total]").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
 });
 
+test("review f3eed3a: a code applied in the picker updates the cart's expected total as soon as the dialog closes", async ({ page }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL70", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 70K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
+    await prisma.cartVoucherSelection.deleteMany({ where: { cartId } });
+    await page.setViewportSize(viewport);
+    await page.goto(`${BASE}/cart`);
+    const expected = page.locator("[data-cart-voucher-total]").first();
+    // AUTO: the 50.000đ voucher (900.000 - 50.000 + the 30.000đ fee).
+    await expect(expected).toContainText("880.000");
+    await page.locator("[data-voucher-picker] > button").click();
+    const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+    await dialog.getByLabel("Nhập mã khuyến mãi").fill("kol70");
+    await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
+    await expect(dialog.getByRole("radio", { name: /Giảm 70.000đ/ })).toBeChecked();
+    // The dialog is open on purpose and the page behind it is not touched yet; closing it settles the totals.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(expected).toContainText("860.000");
+    // The mobile bar says the same.
+    if (viewport.width < 600) await expect(page.getByText("Dự kiến sau ưu đãi").last()).toBeVisible();
+  }
+});
+
 test("a voucher that costs a gift needs the shopper's own consent before it can be held", async ({ page }) => {
   const gift = await prisma.productMirror.create({
     data: { pancakeShopId: SHOP, pancakeProductId: `${PREFIX}gift`, slug: `${PREFIX}gift`, name: "Khăn quà", isActive: true, isPresent: true, syncedAt: new Date(),

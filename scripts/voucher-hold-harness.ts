@@ -7,8 +7,9 @@ import { setTimeout as delay } from "node:timers/promises";
  * H3-V browser evidence for the voucher hold (V12, AC-42 / AC-43), without putting any test code in production.
  *
  *   1. OFFICIAL artifact: a temporary git worktree of HEAD, built exactly as production is built (`next build`).
- *      Proved clean: no harness route in any manifest or output file, no reference to the hold Server Action, and
- *      the harness URL answers 404 even with `LA_VOUCHER_TEST_HARNESS=true` in the server's environment.
+ *      Proved clean: no harness route in any manifest or output file, and the harness URL answers 404 even with `LA_VOUCHER_TEST_HARNESS=true` in the server's environment.
+ *      (Until V18 the official build also had to contain NO reference to the hold Server Action. Checkout now calls it from
+ *      its hold button, so the official build must contain it; only the harness route stays forbidden.)
  *   2. TEST artifact: a second worktree of the same HEAD into whose `src/app` the route from
  *      `tests/fixtures/voucher-hold-harness/app` is copied, built and served with `next start`. Playwright drives the
  *      REAL Server Action against it (tests/a11y-runtime/voucher-hold-harness.spec.ts). The artifact is deleted when
@@ -181,8 +182,10 @@ async function proveOfficialArtifact(evidence: Record<string, unknown>): Promise
   const traceHits = occurrences(official, ROUTE, true);
   const traceActionHits = occurrences(official, ACTION, true);
   check("official build: no executable output file mentions the harness route", routeHits === 0, `${routeHits} file(s)`);
-  check("official build: no executable output file mentions the hold Server Action", actionHits === 0, `${actionHits} file(s) — the action is not reachable from any production page`);
-  check("official build: no file trace mentions the hold Server Action", traceActionHits === 0, `${traceActionHits} file(s)`);
+  // H3-V was proved before checkout existed, when NO production page referenced the hold action. V18 deliberately adds one
+  // caller, the checkout panel's hold button, so the official build now MUST contain the action (a positive control); what
+  // stays forbidden is the harness route and anything harness-only, checked above and by the 404 below.
+  check("official build: the hold Server Action is present for the checkout panel (V18)", actionHits > 0, `${actionHits} file(s) -- referenced by the checkout page's hold button, as designed`);
   log(`info: ${traceHits} .nft.json file trace(s) list the harness SOURCE FILES by path, like every file under tests/; the production image copies only .next, package.json, next.config.mjs, public and the Prisma client, and .dockerignore excludes tests/`);
   await serve(official, CLEAN_PORT, { LA_VOUCHER_TEST_HARNESS: "true" }); // someone sets a test variable by mistake
   const statuses = { harness: await status(CLEAN_PORT, `/${ROUTE}`), other: await status(CLEAN_PORT, `/${ROUTE}/other`), cart: await status(CLEAN_PORT, "/cart") };

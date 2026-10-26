@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { useVoucherPickerActions } from "@/components/headless/use-voucher-picker";
@@ -61,7 +62,18 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
     } else if (!open && element?.open) element.close();
   }, [open]);
 
+  // A code is saved on the server the moment it is accepted, but the page behind the open dialog is not refreshed (that
+  // would remount the picker and close it). Closing the dialog is when the totals outside it must catch up.
+  const router = useRouter();
+  const codeApplied = useRef(false);
+  const settleCodeApplied = () => {
+    if (!codeApplied.current) return;
+    codeApplied.current = false;
+    router.refresh();
+  };
+
   const close = () => {
+    settleCodeApplied();
     setOpen(false);
     setConfirming(false);
     setError(null);
@@ -94,6 +106,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
         setModel(result.picker);
         setDraft(draftOf(result.picker));
         setCode("");
+        codeApplied.current = true;
         setMessage("Đã áp dụng mã ưu đãi.");
       } else setError(result.ok ? GENERIC_ERROR : (CODE_ERROR[result.reason] ?? GENERIC_ERROR));
     });
@@ -115,6 +128,7 @@ export function VoucherPicker({ initial, prefillCode = null }: Readonly<{ initia
         setOpen(false);
         setConfirming(false);
         setMessage(null);
+        settleCodeApplied();
       } else setError(GENERIC_ERROR);
     });
   };
