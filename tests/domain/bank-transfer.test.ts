@@ -8,10 +8,11 @@ import {
   readBankTransferConfig,
   renderTransferContent,
 } from "../../src/commerce/bank-transfer.ts";
+import { buildVietQrPayload } from "../../src/commerce/vietqr.ts";
 
 const account = {
   BANK_TRANSFER_ENABLED: "true",
-  BANK_TRANSFER_BANK_NAME: " MBBank ",
+  BANK_TRANSFER_BANK: " MB ",
   BANK_TRANSFER_ACCOUNT_NUMBER: "123456789",
   BANK_TRANSFER_ACCOUNT_HOLDER: "NGUYEN VAN A",
 };
@@ -20,7 +21,9 @@ test("bank transfer is off unless explicitly enabled and fully configured", () =
   assert.equal(readBankTransferConfig({}), null);
   assert.equal(readBankTransferConfig({ ...account, BANK_TRANSFER_ENABLED: undefined }), null);
   assert.equal(readBankTransferConfig({ ...account, BANK_TRANSFER_ENABLED: "1" }), null);
-  assert.equal(readBankTransferConfig({ ...account, BANK_TRANSFER_BANK_NAME: " " }), null);
+  assert.equal(readBankTransferConfig({ ...account, BANK_TRANSFER_BANK: " " }), null);
+  assert.equal(readBankTransferConfig({ ...account, BANK_TRANSFER_BANK: "VCB" }), null);
+  assert.equal(readBankTransferConfig({ ...account, BANK_TRANSFER_BANK: "mb" }), null);
   assert.equal(readBankTransferConfig({ ...account, BANK_TRANSFER_ACCOUNT_NUMBER: undefined }), null);
   assert.equal(readBankTransferConfig({ ...account, BANK_TRANSFER_ACCOUNT_HOLDER: "" }), null);
   assert.equal(readBankTransferConfig({ ...account, BANK_TRANSFER_ACCOUNT_NUMBER: "12 34" }), null);
@@ -31,7 +34,7 @@ test("a configured account is trimmed and defaults the content to the order id",
     bankName: "MBBank",
     accountNumber: "123456789",
     accountHolder: "NGUYEN VAN A",
-    bankBin: null,
+    bankBin: "970422",
     contentTemplate: "{ORDER_ID}",
   });
 });
@@ -112,22 +115,26 @@ test("a bank-transfer choice is void once the method is off", () => {
   assert.equal(effectivePaymentMethod(false, "COD"), "COD");
 });
 
-test("the confirmation carries a QR only when the bank BIN is configured and the content fits", () => {
+test("the bank name and the BIN in the QR come from one row, so they cannot disagree", () => {
+  // The old independent settings are not read: a BIN or name set on its own changes nothing.
+  const config = readBankTransferConfig({
+    ...account,
+    BANK_TRANSFER_BANK_NAME: "Vietcombank",
+    BANK_TRANSFER_BANK_BIN: "970436",
+  });
+  assert.equal(config?.bankName, "MBBank");
+  assert.equal(config?.bankBin, "970422");
+
   const order = { paymentMethod: "BANK_TRANSFER" as const, publicCode: "LA-ABCD2345", pancakeOrderId: "987", totalVnd: BigInt(530_000) };
+  const payload = buildVietQrPayload({ bankBin: config!.bankBin, accountNumber: config!.accountNumber, amountVnd: 530_000, content: "987" });
+  assert.match(payload ?? "", /0006970422/);
+  assert.doesNotMatch(payload ?? "", /970436/);
+  assert.ok((buildBankTransferInstructions(config, order)?.qr?.size ?? 0) >= 21);
+});
 
-  assert.equal(buildBankTransferInstructions(readBankTransferConfig(account), order)?.qr, null);
-
-  const withBin = readBankTransferConfig({ ...account, BANK_TRANSFER_BANK_BIN: "970422" });
-  assert.equal(withBin?.bankBin, "970422");
-  assert.ok((buildBankTransferInstructions(withBin, order)?.qr?.size ?? 0) >= 21);
-
-  // A malformed BIN costs the QR, not the method.
-  const badBin = readBankTransferConfig({ ...account, BANK_TRANSFER_BANK_BIN: "MB" });
-  assert.equal(badBin?.bankBin, null);
-  assert.equal(buildBankTransferInstructions(badBin, order)?.qr, null);
-
-  // Content too long for the QR purpose field still shows as text without a QR.
-  const long = readBankTransferConfig({ ...account, BANK_TRANSFER_BANK_BIN: "970422", BANK_TRANSFER_CONTENT_TEMPLATE: "LANA DESIGN DON {PUBLIC_CODE}" });
+test("content that does not fit the QR still shows as text without one", () => {
+  const order = { paymentMethod: "BANK_TRANSFER" as const, publicCode: "LA-ABCD2345", pancakeOrderId: "987", totalVnd: BigInt(530_000) };
+  const long = readBankTransferConfig({ ...account, BANK_TRANSFER_CONTENT_TEMPLATE: "LANA DESIGN DON {PUBLIC_CODE}" });
   const instructions = buildBankTransferInstructions(long, order);
   assert.equal(instructions?.content, "LANA DESIGN DON LA-ABCD2345");
   assert.equal(instructions?.qr, null);

@@ -10,12 +10,24 @@
 import { effectivePaymentMethod, parsePaymentMethod, type PaymentMethod } from "./payment-method.ts";
 import { buildQrImage, buildVietQrPayload, type QrImage } from "./vietqr.ts";
 
+/**
+ * The banks the website can take a transfer into. A name and its NAPAS BIN are one fact, so they are
+ * written together here and the environment only picks a row: two independent settings could say
+ * "MBBank" in words and carry another bank's BIN in the QR.
+ *
+ * To add a bank, add its row with the BIN taken from the NAPAS/VietQR bank list (https://www.vietqr.io/api-bank/demo
+ * lists them) and a test; an unknown code turns the method off rather than guessing.
+ */
+const SUPPORTED_BANKS: Readonly<Record<string, Readonly<{ name: string; bin: string }>>> = Object.freeze({
+  MB: Object.freeze({ name: "MBBank", bin: "970422" }),
+});
+
 export type BankTransferConfig = Readonly<{
   bankName: string;
   accountNumber: string;
   accountHolder: string;
-  /** The bank's six-digit NAPAS BIN; without it the confirmation page shows no QR. */
-  bankBin: string | null;
+  /** The bank's six-digit NAPAS BIN, from the same row as `bankName`. */
+  bankBin: string;
   /** Placeholders: `{ORDER_ID}` (the POS order id) and `{PUBLIC_CODE}` (the code the buyer sees). */
   contentTemplate: string;
 }>;
@@ -38,20 +50,17 @@ const WORST_CASE_FACTS = Object.freeze({ orderId: "9".repeat(16), publicCode: "L
  */
 export function readBankTransferConfig(env: Environment = process.env): BankTransferConfig | null {
   if (env.BANK_TRANSFER_ENABLED !== "true") return null;
-  const bankName = env.BANK_TRANSFER_BANK_NAME?.trim();
+  const bank = SUPPORTED_BANKS[env.BANK_TRANSFER_BANK?.trim() ?? ""];
   const accountNumber = env.BANK_TRANSFER_ACCOUNT_NUMBER?.trim();
   const accountHolder = env.BANK_TRANSFER_ACCOUNT_HOLDER?.trim();
-  if (!bankName || !accountNumber || !accountHolder) return null;
+  if (!bank || !accountNumber || !accountHolder) return null;
   if (!/^[0-9]{6,19}$/.test(accountNumber)) return null;
-  // A bad BIN only costs the QR: the account, amount and content are still shown as text.
-  const rawBin = env.BANK_TRANSFER_BANK_BIN?.trim();
-  const bankBin = rawBin && /^[0-9]{6}$/.test(rawBin) ? rawBin : null;
   const contentTemplate = env.BANK_TRANSFER_CONTENT_TEMPLATE?.trim() || DEFAULT_CONTENT_TEMPLATE;
   // The template is part of the account. One that cannot be rendered, can overflow the bank's limit,
   // or is the same text for every order would take transfers the shop cannot match to an order, so
   // it turns the method off here, at the gate in front of every order, not after one is placed.
   if (!isPerOrderTemplate(contentTemplate)) return null;
-  return Object.freeze({ bankName, accountNumber, accountHolder, bankBin, contentTemplate });
+  return Object.freeze({ bankName: bank.name, accountNumber, accountHolder, bankBin: bank.bin, contentTemplate });
 }
 
 function isPerOrderTemplate(template: string): boolean {
@@ -121,10 +130,12 @@ export function buildBankTransferInstructions(
     publicCode: order.publicCode,
   });
   if (content === null) return null;
-  const payload =
-    config.bankBin === null
-      ? null
-      : buildVietQrPayload({ bankBin: config.bankBin, accountNumber: config.accountNumber, amountVnd, content });
+  const payload = buildVietQrPayload({
+    bankBin: config.bankBin,
+    accountNumber: config.accountNumber,
+    amountVnd,
+    content,
+  });
   return Object.freeze({
     bankName: config.bankName,
     accountNumber: config.accountNumber,

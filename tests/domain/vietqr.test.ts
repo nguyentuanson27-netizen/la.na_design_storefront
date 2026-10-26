@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildQrImage, buildVietQrPayload, crc16 } from "../../src/commerce/vietqr.ts";
+import jsQR from "jsqr";
+
+import { buildQrImage, buildVietQrPayload, crc16, type QrImage } from "../../src/commerce/vietqr.ts";
 
 type Field = { id: string; value: string };
 
@@ -67,4 +69,43 @@ test("the QR image is a square path of dark modules", () => {
   const image = buildQrImage(payload);
   assert.ok(image.size >= 21);
   assert.match(image.path, /^(M\d+ \d+h1v1h-1z)+$/);
+});
+
+/** Rasterize the SVG path the page draws (black modules, white quiet zone) into RGBA pixels. */
+function rasterize(image: QrImage, scale = 6, quiet = 4) {
+  const dark = new Set([...image.path.matchAll(/M(\d+) (\d+)h1v1h-1z/g)].map((match) => `${match[1]},${match[2]}`));
+  const side = (image.size + quiet * 2) * scale;
+  const data = new Uint8ClampedArray(side * side * 4).fill(255);
+  for (let y = 0; y < side; y += 1) {
+    for (let x = 0; x < side; x += 1) {
+      if (dark.has(`${Math.floor(x / scale) - quiet},${Math.floor(y / scale) - quiet}`)) {
+        const at = (y * side + x) * 4;
+        data[at] = data[at + 1] = data[at + 2] = 0;
+      }
+    }
+  }
+  return { data, side };
+}
+
+test("an independent decoder reads the rendered QR back to the beneficiary, amount and content", () => {
+  for (const facts of [
+    input,
+    { bankBin: "970422", accountNumber: "118619999", amountVnd: 530_000, content: "LA-ABCD2345" },
+    { bankBin: "970422", accountNumber: "1234567890123", amountVnd: 99_999_000, content: "ORDER 42" },
+  ]) {
+    const payload = buildVietQrPayload(facts);
+    assert.ok(payload);
+    const { data, side } = rasterize(buildQrImage(payload));
+    const decoded = jsQR(data, side, side);
+    assert.ok(decoded, "the rendered image must be readable as a QR code");
+    assert.equal(decoded.data, payload);
+
+    const byId = (fields: Field[], id: string) => fields.find((entry) => entry.id === id)?.value ?? "";
+    const top = parseFields(decoded.data);
+    const beneficiary = parseFields(byId(parseFields(byId(top, "38")), "01"));
+    assert.equal(byId(beneficiary, "00"), facts.bankBin);
+    assert.equal(byId(beneficiary, "01"), facts.accountNumber);
+    assert.equal(byId(top, "54"), String(facts.amountVnd));
+    assert.equal(byId(parseFields(byId(top, "62")), "08"), facts.content);
+  }
 });
