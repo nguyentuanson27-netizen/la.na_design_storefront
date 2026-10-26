@@ -120,6 +120,21 @@ async function click(page: Page, sink: Net[], testId: "hold" | "hold-ack" | "hol
   await page.getByTestId(testId).click({ clickCount: expected });
   await expect.poll(() => count(sink, "hold-action", "POST")).toBe(before + expected);
 }
+/**
+ * back, forward, back -- waiting for the URL after each step. These are client-side (history) navigations, so
+ * `goBack()` can return before the router has handled the pop; chaining them blindly can leave the page on "other".
+ * Starts on the "other" page and ends on the harness page.
+ */
+async function walkHistory(page: Page) {
+  const harness = new RegExp(`/voucher-hold-harness$`);
+  const other = new RegExp(`/voucher-hold-harness/other$`);
+  await page.goBack();
+  await expect(page).toHaveURL(harness);
+  await page.goForward();
+  await expect(page).toHaveURL(other);
+  await page.goBack();
+  await expect(page).toHaveURL(harness);
+}
 const loadHarness = async (page: Page) => {
   await page.goto(`${BASE}/voucher-hold-harness`);
   await expect(page.locator("[data-harness=voucher-hold]")).toBeVisible();
@@ -143,9 +158,7 @@ test("AC-42: GET, RSC render, prefetch, hover, reload and back/forward never cre
   await page.reload();
   await page.getByTestId("link-other").click(); // client-side navigation
   await expect(page.getByTestId("other")).toBeVisible();
-  await page.goBack();
-  await page.goForward();
-  await page.goBack();
+  await walkHistory(page);
   await expect(page.locator("[data-harness=voucher-hold]")).toBeVisible();
   await page.reload();
   await page.waitForLoadState("networkidle");
@@ -202,9 +215,7 @@ test("AC-43: one click POSTs once and holds once; double-click, a second tab, re
   await page.reload();
   await page.getByTestId("link-other").click();
   await expect(page.getByTestId("other")).toBeVisible();
-  await page.goBack();
-  await page.goForward();
-  await page.goBack();
+  await walkHistory(page);
   await expect(page.locator("[data-harness=voucher-hold]")).toBeVisible();
   expect(count(net, "hold-action", "POST")).toBe(postsBefore);
   expect(await snapshot([m.id])).toEqual(afterOne);
