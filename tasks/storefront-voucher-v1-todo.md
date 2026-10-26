@@ -1,6 +1,6 @@
 # Storefront Voucher v1 — execution checklist
 
-**Status:** BUILD IN PROGRESS — owner approved H0, **H1-D and H2** on 2026-10-25. Built and verified: V00–V10, V15–V17, V19; gates **H3-D** (ADR 0019, 2026-10-26) and **H1-V** (live POS probe 4/4 PASS, 2026-10-26) are done. **Not built:** V11–V14 and V18 (holds, accepted order, cancel/refund, checkout exposure — H3-V and the build itself remain), and the completion of V20/V21. `LA_VOUCHER_ENABLED` exists and is OFF by default; **keep it unset in production until V18 ships** (checkout does not apply vouchers yet). Evidence: [verification status](../docs/verification/storefront-voucher-v1.md).
+**Status:** BUILD IN PROGRESS — owner approved H0, **H1-D and H2** on 2026-10-25. Built and verified: V00–V10, V15–V17, V19; gates **H3-D** (ADR 0019, 2026-10-26) and **H1-V** (live POS probe 4/4 PASS, 2026-10-26) are done. **Not built:** V12–V14 and V18 (holds, accepted order, cancel/refund, checkout exposure — H3-V and the build itself remain), and the completion of V20/V21. `LA_VOUCHER_ENABLED` exists and is OFF by default; **keep it unset in production until V18 ships** (checkout does not apply vouchers yet). Evidence: [verification status](../docs/verification/storefront-voucher-v1.md).
 **Authority:** [Merged Voucher v1 spec](../docs/specs/storefront-voucher-v1.md) (PR #212, main@2c6e35d39d165064f5986ef901a5bb3efa464e1a).
 **Execution design:** [Voucher v1 implementation plan](./storefront-voucher-v1-plan.md); V00..V21 and H0..H5. This does **not** replace [master plan](./plan.md) or [master todo](./todo.md).
 **Quality:** [ADR 0005 PR sizing](../docs/decisions/0005-pr-scope-reviewability.md); checkout/Pancake/DB migrations require real test evidence, not a checked box on docs.
@@ -62,9 +62,9 @@
 
 ## Phase D — 10-minute hold, acceptance and cancellation
 
-- [ ] **V11 — Atomic holds and real Admin cap race** _(deps: V04, V05, V06, V10, H3-D)_
-  - [ ] Grant, swap, reuse and expire holds atomically across two groups; no rolling TTL, no oversubscribe.
-  - [ ] Run actual V06×V11 simultaneous cap edit/hold grant AC-45, plus T+3/T+5 natural expiry, T+10 and idempotent ledger.
+- [x] **V11 — Atomic holds and real Admin cap race** _(deps: V04, V05, V06, V10, H3-D)_ — **done 2026-10-26:** `src/commerce/voucher-hold-service.ts`, `tests/database/voucher-hold.test.ts` (15)
+  - [x] Grant, swap, reuse and expire holds atomically across two groups; no rolling TTL, no oversubscribe.
+  - [x] Run actual V06×V11 simultaneous cap edit/hold grant AC-45, plus T+3/T+5 natural expiry, T+10 and idempotent ledger. _Mutations checked: no self-credit, no lazy expiry and an unsorted lock order each make a test fail (the last with a real `deadlock detected`)._
 - [ ] **V12 — Verified-POS-only buyer POST hold** _(deps: V09, V10, V11, H1-V; produces H3-V)_
   - [ ] GET/prefetch read-only; CSRF/idempotent POST invokes verified V09 canProjectExactMoney BEFORE any hold or submit-capable proof.
   - [ ] DB/integration unrepresentable money→no hold/budget/proof/POS (AC-20), plus production prefetch-vs-POST browser evidence (AC-42/43), then H3-V review.

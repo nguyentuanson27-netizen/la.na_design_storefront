@@ -1,6 +1,6 @@
 # Voucher v1 — verification status
 
-- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. V09 now has its H1-V live evidence ([POS probe](./storefront-voucher-v1-pos-probe.md), 2026-10-26, 4/4 PASS); V07 (Admin browser/axe) still lacks one piece of evidence. **Not built** (blocked by gates that need a person): V11–V14 (holds, V11 now unblocked by H3-D, accepted order, consume, cancel/refund), V18 (checkout exposure), V20/V21 completion, H3-V, H4, H5.
+- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. V09 now has its H1-V live evidence ([POS probe](./storefront-voucher-v1-pos-probe.md), 2026-10-26, 4/4 PASS); V07 (Admin browser/axe) still lacks one piece of evidence. **Not built** (blocked by gates that need a person): V11–V14 (holds, V11 built (see rows 14–16, 31–34, 45); V12 next, accepted order, consume, cancel/refund), V18 (checkout exposure), V20/V21 completion, H3-V, H4, H5.
 - **Rule used here:** a row is "verified" only when a named test exercises it against real code (and, where the criterion is about the database, a real PostgreSQL). Anything else is "pending" with the reason. Nothing is marked done from code presence.
 - Spec: [`../specs/storefront-voucher-v1.md`](../specs/storefront-voucher-v1.md). Plan: [`../../tasks/storefront-voucher-v1-plan.md`](../../tasks/storefront-voucher-v1-plan.md).
 
@@ -46,7 +46,10 @@
 | 42 GET / prefetch / hover never hold | verified for the preview and the PDP/cart pages; **production-mode prefetch evidence pending V12** | B `voucher-order-subtotal-checkout`; U (no hold exists after opening the picker or the PDP). Run against `next dev`, not a production build |
 | 43 POST grants once, idempotent | **pending V12** | |
 | 44 cap under committed floor refused | verified | B `voucher-admin-cap-edit`, `voucher-schema` |
-| 45 Admin cap edit racing grants | partial | edits serialize under the campaign row lock (B `voucher-admin-cap-edit`); a real grant race needs V11 |
+| 14–16 / 33 hold is 10 minutes, absolute, reused on reload / two tabs | verified (database) | B `voucher-hold` (TTL from one database timestamp; reload and parallel tabs return the same hold with the original `expiresAt`; nothing extended or double counted) |
+| 31 / 32 held entitlement vs natural campaign expiry | verified at the hold read (V11); **submit-time consume is V13** | B `voucher-hold` (campaign ended at T+3: the T+5 hold is still honoured, nothing new is granted; T+10 refused by the database clock) |
+| 34 swap keeps the old hold when the new one fails | verified | B `voucher-hold` (a pair is all-or-nothing; a refused swap leaves both holds and the ledger as they were) |
+| 45 Admin cap edit racing grants | verified (database) | B `voucher-hold` (6 rounds of a real `voucher-admin-service` edit against 4 simultaneous grants: never over a cap, edit refused exactly at the live-hold floor, counters equal the live holds) |
 | 47 flag OFF settles existing holds | partial | settle path has no flag read by design (ADR 0018 D-6); behaviour test pending V13/V14 |
 
 ## Regression

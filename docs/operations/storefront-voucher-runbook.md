@@ -10,6 +10,8 @@
 | `LA_VOUCHER_ENABLED` unset, empty, or anything but exactly `true` | **OFF** (default). No voucher is listed, selected, previewed, linked or held. The cart, PDP and checkout are byte-for-byte what they were. |
 | `LA_VOUCHER_ENABLED=true` | Vouchers appear in the cart and PDP as **previews**. **Do not set this in production yet**: checkout does not apply vouchers (V18 is not built), so a shopper would see a saving that checkout does not honour. |
 
+`LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS` (comma-separated shop ids, default empty) is the second gate for a NEW hold (ADR 0019 D-6): list a shop only after `pnpm pancake:voucher:accept` passed for it (shop 715077776 passed on 2026-10-26, see the verification folder). Unset or malformed means no hold is ever granted. It is not read on the settle path.
+
 Turning the flag OFF stops **new** exposure only. Existing holds and redemptions keep settling (consume, expire, refund); the settle path does not read the flag (ADR 0018 D-6, AC-47). There is nothing to "drain" before switching off.
 
 ## 2. Admin

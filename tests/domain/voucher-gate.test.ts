@@ -21,3 +21,14 @@ test("issuing new vouchers follows the gate; there is no gate for settling exist
   assert.equal(canIssueNewVouchers({ LA_VOUCHER_ENABLED: "true" }), true);
   assert.equal(canIssueNewVouchers({ LA_VOUCHER_ENABLED: "false" }), false);
 });
+
+test("ADR 0019 D-6: a hold needs the feature AND a verified shop; malformed list entries never match", async () => {
+  const { VOUCHER_VERIFIED_SHOPS_ENV, canGrantVoucherHolds, readVoucherVerifiedShopIds } = await import("../../src/commerce/voucher-gate.ts");
+  const on = { LA_VOUCHER_ENABLED: "true" };
+  assert.equal(canGrantVoucherHolds(715077776, on), false, "feature on, shop not listed");
+  assert.equal(canGrantVoucherHolds(715077776, { ...on, [VOUCHER_VERIFIED_SHOPS_ENV]: "715077776" }), true);
+  assert.equal(canGrantVoucherHolds(715077776, { [VOUCHER_VERIFIED_SHOPS_ENV]: "715077776" }), false, "listed, feature off");
+  assert.deepEqual(readVoucherVerifiedShopIds({ [VOUCHER_VERIFIED_SHOPS_ENV]: " 715077776 , 12;3,0, -4, 1e3, 715077776, 99" }), [715077776, 99]);
+  assert.deepEqual(readVoucherVerifiedShopIds({ [VOUCHER_VERIFIED_SHOPS_ENV]: "" }), []);
+  assert.deepEqual(readVoucherVerifiedShopIds({}), []);
+});

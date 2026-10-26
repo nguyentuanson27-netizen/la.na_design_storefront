@@ -77,3 +77,11 @@ Real-database tests, not mocks: quota = 1 with two simultaneous grants → exact
 - [ ] One-database-timestamp insert (D-1) is acceptable for TTL.
 - [ ] Swap failure keeps the old hold (D-2).
 - [ ] The extra verified-shop gate (D-6) is the right way to keep holds OFF before H1-V.
+
+## Implementation notes (V11, `src/commerce/voucher-hold-service.ts`)
+
+- **Order of locks:** cart row, then campaign rows in ascending id, then the attempt's hold rows. Hold rows are only *peeked* (no lock) to learn which campaigns are in play and are locked after the campaigns, because the sweeper takes campaign then holds; taking hold-then-campaign anywhere would be a cycle. A test with the sort removed produces a real `deadlock detected`.
+- **All or nothing per call:** a pair of vouchers is quoted as a pair, so one refusal rolls back the whole call; a failed swap therefore keeps the old hold (D-2) without any compensating write. Explicit `releaseKinds` covers "NONE" / a combination without that group.
+- **Self-held credit:** capacity is tested with the attempt's own live hold on the same campaign credited back, so a full campaign can still swap the buyer's own entitlement (D-3).
+- **Cart revision:** `paidRevision` is checked on the locked cart row only when something is granted; a pure release does not need it.
+- **Gate:** `canIssueNewVouchers` then `LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS` for any call that grants; release, the sweeper and the honour read (`findHonourableHold`, for V13) never read either.
