@@ -943,6 +943,7 @@ export function createGuestCheckoutSnapshotService(
           communeRef: parsedCheckout.value.communeRef,
           addressDetail: parsedCheckout.value.detail,
           note: composeOrderNote(parsedCheckout.value.note, parsedCheckout.value.attribution),
+          paymentMethod: parsedCheckout.value.paymentMethod,
           merchandiseSubtotalVnd: BigInt(merchandiseSubtotalVnd),
           shippingFeeVnd: BigInt(shippingFeeVnd),
           totalVnd: BigInt(totalVnd),
