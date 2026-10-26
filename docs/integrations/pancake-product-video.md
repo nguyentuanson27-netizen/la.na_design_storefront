@@ -46,8 +46,9 @@ items, photo counts and variant-to-photo mappings do not acquire video fields.
 The route passes that small projection to the existing media stage.
 
 One bottom-right tile sits above the photo counter and outside desktop navigation
-and mobile swipe tracks. Clicking opens a native modal dialog. Only that explicit
-click mounts `<video controls playsInline preload="none">` with an MP4 source.
+and mobile swipe tracks. On desktop its containing frame matches the first
+photograph's portrait cell in the left half, or the centered photo for a one-image
+gallery. Clicking opens a native modal dialog. Only that explicit click mounts `<video controls playsInline preload="none">` with an MP4 source.
 There is no page-load autoplay or video preload. Closing or pressing Escape
 pauses the player, removes its source, unloads it and restores focus. Unmounting
 also releases playback. Media errors show a short message and leave selection,
@@ -63,7 +64,7 @@ transcoding or new polling job is needed.
 | Defaults, transitions, atomic rollback, idempotence, shop ownership, hidden/locked/zero-stock variants, reactivation and unchanged commerce/editorial facts | `tests/database/pancake-product-video.test.ts` |
 | Failed/incomplete pagination leaves READY unchanged | `tests/database/pancake-product-video.test.ts`, `tests/integrations/catalog-sync.test.ts` |
 | Flag/state/MP4/photo gate; UNKNOWN retention suppressed | Domain, database and rendered-browser tests |
-| One tile; counters/navigation/Flash Sale; 320/390/768/1024/1440 px; zero video requests before click | `tests/a11y-runtime/pdp-pancake-video.spec.ts` |
+| One tile inside the primary photo (two-photo and single-photo desktop layouts); counters/navigation/Flash Sale; 320/390/768/1024/1440 px; zero video requests before click | `tests/a11y-runtime/pdp-pancake-video.spec.ts` |
 | Native playback/seek, close/Escape/focus, Axe, media failure, retained size and usable purchase controls | Same Playwright suite, against a production build |
 
 The 2.2 KB synthetic browser MP4 fixture was generated without audio or external
@@ -92,6 +93,28 @@ Before setting the flag to true in a deployed environment:
   after a complete sync; confirm the actual production sync interval and success.
 - Check real-product layout, LCP/CLS and playback failures during controlled QA,
   then obtain the owner's rollout decision. Human PR review is still required.
+
+### Playback error observability — OPEN release gate (review P2)
+
+The current error handlers show a shopper-facing fallback only. **No production
+playback-error collector/counter is implemented by this PR.** The synthetic
+failure test proves the fallback, not operational monitoring. Keep the flag OFF
+until the following monitoring work and evidence are reviewed:
+
+- Wire website-owned telemetry for playback attempts and playback failures so an
+  operator can compare failure counts with attempts after rollout. Deduplicate
+  source/player error callbacks to one failure per explicit opening; reopening
+  starts another attempt.
+- Allow only fixed event names and reviewed error categories (network, decode,
+  unsupported, unknown). Exclude source/poster URLs, product IDs/slugs, user or
+  session identifiers, raw errors, request bodies and remote responses. Review the
+  receiving collector's retention and access before rollout.
+- Force a failure with a real supported mobile browser during controlled QA and
+  retain sanitized counter evidence; verify one error is counted, closing still
+  works, retries do not double-count, and ordinary playback records no error.
+- Identify the operator, dashboard/query and acceptable error-rate threshold for
+  the controlled rollout. Disable the existing flag if failures cross that
+  threshold; do not log raw media URLs while investigating.
 
 `release:check` in this workspace is blocked by missing `PANCAKE_API_KEY`; it is
 not evidence of production readiness. `05_SHARED_REFERENCES.md`, named by AC7,

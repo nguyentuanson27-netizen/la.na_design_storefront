@@ -78,6 +78,14 @@ for (const width of [320, 390, 768, 1024, 1440]) {
     const counter = page.locator(width < 1024 ? ".pdp-mobile-gallery__counter" : ".pdp-stage__counter");
     await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
     const t = (await tile.boundingBox())!;
+    if (width >= 1024) {
+      const primaryPhoto = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
+      expect(t.x, "tile starts inside the primary photo").toBeGreaterThanOrEqual(primaryPhoto.x - 1);
+      expect(t.y, "tile starts inside the primary photo").toBeGreaterThanOrEqual(primaryPhoto.y - 1);
+      expect(t.x + t.width, "tile ends inside the primary photo, not the second photo").toBeLessThanOrEqual(primaryPhoto.x + primaryPhoto.width + 1);
+      expect(t.y + t.height, "tile ends inside the primary photo").toBeLessThanOrEqual(primaryPhoto.y + primaryPhoto.height + 1);
+      expect(primaryPhoto.x + primaryPhoto.width - t.x - t.width).toBeCloseTo(16, 0);
+    }
     const c = (await counter.boundingBox())!;
     expect(t.y + t.height).toBeLessThanOrEqual(c.y);
     const flash = (await page.locator(".pdp-flash-tag").boundingBox())!;
@@ -95,8 +103,43 @@ for (const width of [320, 390, 768, 1024, 1440]) {
     await expect(tile).toBeFocused();
     await expect(page.locator("video, source")).toHaveCount(0);
     await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
+    if (width >= 1024) {
+      await page.getByRole("button", { name: "Ảnh tiếp theo", exact: true }).click();
+      await expect(counter).toHaveText("Trang ảnh 2 / 2");
+      await page.getByRole("button", { name: "Ảnh trước", exact: true }).click();
+      await expect(counter).toHaveText("Trang ảnh 1 / 2");
+    } else {
+      await page.locator(".pdp-mobile-gallery__image").first().focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(counter).toHaveText("2/3");
+      await page.keyboard.press("ArrowLeft");
+      await expect(counter).toHaveText("1/3");
+    }
   });
 }
+
+test("one-photo desktop gallery anchors the tile inside its centered primary photo", async ({ page }) => {
+  await prisma.variantMirror.updateMany({ where: { product: { pancakeProductId: externalId } }, data: { pancakeImageUrls: [] } });
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${BASE}/shop/${slug}`);
+    const tile = page.getByRole("button", { name: "Xem video", exact: true });
+    await expect(tile).toHaveCount(1);
+    const photo = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
+    const t = (await tile.boundingBox())!;
+    expect(t.x).toBeGreaterThanOrEqual(photo.x - 1);
+    expect(t.y).toBeGreaterThanOrEqual(photo.y - 1);
+    expect(t.x + t.width).toBeLessThanOrEqual(photo.x + photo.width + 1);
+    expect(t.y + t.height).toBeLessThanOrEqual(photo.y + photo.height + 1);
+    expect(photo.x + photo.width - t.x - t.width).toBeCloseTo(16, 0);
+    await tile.click();
+    await expect(page.getByRole("dialog", { name: `Video ${productName}` })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(tile).toBeFocused();
+  } finally {
+    await prisma.variantMirror.updateMany({ where: { product: { pancakeProductId: externalId } }, data: { pancakeImageUrls: [VIDEO_POSTER, VIDEO_POSTER.replace("a.jpg", "detail.jpg"), VIDEO_POSTER.replace("a.jpg", "back.jpg")] } });
+  }
+});
 
 test("explicit play fetches/decodes fixture MP4, seeks, closes and reopens accessibly", async ({ page }) => {
   let mediaRequests = 0;

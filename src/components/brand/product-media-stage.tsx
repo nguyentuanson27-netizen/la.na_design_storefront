@@ -409,7 +409,14 @@ export function BrandProductMediaStage({
         </div>
       </dialog>
 
-      {video ? <BrandProductVideoOverlay key={video.src} video={video} productName={productName} /> : null}
+      {video ? (
+        <div className="pdp-video-anchor" data-single-image={images.length === 1 ? "true" : undefined}>
+          {/* Match the first photo's cell, including its portrait width inside a desktop half. */}
+          <div className="pdp-stage__cell">
+            <BrandProductVideoOverlay key={video.src} video={video} productName={productName} />
+          </div>
+        </div>
+      ) : null}
 
       {/*
         The card's FLASH SALE tag, so the shopper recognises the product they tapped. Only that

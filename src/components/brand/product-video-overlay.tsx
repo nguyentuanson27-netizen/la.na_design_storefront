@@ -60,7 +60,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
       <dialog
         ref={dialog}
         aria-labelledby={titleId}
-        className="m-auto max-h-[92dvh] w-[92vw] max-w-3xl overflow-y-auto border-0 bg-[#FAF7F2] p-4 text-[#3B2219] shadow-2xl backdrop:bg-black/60"
+        className="pointer-events-auto m-auto max-h-[92dvh] w-[92vw] max-w-3xl overflow-y-auto border-0 bg-[#FAF7F2] p-4 text-[#3B2219] shadow-2xl backdrop:bg-black/60"
         onCancel={(event) => { event.preventDefault(); close(); }}
         onClose={() => { if (!dialog.current?.open) close(); }}
       >

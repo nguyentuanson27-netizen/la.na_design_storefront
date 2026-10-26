@@ -3237,10 +3237,18 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   }
 }
 
+/* Match the primary photo's frame without adding a second tile or intercepting gallery gestures. */
+.pdp-video-anchor {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  pointer-events: none;
+}
+
 /* A single tile above the counter, outside navigation and swipe tracks. No layout shift. */
 .pdp-video-tile {
   position: absolute;
-  z-index: 4;
+  pointer-events: auto;
   right: 1rem;
   bottom: 3.75rem;
   width: 96px;
@@ -3271,5 +3279,12 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
 }
 .pdp-video-tile__label svg { width: 16px; height: 16px; }
 @media (min-width: 1024px) {
-  .pdp-video-tile { right: var(--shell-gutter); bottom: 4.5rem; }
+  .pdp-video-anchor {
+    right: auto;
+    width: 50%;
+    display: flex;
+    justify-content: center;
+  }
+  .pdp-video-anchor[data-single-image="true"] { width: 100%; }
+  .pdp-video-tile { right: 1rem; bottom: 4.5rem; }
 }
