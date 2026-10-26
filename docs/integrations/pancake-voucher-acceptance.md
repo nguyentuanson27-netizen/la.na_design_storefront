@@ -46,7 +46,7 @@ The reconciliation service stores Pancake's raw integer status (`pancakeStatus`)
 | Status code documented *and* observed as cancel for this shop | refund once (after the mapping is added with its evidence) |
 | Admin cancel with audit | refund once |
 
-The mapping, the shop-scope verification and the replay/out-of-order cases are V14 work; this document only fixes the rule that a guess is never a refund.
+**V14 implements this table** (`voucher-redemption-service.ts`): status `7` is the only mapped cancel code, taken from the stored, complete, shop-verified status record that the status reconciliation writes (evidence: the H1-V probe read 0 → 7 for orders we cancelled ourselves). Every other code, a half record, `SYNC_UNKNOWN`, a timeout or a network error is pending. A cancel made by staff inside the Pancake UI has not been observed yet; until it is, treat it as pending and check it on the live shop.
 
 ## 4. Operator probe boundary
 

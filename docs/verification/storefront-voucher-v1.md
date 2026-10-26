@@ -1,6 +1,6 @@
 # Voucher v1 — verification status
 
-- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. V09 now has its H1-V live evidence ([POS probe](./storefront-voucher-v1-pos-probe.md), 2026-10-26, 4/4 PASS); V07 (Admin browser/axe) still lacks one piece of evidence. **Not built** (blocked by gates that need a person): V11–V14 (V11, V12 and V13 are built — see the V13 section; V14 cancel/refund and V18 remain), V18 (checkout exposure), V20/V21 completion, H3-V, H4, H5.
+- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. V09 now has its H1-V live evidence ([POS probe](./storefront-voucher-v1-pos-probe.md), 2026-10-26, 4/4 PASS); V07 (Admin browser/axe) still lacks one piece of evidence. **Not built** (blocked by gates that need a person): V11–V14 (V11–V14 are built; V18 remains), V18 (checkout exposure), V20/V21 completion, H3-V, H4, H5.
 - **Rule used here:** a row is "verified" only when a named test exercises it against real code (and, where the criterion is about the database, a real PostgreSQL). Anything else is "pending" with the reason. Nothing is marked done from code presence.
 - Spec: [`../specs/storefront-voucher-v1.md`](../specs/storefront-voucher-v1.md). Plan: [`../../tasks/storefront-voucher-v1-plan.md`](../../tasks/storefront-voucher-v1-plan.md).
 
@@ -89,6 +89,20 @@ build V14 and V18 · H4 UX review · V20 convergence run with approved POS · V2
 **Design choice that needs the owner's eye.** The H2-approved migration has no place for the order's voucher declaration (V10's `VoucherOrderSnapshot`), and a HELD hold cannot carry an order id (`VoucherHold_state_check`). Without a declaration, acceptance could not tell a voucher-priced order from a plain one and would risk accepting the former without consuming. Migration `20261026100000_voucher_order_snapshot` therefore adds, additively: table `OrderVoucherSnapshot` (insert-only, DRAFT-only, locked once accepted), index `VoucherHold_orderId_idx`, and its own rollback header. It was applied only to the scratch database; `prisma migrate diff` against the schema shows no drift from it.
 
 **Not done here, on purpose:** nothing writes the declaration yet, so no real order carries one and every real order takes the untouched plain path. V18 must write it in the snapshot transaction and teach the benefit-order re-derivation in `submitBenefitOrder` (which recomputes the quote without vouchers) about the voucher segments; until then a voucher-priced order would be closed there, not accepted. `LA_VOUCHER_ENABLED` stays unset in production.
+
+## V14 — trusted cancel, reject and refund once (2026-10-26)
+
+`src/commerce/voucher-redemption-service.ts`; hooks in the submit service (Pancake 4xx on create), the SYNC_UNKNOWN reconciliation (confirmed absence) and the status reconciliation (stored status 7); `pnpm voucher:refund:sweep` for anything a lost hook left. Real PostgreSQL: `voucher-redemption-refund.test.ts` (10), plus the existing order, checkout and voucher suites (231 passed together), domain 3360/0.
+
+| Criterion | Evidence |
+| --- | --- |
+| AC-18 definitive reject refunds; UNKNOWN does not | REJECTED refunds each redemption once; SYNC_UNKNOWN, CONFIRMED and in-flight orders refund nothing; a create timeout never calls the hook |
+| AC-19 duplicate / out-of-order cancel, after shipping | five parallel status-7 signals on a CONFIRMED order refund two redemptions once each; an older status answer is STALE and refunds nothing; only status 7 on a complete shop-verified mirror is a signal (0–6, 8, 15, 16 and half records are not) |
+| AC-27 expired campaign | counters return, `isEnabled`, window and revision untouched |
+| Retry safety | a failed hook is retried by the next UNCHANGED status read; the sweep settles REJECTED orders once and leaves other states alone |
+| Settle paths ignore the flag | nothing in the refund path reads `LA_VOUCHER_ENABLED` or the verified-shop list |
+
+**Still open (evidence, not code):** only the cancel we issue ourselves is known to read status 7. A cancel made by staff in the Pancake UI, and any code for returned or shipped-then-returned orders, are unmapped and therefore stay pending. The sweep must be scheduled by the V21 runbook. There is no Admin screen for an Admin cancel yet; the service accepts it with audit evidence.
 
 ## Review fix — PRIVATE vouchers and ids (PR #214, 2026-10-26)
 

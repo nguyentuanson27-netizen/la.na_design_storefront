@@ -254,6 +254,12 @@ export type PancakeOrderSubmissionOptions = {
    * boundary failure. A no-voucher order must return `true` without writing.
    */
   acceptAtWriteBoundary?: (tx: Prisma.TransactionClient, order: Readonly<{ id: string }>) => Promise<boolean>;
+  /**
+   * V14 -- the order was definitively refused by Pancake (a 4xx on create) after the website had accepted it, so the
+   * voucher consumed at acceptance is to be refunded. Best effort and idempotent: a failure here never changes the
+   * outcome, and a periodic sweep settles any REJECTED order whose hook was lost.
+   */
+  onRejectedAfterAcceptance?: (order: Readonly<{ id: string }>) => Promise<void>;
 };
 
 /** Thrown inside the boundary transaction to roll it back when the website cannot accept the order. */
@@ -989,6 +995,7 @@ export function createPancakeOrderSubmissionService(
           state: "REJECTED",
           reason: "ORDER_REJECTED",
         });
+        try { await options.onRejectedAfterAcceptance?.({ id: order.id }); } catch { /* the sweep settles it */ }
         return { ok: false, state: "REJECTED", reason: "ORDER_REJECTED" };
       }
 

@@ -1,4 +1,5 @@
 import { prisma } from "../db/prisma.ts";
+import { createVoucherRedemptionService } from "./voucher-redemption-service.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig, type PancakeConfig } from "../integrations/pancake/config.ts";
 import { createPancakeOrderGateway } from "../integrations/pancake/order-gateway.ts";
@@ -30,7 +31,12 @@ function defaultCreateService(
   gateway: StatusGateway,
   options: Readonly<{ shopId: number }>,
 ): StatusService {
-  return createPancakeOrderStatusReconciliationService(prisma, gateway, options);
+  // V14: a verified Pancake cancel refunds the order's voucher once (settle path: no feature flag involved).
+  const redemptions = createVoucherRedemptionService(prisma);
+  return createPancakeOrderStatusReconciliationService(prisma, gateway, {
+    ...options,
+    async onTrustedCancel({ orderId }) { await redemptions.refundOrder({ orderId, reason: "POS_CANCELLED" }); },
+  });
 }
 
 export function createPancakeOrderStatusReconciliationRuntime(options: RuntimeOptions = {}) {

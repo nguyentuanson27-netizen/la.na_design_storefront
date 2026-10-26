@@ -1,4 +1,5 @@
 import { prisma } from "../db/prisma.ts";
+import { createVoucherRedemptionService } from "./voucher-redemption-service.ts";
 import { scheduleMetaPurchaseSafely } from "./meta-request-context.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import type { PancakeConfig } from "../integrations/pancake/config.ts";
@@ -44,6 +45,10 @@ function defaultCreateService(gateway: ReconciliationGateway): ReconciliationSer
     client: prisma,
     gateway,
     async onConfirmed(code) { await scheduleMetaPurchaseSafely(prisma, code); },
+    async onRejected({ publicCode }) {
+      const order = await prisma.orderMirror.findUnique({ where: { publicCode }, select: { id: true } });
+      if (order) await createVoucherRedemptionService(prisma).refundOrder({ orderId: order.id, reason: "POS_REJECTED" });
+    },
   });
 }
 

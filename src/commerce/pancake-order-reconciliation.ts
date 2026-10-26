@@ -29,6 +29,11 @@ export type PancakeOrderReconciliationDependencies = {
   absenceConfirmationDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
   onConfirmed?: (publicCode: string) => Promise<void>;
+  /**
+   * V14: reconciliation settled a previously ambiguous order as REJECTED on confirmed absence from Pancake, which is
+   * evidence the order was not created, so its voucher is refunded. Best effort; a sweep settles any lost call.
+   */
+  onRejected?: (input: Readonly<{ publicCode: string }>) => Promise<void>;
 };
 
 export type OrderReconciliationResult =
@@ -70,6 +75,7 @@ export function createPancakeOrderReconciliationService({
   absenceConfirmationDelayMs = 1000,
   sleep = (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
   onConfirmed = (code) => reportMetaPurchaseSafely(client, code),
+  onRejected,
 }: PancakeOrderReconciliationDependencies) {
   if (!Number.isSafeInteger(absenceConfirmationAttempts) || absenceConfirmationAttempts < 1) {
     throw new TypeError("Absence confirmation attempts must be a positive safe integer");
@@ -402,6 +408,9 @@ export function createPancakeOrderReconciliationService({
 
   async function reconcileAndReport(publicCode: string): Promise<OrderReconciliationResult> {
     const result = await reconcileOrder(publicCode);
+    if (!result.ok && result.state === "REJECTED" && onRejected) {
+      try { await onRejected({ publicCode }); } catch { /* the sweep settles it */ }
+    }
     if (result.ok) {
       try { await onConfirmed(publicCode); }
       catch { console.warn(JSON.stringify({ name: "meta_conversions.purchase_failed", reason: "SCHEDULING_FAILED" })); }

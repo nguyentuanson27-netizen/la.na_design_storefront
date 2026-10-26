@@ -5,6 +5,7 @@ import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig, type PancakeConfig } from "../integrations/pancake/config.ts";
 import { createPancakeOrderGateway } from "../integrations/pancake/order-gateway.ts";
 import { createVoucherOrderAcceptance } from "./voucher-order-acceptance.ts";
+import { createVoucherRedemptionService } from "./voucher-redemption-service.ts";
 import {
   createPancakeOrderSubmissionService,
   type PancakeOrderSubmissionEvent,
@@ -24,6 +25,7 @@ export function createPancakeOrderSubmissionRuntime(config: PancakeConfig) {
     onEvent: writePancakeOrderSubmissionEvent,
     orderSourceId: config.orderSourceId,
     async acceptAtWriteBoundary(tx, order) { return (await voucherAcceptance.acceptWithin(tx, { orderId: order.id })).ok; },
+    async onRejectedAfterAcceptance(order) { await createVoucherRedemptionService(prisma).refundOrder({ orderId: order.id, reason: "POS_REJECTED" }); },
     async onConfirmed(code) { await scheduleMetaPurchaseSafely(prisma, code); },
   });
 }
