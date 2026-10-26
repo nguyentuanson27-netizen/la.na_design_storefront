@@ -59,6 +59,9 @@ function runEnv(port: number, extra: Record<string, string> = {}): NodeJS.Proces
     PANCAKE_SHOP_ID: String(SHOP),
     LA_VOUCHER_ENABLED: "true",
     LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS: String(SHOP),
+    // Holds are only granted where checkout can honour them.
+    LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true",
+    LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP),
     LA_TRACKING_MODE: "preview",
     LA_GTM_CONTAINER_ID: "GTM-VCHRTST",
     ...extra,

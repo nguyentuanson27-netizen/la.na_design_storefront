@@ -533,8 +533,11 @@ export function buildCheckoutVoucherView(input: Readonly<{
   picker: VoucherPickerModel | null;
   /** Earliest expiry of the cart's live holds (database clock), or null when it could not be read. */
   heldUntilMs: number | null;
+  /** False when a NEW hold could not be granted here (gates, shop not verified): an offer would block an order nobody can unblock. */
+  offerAllowed?: boolean;
 }>): CheckoutVoucherView | null {
-  const { render, picker } = input;
+  const { render } = input;
+  const picker = input.offerAllowed === false ? null : input.picker;
   if (render.kind === "BENEFIT" && render.voucher) {
     const v = render.voucher;
     const lines: CheckoutVoucherLine[] = [];

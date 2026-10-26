@@ -285,6 +285,30 @@ test("TG-05 / AC-31: the holds stop describing the cart (it changed) -> priced W
   assert.equal(await prisma.orderAcceptance.count({ where: { order: { sourceCartId: cartId } } }), 0);
 });
 
+test("review f3eed3a: the gift/quantity gate is switched OFF inside the 10 minutes: the hold is set aside and SAID so, the old proof cannot place a plain order, nothing is consumed", async () => {
+  await seed();
+  await fixedVoucher(50_000, 600_000);
+  await hold();
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") return;
+  const proof = issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })!;
+
+  const noGq = { ...ENV, LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: undefined };
+  const items2 = await prisma.cartItem.findMany({ where: { cartId }, select: { variantId: true, quantity: true } });
+  const lines = await createStorefrontCartRepository(prisma).getLines({ shopId: SHOP, items: items2, now: new Date() });
+  const after = await readBenefitCheckoutRender({ client: prisma, cartId, lines, shopId: SHOP, now: new Date(), secret: SECRET, env: noGq });
+  assert.equal(after.kind, "LEGACY", "the benefit pipeline is off, so the cart is priced plainly");
+  assert.equal(after.kind === "LEGACY" && after.voucherStale, true, "and the page is told the buyer's holds were set aside, never silently dropped");
+
+  const pancake = fakePancake();
+  const result = await submit(checkoutService(pancake, proof, { env: noGq }));
+  assert.equal(result.ok, false, "the proof the buyer saw (with the voucher) cannot place a plain order");
+  assert.deepEqual(pancake.calls.create, []);
+  assert.deepEqual((await holdsNow()).map((h) => h.state), ["HELD"], "the hold is not consumed; it expires on its own");
+  assert.equal(await prisma.voucherRedemption.count({ where: { campaign: { pancakeShopId: SHOP } } }), 0);
+});
+
 test("AC-47: flag switched OFF while a voucher checkout is in flight: the live hold is still honoured and settles; no NEW hold is granted", async () => {
   await seed();
   const m = await fixedVoucher(50_000, 600_000);

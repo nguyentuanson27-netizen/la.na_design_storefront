@@ -100,3 +100,13 @@ Smallest first: unset `LA_VOUCHER_ENABLED`; remove the shop from the verified li
 | H4 UX review accepted | | | |
 | H5 go / no-go | | | |
 | `/ship` approved | | | |
+
+## 8. Re-review of PR #214 at `f3eed3a` (owner account, 2026-10-26) and what was done
+
+| Finding | Verified against the code | Change |
+| --- | --- | --- |
+| P1 hold granted but checkout cannot honour it when the gift/quantity gate is OFF | yes: the hold flow checked only the voucher gate and the verified shop; `resolveBenefitCheckoutQuote` returns `LEGACY` before reading holds | New holds also need `canCheckoutHonorVouchers` (gift/quantity gate + line-level-verified shop); checkout shows no offer (and does not block the order) where no hold can be granted; a live hold met with the gate OFF is set aside **and reported** (`voucherStale`), never silently plain. Tests: `voucher-hold-flow` (each dependency off on its own), `voucher-checkout` (gate off inside the 10 minutes), domain gate and view tests; two mutations each fail a test |
+| P1 status 7 stored but the refund hook lost is never swept | yes: the sweep only read `REJECTED` orders | `sweepCancelledOrders` (and `sweep()`, now what `pnpm voucher:refund:sweep` runs): candidates are orders with stored status 7 and an unrefunded redemption; `refundOrder` still re-checks the complete, shop-verified record under the order lock. Test: lost hook → sweep → once, with provenance; other codes, half records and `SYNC_UNKNOWN` untouched; a mutation fails it |
+| P2 a code applied in the picker leaves the cart's "Dự kiến sau ưu đãi" stale | yes: the apply-code action deliberately does not refresh | The picker refreshes the page when the dialog closes after a code was applied; browser test at 390 and 1280 px |
+
+Design note for the owner: where the gift/quantity gate goes OFF **while** a shopper holds a voucher, the hold is **not** honoured (it cannot be priced without the benefit pipeline); the shopper is told and nothing is charged or consumed. Honouring it would mean pricing voucher orders without that pipeline, which is new design, not a fix. The runbook says to keep the gate on for as long as vouchers are on.

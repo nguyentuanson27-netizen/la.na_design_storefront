@@ -11,6 +11,9 @@
  * settle path.
  */
 
+import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contract.ts";
+
 export const VOUCHER_ENV = "LA_VOUCHER_ENABLED";
 
 type GateEnvironment = Readonly<Record<string, string | undefined>>;
@@ -47,4 +50,18 @@ export function readVoucherVerifiedShopIds(env: GateEnvironment = process.env): 
 /** A NEW hold: the feature gate is on AND this shop's POS acceptance is recorded. */
 export function canGrantVoucherHolds(shopId: number, env: GateEnvironment = process.env): boolean {
   return canIssueNewVouchers(env) && readVoucherVerifiedShopIds(env).includes(shopId);
+}
+
+/**
+ * Whether checkout can PRICE and send a held voucher for this shop. Voucher checkout rides the benefit pipeline, so it needs
+ * the gift/quantity gate and a shop verified for line-level POS pricing. A hold the checkout cannot honour must never be
+ * granted: it would take quota and budget for ten minutes and then be set aside (review of PR #214, f3eed3a).
+ */
+export function canCheckoutHonorVouchers(shopId: number, env: GateEnvironment = process.env): boolean {
+  return isGiftQuantityPromotionsEnabled(env) && readLineLevelPricingVerifiedShopIds(env).includes(shopId);
+}
+
+/** A NEW hold: the voucher gates, the POS acceptance AND a checkout that can honour it. */
+export function canGrantHonourableVoucherHolds(shopId: number, env: GateEnvironment = process.env): boolean {
+  return canGrantVoucherHolds(shopId, env) && canCheckoutHonorVouchers(shopId, env);
 }

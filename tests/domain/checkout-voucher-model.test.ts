@@ -131,3 +131,12 @@ test("nothing to offer: stale holds are only reported, and otherwise the checkou
   // No digest means no hold can be asked for, so no offer either.
   assert.equal(buildCheckoutVoucherView({ render: { kind: "LEGACY" }, picker: picker({ quoteDigest: null }), heldUntilMs: null }), null);
 });
+
+test("review f3eed3a: an offer is never shown (and never blocks the order) where no hold can be granted", () => {
+  const plain = { kind: "LEGACY" as const };
+  assert.equal(buildCheckoutVoucherView({ render: plain, picker: picker(), heldUntilMs: null, offerAllowed: false }), null);
+  // Holds that were set aside are still reported, so the shopper is told rather than shown a silently plain price.
+  assert.deepEqual(buildCheckoutVoucherView({ render: { kind: "LEGACY", voucherStale: true }, picker: picker(), heldUntilMs: null, offerAllowed: false }), { state: "STALE" });
+  // The default is unchanged.
+  assert.equal(buildCheckoutVoucherView({ render: plain, picker: picker(), heldUntilMs: null })!.state, "OFFERED");
+});

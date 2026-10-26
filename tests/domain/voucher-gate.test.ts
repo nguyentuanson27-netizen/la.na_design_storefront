@@ -32,3 +32,16 @@ test("ADR 0019 D-6: a hold needs the feature AND a verified shop; malformed list
   assert.deepEqual(readVoucherVerifiedShopIds({ [VOUCHER_VERIFIED_SHOPS_ENV]: "" }), []);
   assert.deepEqual(readVoucherVerifiedShopIds({}), []);
 });
+
+test("review f3eed3a: checkout readiness needs the gift/quantity gate AND a line-level-verified shop, each on its own", async () => {
+  const { canCheckoutHonorVouchers, canGrantHonourableVoucherHolds } = await import("../../src/commerce/voucher-gate.ts");
+  const ready = { LA_VOUCHER_ENABLED: "true", LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS: "7", LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true", LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: "7" };
+  assert.equal(canCheckoutHonorVouchers(7, ready), true);
+  assert.equal(canGrantHonourableVoucherHolds(7, ready), true);
+  assert.equal(canCheckoutHonorVouchers(7, { ...ready, LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: undefined }), false);
+  assert.equal(canCheckoutHonorVouchers(7, { ...ready, LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: "8" }), false);
+  assert.equal(canCheckoutHonorVouchers(8, ready), false);
+  // The voucher gates alone are not enough to grant, and checkout readiness alone is not either.
+  assert.equal(canGrantHonourableVoucherHolds(7, { ...ready, LA_VOUCHER_ENABLED: undefined }), false);
+  assert.equal(canGrantHonourableVoucherHolds(7, { ...ready, LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS: undefined }), false);
+});

@@ -30,7 +30,8 @@ const P = "vchr-accept";
 const SECRET = "voucher-accept-test-secret-0123456789abcdef";
 const f = createVoucherFixtures(prisma, SHOP, P);
 const PAST = new Date("2026-10-01T00:00:00.000Z");
-const ENV = { LA_VOUCHER_ENABLED: "true", LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS: String(SHOP) } as const;
+// A hold is only granted where checkout can honour it: the gift/quantity gate and a line-level-verified shop are part of readiness.
+const ENV = { LA_VOUCHER_ENABLED: "true", LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS: String(SHOP), LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true", LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP) } as const;
 const flow = createVoucherHoldFlow(prisma, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: ENV });
 const service = createVoucherHoldService(prisma, { attemptSecret: SECRET, env: ENV });
 const acceptance = createVoucherOrderAcceptance({ readAttemptSecret: () => SECRET });

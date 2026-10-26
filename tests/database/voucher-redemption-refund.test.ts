@@ -189,6 +189,38 @@ test("the sweep settles REJECTED orders whose hook was lost, once, and leaves ev
   assert.deepEqual(await counters(confirmed.m.id), [1, BigInt(50_000), 0, BigInt(0)]);
 });
 
+test("the sweep also settles an order whose cancelled status (7) was stored but whose refund hook was lost: once, with provenance, and nothing else", async () => {
+  // Status 7 is persisted by the status reconciliation BEFORE the refund; a crash or a thrown hook leaves it unrefunded.
+  const lost = await acceptedOrder({ shipping: true });
+  await setState(lost.order.id, "CONFIRMED");
+  await mirrorStatus(lost.order.id, 7);
+  // Not signals: another code, a half record at 7, and SYNC_UNKNOWN with no status record at all.
+  const other = await acceptedOrder();
+  await setState(other.order.id, "CONFIRMED");
+  await mirrorStatus(other.order.id, 3, "8800200");
+  const half = await acceptedOrder();
+  await setState(half.order.id, "CONFIRMED");
+  await prisma.orderMirror.update({ where: { id: half.order.id }, data: { pancakeOrderId: "8800201", pancakeStatus: 7 } });
+  const unknown = await acceptedOrder();
+  await setState(unknown.order.id, "SYNC_UNKNOWN");
+
+  const first = await refunds.sweepCancelledOrders();
+  assert.equal(first.refunded, 2, "the two redemptions of the lost order");
+  assert.deepEqual(await counters(lost.m.id), [0, BigInt(0), 0, BigInt(0)]);
+  assert.deepEqual(await counters(lost.s!.id), [0, BigInt(0), 0, BigInt(0)]);
+  assert.match((await redemptionsOf(lost.order.id))[0]!.refundEvidence!, /^pancake:shop=940015;order=8800123;status=7;/);
+  assert.equal((await redemptionsOf(lost.order.id))[0]!.refundReason, "POS_CANCELLED");
+  assert.deepEqual(await counters(unknown.m.id), [1, BigInt(50_000), 0, BigInt(0)], "SYNC_UNKNOWN is pending, never refunded");
+  assert.deepEqual(await counters(other.m.id), [1, BigInt(50_000), 0, BigInt(0)], "status 3 is not a cancel");
+  assert.deepEqual(await counters(half.m.id), [1, BigInt(50_000), 0, BigInt(0)], "a half record is not evidence");
+
+  // Exactly once: a second run, and the plain sweep, change nothing more.
+  assert.equal((await refunds.sweepCancelledOrders()).refunded, 0);
+  const again = await refunds.sweep();
+  assert.equal(again.cancelled.refunded, 0);
+  assert.deepEqual(await counters(lost.m.id), [0, BigInt(0), 0, BigInt(0)]);
+});
+
 // ---- the signals reach the refund through the real services ------------------------------------------------------
 
 const upstream = (status: number, updatedAt: string): PancakeOrderStatus =>

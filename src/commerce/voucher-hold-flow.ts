@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 import { canProjectExactMoney } from "./pancake-voucher-projection.ts";
 import { createVoucherHoldRateLimiter, type VoucherCodeRateLimiter } from "./voucher-code-rate-limit.ts";
-import { canIssueNewVouchers, readVoucherVerifiedShopIds } from "./voucher-gate.ts";
+import { canCheckoutHonorVouchers, canIssueNewVouchers, readVoucherVerifiedShopIds } from "./voucher-gate.ts";
 import { createVoucherHoldService, type HeldVoucher, type VoucherGroup, type VoucherHoldFailureReason, type VoucherHoldGrant } from "./voucher-hold-service.ts";
 import { readVoucherPreview, readVoucherPreviewWithin } from "./voucher-preview.ts";
 import { buildVoucherQuoteFacts, GIFT_SLOTS_VARIATION } from "./voucher-quote-facts.ts";
@@ -92,7 +92,8 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
     const now = input.now ?? new Date();
     if (typeof expectedQuoteDigest !== "string" || !HEX64.test(expectedQuoteDigest) || typeof cartId !== "string" || cartId.length === 0) return { ok: false, reason: "CART_UNAVAILABLE" };
     // 1. Both gates, before anything is read.
-    if (!canIssueNewVouchers(env) || !readVoucherVerifiedShopIds(env).includes(options.shopId)) return { ok: false, reason: "PREVIEW_ONLY" };
+    // A hold the checkout could not honour (gift/quantity gate off, shop not line-level verified) is never granted.
+    if (!canIssueNewVouchers(env) || !readVoucherVerifiedShopIds(env).includes(options.shopId) || !canCheckoutHonorVouchers(options.shopId, env)) return { ok: false, reason: "PREVIEW_ONLY" };
     // Anti-flood (ADR 0019 D-5): counted on every attempt, before any cart or catalog read.
     if (!(await limiter.consume({ cartId, shopId: options.shopId, now }))) return { ok: false, reason: "RATE_LIMITED" };
 

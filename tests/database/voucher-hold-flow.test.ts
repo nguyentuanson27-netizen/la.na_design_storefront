@@ -29,7 +29,8 @@ const SECRET = "voucher-flow-test-secret-0123456789abcdef";
 const f = createVoucherFixtures(prisma, SHOP, P);
 const PAST = new Date("2026-10-01T00:00:00.000Z");
 const MIN = 60_000;
-const ENV = { LA_VOUCHER_ENABLED: "true", LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS: String(SHOP) } as const;
+// A hold is only granted where checkout can honour it: the gift/quantity gate and a line-level-verified shop are part of readiness.
+const ENV = { LA_VOUCHER_ENABLED: "true", LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS: String(SHOP), LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true", LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP) } as const;
 const flow = createVoucherHoldFlow(prisma, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: ENV });
 const service = createVoucherHoldService(prisma, { attemptSecret: SECRET, env: ENV });
 
@@ -103,6 +104,20 @@ test("D-6: feature off or shop not verified answers PREVIEW_ONLY and reads and w
   assert.deepEqual(await off.hold({ cartId: c.id, expectedQuoteDigest: digest }), { ok: false, reason: "PREVIEW_ONLY" });
   assert.deepEqual(await unverified.hold({ cartId: c.id, expectedQuoteDigest: digest }), { ok: false, reason: "PREVIEW_ONLY" });
   assert.equal((await holdsOf()).length, 0);
+});
+
+test("review f3eed3a: a hold the checkout could not honour is never granted -- each dependency OFF on its own, with voucher ON and the shop verified", async () => {
+  const c = await cart([{ variantId: await product(450_000), quantity: 2 }]);
+  await fixed(50_000, 100_000);
+  const digest = (await shown(c.id)).quoteDigest!;
+  const without = (drop: string) => Object.fromEntries(Object.entries(ENV).filter(([key]) => key !== drop));
+  for (const drop of ["LA_GIFT_QUANTITY_PROMOTIONS_ENABLED", "LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS"]) {
+    const limited = createVoucherHoldFlow(prisma, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: without(drop) });
+    assert.deepEqual(await limited.hold({ cartId: c.id, expectedQuoteDigest: digest }), { ok: false, reason: "PREVIEW_ONLY" }, `without ${drop}`);
+    assert.equal((await holdsOf()).length, 0, `no quota or budget taken without ${drop}`);
+  }
+  // Both ready: the same request is granted, so the refusals above are the gates and nothing else.
+  assert.equal((await flow.hold({ cartId: c.id, expectedQuoteDigest: digest })).ok, true);
 });
 
 test("AC-43 / EX-01: the POST holds both vouchers once, returns a HELD proof a submit can verify, and a PREVIEW proof can never submit", async () => {

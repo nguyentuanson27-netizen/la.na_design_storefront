@@ -31,6 +31,7 @@ import { DROPPED_BENEFIT_REASONS } from "./order-quote-snapshot.ts";
 import { parseTrustedProductImageUrl } from "./product-media.ts";
 import type { QuoteStructure } from "./order-quote-rules.ts";
 import type { StorefrontCartLine } from "./storefront-cart.ts";
+import { createVoucherHoldService } from "./voucher-hold-service.ts";
 import { resolveHeldVoucherCheckout, type CheckoutGroup, type HeldVoucherCheckout } from "./voucher-checkout-quote.ts";
 import type { VoucherOrderSnapshot } from "./voucher-order-snapshot.ts";
 
@@ -144,6 +145,18 @@ async function resolveOnce({
   try { shippingPolicy = readGuestShippingPolicy(env); } catch { return { kind: "UNAVAILABLE" }; }
   if (!isGiftQuantityPromotionsEnabled(env)) {
     if (lines === undefined) return { kind: "UNAVAILABLE" };
+    // The benefit pipeline is what prices and sends a held voucher. With it off a live hold cannot be honoured here: the
+    // cart is priced plainly AND the result says the holds were set aside, never a silent plain order (the shopper is told).
+    if (applyVoucher && voucher !== undefined) {
+      let attemptSecret: string | null = null;
+      try { attemptSecret = voucher.attemptSecret; } catch { attemptSecret = null; }
+      if (attemptSecret !== null) {
+        try {
+          const own = await createVoucherHoldService(tx as never, { attemptSecret, env }).readOwnLiveHoldFactsIn(tx as never, cartId);
+          if (own.length > 0) return { kind: "VOUCHER_STALE" };
+        } catch { return { kind: "UNAVAILABLE" }; }
+      }
+    }
     try {
       const shippingQuote = await readShippingQuote({ client: tx, shopId, now, paidItems: lines,
         policy: shippingPolicy, hasOtherPromotions: lines.some((line) => line.price !== null && line.basePrice !== undefined && line.price < line.basePrice) });

@@ -9,8 +9,8 @@
 | --- | --- |
 | `LA_VOUCHER_ENABLED` | Exactly `true` turns NEW exposure on: voucher lists, selections, previews, links, holds, and applying holds in checkout. Anything else (unset, empty, `1`, `TRUE`, a `NEXT_PUBLIC_` copy) is OFF. **Default OFF; keep it unset in production until H5.** |
 | `LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS` | Comma-separated shop ids allowed to receive a NEW hold (ADR 0019 D-6). List a shop only after `pnpm pancake:voucher:accept` passed for it (shop 715077776 passed 2026-10-26). Unset or malformed: no hold is ever granted. |
-| `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` | Voucher checkout rides the benefit checkout, so this gate must be `true` too. With it off a held voucher is not applied and checkout shows the price without it. |
-| `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS` | The shop must also be line-level-pricing verified (the POS order carries one price per line). |
+| `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` | Voucher checkout rides the benefit checkout, so this gate must be `true` too. **With it off no NEW hold is granted** (a hold checkout could not honour would only take quota for ten minutes). If it is switched off while a shopper already holds a voucher, checkout cannot price it: the hold is set aside and the page says so ("giá bên dưới chưa có ưu đãi"), the old proof cannot place a plain order, nothing is consumed and the hold expires. Keep it `true` for as long as vouchers are on. |
+| `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS` | The shop must also be line-level-pricing verified (the POS order carries one price per line). Like the gate above, a shop missing from this list gets no NEW hold, and checkout does not offer or block on a voucher it cannot hold. |
 | `LA_VOUCHER_TEST_HARNESS` | **Never set in production.** It only matters to a test build; an official build answers 404 for the harness even if it is set by mistake (`pnpm voucher:hold-harness` proves both). |
 
 What OFF means (ADR 0018 D-6, AC-47): it stops **new** exposure. The settle paths never read it, **and neither does checkout for a hold that already exists**. Verified by a database test (`voucher-checkout.test.ts`, AC-47) and what an operator should expect when the flag is switched OFF while shoppers are mid-checkout:
@@ -84,11 +84,13 @@ A redemption is refunded **once** and **only from a trusted signal** (ADR 0018 D
 | Situation | What happens | Operator action |
 | --- | --- | --- |
 | Pancake rejects the create (4xx), or confirmed absence after `SYNC_UNKNOWN` | Order closed `REJECTED`; the hook refunds the redemptions and returns the counters | none |
-| A hook was lost (crash between the state change and the refund) | The order stays `REJECTED` with an unrefunded redemption | `pnpm voucher:refund:sweep` (idempotent; prints `N rejected orders checked, M redemptions refunded`). Run it from the `ops` container. |
+| A hook was lost (crash between the state change and the refund), for a `REJECTED` order **or** an order with a stored status 7 | The redemption stays unrefunded | `pnpm voucher:refund:sweep` (idempotent; prints `N rejected orders checked, M redemptions refunded`). Run it from the `ops` container. |
 | Order cancelled in Pancake with status `7` on a complete shop-verified status record (the cancel we issue ourselves) | The status reconciliation refunds once | none |
 | `SYNC_UNKNOWN`, timeout, network error, **any other status code**, a half-written status record | **Pending.** No refund. | Reconcile against Pancake, never create a duplicate order. A cancel made by staff in the Pancake UI has **not been observed**; check such orders by hand until it has. |
 | Admin cancel with evidence | `refundOrder(… "ADMIN_CANCEL", evidence)` exists in the service | **No screen or script calls it yet.** Until one exists, an operator-run script is an owner decision, not something to improvise on production. |
 | Campaign expired or disabled after acceptance | Counters return; the campaign's `isEnabled`, window and revision are not touched | none |
+
+`pnpm voucher:refund:sweep` settles both kinds of lost hook: `REJECTED` orders, and orders whose cancelled status (7) was stored on a complete, shop-verified record but whose refund never ran (`CONFIRMED` orders that Pancake cancelled). It prints `N rejected orders checked, M redemptions refunded; N cancelled orders checked, M redemptions refunded`.
 
 **Scheduling gap (blocks H5):** nothing in `deploy/vps` runs `voucher:refund:sweep` on a schedule (`catalog-sync` is the only loop in the `ops` profile). The sweep is safe on any schedule; the owner has to decide where it runs (a cron or systemd timer on the VPS calling `docker compose --profile ops run --rm ops pnpm voucher:refund:sweep`, every 5–15 minutes) and add it to the release checklist. Holds need no scheduled job: expiry is lazy under the campaign lock, and `sweepExpired` is a tidy-up with no caller.
 

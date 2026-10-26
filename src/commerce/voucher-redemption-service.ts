@@ -104,7 +104,33 @@ export function createVoucherRedemptionService(client: PrismaClient) {
     return { scanned: orders.length, refunded };
   }
 
-  return { refundOrder, sweepRejectedOrders };
+  /**
+   * Settles redemptions of orders Pancake has cancelled whose refund a crash or a lost hook left undone: the status
+   * reconciliation stores status 7 first and refunds second, and nothing re-reads an unchanged status. Only a candidate
+   * list: `refundOrder` re-checks the trust (complete, shop-verified record at the cancelled code) under the order lock,
+   * so `SYNC_UNKNOWN`, a half record or any other code is never refunded here.
+   */
+  async function sweepCancelledOrders(options: Readonly<{ limit?: number }> = {}): Promise<Readonly<{ scanned: number; refunded: number }>> {
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 500));
+    const orders = await client.$queryRaw<Array<{ id: string }>>`
+      SELECT DISTINCT o."id" FROM "OrderMirror" o JOIN "VoucherRedemption" r ON r."orderId" = o."id"
+      WHERE o."pancakeStatus" = ${PANCAKE_ORDER_CANCELED_STATUS} AND o."state" <> 'REJECTED' AND r."refundedAt" IS NULL LIMIT ${limit}`;
+    let refunded = 0;
+    for (const order of orders) {
+      const result = await refundOrder({ orderId: order.id, reason: "POS_CANCELLED" });
+      if (result.ok) refunded += result.refunded;
+    }
+    return { scanned: orders.length, refunded };
+  }
+
+  /** Both sweeps: what the scheduled `pnpm voucher:refund:sweep` runs. */
+  async function sweep(options: Readonly<{ limit?: number }> = {}): Promise<Readonly<{ rejected: Readonly<{ scanned: number; refunded: number }>; cancelled: Readonly<{ scanned: number; refunded: number }> }>> {
+    const rejected = await sweepRejectedOrders(options);
+    const cancelled = await sweepCancelledOrders(options);
+    return { rejected, cancelled };
+  }
+
+  return { refundOrder, sweepRejectedOrders, sweepCancelledOrders, sweep };
 }
 
 export type VoucherRedemptionService = ReturnType<typeof createVoucherRedemptionService>;

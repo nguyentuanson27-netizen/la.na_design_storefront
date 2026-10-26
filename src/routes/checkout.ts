@@ -13,6 +13,7 @@ import { getCurrentStorefrontCheckoutContext } from "@/commerce/storefront-cart-
 import { buildCheckoutBeginEvent } from "@/components/analytics/cart-funnel-tracking";
 import { loadCurrentVoucherPicker } from "@/commerce/voucher-picker-runtime";
 import { readCartHeldUntilMs } from "@/commerce/voucher-own-holds";
+import { canGrantHonourableVoucherHolds } from "@/commerce/voucher-gate";
 import { prisma } from "@/db/prisma";
 import { readPancakeShopId } from "@/integrations/pancake/config";
 
@@ -67,6 +68,8 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
         render: benefitRender,
         picker: await loadCurrentVoucherPicker(),
         heldUntilMs: benefitRender.kind === "BENEFIT" && benefitRender.voucher ? await readCartHeldUntilMs(prisma, checkoutContext.cartId) : null,
+        // An offer is only worth showing (and blocking an order for) when the hold button can actually grant it.
+        offerAllowed: canGrantHonourableVoucherHolds(readPancakeShopId()),
       })
     : null;
   if (benefitRender.kind !== "LEGACY") {
