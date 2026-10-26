@@ -70,6 +70,28 @@ export type HeldVoucherCheckout =
 
 const stripSegment = (lineId: string) => lineId.replace(/\|v\d+$/, "");
 
+/**
+ * What the gifts would be after the voucher a PREVIEW chose (nothing is held yet): the gift authority run on the cart's
+ * groups re-priced by the preview's allocation, exactly like the held path below. Null when the preview carries no gift
+ * authority or a line cannot be matched to its group (the caller treats that as "the quote changed").
+ */
+export function giftsAfterVoucher(preview: Readonly<{
+  giftState: Awaited<ReturnType<typeof readCartGiftState>> | null;
+  stackedGroups: readonly StackedGroup[];
+  lines: Parameters<typeof applyAllocationToLines>[0];
+  quote: Extract<VoucherQuote, { ok: true }>;
+}>): ReturnType<Awaited<ReturnType<typeof readCartGiftState>>["evaluateGifts"]> | null {
+  if (preview.giftState === null) return null;
+  const groupByKey = new Map(preview.stackedGroups.map((group) => [group.groupKey, group]));
+  const stackGroups: StackedGroup[] = [];
+  for (const line of applyAllocationToLines(preview.lines, preview.quote.allocation)) {
+    const source = groupByKey.get(stripSegment(line.lineId));
+    if (source === undefined) return null;
+    stackGroups.push({ ...source, groupKey: line.lineId, quantity: line.quantity, unitPriceVnd: line.unitPriceVnd, lineTotalVnd: line.quantity * line.unitPriceVnd });
+  }
+  return preview.giftState.evaluateGifts(stackGroups);
+}
+
 export async function resolveHeldVoucherCheckout(input: Readonly<{
   tx: Prisma.TransactionClient;
   cartId: string;

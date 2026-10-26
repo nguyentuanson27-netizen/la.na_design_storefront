@@ -21,23 +21,17 @@ export type VoucherGiftRepairResult =
   | Readonly<{ ok: true; repair: VoucherGiftRepair }>
   | Readonly<{ ok: false; reason: "QUOTE_CHANGED" }>;
 
-export async function repairGiftSelectionsAfterVoucherConsent(input: Readonly<{
-  tx: Prisma.TransactionClient;
-  cartId: string;
-  shopId: number;
-  now: Date;
-  env: Readonly<Record<string, string | undefined>>;
-  attemptSecret: string;
-}>): Promise<VoucherGiftRepairResult> {
-  const { tx, cartId, shopId, now, env, attemptSecret } = input;
-  const giftState = await readCartGiftState(tx, cartId, shopId, now, env);
-  // The holds exist in this transaction already; the very derivation checkout will run says what the gifts are after them.
-  const held = await resolveHeldVoucherCheckout({ tx, cartId, shopId, now, env, attemptSecret, giftState });
-  if (held.kind !== "APPLIED") return { ok: false, reason: "QUOTE_CHANGED" };
-
-  const entitledBy = new Map(held.gift.entitlements.map((entry) => [entry.campaignId, entry.entitled]));
-  // Only the choices that count for this cart (a lower milestone waiting behind a higher one is not touched).
-  const counting = new Set(giftState.selections.map((row) => `${row.campaignId}/${row.variantId}`));
+/**
+ * The one rule both consent paths use: against the entitlements the cart has AFTER the voucher, remove or reduce (newest
+ * first) the counting choices that exceed them. `counting` names the choices that count for the cart (`campaign/variant`).
+ */
+export async function applyGiftEntitlementsToSelections(
+  tx: Prisma.TransactionClient,
+  cartId: string,
+  entitlements: readonly Readonly<{ campaignId: string; entitled: number }>[],
+  counting: ReadonlySet<string>,
+): Promise<VoucherGiftRepair> {
+  const entitledBy = new Map(entitlements.map((entry) => [entry.campaignId, entry.entitled]));
   const rows = (await tx.cartGiftSelection.findMany({
     where: { cartId },
     // Newest choice first: when slots must go, the older, more settled choices stay.
@@ -66,5 +60,24 @@ export async function repairGiftSelectionsAfterVoucherConsent(input: Readonly<{
       }
     }
   }
-  return { ok: true, repair: { removed, reduced } };
+  return { removed, reduced };
+}
+
+export const countingKeys = (selections: readonly Readonly<{ campaignId: string; variantId: string }>[]): ReadonlySet<string> =>
+  new Set(selections.map((row) => `${row.campaignId}/${row.variantId}`));
+
+/** At the HOLD: the holds exist in this transaction, and the very derivation checkout runs says what the gifts are after them. */
+export async function repairGiftSelectionsAfterVoucherConsent(input: Readonly<{
+  tx: Prisma.TransactionClient;
+  cartId: string;
+  shopId: number;
+  now: Date;
+  env: Readonly<Record<string, string | undefined>>;
+  attemptSecret: string;
+}>): Promise<VoucherGiftRepairResult> {
+  const { tx, cartId, shopId, now, env, attemptSecret } = input;
+  const giftState = await readCartGiftState(tx, cartId, shopId, now, env);
+  const held = await resolveHeldVoucherCheckout({ tx, cartId, shopId, now, env, attemptSecret, giftState });
+  if (held.kind !== "APPLIED") return { ok: false, reason: "QUOTE_CHANGED" };
+  return { ok: true, repair: await applyGiftEntitlementsToSelections(tx, cartId, held.gift.entitlements, countingKeys(giftState.selections)) };
 }

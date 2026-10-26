@@ -6,9 +6,10 @@ import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
 import { buildVoucherPickerModel } from "../routes/voucher-picker-model.ts";
 import { readAnonymousCartCookie } from "./anonymous-cart-cookie.ts";
-import { parseVoucherCodeInput, parseVoucherDraftInput, parseVoucherSelectionInput } from "./voucher-selection-input.ts";
+import { parseVoucherCodeInput, parseVoucherCommitInput, parseVoucherDraftInput, parseVoucherSelectionInput } from "./voucher-selection-input.ts";
 import { createVoucherSelectionService } from "./voucher-selection-service.ts";
 import { readCartOwnVoucherHolds } from "./voucher-own-holds.ts";
+import { commitVoucherDraft } from "./voucher-draft-commit.ts";
 import { readVoucherPreview } from "./voucher-preview.ts";
 import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
 
@@ -76,13 +77,23 @@ export async function previewStorefrontVoucherDraft(input: unknown) {
   return picker === null ? ({ ok: false, reason: "QUOTE_UNAVAILABLE" } as const) : ({ ok: true, picker } as const);
 }
 
-/** "Áp dụng": commit both groups of the draft in one transaction, then answer with what the server now computes. */
+/**
+ * "Áp dụng": commit both groups of the draft in one transaction, then answer with what the server now computes.
+ *
+ * When the draft costs the shopper gifts they had chosen, the server refuses without their explicit consent
+ * (`CONFIRMATION_REQUIRED`, nothing written). With it, and only if the quote they confirmed is still the quote the server
+ * derives under the cart lock (`QUOTE_CHANGED` otherwise), the voucher intent AND the gift change are written together:
+ * the choices the voucher makes unearned are removed or reduced in the same transaction (spec 4.1.4 / 7.3 / AC-35).
+ */
 export async function commitStorefrontVoucherDraft(input: unknown) {
-  const draft = parseVoucherDraftInput(input);
+  const parsed = parseVoucherCommitInput(input);
   const cartId = readAnonymousCartCookie(await cookies());
-  if (draft === null) return { ok: false, reason: "INVALID_INPUT" } as const;
+  if (parsed === null) return { ok: false, reason: "INVALID_INPUT" } as const;
   if (cartId === null) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
-  const result = await createVoucherSelectionService(prisma, { shopId: readPancakeShopId() }).applyBoth({ cartId, ...draft });
+  const result = await commitVoucherDraft({
+    client: prisma, cartId, shopId: readPancakeShopId(), draft: parsed.draft, consentDigest: parsed.consentDigest,
+    ownHolds: await readCartOwnVoucherHolds(prisma, cartId),
+  });
   if (!result.ok) return { ok: false, reason: result.reason } as const;
   return { ok: true, ...(await respond(result, cartId)) } as const;
 }

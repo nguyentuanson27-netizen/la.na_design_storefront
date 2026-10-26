@@ -15,6 +15,7 @@ import { createStorefrontCartRepository } from "../../src/commerce/storefront-ca
 import { createVoucherHoldFlow } from "../../src/commerce/voucher-hold-flow.ts";
 import { createVoucherHoldService } from "../../src/commerce/voucher-hold-service.ts";
 import { createVoucherOrderAcceptance } from "../../src/commerce/voucher-order-acceptance.ts";
+import { commitVoucherDraft } from "../../src/commerce/voucher-draft-commit.ts";
 import { readVoucherPreview } from "../../src/commerce/voucher-preview.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
@@ -412,6 +413,44 @@ test("AC-08 / AC-35: a voucher that takes the cart below a gift threshold never 
   const result = await submit(checkoutService(pancake, issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })));
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.deepEqual(items(pancake.calls.create[0]!), [[paid.variationId, 2, 425_000]]);
+});
+
+/** The picker's "Áp dụng" for the draft "this voucher, shipping AUTO", with the digest of the quote the picker showed. */
+async function pickerCommit(voucherId: string, consent: "none" | "current" | "stale") {
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { mode: "MANUAL", voucherId }, shipping: { mode: "AUTO" } } });
+  assert.ok(preview.enabled && preview.ok);
+  const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
+  return commitVoucherDraft({
+    client: prisma, cartId, shopId: SHOP, env: ENV, ownHolds: [],
+    draft: { merchandise: { mode: "MANUAL", voucherId }, shipping: { mode: "AUTO", voucherId: null } },
+    consentDigest: consent === "none" ? null : consent === "current" ? digest : "0".repeat(64),
+  });
+}
+
+test("AC-35 at the picker: 'Áp dụng' that costs a chosen gift is refused without consent, refused for a stale quote, and with consent saves the voucher AND repairs the gift together", async () => {
+  await seed({ giftThreshold: 880_000 });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  const m = await fixedVoucher(50_000, 600_000);
+
+  assert.deepEqual(await pickerCommit(m.id, "none"), { ok: false, reason: "CONFIRMATION_REQUIRED" });
+  assert.deepEqual(await pickerCommit(m.id, "stale"), { ok: false, reason: "QUOTE_CHANGED" });
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0, "a refusal writes nothing");
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "and the gift choice is untouched");
+
+  const saved = await pickerCommit(m.id, "current");
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0, "the confirmed loss was carried out with the voucher");
+  const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
+  assert.deepEqual([row.merchandiseMode, row.merchandiseVoucherId], ["MANUAL", m.id]);
+});
+
+test("AC-35 at the picker: a draft that costs no gift needs no consent and touches no gift", async () => {
+  await seed({ giftThreshold: 100_000 });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  const m = await fixedVoucher(50_000, 600_000);
+  const saved = await pickerCommit(m.id, "none");
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1);
 });
 
 test("AC-35: fewer slots than were chosen reduces the choice (newest first) instead of removing it; unrelated choices stay", async () => {

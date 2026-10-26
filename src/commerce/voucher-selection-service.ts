@@ -24,7 +24,7 @@ export type VoucherGroupDraft = Readonly<{ mode: "AUTO" | "MANUAL"; voucherId: s
 
 export type VoucherSelectionResult =
   | Readonly<{ ok: true; selection: VoucherSelectionIntent }>
-  | Readonly<{ ok: false; reason: "FEATURE_DISABLED" | "CART_UNAVAILABLE" | "INVALID_INPUT" | "NOT_AVAILABLE" }>;
+  | Readonly<{ ok: false; reason: "FEATURE_DISABLED" | "CART_UNAVAILABLE" | "INVALID_INPUT" | "NOT_AVAILABLE" | "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED" }>;
 
 export type VoucherCodeResult =
   | Readonly<{ ok: true; selection: VoucherSelectionIntent; card: VoucherCard; group: VoucherGroup }>
@@ -129,7 +129,19 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
    * Commits the picker's "Áp dụng": both groups at once, in one transaction, so a shopper never ends up with half a
    * choice. Each manual voucher is validated exactly like `setGroup`; if either is refused nothing is written.
    */
-  async function applyBoth(input: Readonly<{ cartId: string; merchandise: VoucherGroupDraft; shipping: VoucherGroupDraft; now?: Date }>): Promise<VoucherSelectionResult> {
+  async function applyBoth(input: Readonly<{
+    cartId: string;
+    merchandise: VoucherGroupDraft;
+    shipping: VoucherGroupDraft;
+    now?: Date;
+    /**
+     * Runs INSIDE the transaction, under the cart lock, after the vouchers are validated and BEFORE anything is written. A
+     * refusal writes nothing. This is where the picker's consent to lose gifts is verified against the server's own quote.
+     */
+    beforeSave?: (tx: Prisma.TransactionClient) => Promise<Extract<VoucherSelectionResult, { ok: false }> | null>;
+    /** Runs INSIDE the same transaction right after the selection is written: the gift change the consent bought. */
+    afterSave?: (tx: Prisma.TransactionClient) => Promise<void>;
+  }>): Promise<VoucherSelectionResult> {
     const now = input.now ?? new Date();
     if (!canIssueNewVouchers(env)) return { ok: false, reason: "FEATURE_DISABLED" };
     const drafts: Array<[VoucherGroup, VoucherGroupDraft]> = [["MERCHANDISE", input.merchandise], ["SHIPPING_FREE", input.shipping]];
@@ -147,11 +159,16 @@ export function createVoucherSelectionService(client: PrismaClient, options: Rea
         const campaign = found.find((candidate) => candidate.id === draft.voucherId);
         if (campaign?.kind !== group || (campaign.visibility === "PRIVATE" && !unlocked.has(campaign.id))) return { ok: false, reason: "NOT_AVAILABLE" };
       }
+      if (input.beforeSave) {
+        const refusal = await input.beforeSave(tx);
+        if (refusal !== null) return refusal;
+      }
       const row = await tx.cartVoucherSelection.upsert({
         where: { cartId: cart.id },
         create: { cartId: cart.id, expiresAt: cart.expiresAt, ...columns("MERCHANDISE", input.merchandise.mode, input.merchandise.voucherId), ...columns("SHIPPING_FREE", input.shipping.mode, input.shipping.voucherId) },
         update: { expiresAt: cart.expiresAt, ...columns("MERCHANDISE", input.merchandise.mode, input.merchandise.voucherId), ...columns("SHIPPING_FREE", input.shipping.mode, input.shipping.voucherId) },
       });
+      if (input.afterSave) await input.afterSave(tx);
       return { ok: true, selection: selectionIntentFromRow(row, new Date(0)) };
     });
     return result ?? { ok: false, reason: "CART_UNAVAILABLE" };
