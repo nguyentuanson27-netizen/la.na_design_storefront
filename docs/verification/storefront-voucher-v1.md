@@ -122,6 +122,8 @@ The checkout never applies a voucher the shopper merely picked: a HELD voucher i
 
 Run on a `NODE_ENV=production` build (4/4). Axe is scoped to the voucher panel and the new cart block before the form is filled: the untouched address `<select>` placeholder and the cart's product-image link have existing findings (contrast, label-in-name) that are not part of this change. Not covered: >16 KiB proof UX, expiry while the page is open.
 
+Regression run of the neighbouring specs on the same build (`voucher-picker`, `checkout`, `checkout-benefit`, `cart-gift-picker`; 63 tests): 59 pass. The 4 failures are all axe rule `label-content-name-mismatch` on the cart's product-image link (`aria-label="Xem …"`), code this change did not touch; the local runner has axe-core 4.14.0 where the repo pins 4.12.1 (`tests/a11y-runtime/package.json`), and that rule is stricter in the newer version. CI, which uses the pinned version, is the authority for those four.
+
 ## V14 — trusted cancel, reject and refund once (2026-10-26)
 
 `src/commerce/voucher-redemption-service.ts`; hooks in the submit service (Pancake 4xx on create), the SYNC_UNKNOWN reconciliation (confirmed absence) and the status reconciliation (stored status 7); `pnpm voucher:refund:sweep` for anything a lost hook left. Real PostgreSQL: `voucher-redemption-refund.test.ts` (10), plus the existing order, checkout and voucher suites (231 passed together), domain 3360/0.
