@@ -152,6 +152,7 @@ for (const scenario of [
   { name: "PREORDER with no ready component stock", mode: "PREORDER", componentStock: 0, held: false, preorder: true },
   { name: "OVERSELL with no ready component stock", mode: "OVERSELL", componentStock: 0, held: false, preorder: false },
   { name: "PREORDER with the last ready component held by another order", mode: "PREORDER", componentStock: 1, held: true, preorder: true },
+  { name: "PREORDER retry with its own last ready component held", mode: "PREORDER", componentStock: 1, held: false, preorder: false, ownRetry: true },
 ] as const) test(`composite parent signed checkout and reservation: ${scenario.name}`, async () => {
   const parent = await seed("parent", -20, { sellingMode: scenario.mode, negativeStockLimit: -20 });
   const component = await seed("a", scenario.componentStock);
@@ -192,17 +193,18 @@ for (const scenario of [
   const proof = issueRenderedQuoteProof({ quote, cartId, secret: compositeProofSecret });
   assert.ok(proof, "buyer must receive a real signed quote proof");
 
-  const checkout = await createGuestCheckoutSnapshotService(prisma, {
+  const checkoutInput = {
+    name: "Nguyen Van A", phone: "0901234567", provinceRef: "province-01",
+    districtRef: "district-01", communeRef: "commune-01", detail: "12 Duong A", note: "",
+  };
+  const snapshotService = createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: true,
     verifyRenderedQuote: (currentQuote) => verifyRenderedQuoteProof({
       proof, cartId, currentQuote, secret: compositeProofSecret,
     }),
-  }).create({
-    shopId, cartId, publicCode: `${prefix}-parent-checkout-order`, now,
-    checkoutInput: {
-      name: "Nguyen Van A", phone: "0901234567", provinceRef: "province-01",
-      districtRef: "district-01", communeRef: "commune-01", detail: "12 Duong A", note: "",
-    },
+  });
+  const checkout = await snapshotService.create({
+    shopId, cartId, publicCode: `${prefix}-parent-checkout-order`, now, checkoutInput,
   });
   assert.equal(checkout.ok, true, checkout.ok ? "" : checkout.reason);
   if (!checkout.ok) return;
@@ -214,6 +216,18 @@ for (const scenario of [
     lines: [{ variantId: parent.variant.id, quantity: 1, expectedFulfillmentState }],
   });
   assert.equal(reserved.ok, true, reserved.ok ? "" : reserved.reason);
+  if ("ownRetry" in scenario) {
+    // A previous pre-write failure may leave the website DRAFT and its READY hold intact.
+    // The same signed proof must not be invalidated by subtracting that order's own last unit.
+    const retry = await snapshotService.create({
+      shopId, cartId, publicCode: `${prefix}-parent-checkout-retry`, now, checkoutInput,
+    });
+    assert.equal(retry.ok, true, retry.ok ? "" : retry.reason);
+    if (retry.ok) {
+      assert.equal(retry.order.id, checkout.order.id, "the retry must reuse the held DRAFT");
+      assert.equal(retry.verifiedFulfillmentStateByVariantId.get(parent.variant.id), "READY");
+    }
+  }
 });
 
 test("composite graph and hold reads stay batched as parent variant count grows", async () => {
