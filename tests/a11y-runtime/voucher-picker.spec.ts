@@ -106,6 +106,13 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies([{ name: "la_cart", value: cartId, url: BASE, httpOnly: true, sameSite: "Lax" }]);
 });
 
+
+// Optional review screenshots (H4): written only when H4_SHOTS_DIR is set; CI never sets it, so this changes nothing there.
+const SHOTS_DIR = process.env.H4_SHOTS_DIR;
+async function shot(page: Page, name: string, fullPage = false) {
+  if (SHOTS_DIR) await page.screenshot({ path: `${SHOTS_DIR}/${name}.png`, fullPage });
+}
+
 const selection = () => prisma.cartVoucherSelection.findUnique({ where: { cartId } });
 const trigger = (page: Page) => page.locator("[data-voucher-picker] > button");
 
@@ -114,6 +121,7 @@ test("AC-12: the picker shows two groups, NONE options, the exact shortfall and 
     await page.setViewportSize(viewport);
     await page.goto(`${BASE}/cart`);
     await expect(trigger(page)).toContainText("Đang dùng 2 ưu đãi");
+    await shot(page, `cart-${viewport.width}`, true);
     await trigger(page).click();
     const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
     await expect(dialog).toBeVisible();
@@ -125,6 +133,7 @@ test("AC-12: the picker shows two groups, NONE options, the exact shortfall and 
     await expect(dialog.getByText("Đặt thêm 1.100.000đ để được hưởng ưu đãi này")).toBeVisible();
     await expect(dialog.getByRole("radio", { name: /Giảm 200.000đ/ })).toBeDisabled();
     await expect(dialog.getByRole("button", { name: "Áp dụng • 2 ưu đãi" })).toBeVisible();
+    await shot(page, `picker-${viewport.width}`);
     expect((await new AxeBuilder({ page }).include("dialog").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
     // Touch targets: every radio row is at least 44px tall.
     const heights = await dialog.locator("label:has(input[type=radio])").evaluateAll((labels) => labels.map((label) => label.getBoundingClientRect().height));

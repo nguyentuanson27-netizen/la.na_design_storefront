@@ -1,6 +1,6 @@
 # Voucher v1 — verification status
 
-- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. V09 now has its H1-V live evidence ([POS probe](./storefront-voucher-v1-pos-probe.md), 2026-10-26, 4/4 PASS); V07 (Admin browser/axe) still lacks one piece of evidence. **Not built** (blocked by gates that need a person): V11–V14 (V11–V14 are built; V18 remains), V18 (checkout exposure), V20/V21 completion, H3-V, H4, H5.
+- **Status:** PARTIAL. Built and verified: V00–V06, V08, V10, V15–V17, V19. V09 now has its H1-V live evidence ([POS probe](./storefront-voucher-v1-pos-probe.md), 2026-10-26, 4/4 PASS); V07 (Admin browser/axe) now has it: `tests/a11y-runtime/admin-voucher.spec.ts`, 7 tests on a production build (list, create form, refusal, enable/stale/copy/disable, hostile URL reason, non-admin, 390px; Axe clean; no horizontal overflow). Found, not fixed: after a refused save the Admin form comes back empty (the Server Action redirects), so what was typed is lost. **Not built** (blocked by gates that need a person): V11–V14 (V11–V14 are built; V18 remains), V18 (checkout exposure), V20/V21 completion, H3-V, H4, H5.
 - **Rule used here:** a row is "verified" only when a named test exercises it against real code (and, where the criterion is about the database, a real PostgreSQL). Anything else is "pending" with the reason. Nothing is marked done from code presence.
 - Spec: [`../specs/storefront-voucher-v1.md`](../specs/storefront-voucher-v1.md). Plan: [`../../tasks/storefront-voucher-v1-plan.md`](../../tasks/storefront-voucher-v1-plan.md).
 

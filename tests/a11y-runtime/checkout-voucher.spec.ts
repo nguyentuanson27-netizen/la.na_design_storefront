@@ -117,6 +117,13 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies([{ name: "la_cart", value: cartId, url: BASE, httpOnly: true, sameSite: "Lax" }]);
 });
 
+
+// Optional review screenshots (H4): written only when H4_SHOTS_DIR is set; CI never sets it, so this changes nothing there.
+const SHOTS_DIR = process.env.H4_SHOTS_DIR;
+async function shot(page: Page, name: string, fullPage = false) {
+  if (SHOTS_DIR) await page.screenshot({ path: `${SHOTS_DIR}/${name}.png`, fullPage });
+}
+
 const dropHolds = () =>
   prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica");
@@ -143,6 +150,7 @@ test("an offered voucher is not applied and blocks the order until the shopper c
     await expect(panel(page)).toHaveAttribute("data-checkout-vouchers", "offered");
     await expect(panel(page)).toContainText("Giảm 50.000đ");
     await expect(page.locator("[data-checkout-voucher-total]")).toContainText("880.000");
+    await shot(page, `checkout-offered-${viewport.width}`, true);
     // Nothing is held, nothing is priced: the order cannot be placed with an unconfirmed offer.
     expect(await holds()).toHaveLength(0);
     await expect(submit(page)).toBeDisabled();
@@ -161,6 +169,7 @@ test("an offered voucher is not applied and blocks the order until the shopper c
     await expect(bill).toContainText("−50.000");
     await expect(bill.locator("dd").last()).toContainText("880.000");
     await expect(submit(page)).toBeEnabled();
+    await shot(page, `checkout-held-${viewport.width}`, true);
     // The refresh that applied the voucher kept what the shopper had typed.
     await expect(page.getByLabel("Họ và tên", { exact: false })).toHaveValue("Nguyễn Văn A");
     await expect(page.getByLabel("Số nhà, tên đường", { exact: false })).toHaveValue("12 Đường A");
@@ -278,6 +287,7 @@ test("review 5a62d20 / AC-35: a typed code that costs the shopper a gift is show
   // Valid, but it costs the chosen gift: shown with the warning, NOT saved.
   await expect(dialog).toContainText("Mã hợp lệ");
   await expect(dialog).toContainText("quà đã chọn sẽ được bỏ khỏi giỏ hàng");
+  await shot(page, "picker-code-costs-a-gift-390");
   expect((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).toBeNull();
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
   // The shopper's yes saves the code and removes the gift in one step.
