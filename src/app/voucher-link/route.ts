@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-import { readAnonymousCartCookie } from "@/commerce/anonymous-cart-cookie";
 import { readStorefrontOrigin } from "@/commerce/storefront-origin";
 import {
   VOUCHER_REDIRECT_HEADERS,
@@ -8,17 +7,15 @@ import {
   serializeVoucherIntentCookie,
 } from "@/commerce/voucher-marketing-link";
 import { canIssueNewVouchers } from "@/commerce/voucher-gate";
-import { createVoucherSelectionService } from "@/commerce/voucher-selection-service";
-import { prisma } from "@/db/prisma";
-import { readPancakeShopId } from "@/integrations/pancake/config";
 
 /**
- * Voucher v1 (V19): the server half of a marketing link. The proxy sends `?voucher=CODE` landings here; this handler
- * validates the code through the same throttled path as the typed one (V15), stores the manual choice against the
- * cart, or - for a visitor with no cart yet - remembers the code in an HttpOnly cookie for the cart page to offer, and
- * then redirects to the clean URL. It answers with no body, `Referrer-Policy: no-referrer` and `no-store`, so the code
- * is never in a rendered document, a Referer header or a cache. It never holds quota and never trusts a destination
- * it did not recognise.
+ * Voucher v1 (V19): the server half of a marketing link. The proxy sends `?voucher=CODE` landings here; this handler remembers
+ * the code in an HttpOnly cookie for the cart page to OFFER (pre-filled in the picker's code box) and redirects to the clean
+ * URL. It NEVER saves a voucher choice, whether or not the visitor already has a cart: a GET is a navigation, not a
+ * confirmation, and a code can cost the shopper a chosen gift or raise the total (spec 4.1.4 / 7.3, EX-06), which only the
+ * picker's own "Áp dụng mã" (verify, rate-count, quote, consent, save in one transaction) may settle. It answers with no body,
+ * `Referrer-Policy: no-referrer` and `no-store`, so the code is never in a rendered document, a Referer header or a cache. It never
+ * holds quota and never trusts a destination it did not recognise.
  */
 export async function GET(request: NextRequest): Promise<Response> {
   const target = request.nextUrl.searchParams.get("to");
@@ -31,14 +28,9 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   if (code === null || !canIssueNewVouchers()) return response;
   try {
-    const cartId = readAnonymousCartCookie(request.cookies);
-    if (cartId === null) {
-      response.headers.append("Set-Cookie", serializeVoucherIntentCookie(code, origin));
-      return response;
-    }
-    await createVoucherSelectionService(prisma, { shopId: readPancakeShopId() }).applyCode({ cartId, rawCode: code });
+    response.headers.append("Set-Cookie", serializeVoucherIntentCookie(code, origin));
   } catch {
-    // A link never costs the visitor the page; the code can still be typed.
+    // A link never costs the visitor the page; a code that cannot be remembered can still be typed.
   }
   return response;
 }

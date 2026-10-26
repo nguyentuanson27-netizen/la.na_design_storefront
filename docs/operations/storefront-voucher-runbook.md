@@ -100,7 +100,7 @@ Decisions recorded for v1 (owner, 2026-10-26, "theo khuyến nghị"): (1) while
 
 - A campaign that has run and was switched off, or has ended, is read-only; **Sao chép** makes a new draft.
 - Caps cannot be set below *redeemed-not-refunded + live holds*. The screen shows the committed budget; the database refuses a lower cap even if a script tries.
-- A PRIVATE voucher is reachable only through its code (rate-limited); a link `?voucher=CODE` is validated, the parameter is stripped by redirect, and the code never reaches a rendered page or a later request URL (AC-40).
+- A PRIVATE voucher is reachable only through its code (rate-limited); a link `?voucher=CODE` is only **offered**: the parameter is stripped by redirect, the code waits in an HttpOnly cookie and is pre-filled in the picker's code box, and **nothing is saved by the link** (a GET is a navigation, not a confirmation); the shopper applies it with "Áp dụng mã", which verifies, rate-counts, quotes and asks for consent before saving. The code never reaches a rendered page or a later request URL (AC-40).
 
 ## 7. Release checklist for the person flipping the switch
 

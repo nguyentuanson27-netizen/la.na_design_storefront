@@ -416,6 +416,47 @@ test("review beca608: dropping a voucher while the price cannot be derived is sa
   expect([row.merchandiseMode, row.merchandiseVoucherId]).toEqual(["MANUAL", null]);
 });
 
+test("review 54cb476: a marketing link to a code that would cost a chosen gift saves nothing; the picker offers it and only the shopper's consent applies it", async ({ page }) => {
+  const gift = await prisma.productMirror.create({
+    data: { pancakeShopId: SHOP, pancakeProductId: `${PREFIX}gift5`, slug: `${PREFIX}gift5`, name: "Khăn quà", isActive: true, isPresent: true, syncedAt: new Date(),
+      variants: { create: { pancakeVariationId: `${PREFIX}gift5-var`, color: "Trắng", size: "M", isActive: true, isPresent: true, syncedAt: new Date(), pancakeRetailPrice: 100_000, pancakeRetailPriceAfterDiscount: 100_000,
+        warehouseStocks: { create: { pancakeWarehouseId: `${PREFIX}wh`, quantity: 10, syncedAt: new Date() } } } } },
+    include: { variants: true },
+  });
+  const campaignId = `${PREFIX}gift5`;
+  await prisma.giftQuantityCampaign.create({
+    data: {
+      id: campaignId, kind: "GIFT_ITEM", name: "Quà 880K", isEnabled: true, enabledAt: new Date(), scopeMode: "GLOBAL_ALL_PAID_LINES",
+      giftTrigger: "ORDER_SUBTOTAL", minimumSubtotalVnd: 880_000, subtotalScope: "ALL_PAID_LINES", awardMode: "ONCE",
+      maxGiftsPerOrder: 1, allowDuplicateGifts: false, giftOptions: { create: { variantId: gift.variants[0]!.id } },
+    },
+  });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: gift.variants[0]!.id, quantity: 1, campaignRevision: 1 } });
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL73", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 73K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  await prisma.cartVoucherSelection.deleteMany({ where: { cartId } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  // The shopper has a cart with the gift chosen and follows the link. The GET must not touch the choice or the gift.
+  await page.goto(`${BASE}/shop/${PREFIX}dress?voucher=KOL73`);
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
+  await page.goto(`${BASE}/cart`);
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await expect(dialog.getByLabel("Nhập mã khuyến mãi")).toHaveValue(/KOL73/i);
+  await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
+  // The code is valid but costs the gift: shown with the warning, still NOT saved.
+  await expect(dialog).toContainText("quà đã chọn sẽ được bỏ khỏi giỏ hàng");
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
+  // Declining (closing the picker) keeps everything as it was.
+  await dialog.getByRole("button", { name: "Quay lại, giữ lựa chọn cũ" }).click();
+  await expect(dialog).toBeHidden();
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
+});
+
 test("a voucher that costs a gift needs the shopper's own consent before it can be held", async ({ page }) => {
   const gift = await prisma.productMirror.create({
     data: { pancakeShopId: SHOP, pancakeProductId: `${PREFIX}gift`, slug: `${PREFIX}gift`, name: "Khăn quà", isActive: true, isPresent: true, syncedAt: new Date(),
