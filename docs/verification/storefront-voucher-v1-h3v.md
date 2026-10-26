@@ -1,7 +1,7 @@
 # Voucher v1 — H3-V browser evidence (AC-42 / AC-43 / TG-12)
 
 - **Status:** **re-opened by the second H3-V review** (two P1 found in the flow logic, now fixed with regression tests); this document is being re-validated against the fixed code (see "Second review"). H3-V is **not** closed.
-- **Code under test:** commit `68112c8db809a4cf1115157f29930aa75a346e35` (recorded in the evidence file). Run 2026-10-26, Node 22, Chromium (Desktop Chrome profile), PostgreSQL 16, **no Pancake call**.
+- **Code under test:** commit `bc0229264a15962d41961b48277eac5025e22a50` (recorded in the evidence file; re-run after the second review fixes). Run 2026-10-26, Node 22, Chromium (Desktop Chrome profile), PostgreSQL 16, **no Pancake call**.
 - **Raw, sanitized evidence:** [`storefront-voucher-v1-h3v-browser-evidence.json`](./storefront-voucher-v1-h3v-browser-evidence.json). Re-run with `pnpm voucher:hold-harness` (needs `DATABASE_URL`, `BETTER_AUTH_SECRET`; CI job `voucher-hold-harness`).
 
 ## How it is built (and why it adds nothing to production)

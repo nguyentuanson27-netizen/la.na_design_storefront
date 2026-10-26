@@ -1,7 +1,7 @@
 {
-  "commit": "68112c8db809a4cf1115157f29930aa75a346e35",
+  "commit": "bc0229264a15962d41961b48277eac5025e22a50",
   "node": "v22.22.0",
-  "startedAt": "2026-10-26T04:06:20.790Z",
+  "startedAt": "2026-10-26T04:35:17.810Z",
   "officialArtifact": {
     "executableOutputFilesNamingHarnessRoute": 0,
     "executableOutputFilesNamingHoldAction": 0,
@@ -39,7 +39,7 @@
             "campaign": "campaign1",
             "reservedUses": 0,
             "reservedVnd": 0,
-            "updatedAtMs": 1792987692331
+            "updatedAtMs": 1792989432555
           }
         ]
       },
@@ -50,7 +50,7 @@
             "campaign": "campaign1",
             "reservedUses": 0,
             "reservedVnd": 0,
-            "updatedAtMs": 1792987692331
+            "updatedAtMs": 1792989432555
           }
         ]
       },
@@ -59,7 +59,7 @@
     "AC-43": {
       "networkTab1": {
         "documents": 2,
-        "rscPrefetch": 43,
+        "rscPrefetch": 50,
         "rscNavigation": 3,
         "holdActionPosts": 3,
         "otherServerActionPosts": 2,
@@ -80,7 +80,7 @@
             "campaign": "campaign1",
             "reservedUses": 0,
             "reservedVnd": 0,
-            "updatedAtMs": 1792987695289
+            "updatedAtMs": 1792989435676
           }
         ]
       },
@@ -91,8 +91,8 @@
             "kind": "MERCHANDISE",
             "campaign": "campaign1",
             "heldVnd": 50000,
-            "createdAtMs": 1792987695887,
-            "expiresAtMs": 1792988295887
+            "createdAtMs": 1792989436322,
+            "expiresAtMs": 1792990036322
           }
         ],
         "campaigns": [
@@ -100,7 +100,7 @@
             "campaign": "campaign1",
             "reservedUses": 1,
             "reservedVnd": 50000,
-            "updatedAtMs": 1792987695289
+            "updatedAtMs": 1792989435676
           }
         ]
       },
@@ -111,8 +111,8 @@
             "kind": "MERCHANDISE",
             "campaign": "campaign1",
             "heldVnd": 50000,
-            "createdAtMs": 1792987695887,
-            "expiresAtMs": 1792988295887
+            "createdAtMs": 1792989436322,
+            "expiresAtMs": 1792990036322
           }
         ],
         "campaigns": [
@@ -120,7 +120,7 @@
             "campaign": "campaign1",
             "reservedUses": 1,
             "reservedVnd": 50000,
-            "updatedAtMs": 1792987695289
+            "updatedAtMs": 1792989435676
           }
         ]
       },
@@ -145,13 +145,13 @@
             "campaign": "campaign1",
             "reservedUses": 0,
             "reservedVnd": 0,
-            "updatedAtMs": 1792987698518
+            "updatedAtMs": 1792989438941
           },
           {
             "campaign": "campaign2",
             "reservedUses": 0,
             "reservedVnd": 0,
-            "updatedAtMs": 1792987698521
+            "updatedAtMs": 1792989438943
           }
         ]
       },
@@ -162,8 +162,8 @@
             "kind": "MERCHANDISE",
             "campaign": "campaign2",
             "heldVnd": 50000,
-            "createdAtMs": 1792987699755,
-            "expiresAtMs": 1792988299755
+            "createdAtMs": 1792989440305,
+            "expiresAtMs": 1792990040305
           }
         ],
         "campaigns": [
@@ -171,13 +171,13 @@
             "campaign": "campaign1",
             "reservedUses": 0,
             "reservedVnd": 0,
-            "updatedAtMs": 1792987698518
+            "updatedAtMs": 1792989438941
           },
           {
             "campaign": "campaign2",
             "reservedUses": 1,
             "reservedVnd": 50000,
-            "updatedAtMs": 1792987698521
+            "updatedAtMs": 1792989438943
           }
         ]
       }
@@ -192,7 +192,7 @@
               "campaign": "campaign1",
               "reservedUses": 0,
               "reservedVnd": 0,
-              "updatedAtMs": 1792987700061
+              "updatedAtMs": 1792989440541
             }
           ]
         }
@@ -205,8 +205,8 @@
               "kind": "MERCHANDISE",
               "campaign": "campaign1",
               "heldVnd": 10000,
-              "createdAtMs": 1792987700961,
-              "expiresAtMs": 1792988300961
+              "createdAtMs": 1792989441434,
+              "expiresAtMs": 1792990041434
             }
           ],
           "campaigns": [
@@ -214,7 +214,7 @@
               "campaign": "campaign1",
               "reservedUses": 1,
               "reservedVnd": 10000,
-              "updatedAtMs": 1792987700061
+              "updatedAtMs": 1792989440541
             }
           ]
         }
@@ -231,7 +231,7 @@
             "campaign": "campaign1",
             "reservedUses": 0,
             "reservedVnd": 0,
-            "updatedAtMs": 1792987701077
+            "updatedAtMs": 1792989441515
           }
         ]
       },
@@ -242,8 +242,8 @@
             "kind": "MERCHANDISE",
             "campaign": "campaign1",
             "heldVnd": 49950,
-            "createdAtMs": 1792987702749,
-            "expiresAtMs": 1792988302749
+            "createdAtMs": 1792989443220,
+            "expiresAtMs": 1792990043220
           }
         ],
         "campaigns": [
@@ -251,7 +251,7 @@
             "campaign": "campaign1",
             "reservedUses": 1,
             "reservedVnd": 49950,
-            "updatedAtMs": 1792987701077
+            "updatedAtMs": 1792989441515
           }
         ]
       }
@@ -379,5 +379,5 @@
       "detail": "exit 0"
     }
   ],
-  "finishedAt": "2026-10-26T04:08:23.110Z"
+  "finishedAt": "2026-10-26T04:37:23.477Z"
 }

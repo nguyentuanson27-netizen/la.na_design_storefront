@@ -19,9 +19,14 @@ import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
  * UI shows what the server decided, not what the browser expected (spec §7.3: "không báo thành công chỉ từ click").
  */
 
-async function respond(selected: { ok: boolean }, cartId: string, selectionOverride?: VoucherSelectionIntent) {
+/**
+ * `refreshPage: false` is for a caller whose dialog is still open: the page re-render re-keys the picker
+ * (`voucherPickerKey`), which would remount it and close the dialog the shopper is looking at. The picker already
+ * holds the model the server just answered with, so nothing is lost by not refreshing behind it.
+ */
+async function respond(selected: { ok: boolean }, cartId: string, selectionOverride?: VoucherSelectionIntent, refreshPage = true) {
   const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now: new Date(), ownHolds: await readCartOwnVoucherHolds(prisma, cartId), ...(selectionOverride ? { selectionOverride } : {}) });
-  if (selected.ok) refresh();
+  if (selected.ok && refreshPage) refresh();
   if (!preview.enabled || !preview.ok) return { picker: null } as const;
   return { picker: buildVoucherPickerModel({ quote: preview.quote, entries: preview.entries, intent: preview.selectionIntent, quoteDigest: preview.quoteDigest }) } as const;
 }
@@ -43,7 +48,8 @@ export async function applyStorefrontVoucherCode(input: unknown) {
   if (cartId === null) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
   const result = await createVoucherSelectionService(prisma, { shopId: readPancakeShopId() }).applyCode({ cartId, rawCode: code });
   if (!result.ok) return { ok: false, reason: result.reason } as const;
-  return { ok: true, group: result.group, ...(await respond(result, cartId)) } as const;
+  // The dialog stays open on the checked voucher: no page refresh (it would remount the picker and close it).
+  return { ok: true, group: result.group, ...(await respond(result, cartId, undefined, false)) } as const;
 }
 
 /** Resolve an ambiguous write by reading the cookie-owned cart; never repeat the write. */
