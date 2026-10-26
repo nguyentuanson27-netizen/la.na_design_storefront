@@ -37,7 +37,19 @@ export async function setStorefrontVoucherSelection(input: unknown) {
   const cartId = readAnonymousCartCookie(await cookies());
   if (parsed === null) return { ok: false, reason: "INVALID_INPUT" } as const;
   if (cartId === null) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
-  const result = await createVoucherSelectionService(prisma, { shopId: readPancakeShopId() }).setGroup({ cartId, ...parsed });
+  const shopId = readPancakeShopId();
+  // One group at a time is the picker's two-group commit with the other group left as it is saved, so it meets the same
+  // rule: a choice that costs a chosen gift or raises the total needs the explicit consent only the picker's commit carries.
+  const current = await createVoucherSelectionService(prisma, { shopId }).read(cartId);
+  const keep = (group: { mode: "AUTO" } | { mode: "MANUAL"; voucherId: string | null }) => ({ mode: group.mode, voucherId: group.mode === "MANUAL" ? group.voucherId : null });
+  const next = { mode: parsed.mode, voucherId: parsed.voucherId };
+  const result = await commitVoucherDraft({
+    client: prisma, cartId, shopId, consentDigest: null, ownHolds: await readCartOwnVoucherHolds(prisma, cartId),
+    draft: {
+      merchandise: parsed.group === "MERCHANDISE" ? next : keep(current.merchandise),
+      shipping: parsed.group === "SHIPPING_FREE" ? next : keep(current.shipping),
+    },
+  });
   if (!result.ok) return { ok: false, reason: result.reason } as const;
   return { ok: true, ...(await respond(result, cartId)) } as const;
 }

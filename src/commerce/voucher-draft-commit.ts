@@ -44,9 +44,15 @@ export async function commitVoucherDraft(input: Readonly<{
       const preview = await readVoucherPreviewWithin(tx, { cartId, shopId, now, env, ownHolds, selectionOverride });
       // A preview that cannot be derived keeps the old behaviour: the intent is saved and the hold flow judges it.
       if (!preview.enabled || !preview.ok) return null;
-      if ((preview.quote.giftLoss?.selectedSlotsLost ?? 0) <= 0) return null;
+      // A consent the shopper gave is always held against the quote the server derives now, even if this draft happens to need none.
+      if (consentDigest !== null && preview.quoteDigest !== consentDigest) return { ok: false, reason: "QUOTE_CHANGED" } as const;
+      const giftLost = (preview.quote.giftLoss?.selectedSlotsLost ?? 0) > 0;
+      // What costs the shopper something needs their explicit yes BEFORE it is saved (spec 4.1.7 / 7.3, AC-29 / AC-35): a chosen gift
+      // lost, or a total that rises against the no-voucher cart (a lost campaign free-ship, a higher fee: EX-06).
+      const needsConsent = giftLost || preview.quote.confirmation !== null;
+      if (!needsConsent) return null;
       if (consentDigest === null) return { ok: false, reason: "CONFIRMATION_REQUIRED" } as const;
-      if (preview.quoteDigest !== consentDigest) return { ok: false, reason: "QUOTE_CHANGED" } as const;
+      if (!giftLost) return null;
       const gifts = giftsAfterVoucher(preview);
       if (gifts === null || preview.giftState === null) return { ok: false, reason: "QUOTE_CHANGED" } as const;
       repair = { entitlements: gifts.entitlements, counting: countingKeys(preview.giftState.selections) };

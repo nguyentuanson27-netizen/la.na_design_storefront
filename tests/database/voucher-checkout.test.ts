@@ -453,6 +453,33 @@ test("AC-35 at the picker: a draft that costs no gift needs no consent and touch
   assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1);
 });
 
+test("EX-06 / AC-29 at the picker: a voucher that makes the total RISE (it costs a non-stacking free-ship campaign) is refused without consent, saved only with it", async () => {
+  await seed();
+  const variant = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paid.variantId }, select: { productId: true } });
+  await prisma.productCategoryMembership.create({ data: { productId: variant.productId, categoryKey: "vayDam" } });
+  await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: SHOP, name: "Freeship vay", isEnabled: true, enabledAt: PAST, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] } });
+  const m = await fixedVoucher(10_000, 600_000);
+  // The cart ships free by the campaign; the 10.000đ voucher would bring the 30.000đ fee back: the total rises by 20.000đ.
+  const risen = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "AUTO" } } });
+  assert.ok(risen.enabled && risen.ok);
+  assert.deepEqual(risen.enabled && risen.ok ? risen.quote.confirmation : null, { totalIncreaseVnd: 20_000, shippingFeeIncreaseVnd: 30_000 });
+
+  assert.deepEqual(await pickerCommit(m.id, "none"), { ok: false, reason: "CONFIRMATION_REQUIRED" });
+  assert.deepEqual(await pickerCommit(m.id, "stale"), { ok: false, reason: "QUOTE_CHANGED" });
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0, "a refusal writes nothing");
+  const saved = await pickerCommit(m.id, "current");
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, m.id);
+});
+
+test("a consent for a quote that is no longer the server's is refused even when the draft itself needs none", async () => {
+  await seed({ giftThreshold: 100_000 });
+  const m = await fixedVoucher(50_000, 600_000);
+  assert.deepEqual(await pickerCommit(m.id, "stale"), { ok: false, reason: "QUOTE_CHANGED" });
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0);
+  assert.equal((await pickerCommit(m.id, "none")).ok, true, "and with no consent offered, a draft that costs nothing is saved as before");
+});
+
 test("AC-35: fewer slots than were chosen reduces the choice (newest first) instead of removing it; unrelated choices stay", async () => {
   await seed({ giftThreshold: 440_000 });
   // 900.000đ = 2 slots; 850.000đ after the voucher = 1 slot.
