@@ -1,0 +1,383 @@
+{
+  "commit": "68112c8db809a4cf1115157f29930aa75a346e35",
+  "node": "v22.22.0",
+  "startedAt": "2026-10-26T04:06:20.790Z",
+  "officialArtifact": {
+    "executableOutputFilesNamingHarnessRoute": 0,
+    "executableOutputFilesNamingHoldAction": 0,
+    "fileTraceListsNamingHarnessSourcePaths": 3,
+    "fileTraceListsNamingHoldAction": 0,
+    "statusesWithTestEnvVariableSet": {
+      "harness": 404,
+      "other": 404,
+      "cart": 200
+    },
+    "manifestsChecked": [
+      "app-path-routes-manifest.json",
+      "routes-manifest.json",
+      "server/app-paths-manifest.json",
+      "build-manifest.json",
+      "prerender-manifest.json",
+      "server/server-reference-manifest.json",
+      "required-server-files.json"
+    ]
+  },
+  "scenarios": {
+    "AC-42": {
+      "network": {
+        "documents": 3,
+        "rscPrefetch": 87,
+        "rscNavigation": 4,
+        "holdActionPosts": 0,
+        "otherServerActionPosts": 3,
+        "postsThatAreNotServerActions": 0
+      },
+      "databaseBefore": {
+        "holds": [],
+        "campaigns": [
+          {
+            "campaign": "campaign1",
+            "reservedUses": 0,
+            "reservedVnd": 0,
+            "updatedAtMs": 1792987692331
+          }
+        ]
+      },
+      "databaseAfter": {
+        "holds": [],
+        "campaigns": [
+          {
+            "campaign": "campaign1",
+            "reservedUses": 0,
+            "reservedVnd": 0,
+            "updatedAtMs": 1792987692331
+          }
+        ]
+      },
+      "unchanged": true
+    },
+    "AC-43": {
+      "networkTab1": {
+        "documents": 2,
+        "rscPrefetch": 43,
+        "rscNavigation": 3,
+        "holdActionPosts": 3,
+        "otherServerActionPosts": 2,
+        "postsThatAreNotServerActions": 0
+      },
+      "networkTab2": {
+        "documents": 1,
+        "rscPrefetch": 29,
+        "rscNavigation": 1,
+        "holdActionPosts": 1,
+        "otherServerActionPosts": 1,
+        "postsThatAreNotServerActions": 0
+      },
+      "databaseBefore": {
+        "holds": [],
+        "campaigns": [
+          {
+            "campaign": "campaign1",
+            "reservedUses": 0,
+            "reservedVnd": 0,
+            "updatedAtMs": 1792987695289
+          }
+        ]
+      },
+      "databaseAfterFirstClick": {
+        "holds": [
+          {
+            "state": "HELD",
+            "kind": "MERCHANDISE",
+            "campaign": "campaign1",
+            "heldVnd": 50000,
+            "createdAtMs": 1792987695887,
+            "expiresAtMs": 1792988295887
+          }
+        ],
+        "campaigns": [
+          {
+            "campaign": "campaign1",
+            "reservedUses": 1,
+            "reservedVnd": 50000,
+            "updatedAtMs": 1792987695289
+          }
+        ]
+      },
+      "databaseAfterDoubleClickSecondTabAndNavigation": {
+        "holds": [
+          {
+            "state": "HELD",
+            "kind": "MERCHANDISE",
+            "campaign": "campaign1",
+            "heldVnd": 50000,
+            "createdAtMs": 1792987695887,
+            "expiresAtMs": 1792988295887
+          }
+        ],
+        "campaigns": [
+          {
+            "campaign": "campaign1",
+            "reservedUses": 1,
+            "reservedVnd": 50000,
+            "updatedAtMs": 1792987695289
+          }
+        ]
+      },
+      "ttlMs": 600000,
+      "holdCount": 1,
+      "reservedUses": 1
+    },
+    "CSRF": {
+      "forgedOriginStatus": 500,
+      "forgedHeldAnything": false,
+      "holdsAfterForged": 0,
+      "sameOriginControlStatus": 200,
+      "holdsAfterControl": 1
+    },
+    "AC-34-same-total": {
+      "totalShown": "880000",
+      "refusedReason": "QUOTE_CHANGED",
+      "databaseAfterRefusal": {
+        "holds": [],
+        "campaigns": [
+          {
+            "campaign": "campaign1",
+            "reservedUses": 0,
+            "reservedVnd": 0,
+            "updatedAtMs": 1792987698518
+          },
+          {
+            "campaign": "campaign2",
+            "reservedUses": 0,
+            "reservedVnd": 0,
+            "updatedAtMs": 1792987698521
+          }
+        ]
+      },
+      "databaseAfterRefresh": {
+        "holds": [
+          {
+            "state": "HELD",
+            "kind": "MERCHANDISE",
+            "campaign": "campaign2",
+            "heldVnd": 50000,
+            "createdAtMs": 1792987699755,
+            "expiresAtMs": 1792988299755
+          }
+        ],
+        "campaigns": [
+          {
+            "campaign": "campaign1",
+            "reservedUses": 0,
+            "reservedVnd": 0,
+            "updatedAtMs": 1792987698518
+          },
+          {
+            "campaign": "campaign2",
+            "reservedUses": 1,
+            "reservedVnd": 50000,
+            "updatedAtMs": 1792987698521
+          }
+        ]
+      }
+    },
+    "consent": {
+      "withoutConsent": {
+        "reason": "CONFIRMATION_REQUIRED",
+        "database": {
+          "holds": [],
+          "campaigns": [
+            {
+              "campaign": "campaign1",
+              "reservedUses": 0,
+              "reservedVnd": 0,
+              "updatedAtMs": 1792987700061
+            }
+          ]
+        }
+      },
+      "withConsent": {
+        "database": {
+          "holds": [
+            {
+              "state": "HELD",
+              "kind": "MERCHANDISE",
+              "campaign": "campaign1",
+              "heldVnd": 10000,
+              "createdAtMs": 1792987700961,
+              "expiresAtMs": 1792988300961
+            }
+          ],
+          "campaigns": [
+            {
+              "campaign": "campaign1",
+              "reservedUses": 1,
+              "reservedVnd": 10000,
+              "updatedAtMs": 1792987700061
+            }
+          ]
+        }
+      }
+    },
+    "proof-failure": {
+      "reason": "PROOF_UNAVAILABLE",
+      "cartLines": 50,
+      "signedProofLines": 100,
+      "databaseAfterFailure": {
+        "holds": [],
+        "campaigns": [
+          {
+            "campaign": "campaign1",
+            "reservedUses": 0,
+            "reservedVnd": 0,
+            "updatedAtMs": 1792987701077
+          }
+        ]
+      },
+      "databaseAfterNextBuyer": {
+        "holds": [
+          {
+            "state": "HELD",
+            "kind": "MERCHANDISE",
+            "campaign": "campaign1",
+            "heldVnd": 49950,
+            "createdAtMs": 1792987702749,
+            "expiresAtMs": 1792988302749
+          }
+        ],
+        "campaigns": [
+          {
+            "campaign": "campaign1",
+            "reservedUses": 1,
+            "reservedVnd": 49950,
+            "updatedAtMs": 1792987701077
+          }
+        ]
+      }
+    }
+  },
+  "checks": [
+    {
+      "name": "official build: no harness route directory",
+      "ok": true,
+      "detail": ".next-vhh/server/app/voucher-hold-harness absent"
+    },
+    {
+      "name": "official build: app-path-routes-manifest.json names no harness route",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: app-path-routes-manifest.json names no hold action",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: routes-manifest.json names no harness route",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: routes-manifest.json names no hold action",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: server/app-paths-manifest.json names no harness route",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: server/app-paths-manifest.json names no hold action",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: build-manifest.json names no harness route",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: build-manifest.json names no hold action",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: prerender-manifest.json names no harness route",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: prerender-manifest.json names no hold action",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: server/server-reference-manifest.json names no harness route",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: server/server-reference-manifest.json names no hold action",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: required-server-files.json names no harness route",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: required-server-files.json names no hold action",
+      "ok": true,
+      "detail": "no occurrence"
+    },
+    {
+      "name": "official build: no executable output file mentions the harness route",
+      "ok": true,
+      "detail": "0 file(s)"
+    },
+    {
+      "name": "official build: no executable output file mentions the hold Server Action",
+      "ok": true,
+      "detail": "0 file(s) — the action is not reachable from any production page"
+    },
+    {
+      "name": "official build: no file trace mentions the hold Server Action",
+      "ok": true,
+      "detail": "0 file(s)"
+    },
+    {
+      "name": "official server with LA_VOUCHER_TEST_HARNESS=true: harness URL is 404",
+      "ok": true,
+      "detail": "GET /voucher-hold-harness → 404, /voucher-hold-harness/other → 404"
+    },
+    {
+      "name": "official server answers a real page",
+      "ok": true,
+      "detail": "GET /cart → 200"
+    },
+    {
+      "name": "test build: the harness route IS present (positive control)",
+      "ok": true,
+      "detail": "app-path-routes-manifest.json lists it"
+    },
+    {
+      "name": "test build: the hold action IS present (positive control)",
+      "ok": true,
+      "detail": "7 file(s)"
+    },
+    {
+      "name": "test build: the hold action has an id in the server reference manifest",
+      "ok": true,
+      "detail": "found"
+    },
+    {
+      "name": "playwright: every voucher-hold scenario passed",
+      "ok": true,
+      "detail": "exit 0"
+    }
+  ],
+  "finishedAt": "2026-10-26T04:08:23.110Z"
+}
