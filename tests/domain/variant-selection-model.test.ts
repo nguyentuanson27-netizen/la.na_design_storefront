@@ -646,10 +646,77 @@ test("mobile complete summary follows kind, color, size and ready action becomes
 
   assert.deepEqual(resolveMobilePurchasePresentation(view, selection), {
     actionLabel: "Thêm vào giỏ",
+    stickyActionLabel: "Mua ngay",
     summary: "Nguyên bộ · Trắng · M",
     readyToAdd: true,
     unavailableMessage: "",
   });
+});
+
+test("the sticky bar offers buy-now only for a ready selection and keeps its other states", () => {
+  const options = [
+    option({ id: "ready-m", color: "Đen", size: "M" }),
+    option({ id: "ready-l", color: "Đen", size: "L" }),
+    option({
+      id: "sold-out",
+      color: "Đen",
+      size: "S",
+      purchasable: false,
+      unavailableReason: "OUT_OF_STOCK",
+    }),
+  ];
+  const sticky = (selection: { kindKey: string | null; color: string | null; size: string | null }) =>
+    resolveMobilePurchasePresentation(
+      resolveVariantSelectionView({ options, productLevelOptions: options, selection }),
+      selection,
+    );
+
+  // Incomplete: the bar names what is still to choose, exactly as before.
+  const incomplete = sticky({ kindKey: null, color: null, size: null });
+  assert.equal(incomplete.stickyActionLabel, "Chọn màu / size");
+  assert.equal(incomplete.stickyActionLabel, incomplete.actionLabel);
+  // Genuinely unavailable: the buyer-safe sentence, never a purchase word.
+  const unavailable = sticky({ kindKey: null, color: "Đen", size: "S" });
+  assert.equal(unavailable.stickyActionLabel, "Lựa chọn này tạm hết");
+  assert.equal(unavailable.readyToAdd, false);
+  // Ready: buy-now on the bar, while the sheet's add-to-bag word is untouched.
+  const ready = sticky({ kindKey: null, color: "Đen", size: "M" });
+  assert.equal(ready.stickyActionLabel, "Mua ngay");
+  assert.equal(ready.actionLabel, "Thêm vào giỏ");
+});
+
+test("a preorder selection never reads Mua ngay: each button says its own destination", () => {
+  const preorderOptions = [option({ id: "pre-m", color: "Đen", size: "M", isPreorderSale: true })];
+  const readyOptions = [option({ id: "ready-m", color: "Đen", size: "M" })];
+  const selection = { kindKey: null, color: "Đen", size: "M" } as const;
+  const resolve = (options: StorefrontProjectionOption[]) => {
+    const view = resolveVariantSelectionView({ options, productLevelOptions: options, selection });
+    return { view, mobile: resolveMobilePurchasePresentation(view, selection) };
+  };
+
+  const preorder = resolve(preorderOptions);
+  assert.equal(preorder.view.isPreorderSelection, true);
+  // §30's word leads both buttons, and each one says where it goes -- a bare "Đặt trước" on both
+  // would leave only the colour to tell a shopper which button checks the whole cart out.
+  assert.equal(preorder.view.buyNowLabel, "Đặt trước · Thanh toán");
+  assert.equal(preorder.view.addToBagLabel, "Đặt trước · Thêm vào giỏ");
+  assert.notEqual(preorder.view.buyNowLabel, preorder.view.addToBagLabel);
+  // One word for every buy-now surface.
+  assert.equal(preorder.mobile.stickyActionLabel, preorder.view.buyNowLabel);
+  assert.equal(preorder.mobile.actionLabel, preorder.view.addToBagLabel);
+  // Each accessible name contains its own visible label, and the two names stay apart.
+  assert.equal(preorder.view.buyNowAccessibleName, "Đặt trước · Thanh toán ngay");
+  assert.equal(preorder.view.addToBagAccessibleName, "Đặt trước · Thêm vào giỏ hàng");
+  assert.ok(preorder.view.buyNowAccessibleName.includes(preorder.view.buyNowLabel));
+  assert.ok(preorder.view.addToBagAccessibleName.includes(preorder.view.addToBagLabel));
+  assert.notEqual(preorder.view.buyNowAccessibleName, preorder.view.addToBagAccessibleName);
+
+  const ready = resolve(readyOptions);
+  assert.equal(ready.view.buyNowLabel, "Mua ngay");
+  assert.equal(ready.view.buyNowAccessibleName, "Mua ngay");
+  assert.equal(ready.view.addToBagAccessibleName, "Thêm vào giỏ hàng");
+  assert.ok(ready.view.addToBagAccessibleName.includes(ready.view.addToBagLabel));
+  assert.equal(ready.mobile.stickyActionLabel, "Mua ngay");
 });
 
 test("genuine selected stock failure uses the buyer-safe mobile wording", () => {

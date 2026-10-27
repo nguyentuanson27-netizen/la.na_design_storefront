@@ -999,6 +999,149 @@ test("Mua ngay reuses canonical cart authority before navigating to checkout", a
   await expect(cartLine.getByText(/890\.000.*₫/).first()).toBeVisible();
 });
 
+/**
+ * Completes Black / M in the phone selection sheet and closes it, leaving the selection in place so
+ * the sticky bar is what the shopper presses next.
+ */
+async function chooseBlackMediumThenCloseSheet(page: Page) {
+  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button");
+  await stickyCta.click();
+  const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
+  await sheet.getByRole("group", { name: "Kích cỡ" }).getByText("M", { exact: true }).click();
+  await sheet.getByRole("button", { name: "Đóng lựa chọn sản phẩm", exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  return stickyCta;
+}
+
+test("the phone sticky bar buys now: incomplete opens the sheet, complete goes to checkout with the exact variant", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const postRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST") postRequests.push(request.url());
+  });
+
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button");
+
+  // Nothing chosen: the bar still asks for the choices and starts no purchase.
+  await expect(stickyCta).toHaveText("Chọn màu / size");
+  const postCountBeforeSheet = postRequests.length;
+  await stickyCta.click();
+  await expect(page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" })).toBeVisible();
+  expect(postRequests, "opening the sheet is not a purchase attempt").toHaveLength(postCountBeforeSheet);
+  expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
+  await page.getByRole("button", { name: "Đóng lựa chọn sản phẩm", exact: true }).click();
+  await expect(page).toHaveURL(`${BASE_URL}/shop/${productSlug}`);
+
+  const ready = await chooseBlackMediumThenCloseSheet(page);
+  await expect(ready).toHaveText("Mua ngay");
+  await ready.click();
+
+  await expect(page).toHaveURL(`${BASE_URL}/checkout`);
+  await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
+  // The cart drawer is not part of this path.
+  await expect(page.getByRole("dialog", { name: "Giỏ hàng" })).toHaveCount(0);
+
+  const cartId = (await page.context().cookies()).find(({ name }) => name === "la_cart")?.value;
+  expect(cartId, "the buy-now add created the cart").toBeTruthy();
+  const items = await prisma.cartItem.findMany({
+    where: { cartId: cartId! },
+    include: { variant: true },
+  });
+  expect(items.map((item) => [item.variant.pancakeVariationId, item.quantity])).toEqual([
+    [variantExternalId, 1],
+  ]);
+  // The order summary is a collapsed disclosure on a phone, so the lines are attached, not shown.
+  await expect(
+    page.locator('[data-line-role="paid"]').filter({ hasText: productName }).first(),
+  ).toBeAttached();
+
+  await page.context().clearCookies({ name: "la_cart" });
+});
+
+test("a failed add from the phone sticky bar does not navigate to checkout", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  const ready = await chooseBlackMediumThenCloseSheet(page);
+  await expect(ready).toHaveText("Mua ngay");
+
+  await page.route("**/shop/**", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.abort("failed");
+      return;
+    }
+    await route.fallback();
+  });
+
+  const failedAdd = page.waitForEvent("requestfailed", (request) => request.method() === "POST");
+  await ready.click();
+  await failedAdd;
+
+  // Only a server-confirmed add may leave the product page.
+  await expect(page).toHaveURL(`${BASE_URL}/shop/${productSlug}`);
+  await expect(ready).toBeEnabled();
+  // The shopper is told why, beside the button they pressed and inside the viewport: the panel's
+  // own status is far above the fold while the sticky bar is showing.
+  const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
+  const feedback = stickyBar.getByText("Chưa thêm được vào giỏ hàng. Nàng thử lại nhé.", { exact: true });
+  await expect(feedback).toBeVisible();
+  await expect(feedback).toBeInViewport();
+  expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
+
+  await page.unroute("**/shop/**");
+});
+
+test("buying now from the phone sticky bar checks out the whole cart: A already in the bag, then B", async ({
+  page,
+}) => {
+  /*
+   * Owner decision on this PR: "Mua ngay" is not "buy only this". It adds the chosen unit to the
+   * shopper's existing cart and checks that cart out, so A (already there) and B (just chosen)
+   * both reach checkout.
+   */
+  await page.setViewportSize({ width: 390, height: 844 });
+  const lineA = await prisma.variantMirror.findUniqueOrThrow({
+    where: { pancakeVariationId: sizeOnlyVariantExternalId },
+  });
+  const cart = await prisma.cart.create({
+    data: {
+      expiresAt: new Date(Date.now() + 86_400_000),
+      items: { create: { variantId: lineA.id, quantity: 1 } },
+    },
+  });
+  await page.context().addCookies([
+    { name: "la_cart", value: cart.id, url: BASE_URL, httpOnly: true, sameSite: "Lax" },
+  ]);
+
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  const ready = await chooseBlackMediumThenCloseSheet(page);
+  await expect(ready).toHaveText("Mua ngay");
+  await ready.click();
+
+  await expect(page).toHaveURL(`${BASE_URL}/checkout`);
+  await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
+  await expect(
+    page.locator('[data-line-role="paid"]').filter({ hasText: sizeOnlyProductName }).first(),
+  ).toBeAttached();
+  await expect(
+    page.locator('[data-line-role="paid"]').filter({ hasText: productName }).first(),
+  ).toBeAttached();
+  const items = await prisma.cartItem.findMany({
+    where: { cartId: cart.id },
+    include: { variant: true },
+  });
+  expect(items.map((item) => item.variant.pancakeVariationId).sort()).toEqual(
+    [sizeOnlyVariantExternalId, variantExternalId].sort(),
+  );
+
+  await prisma.cart.delete({ where: { id: cart.id } });
+  await page.context().clearCookies({ name: "la_cart" });
+});
+
 test("a line above its stock steps straight down to what is left, in the mini-cart and on /cart", async ({ page }) => {
   // Review P2-1: 4 in the bag, 2 in stock. One step down (3) would be refused again and again.
   const variant = await prisma.variantMirror.findUniqueOrThrow({ where: { pancakeVariationId: variantExternalId } });

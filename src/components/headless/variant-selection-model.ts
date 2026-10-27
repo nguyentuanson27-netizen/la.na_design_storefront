@@ -63,7 +63,21 @@ function defaultPriceLabel(options: readonly StorefrontProjectionOption[]): stri
  * will not ship for fifteen days is precisely the misreading §30 forbids.
  */
 export const DEFAULT_ADD_TO_BAG_LABEL = "Thêm vào giỏ";
-export const PREORDER_ADD_TO_BAG_LABEL = PREORDER_LABEL;
+/**
+ * A preorder keeps §30's word, but the two buttons that carry it do different things -- one adds to
+ * the bag, the other checks the whole bag out -- so each says where it goes. With a bare "Đặt trước"
+ * on both, only the button's colour told a shopper looking at the screen which was which.
+ */
+export const PREORDER_ADD_TO_BAG_LABEL = `${PREORDER_LABEL} · Thêm vào giỏ`;
+
+/**
+ * The buy-now wording, which follows the same §30 rule as add-to-bag: a button that still said
+ * "buy now" for an item that ships in fifteen days is the misreading §30 forbids. Every buy-now
+ * surface (panel, sheet, sticky bar) takes its word from `view.buyNowLabel`, so one variant never
+ * reads "Đặt trước" on one surface and "Mua ngay" on another.
+ */
+export const DEFAULT_BUY_NOW_LABEL = "Mua ngay";
+export const PREORDER_BUY_NOW_LABEL = `${PREORDER_LABEL} · Thanh toán`;
 
 /**
  * The accessible names for the same two buttons.
@@ -74,7 +88,15 @@ export const PREORDER_ADD_TO_BAG_LABEL = PREORDER_LABEL;
  */
 export const ADD_TO_BAG_NAMES = {
   ready: "Thêm vào giỏ hàng",
-  preorder: `${PREORDER_LABEL} sản phẩm này`,
+  preorder: `${PREORDER_ADD_TO_BAG_LABEL} hàng`,
+} as const;
+/**
+ * The accessible names for the buy-now button. Each one contains its visible label (label-in-name),
+ * so speech-control users can say what they read, and the two preorder buttons stay apart by name.
+ */
+export const BUY_NOW_NAMES = {
+  ready: DEFAULT_BUY_NOW_LABEL,
+  preorder: `${PREORDER_BUY_NOW_LABEL} ngay`,
 } as const;
 const QUICK_ADD_NAMES = {
   ready: "Thêm vào giỏ từ thanh mua nhanh",
@@ -232,6 +254,9 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
     addToBagAccessibleName: isPreorderSelection
       ? ADD_TO_BAG_NAMES.preorder
       : ADD_TO_BAG_NAMES.ready,
+    /** What the buy-now button must say: the §30 word for a preorder, "Mua ngay" otherwise. */
+    buyNowLabel: isPreorderSelection ? PREORDER_BUY_NOW_LABEL : DEFAULT_BUY_NOW_LABEL,
+    buyNowAccessibleName: isPreorderSelection ? BUY_NOW_NAMES.preorder : BUY_NOW_NAMES.ready,
     quickAddAccessibleName: isPreorderSelection ? QUICK_ADD_NAMES.preorder : QUICK_ADD_NAMES.ready,
     hasPurchasableVariant: input.options.some((option) => option.purchasable),
     hasColorDimension,
@@ -365,6 +390,8 @@ export function resolveMobilePurchasePresentation(
   selection: VariantSelectionState,
 ): Readonly<{
   actionLabel: string;
+  /** What the sticky bar's button says: `actionLabel`, except a ready selection offers buy-now. */
+  stickyActionLabel: string;
   summary: string;
   readyToAdd: boolean;
   unavailableMessage: string;
@@ -414,12 +441,15 @@ export function resolveMobilePurchasePresentation(
       ? "Lựa chọn này tạm hết"
       : view.unavailableMessage;
 
+  const actionLabel = readyToAdd
+    ? view.addToBagLabel
+    : selectionComplete && unavailableMessage
+      ? unavailableMessage
+      : `Chọn ${(pendingLabels.length > 0 ? pendingLabels : dimensionLabels).join(" / ")}`;
+
   return Object.freeze({
-    actionLabel: readyToAdd
-      ? view.addToBagLabel
-      : selectionComplete && unavailableMessage
-        ? unavailableMessage
-        : `Chọn ${(pendingLabels.length > 0 ? pendingLabels : dimensionLabels).join(" / ")}`,
+    actionLabel,
+    stickyActionLabel: readyToAdd ? view.buyNowLabel : actionLabel,
     summary: selectedValues.join(" · "),
     readyToAdd,
     unavailableMessage,
