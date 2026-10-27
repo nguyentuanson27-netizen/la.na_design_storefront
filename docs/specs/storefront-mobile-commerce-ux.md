@@ -166,15 +166,17 @@ When required options are incomplete:
 When all required choices are valid:
 - sticky summary shows the selected values in one compact string, e.g. **`Nguyên bộ · Trắng · M`**;
 - omit dimensions that do not exist for the product rather than rendering placeholders;
-- the sticky action is **`Thêm vào giỏ`**.
+- the sticky action is **`Mua ngay`** (**`Đặt trước`** while the selected variant is a preorder, per master spec §30). One tap adds the selected unit through the existing add mutation and navigates to `/checkout`; it does not open the cart drawer;
+- **`Mua ngay` checks out the whole cart**, not just this item: a cart that already holds A plus a `Mua ngay` on B reaches checkout with A + B. Cart/checkout authority is unchanged;
+- incomplete selection still opens the sheet, and a genuinely unavailable selection still reads **`Lựa chọn này tạm hết`**.
 
 Inside the bottom sheet:
 - there is **no separate "Xác nhận lựa chọn" step**;
-- once selection is complete, the bottom CTA becomes **`Thêm vào giỏ`**;
-- **server-confirmed success is the only cart-open seam:** opening the cart must happen only after the existing async add mutation resolves with `result.ok === true` (or an equivalent controller success signal derived from that result). The current synchronous `"submitted"` return value means only that the request started and must not open the cart;
-- on server rejection/failure, keep the selection sheet open and show the existing purchase feedback; do not create a second mutation path;
+- once selection is complete, the bottom of the sheet offers **`Mua ngay`** (primary, first; `Đặt trước` for a preorder) and **`Thêm vào giỏ`** (outline). The accessible name of the preorder buy-now button is `Đặt trước và thanh toán ngay`;
+- **server-confirmed success is the only hand-off seam:** opening the cart (`Thêm vào giỏ`) or navigating to `/checkout` (`Mua ngay`, sticky or sheet) must happen only after the existing async add mutation resolves with `result.ok === true` (or an equivalent controller success signal derived from that result). The current synchronous `"submitted"` return value means only that the request started and must not open the cart or navigate;
+- on server rejection/failure, do not navigate; keep the selection sheet open (when it is open) and show the existing purchase feedback; do not create a second mutation path;
 - the controller may expose a success callback/signal if needed, but the existing cart/server mutation remains the single authority;
-- after confirmed success, **close/suspend the selection sheet first**, then open the existing cart drawer and show the exact selected product/variant/color/size;
+- after a confirmed `Thêm vào giỏ`, **close/suspend the selection sheet first**, then open the existing cart drawer and show the exact selected product/variant/color/size;
 - only one modal/focus trap may be active during this handoff. Once cart opens, the cart drawer becomes the focus owner; do not restore focus into the hidden selection sheet while the cart is open;
 - if the shopper closes the sheet before adding, current selection persists and the sticky summary reflects it.
 

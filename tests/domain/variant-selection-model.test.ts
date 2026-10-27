@@ -653,6 +653,63 @@ test("mobile complete summary follows kind, color, size and ready action becomes
   });
 });
 
+test("the sticky bar offers buy-now only for a ready selection and keeps its other states", () => {
+  const options = [
+    option({ id: "ready-m", color: "Đen", size: "M" }),
+    option({ id: "ready-l", color: "Đen", size: "L" }),
+    option({
+      id: "sold-out",
+      color: "Đen",
+      size: "S",
+      purchasable: false,
+      unavailableReason: "OUT_OF_STOCK",
+    }),
+  ];
+  const sticky = (selection: { kindKey: string | null; color: string | null; size: string | null }) =>
+    resolveMobilePurchasePresentation(
+      resolveVariantSelectionView({ options, productLevelOptions: options, selection }),
+      selection,
+    );
+
+  // Incomplete: the bar names what is still to choose, exactly as before.
+  const incomplete = sticky({ kindKey: null, color: null, size: null });
+  assert.equal(incomplete.stickyActionLabel, "Chọn màu / size");
+  assert.equal(incomplete.stickyActionLabel, incomplete.actionLabel);
+  // Genuinely unavailable: the buyer-safe sentence, never a purchase word.
+  const unavailable = sticky({ kindKey: null, color: "Đen", size: "S" });
+  assert.equal(unavailable.stickyActionLabel, "Lựa chọn này tạm hết");
+  assert.equal(unavailable.readyToAdd, false);
+  // Ready: buy-now on the bar, while the sheet's add-to-bag word is untouched.
+  const ready = sticky({ kindKey: null, color: "Đen", size: "M" });
+  assert.equal(ready.stickyActionLabel, "Mua ngay");
+  assert.equal(ready.actionLabel, "Thêm vào giỏ");
+});
+
+test("a preorder selection never reads Mua ngay: label and accessible name follow isPreorderSelection", () => {
+  const preorderOptions = [option({ id: "pre-m", color: "Đen", size: "M", isPreorderSale: true })];
+  const readyOptions = [option({ id: "ready-m", color: "Đen", size: "M" })];
+  const selection = { kindKey: null, color: "Đen", size: "M" } as const;
+  const resolve = (options: StorefrontProjectionOption[]) => {
+    const view = resolveVariantSelectionView({ options, productLevelOptions: options, selection });
+    return { view, mobile: resolveMobilePurchasePresentation(view, selection) };
+  };
+
+  const preorder = resolve(preorderOptions);
+  assert.equal(preorder.view.isPreorderSelection, true);
+  // One word for every buy-now surface, and it is the §30 one.
+  assert.equal(preorder.view.buyNowLabel, "Đặt trước");
+  assert.equal(preorder.mobile.stickyActionLabel, preorder.view.buyNowLabel);
+  // The accessible name contains the visible word and tells the two buttons apart.
+  assert.equal(preorder.view.buyNowAccessibleName, "Đặt trước và thanh toán ngay");
+  assert.ok(preorder.view.buyNowAccessibleName.includes(preorder.view.buyNowLabel));
+  assert.notEqual(preorder.view.buyNowAccessibleName, preorder.view.addToBagAccessibleName);
+
+  const ready = resolve(readyOptions);
+  assert.equal(ready.view.buyNowLabel, "Mua ngay");
+  assert.equal(ready.view.buyNowAccessibleName, "Mua ngay");
+  assert.equal(ready.mobile.stickyActionLabel, "Mua ngay");
+});
+
 test("genuine selected stock failure uses the buyer-safe mobile wording", () => {
   const options = [
     option({

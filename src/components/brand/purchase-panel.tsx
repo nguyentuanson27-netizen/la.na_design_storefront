@@ -915,11 +915,12 @@ export function PurchasePanelView({
           <button
             className="btn btn--primary w-full px-4"
             type="button"
+            aria-label={view.buyNowAccessibleName}
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
             onClick={() => runPurchase("panel", buyNow)}
           >
-            Mua ngay
+            {view.buyNowLabel}
           </button>
           <button
             className="btn btn--outline w-full px-4"
@@ -1069,11 +1070,12 @@ export function PurchasePanelView({
                       <button
                         type="button"
                         className="btn btn--primary w-full px-3"
+                        aria-label={view.buyNowAccessibleName}
                         disabled={isPending}
                         aria-busy={isPending}
                         onClick={() => runPurchase("sheet", buyNow)}
                       >
-                        Mua ngay
+                        {view.buyNowLabel}
                       </button>
                       <button
                         type="button"

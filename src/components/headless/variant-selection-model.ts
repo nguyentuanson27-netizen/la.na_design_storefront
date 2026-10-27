@@ -66,11 +66,13 @@ export const DEFAULT_ADD_TO_BAG_LABEL = "Thêm vào giỏ";
 export const PREORDER_ADD_TO_BAG_LABEL = PREORDER_LABEL;
 
 /**
- * The sticky mobile bar skips the bag: a finished selection goes straight to checkout. A preorder
- * keeps its §30 word for the same reason `addToBagLabel` does -- "buy now" on an item that ships in
- * fifteen days is the misreading §30 forbids.
+ * The buy-now wording, which follows the same §30 rule as add-to-bag: a button that still said
+ * "buy now" for an item that ships in fifteen days is the misreading §30 forbids. Every buy-now
+ * surface (panel, sheet, sticky bar) takes its word from `view.buyNowLabel`, so one variant never
+ * reads "Đặt trước" on one surface and "Mua ngay" on another.
  */
 export const DEFAULT_BUY_NOW_LABEL = "Mua ngay";
+export const PREORDER_BUY_NOW_LABEL = PREORDER_LABEL;
 
 /**
  * The accessible names for the same two buttons.
@@ -82,6 +84,15 @@ export const DEFAULT_BUY_NOW_LABEL = "Mua ngay";
 export const ADD_TO_BAG_NAMES = {
   ready: "Thêm vào giỏ hàng",
   preorder: `${PREORDER_LABEL} sản phẩm này`,
+} as const;
+/**
+ * The accessible names for the buy-now button. A preorder's visible word is the same "Đặt trước" as
+ * its add-to-bag button, so the name says what this one does differently while still containing the
+ * visible word (label-in-name).
+ */
+const BUY_NOW_NAMES = {
+  ready: DEFAULT_BUY_NOW_LABEL,
+  preorder: `${PREORDER_LABEL} và thanh toán ngay`,
 } as const;
 const QUICK_ADD_NAMES = {
   ready: "Thêm vào giỏ từ thanh mua nhanh",
@@ -239,6 +250,9 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
     addToBagAccessibleName: isPreorderSelection
       ? ADD_TO_BAG_NAMES.preorder
       : ADD_TO_BAG_NAMES.ready,
+    /** What the buy-now button must say: the §30 word for a preorder, "Mua ngay" otherwise. */
+    buyNowLabel: isPreorderSelection ? PREORDER_BUY_NOW_LABEL : DEFAULT_BUY_NOW_LABEL,
+    buyNowAccessibleName: isPreorderSelection ? BUY_NOW_NAMES.preorder : BUY_NOW_NAMES.ready,
     quickAddAccessibleName: isPreorderSelection ? QUICK_ADD_NAMES.preorder : QUICK_ADD_NAMES.ready,
     hasPurchasableVariant: input.options.some((option) => option.purchasable),
     hasColorDimension,
@@ -431,7 +445,7 @@ export function resolveMobilePurchasePresentation(
 
   return Object.freeze({
     actionLabel,
-    stickyActionLabel: readyToAdd && !view.isPreorderSelection ? DEFAULT_BUY_NOW_LABEL : actionLabel,
+    stickyActionLabel: readyToAdd ? view.buyNowLabel : actionLabel,
     summary: selectedValues.join(" · "),
     readyToAdd,
     unavailableMessage,
