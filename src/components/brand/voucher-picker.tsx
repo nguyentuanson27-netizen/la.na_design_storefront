@@ -159,6 +159,8 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         setDraft(draftOf(result.picker));
         setCode("");
         setPendingCode(null);
+        setPendingLink(false);
+        setConfirming(false);
         codeApplied.current = true;
         setMessage("Đã áp dụng mã ưu đãi.");
       } else if (result.ok) {
@@ -166,6 +168,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         // page behind the dialog show the server's numbers when the dialog closes.
         setCode("");
         setPendingCode(null);
+        setPendingLink(false);
         setConfirming(false);
         codeApplied.current = true;
         setMessage("Đã áp dụng mã ưu đãi. Giá dự kiến sẽ được cập nhật khi nàng đóng hộp thoại.");
@@ -175,7 +178,9 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
           setModel(result.picker);
           setDraft(draftOf(result.picker));
         }
+        // The typed code is now the one waiting for the yes; a linked step that was waiting no longer is.
         setPendingCode(code);
+        setPendingLink(false);
         setConfirming(result.reason === "CONFIRMATION_REQUIRED");
         setMessage("Mã hợp lệ. Nàng xem ưu đãi và lưu ý bên dưới, rồi bấm xác nhận để áp dụng.");
       } else setError(result.ok ? GENERIC_ERROR : (CODE_ERROR[result.reason] ?? GENERIC_ERROR));
@@ -186,6 +191,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   // Whichever step noticed -- the first click or the consent -- drops the old offer's pending step AND its quote and warnings, so the
   // shopper is not left confirming a code that can no longer be applied, then re-renders the page to show what is on offer now.
   const offerGone = (reason: "OFFER_CHANGED" | "INVALID_CODE") => {
+    setPendingCode(null);
     setPendingLink(false);
     setConfirming(false);
     setModel(saved);
@@ -205,11 +211,16 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         setBaseVersion(result.picker.selectionVersion);
         setModel(result.picker);
         setDraft(draftOf(result.picker));
+        // What is shown is the linked code's result, so a typed code that was waiting for its yes no longer is: its confirmation
+        // (and the footer button that carries it) must not outlive the quote it was given for.
+        setPendingCode(null);
         setPendingLink(false);
+        setConfirming(false);
         codeApplied.current = true;
         markLinkUsed(result);
         setMessage("Đã áp dụng mã ưu đãi.");
       } else if (result.ok) {
+        setPendingCode(null);
         setPendingLink(false);
         setConfirming(false);
         codeApplied.current = true;
@@ -220,6 +231,8 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
           setModel(result.picker);
           setDraft(draftOf(result.picker));
         }
+        // The linked code is now the one waiting for the yes; a typed code that was waiting no longer is.
+        setPendingCode(null);
         setPendingLink(true);
         setConfirming(result.reason === "CONFIRMATION_REQUIRED");
         setMessage("Mã hợp lệ. Nàng xem ưu đãi và lưu ý bên dưới, rồi bấm xác nhận để áp dụng.");

@@ -518,6 +518,73 @@ test("review b948f0e: the consent step notices a replaced offer too -- A confirm
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
 });
 
+/** The cart of seedCodeThatCostsAGift plus KOL10: a small private code (10K) that leaves the subtotal above the gift's 880K, so it costs nothing. */
+async function seedSmallCodes(...codes: string[]) {
+  for (const [index, code] of codes.entries()) {
+    await prisma.voucherCampaign.create({
+      data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code, discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: code, fixedAmountVnd: BigInt(10_000 + index * 1_000), minEligibleSubtotalVnd: BigInt(600_000) },
+    });
+  }
+}
+
+test("review 735ff62: a linked code that applies cleanly replaces a typed code waiting for its yes -- the footer no longer carries the typed code", async ({ page }) => {
+  await seedCodeThatCostsAGift("KOL73");
+  await seedSmallCodes("KOL10");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/shop/${PREFIX}dress?voucher=KOL10`);
+  await page.goto(`${BASE}/cart`);
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  // The shopper types KOL73, which costs the gift: it is shown and waits for their yes.
+  await dialog.getByLabel("Nhập mã khuyến mãi").fill("KOL73");
+  await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
+  await expect(dialog.getByRole("button", { name: /Tiếp tục với voucher này/ })).toBeVisible();
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
+  // Then they use the linked offer instead (KOL10 costs nothing, so it is saved at once).
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await expect(dialog).toContainText("Đã áp dụng mã ưu đãi");
+  const kol10 = await prisma.voucherCampaign.findFirstOrThrow({ where: { code: "KOL10" }, select: { id: true } });
+  await expect.poll(async () => (await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).toBe(kol10.id);
+  // What is shown is KOL10's result; KOL73's confirmation is gone with its footer button.
+  await expect(dialog.getByRole("button", { name: /Tiếp tục với voucher này/ })).toHaveCount(0);
+  await expect(dialog.getByRole("radio", { name: /Giảm 10.000đ/ })).toBeChecked();
+  // The footer commits what is displayed: KOL73 is never sent, the gift stays.
+  await dialog.getByRole("button", { name: /Áp dụng • 1 ưu đãi/ }).click();
+  await expect(dialog).toBeHidden();
+  expect((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).toBe(kol10.id);
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
+});
+
+test("review 735ff62: a replaced offer also drops a typed code that was waiting for its yes", async ({ page, context }) => {
+  await seedCodeThatCostsAGift("KOL73");
+  await seedSmallCodes("KOL10", "KOL11");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/shop/${PREFIX}dress?voucher=KOL10`);
+  await page.goto(`${BASE}/cart`);
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await dialog.getByLabel("Nhập mã khuyến mãi").fill("KOL73");
+  await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
+  await expect(dialog.getByRole("button", { name: /Tiếp tục với voucher này/ })).toBeVisible();
+  // Another tab opens a newer link; this tab's offer is no longer the one the server holds.
+  const other = await context.newPage();
+  await other.goto(`${BASE}/shop/${PREFIX}dress?voucher=KOL11`);
+  await other.close();
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await expect(dialog).toContainText("vừa được thay bằng một mã khác");
+  // Nothing saved, and the typed code's confirmation went with it: no footer button that would send KOL73.
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
+  await expect(dialog.getByRole("button", { name: /Tiếp tục với voucher này/ })).toHaveCount(0);
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
+  // Whatever the footer does now, it acts on what is DISPLAYED (the saved choice), never on the typed KOL73 that was waiting.
+  const kol73 = await prisma.voucherCampaign.findFirstOrThrow({ where: { code: "KOL73" }, select: { id: true } });
+  await dialog.getByRole("button", { name: /Áp dụng/ }).last().click();
+  const confirm = dialog.getByRole("button", { name: /Tiếp tục với voucher này/ });
+  if (await confirm.isVisible()) await confirm.click();
+  await expect(dialog).toBeHidden();
+  expect((await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).not.toBe(kol73.id);
+});
+
 test("review 04dea8b: the linked code applied while pricing cannot be re-read is a success the shopper is told about, not a closed dialog", async ({ page, context }) => {
   await prisma.voucherCampaign.create({
     data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL74", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 74K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
