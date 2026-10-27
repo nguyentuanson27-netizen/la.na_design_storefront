@@ -52,6 +52,14 @@ async function cleanup() { await prisma.promotionCampaign.deleteMany({ where: { 
 async function state(pancakeVideoSyncState: "READY" | "UNKNOWN" | "NONE" | "CONFLICT" | "UNSUPPORTED", pancakeVideoUrl: string | null = VIDEO_A) {
   await prisma.productMirror.update({ where: { pancakeProductId: externalId }, data: { pancakeVideoSyncState, pancakeVideoUrl } });
 }
+async function serveVideo(page: Page, onRequest: () => void = () => undefined) {
+  await page.route(VIDEO_A, (route) => {
+    onRequest();
+    const range = route.request().headers().range;
+    const start = Number(range?.match(/bytes=(\d+)-/)?.[1] ?? 0);
+    return route.fulfill({ status: range ? 206 : 200, contentType: "video/mp4", headers: { "Accept-Ranges": "bytes", ...(range ? { "Content-Range": `bytes ${start}-${mp4.length - 1}/${mp4.length}` } : {}) }, body: mp4.subarray(start) });
+  });
+}
 function collectedPlayback() { return summarizePdpVideoPlaybackLogs(output.split("\n")); }
 async function images(page: Page) {
   await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => route.fulfill({ contentType: "image/png", body: image }));
@@ -72,18 +80,25 @@ test.beforeEach(async ({ page }) => { output = ""; await state("READY"); await i
 test.afterAll(async () => { await stop(); await cleanup(); await prisma.$disconnect(); });
 
 for (const width of [320, 390, 768, 1024, 1440]) {
-  test(`one overlay, photo count, collision-free layout and no media network at ${width}px`, async ({ page }) => {
+  test(`one 9:16 overlay, photo count, collision-free layout and a muted autoplaying preview at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    const requests: string[] = [];
-    page.on("request", (r) => { if (/\.(mp4|mov)(?:[?#]|$)/.test(r.url())) requests.push(r.url()); });
+    await serveVideo(page);
     await page.goto(`${BASE}/shop/${slug}`);
     const tile = page.getByRole("button", { name: "Xem video", exact: true });
     await expect(tile).toHaveCount(1);
     await expect(tile).toBeVisible();
-    await expect(page.locator("video, source")).toHaveCount(0);
+    await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
+    // The preview starts by itself once the page has loaded: muted, looping, inline, decorative.
+    const preview = tile.locator("video");
+    await expect(preview).toHaveCount(1);
+    await expect(preview).toHaveAttribute("aria-hidden", "true");
+    expect(await preview.evaluate((element: HTMLVideoElement) => [element.muted, element.loop, element.playsInline])).toEqual([true, true, true]);
+    await expect(preview).toHaveAttribute("data-playing", "true");
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
     const counter = page.locator(width < 1024 ? ".pdp-mobile-gallery__counter" : ".pdp-stage__counter");
     await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
     const t = (await tile.boundingBox())!;
+    expect(t.height / t.width, "the frame is 9:16 portrait").toBeCloseTo(16 / 9, 1);
     if (width >= 1024) {
       const primaryPhoto = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
       expect(t.x, "tile starts inside the primary photo").toBeGreaterThanOrEqual(primaryPhoto.x - 1);
@@ -98,16 +113,17 @@ for (const width of [320, 390, 768, 1024, 1440]) {
     expect(flash.x + flash.width <= t.x || flash.y >= t.y + t.height).toBeTruthy();
     expect(t.width).toBeGreaterThanOrEqual(44);
     expect(t.x + t.width).toBeLessThanOrEqual(width);
-    await page.waitForTimeout(200);
-    expect(requests).toEqual([]);
     await tile.click();
     const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
     await expect(dialog).toBeVisible();
     await expect(dialog.locator("video")).toHaveAttribute("preload", "none");
+    // The dialog holds the shopper's attention: the inline preview stands still until it closes.
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
     await page.keyboard.press("Escape");
     await expect(dialog).not.toBeVisible();
     await expect(tile).toBeFocused();
-    await expect(page.locator("video, source")).toHaveCount(0);
+    await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
     await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
     if (width >= 1024) {
       await page.getByRole("button", { name: "Ảnh tiếp theo", exact: true }).click();
@@ -149,19 +165,12 @@ test("one-photo desktop gallery anchors the tile inside its centered primary pho
 
 test("explicit play fetches/decodes fixture MP4, seeks, closes and reopens accessibly", async ({ page }) => {
   let mediaRequests = 0;
-  await page.route(VIDEO_A, (route) => {
-    mediaRequests++;
-    const range = route.request().headers().range;
-    const start = Number(range?.match(/bytes=(\d+)-/)?.[1] ?? 0);
-    return route.fulfill({ status: range ? 206 : 200, contentType: "video/mp4", headers: { "Accept-Ranges": "bytes", ...(range ? { "Content-Range": `bytes ${start}-${mp4.length - 1}/${mp4.length}` } : {}) }, body: mp4.subarray(start) });
-  });
+  await serveVideo(page, () => { mediaRequests++; });
   await page.goto(`${BASE}/shop/${slug}`);
   const tile = page.getByRole("button", { name: "Xem video", exact: true });
   await tile.click();
   const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
   const video = dialog.locator("video");
-  expect(mediaRequests).toBe(0);
-  expect(collectedPlayback().attempts).toBe(0);
   await video.evaluate((element: HTMLVideoElement) => element.play());
   await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
   expect(await video.evaluate((element: HTMLVideoElement) => element.videoWidth)).toBeGreaterThan(0);
@@ -177,7 +186,7 @@ test("explicit play fetches/decodes fixture MP4, seeks, closes and reopens acces
   expect(axe.violations).toEqual([]);
   await dialog.getByRole("button", { name: "Đóng", exact: true }).click();
   await expect(tile).toBeFocused();
-  await expect(page.locator("video, source")).toHaveCount(0);
+  await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
   await tile.click();
   await expect(dialog).toBeVisible();
   await page.keyboard.press("Escape");
@@ -190,12 +199,12 @@ test("playback failure retains photos and size selection", async ({ page }) => {
   const size = page.getByRole("radio", { name: "L", exact: true });
   await page.getByRole("region", { name: "Mua sản phẩm" }).getByRole("group", { name: /^Kích cỡ/ }).getByText("L", { exact: true }).click();
   await page.getByRole("button", { name: "Xem video", exact: true }).click();
-  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+  await page.locator("dialog video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
   await expect(page.getByRole("alert").filter({ hasText: "Chưa phát được video" })).toBeVisible();
   await expect.poll(() => collectedPlayback().failures).toBe(1);
   await expect.poll(() => collectedPlayback().attempts).toBe(1);
   // Native source and player callbacks may both fire; neither adds another failure.
-  await page.locator("video").evaluate((element) => {
+  await page.locator("dialog video").evaluate((element) => {
     element.dispatchEvent(new Event("error"));
     element.querySelector("source")?.dispatchEvent(new Event("error"));
   });
@@ -205,7 +214,7 @@ test("playback failure retains photos and size selection", async ({ page }) => {
   await expect(page.locator(".pdp-mobile-gallery__counter")).toHaveText("1/3");
   await expect(page.getByRole("button", { name: "Thêm vào giỏ", exact: false }).first()).toBeEnabled();
   await page.getByRole("button", { name: "Xem video", exact: true }).click();
-  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+  await page.locator("dialog video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
   await expect.poll(() => collectedPlayback().failures).toBe(2);
   expect(collectedPlayback().attempts).toBe(2);
 });
@@ -214,12 +223,11 @@ test("an audio-only container is counted as unsupported video and stopped", asyn
   await page.route(VIDEO_A, (route) => route.fulfill({ contentType: "video/mp4", body: audioOnlyMp4 }));
   await page.goto(`${BASE}/shop/${slug}`);
   await page.getByRole("button", { name: "Xem video", exact: true }).click();
-  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
   await expect(page.getByRole("alert").filter({ hasText: "Chưa phát được video" })).toBeVisible();
   await expect.poll(() => collectedPlayback().errors.unsupported).toBe(1);
   await expect.poll(() => collectedPlayback().attempts).toBe(1);
-  expect(await page.locator("video").evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
-  await expect(page.locator("video source")).not.toHaveAttribute("src");
+  expect(await page.locator("dialog video").evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+  await expect(page.locator("dialog video source")).not.toHaveAttribute("src");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Xem video", exact: true })).toBeFocused();
 });
@@ -232,7 +240,7 @@ test("startup waiting forever without error times out once and unloads the playe
   try {
     await page.goto(`${BASE}/shop/${slug}`);
     await page.getByRole("button", { name: "Xem video", exact: true }).click();
-    const video = page.locator("video");
+    const video = page.locator("dialog video");
     await video.evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
     await expect.poll(() => collectedPlayback().attempts).toBe(1);
     await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
@@ -254,7 +262,7 @@ test("startup waiting forever without error times out once and unloads the playe
   } finally { finish(); }
 });
 
-test("closing a waiting player cancels timeout and opening alone does not start a deadline", async ({ page }) => {
+test("opening autoplays the dialog once and closing a waiting player cancels the timeout", async ({ page }) => {
   await page.clock.install();
   let finish: () => void = () => undefined;
   const held = new Promise<void>((resolve) => { finish = resolve; });
@@ -262,12 +270,14 @@ test("closing a waiting player cancels timeout and opening alone does not start 
   try {
     await page.goto(`${BASE}/shop/${slug}`);
     const tile = page.getByRole("button", { name: "Xem video", exact: true });
-    await tile.click();
+    // The inline preview is silent: only the shopper's own opening is an attempt.
     await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
     expect(collectedPlayback().attempts).toBe(0);
     expect(collectedPlayback().failures).toBe(0);
-    await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+    await tile.click();
     await expect.poll(() => collectedPlayback().attempts).toBe(1);
+    await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS - 1000);
+    expect(collectedPlayback().failures).toBe(0);
     await page.keyboard.press("Escape");
     await expect(tile).toBeFocused();
     await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
@@ -275,16 +285,39 @@ test("closing a waiting player cancels timeout and opening alone does not start 
   } finally { finish(); }
 });
 
+test("a failing inline preview falls back to the poster and sends no telemetry", async ({ page }) => {
+  await page.route(VIDEO_A, (route) => route.abort());
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  await expect(tile).toBeVisible();
+  await expect(tile.locator("video")).toHaveCount(0);
+  expect(collectedPlayback().attempts).toBe(0);
+  expect(collectedPlayback().failures).toBe(0);
+});
+
+test("reduced motion keeps the frame a poster and requests no video until it is opened", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const requests: string[] = [];
+  page.on("request", (r) => { if (/\.(mp4|mov)(?:[?#]|$)/.test(r.url())) requests.push(r.url()); });
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  await expect(tile).toBeVisible();
+  await page.waitForLoadState("load");
+  await page.waitForTimeout(500);
+  await expect(page.locator("video")).toHaveCount(0);
+  expect(requests).toEqual([]);
+});
+
 test("successful playing cancels the startup deadline", async ({ page }) => {
   await page.clock.install();
   await page.route(VIDEO_A, (route) => route.fulfill({ contentType: "video/mp4", body: mp4 }));
   await page.goto(`${BASE}/shop/${slug}`);
   await page.getByRole("button", { name: "Xem video", exact: true }).click();
-  await page.locator("video").evaluate((element: HTMLVideoElement) => element.play());
+  await page.locator("dialog video").evaluate((element: HTMLVideoElement) => element.play());
   await expect.poll(() => collectedPlayback().attempts).toBe(1);
-  await expect.poll(() => page.locator("video").evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(3);
+  await expect.poll(() => page.locator("dialog video").evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(3);
   // A network stalled event is not a playback stall while future data is buffered.
-  await page.locator("video").evaluate((element) => element.dispatchEvent(new Event("stalled")));
+  await page.locator("dialog video").evaluate((element) => element.dispatchEvent(new Event("stalled")));
   await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
   expect(collectedPlayback().failures).toBe(0);
   await expect(page.getByRole("alert").filter({ hasText: "Chưa phát được video" })).toHaveCount(0);
@@ -317,7 +350,7 @@ test("telemetry sends only fixed fields without cookies/referrer and collection 
   await page.route(VIDEO_A, (route) => route.abort());
   await page.goto(`${BASE}/shop/${slug}`);
   await page.getByRole("button", { name: "Xem video", exact: true }).click();
-  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+  await page.locator("dialog video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
   await expect.poll(() => bodies.length).toBe(2);
   expect(bodies[0]).toEqual({ kind: "attempt" });
   expect(bodies[1]).toEqual({ kind: "failure", reason: expect.stringMatching(/^(network|decode|unsupported|timeout|unknown)$/) });
@@ -347,9 +380,9 @@ test("one own parent variation video renders the tile when another SKU has no vi
   const tile = page.getByRole("button", { name: "Xem video", exact: true });
   await expect(tile).toHaveCount(1);
   await expect(tile).toBeVisible();
-  await expect(page.locator("video, source")).toHaveCount(0);
+  await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
   await tile.click();
-  await expect(page.locator("video source")).toHaveAttribute("src", VIDEO_A);
+  await expect(page.locator("dialog video source")).toHaveAttribute("src", VIDEO_A);
   await page.keyboard.press("Escape");
   await expect(tile).toBeFocused();
 });

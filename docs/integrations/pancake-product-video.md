@@ -55,15 +55,39 @@ The PDP detail repository reads video fields only when the flag is exactly
 items, photo counts and variant-to-photo mappings do not acquire video fields.
 The route passes that small projection to the existing media stage.
 
-One bottom-right tile sits above the photo counter and outside desktop navigation
-and mobile swipe tracks. On desktop its containing frame matches the first
-photograph's portrait cell in the left half, or the centered photo for a one-image
-gallery. Clicking opens a native modal dialog. Only that explicit click mounts `<video controls playsInline preload="none">` with an MP4 source.
-There is no page-load autoplay or video preload. Closing or pressing Escape
-pauses the player, removes its source, unloads it and restores focus. Unmounting
-also releases playback. Media errors show a short message and leave selection,
-photography and purchasing available. No CSP expansion, remote fetch/proxy,
-transcoding or new polling job is needed.
+One 9:16 frame sits on the photograph's right edge (about a quarter of the photo's height above its
+bottom below `lg`, above the counter on desktop), outside desktop navigation and mobile swipe tracks.
+On desktop its containing frame matches the first photograph's portrait cell in the left half, or the
+centered photo for a one-image gallery.
+
+The frame is a muted, looping, `playsInline` preview that starts by itself (supersedes v0.3's "no
+page-load autoplay"; the owner asked for it). It is built to cost the photographs nothing:
+
+- The poster is an optimized photograph (`sizes="120px"`) that paints with the page; the preview
+  fades in over it only once it is really `playing`, so a slow start shows the photo, not black.
+- The `<video>` is mounted only after the window `load` event, so it never competes with the hero
+  image, and `react-dom`'s `preconnect` warms the video origin during SSR.
+- It plays only while at least 25% on screen and pauses while the dialog is open.
+- It is not mounted at all under `prefers-reduced-motion`, Data Saver or a 2G link
+  (`use-inline-video-allowed.ts`); the frame stays a poster and the dialog is one tap away.
+- A load error, or metadata with no picture (HEVC discarded by the browser), removes the preview and
+  leaves the poster. It sends no telemetry, so attempt/failure counters still mean explicit openings.
+
+Tapping the frame opens a native modal dialog (9:16, `max-w-md`). Only that tap mounts
+`<video controls playsInline preload="none">` with an MP4 source and calls `play()` explicitly (not the
+`autoplay` attribute, so `play` fires at once and the 15 s startup deadline runs even if no byte
+arrives). Closing or pressing Escape pauses the player, removes its source, unloads it and restores
+focus. Unmounting also releases playback. Media errors show a short message and leave selection,
+photography and purchasing available. No CSP expansion, remote fetch/proxy, transcoding or new
+polling job is needed.
+
+### Keeping the first frame fast
+
+What the page controls is done above. What it cannot is the file itself, so the source video matters
+most: H.264 (not HEVC) in an MP4 with `-movflags +faststart` (moov atom first, so playback starts
+without reading the tail), about 540x960 at roughly 600-900 kbps, ideally a 5-10 s loop since the
+preview repeats, served with `Accept-Ranges` and long-lived `Cache-Control` from the CDN. The dialog
+then re-uses the preview's cached bytes.
 
 ## Regression coverage
 
@@ -74,7 +98,7 @@ transcoding or new polling job is needed.
 | Defaults, transitions, atomic rollback, idempotence, shop ownership, hidden/locked/zero-stock variants, reactivation and unchanged commerce/editorial facts | `tests/database/pancake-product-video.test.ts` |
 | Failed/incomplete pagination leaves READY unchanged | `tests/database/pancake-product-video.test.ts`, `tests/integrations/catalog-sync.test.ts` |
 | Flag/state/MP4/photo gate; UNKNOWN retention suppressed | Domain, database and rendered-browser tests |
-| One tile inside the primary photo (two-photo and single-photo desktop layouts); counters/navigation/Flash Sale; 320/390/768/1024/1440 px; zero video requests before click | `tests/a11y-runtime/pdp-pancake-video.spec.ts` |
+| One 9:16 frame inside the primary photo (two-photo and single-photo desktop layouts); counters/navigation/Flash Sale; 320/390/768/1024/1440 px; muted autoplaying preview, poster fallback, reduced-motion opt-out | `tests/a11y-runtime/pdp-pancake-video.spec.ts` |
 | Native playback/seek, close/Escape/focus, Axe, media failure, retained size and usable purchase controls | Same Playwright suite, against a production build |
 
 The 2.2 KB synthetic browser MP4 fixture was generated without audio or external

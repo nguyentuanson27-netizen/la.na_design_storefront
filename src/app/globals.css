@@ -3245,14 +3245,17 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   pointer-events: none;
 }
 
-/* A single tile above the counter, outside navigation and swipe tracks. No layout shift. */
+/* The product video: one 9:16 frame on the photograph's right edge, outside navigation and swipe
+   tracks. Its height follows its width, so the frame never shifts the layout. Below `lg` it sits at
+   about a quarter of the photograph's height from the bottom, clear of the counter and the Flash
+   Sale tag. */
 .pdp-video-tile {
   position: absolute;
   pointer-events: auto;
   right: 1rem;
-  bottom: 3.75rem;
-  width: 96px;
-  height: 76px;
+  bottom: 26%;
+  width: clamp(88px, 25vw, 112px);
+  aspect-ratio: 9 / 16;
   overflow: hidden;
   border: 1px solid var(--paper);
   border-radius: 4px;
@@ -3260,6 +3263,18 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   color: white;
   box-shadow: 0 2px 8px #0003;
 }
+/* The preview fades in over its poster once it is really playing, so a slow start shows the
+   photograph rather than a black frame. */
+.pdp-video-tile__preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.pdp-video-tile__preview[data-playing="true"] { opacity: 1; }
 .pdp-video-tile:focus-visible {
   outline: 3px solid var(--paper);
   outline-offset: 3px;
@@ -3286,5 +3301,5 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     justify-content: center;
   }
   .pdp-video-anchor[data-single-image="true"] { width: 100%; }
-  .pdp-video-tile { right: 1rem; bottom: 4.5rem; }
+  .pdp-video-tile { right: 1rem; bottom: 4.5rem; width: 120px; }
 }
