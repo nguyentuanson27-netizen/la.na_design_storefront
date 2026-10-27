@@ -48,6 +48,12 @@ let unknownOutcomeAt = 0;
 // Same reason: the clearing of a used linked offer that failed in transport. The re-read that follows remounts the picker (the saved choice
 // changed), which would forget it; this keeps the opaque handle so the next close can repeat the compare-and-clear. Never the code.
 let pendingOfferClearing: string | null = null;
+let pendingOfferClearingAt = 0;
+// The handle names an OFFER (a code), not one issue of a link, so it must not outlive the situation it was kept for: it is used for a few
+// minutes only. Within that window the worst a repeat can do is clear a newer link for the SAME code in the same browser -- whose cart
+// already holds that code, since the tab that kept the handle applied it -- which loses nothing the shopper could still gain.
+const PENDING_CLEARING_TTL_MS = 5 * 60_000;
+const livePendingClearing = () => (pendingOfferClearing !== null && Date.now() - pendingOfferClearingAt < PENDING_CLEARING_TTL_MS ? pendingOfferClearing : null);
 
 export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial: VoucherPickerModel; linkOffer?: string | null }>) {
   const { previewDraft, commitDraft, applyCode, applyLinkedCode, dismissLinkedOffer } = useVoucherPickerActions();
@@ -78,8 +84,9 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   const [linkUsed, setLinkUsed] = useState(false);
   // The opaque handle of the offer this page SHOWED; it goes back with the click so only that offer can be applied.
   const linkVisible = linkOffer !== null && !linkUsed;
-  const linkApplied = useRef(pendingOfferClearing !== null);
-  const linkToken = useRef<string | null>(pendingOfferClearing);
+  const [keptClearing] = useState(livePendingClearing);
+  const linkApplied = useRef(keptClearing !== null);
+  const linkToken = useRef<string | null>(keptClearing);
   // The token is an opaque handle the server gave back for the offer just used (never the code): it lets the close clear THAT offer only.
   const markLinkUsed = (result: unknown) => {
     linkApplied.current = true;
@@ -151,6 +158,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
       void (token === null ? Promise.resolve() : dismissLinkedOffer({ offerToken: token }))
         .catch(() => {
           pendingOfferClearing = token;
+          pendingOfferClearingAt = Date.now();
           if (linkToken.current === null && !linkApplied.current) {
             linkToken.current = token;
             linkApplied.current = true;
