@@ -7,7 +7,7 @@ import { createPdpVideoPlaybackReporter } from "@/components/headless/pdp-video-
 import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
 import { pdpProductImageLoader } from "@/components/headless/pdp-image-loader";
 import { useDocumentLoaded } from "@/components/headless/use-document-loaded";
-import { useInlineVideoAllowed } from "@/components/headless/use-inline-video-allowed";
+import { DESKTOP_VIDEO_MEDIA, useInlineVideoAllowed } from "@/components/headless/use-inline-video-allowed";
 
 function releaseVideo(video: HTMLVideoElement | null) {
   if (!video) return;
@@ -78,11 +78,12 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
     };
   }, [requested, video.src, reporting]);
 
-  // The shopper's tap is the request to play, so it plays at once. An explicit `play()` rather than
+  // On the phone layout the shopper's tap is the request to play, so it plays at once; desktop keeps
+  // its player waiting for the shopper's own play. An explicit `play()` rather than
   // the `autoplay` attribute: it raises `play` immediately, which starts the startup deadline even
   // when the first byte never arrives.
   useEffect(() => {
-    if (requested) void player.current?.play().catch(() => undefined);
+    if (requested && !window.matchMedia(DESKTOP_VIDEO_MEDIA).matches) void player.current?.play().catch(() => undefined);
   }, [requested]);
 
   function close() {
@@ -148,7 +149,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
       <dialog
         ref={dialog}
         aria-labelledby={titleId}
-        className="pointer-events-auto m-auto max-h-[92dvh] w-[92vw] max-w-md overflow-y-auto border-0 bg-[#FAF7F2] p-4 text-[#3B2219] shadow-2xl backdrop:bg-black/60"
+        className="pointer-events-auto m-auto max-h-[92dvh] w-[92vw] max-w-md overflow-y-auto lg:max-w-3xl border-0 bg-[#FAF7F2] p-4 text-[#3B2219] shadow-2xl backdrop:bg-black/60"
         onCancel={(event) => { event.preventDefault(); close(); }}
         onClose={() => { if (!dialog.current?.open) close(); }}
       >
@@ -157,7 +158,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
           <button type="button" className="min-h-11 min-w-11 px-2 underline focus-visible:outline-2 focus-visible:outline-offset-2" onClick={close}>Đóng</button>
         </div>
         {requested ? (
-          <video ref={player} controls playsInline preload="none" poster={video.poster} tabIndex={0} aria-label={`Video ${productName}`} className="mx-auto block aspect-[9/16] h-[min(78dvh,720px)] max-w-full bg-black object-contain" onLoadedMetadata={(event) => {
+          <video ref={player} controls playsInline preload="none" poster={video.poster} tabIndex={0} aria-label={`Video ${productName}`} className="mx-auto block aspect-[9/16] h-[min(78dvh,720px)] max-w-full bg-black object-contain lg:aspect-auto lg:h-auto lg:max-h-[70dvh] lg:w-full" onLoadedMetadata={(event) => {
             const element = event.currentTarget;
             // Some browsers accept an HEVC container's AAC track but silently discard the video.
             // A running audio clock is not evidence that the shopper can see a product video.

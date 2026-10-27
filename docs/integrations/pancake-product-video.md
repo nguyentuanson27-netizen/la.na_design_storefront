@@ -55,20 +55,21 @@ The PDP detail repository reads video fields only when the flag is exactly
 items, photo counts and variant-to-photo mappings do not acquire video fields.
 The route passes that small projection to the existing media stage.
 
-One 9:16 frame sits on the photograph's right edge (about a quarter of the photo's height above its
-bottom below `lg`, above the counter on desktop), outside desktop navigation and mobile swipe tracks.
-On desktop its containing frame matches the first photograph's portrait cell in the left half, or the
+Below `lg` (phone layout) the video is one 9:16 frame on the photograph's right edge, about a quarter
+of the photo's height above its bottom. From `lg` up the original 96x76 poster tile above the counter
+is kept unchanged: no preview, and the dialog stays landscape and waits for the shopper's own play.
+Both sit outside desktop navigation and mobile swipe tracks. On desktop the containing frame matches the first photograph's portrait cell in the left half, or the
 centered photo for a one-image gallery.
 
-The frame is a muted, looping, `playsInline` preview that starts by itself (supersedes v0.3's "no
-page-load autoplay"; the owner asked for it). It is built to cost the photographs nothing:
+On the phone layout the frame is a muted, looping, `playsInline` preview that starts by itself
+(supersedes v0.3's "no page-load autoplay" there only; the owner asked for it). It is built to cost the photographs nothing:
 
 - The poster is an optimized photograph (`sizes="120px"`) that paints with the page; the preview
   fades in over it only once it is really `playing`, so a slow start shows the photo, not black.
 - The `<video>` is mounted only after the window `load` event, so it never competes with the hero
   image, and `react-dom`'s `preconnect` warms the video origin during SSR.
 - It plays only while at least 25% on screen and pauses while the dialog is open.
-- It is not mounted at all under `prefers-reduced-motion`, Data Saver or a 2G link
+- It is not mounted at all on desktop (`min-width: 1024px`), nor under `prefers-reduced-motion`, Data Saver or a 2G link
   (`use-inline-video-allowed.ts`); the frame stays a poster and the dialog is one tap away.
 - A load error, or metadata with no picture (HEVC discarded by the browser), removes the preview and
   leaves the poster. It sends no telemetry, so attempt/failure counters still mean explicit openings.

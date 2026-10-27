@@ -80,7 +80,7 @@ test.beforeEach(async ({ page }) => { output = ""; await state("READY"); await i
 test.afterAll(async () => { await stop(); await cleanup(); await prisma.$disconnect(); });
 
 for (const width of [320, 390, 768, 1024, 1440]) {
-  test(`one 9:16 overlay, photo count, collision-free layout and a muted autoplaying preview at ${width}px`, async ({ page }) => {
+  test(`one overlay, photo count and collision-free layout at ${width}px: ${width < 1024 ? "9:16 muted autoplaying preview" : "the original poster tile"}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await serveVideo(page);
     await page.goto(`${BASE}/shop/${slug}`);
@@ -88,17 +88,25 @@ for (const width of [320, 390, 768, 1024, 1440]) {
     await expect(tile).toHaveCount(1);
     await expect(tile).toBeVisible();
     await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
-    // The preview starts by itself once the page has loaded: muted, looping, inline, decorative.
     const preview = tile.locator("video");
-    await expect(preview).toHaveCount(1);
-    await expect(preview).toHaveAttribute("aria-hidden", "true");
-    expect(await preview.evaluate((element: HTMLVideoElement) => [element.muted, element.loop, element.playsInline])).toEqual([true, true, true]);
-    await expect(preview).toHaveAttribute("data-playing", "true");
-    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
+    if (width < 1024) {
+      // The preview starts by itself once the page has loaded: muted, looping, inline, decorative.
+      await expect(preview).toHaveCount(1);
+      await expect(preview).toHaveAttribute("aria-hidden", "true");
+      expect(await preview.evaluate((element: HTMLVideoElement) => [element.muted, element.loop, element.playsInline])).toEqual([true, true, true]);
+      await expect(preview).toHaveAttribute("data-playing", "true");
+      await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
+    } else {
+      // Desktop is the original poster tile: no preview, no video request before the shopper asks.
+      await page.waitForLoadState("load");
+      await page.waitForTimeout(300);
+      await expect(page.locator("video, source")).toHaveCount(0);
+    }
     const counter = page.locator(width < 1024 ? ".pdp-mobile-gallery__counter" : ".pdp-stage__counter");
     await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
     const t = (await tile.boundingBox())!;
-    expect(t.height / t.width, "the frame is 9:16 portrait").toBeCloseTo(16 / 9, 1);
+    if (width < 1024) expect(t.height / t.width, "the phone frame is 9:16 portrait").toBeCloseTo(16 / 9, 1);
+    else expect([t.width, t.height], "the desktop tile is the original 96x76").toEqual([96, 76]);
     if (width >= 1024) {
       const primaryPhoto = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
       expect(t.x, "tile starts inside the primary photo").toBeGreaterThanOrEqual(primaryPhoto.x - 1);
@@ -117,13 +125,18 @@ for (const width of [320, 390, 768, 1024, 1440]) {
     const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
     await expect(dialog).toBeVisible();
     await expect(dialog.locator("video")).toHaveAttribute("preload", "none");
-    // The dialog holds the shopper's attention: the inline preview stands still until it closes.
-    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+    if (width < 1024) {
+      // The dialog holds the shopper's attention: the inline preview stands still until it closes.
+      await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+    } else {
+      // Desktop waits for the shopper's own play.
+      expect(await dialog.locator("video").evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+    }
     await page.keyboard.press("Escape");
     await expect(dialog).not.toBeVisible();
     await expect(tile).toBeFocused();
     await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
-    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
+    if (width < 1024) await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
     await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
     if (width >= 1024) {
       await page.getByRole("button", { name: "Ảnh tiếp theo", exact: true }).click();

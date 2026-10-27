@@ -3245,8 +3245,8 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   pointer-events: none;
 }
 
-/* The product video: one 9:16 frame on the photograph's right edge, outside navigation and swipe
-   tracks. Its height follows its width, so the frame never shifts the layout. Below `lg` it sits at
+/* Below `lg`, the product video: one 9:16 frame on the photograph's right edge, outside navigation
+   and swipe tracks. Its height follows its width, so the frame never shifts the layout. It sits at
    about a quarter of the photograph's height from the bottom, clear of the counter and the Flash
    Sale tag. */
 .pdp-video-tile {
@@ -3301,5 +3301,6 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     justify-content: center;
   }
   .pdp-video-anchor[data-single-image="true"] { width: 100%; }
-  .pdp-video-tile { right: 1rem; bottom: 4.5rem; width: 120px; }
+  /* Desktop keeps the original small poster tile; the 9:16 preview is the phone layout's. */
+  .pdp-video-tile { right: 1rem; bottom: 4.5rem; width: 96px; height: 76px; aspect-ratio: auto; }
 }
