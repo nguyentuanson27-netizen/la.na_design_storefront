@@ -913,6 +913,15 @@ export function PurchasePanelView({
 
         <div ref={panelActionsRef} className="mt-8 grid grid-cols-2 gap-3">
           <button
+            className="btn btn--primary w-full px-4"
+            type="button"
+            disabled={!canAttemptPurchase}
+            aria-busy={isPending}
+            onClick={() => runPurchase("panel", buyNow)}
+          >
+            Mua ngay
+          </button>
+          <button
             className="btn btn--outline w-full px-4"
             type="button"
             aria-label={view.addToBagAccessibleName}
@@ -921,15 +930,6 @@ export function PurchasePanelView({
             onClick={() => runPurchase("panel", addToBag)}
           >
             {view.addToBagLabel}
-          </button>
-          <button
-            className="btn btn--primary w-full px-4"
-            type="button"
-            disabled={!canAttemptPurchase}
-            aria-busy={isPending}
-            onClick={() => runPurchase("panel", buyNow)}
-          >
-            Mua ngay
           </button>
         </div>
 
@@ -1062,19 +1062,10 @@ export function PurchasePanelView({
                 <div className="border-t border-black/15 bg-[#FAF7F2] p-4">
                   {mobilePresentation.readyToAdd ? (
                     /*
-                     * A finished selection offers both ways out the panel has: into the bag (and the
-                     * drawer), or straight to checkout for the shopper who is buying just this.
+                     * A finished selection offers both ways out the panel has: straight to checkout
+                     * (the highlighted one), or into the bag (and the drawer).
                      */
                     <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        className="btn btn--outline w-full px-3"
-                        disabled={isPending}
-                        aria-busy={isPending}
-                        onClick={() => runPurchase("sheet", () => addToBag(handleSheetAddAccepted))}
-                      >
-                        {mobilePresentation.actionLabel}
-                      </button>
                       <button
                         type="button"
                         className="btn btn--primary w-full px-3"
@@ -1083,6 +1074,15 @@ export function PurchasePanelView({
                         onClick={() => runPurchase("sheet", buyNow)}
                       >
                         Mua ngay
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--outline w-full px-3"
+                        disabled={isPending}
+                        aria-busy={isPending}
+                        onClick={() => runPurchase("sheet", () => addToBag(handleSheetAddAccepted))}
+                      >
+                        {mobilePresentation.actionLabel}
                       </button>
                     </div>
                   ) : (
