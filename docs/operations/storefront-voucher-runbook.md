@@ -104,7 +104,8 @@ Decisions recorded for v1 (owner, 2026-10-26, "theo khuyến nghị"): (1) while
 
 ## 7. Release checklist for the person flipping the switch
 
-- [ ] Owner approved the two migrations beyond H2 (`20261026100000_voucher_order_snapshot`, `20261026120000_order_quote_step_voucher`).
+- [x] Owner approved the two migrations beyond H2 (`20261026100000_voucher_order_snapshot`, `20261026120000_order_quote_step_voucher`) on 2026-10-27 ([comment](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/214#issuecomment-6433999206)). That is approval of the SQL only, not of running it on production.
+- [ ] Before applying them to the real database: backup taken; earlier migrations in the expected state; table sizes and a maintenance window agreed (`CREATE INDEX` on `VoucherHold` can block writes while it builds; the `CHECK` change on `OrderQuoteDiscountStep` locks the table and scans it); both rollback lists dry-run on a scratch/staging database with representative data.
 - [ ] CI green on the exact release SHA, including the database and browser jobs.
 - [ ] `pnpm pancake:voucher:accept` passed for the shop within the agreed window; a staff-made cancel was observed on 2026-10-26 (status 6, order `11`; the owner accepted it as a cancel).
 - [ ] The refund sweep is scheduled (§5) and a first run printed `0 … 0` or its real numbers.
