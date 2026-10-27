@@ -619,7 +619,7 @@ test("review 5a22b12: closing the dialog while a TYPED code is being applied sti
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   await action.reached;
   // While the write is running the dialog says so: leaving does NOT cancel it.
-  await expect(dialog.getByText("ưu đãi vẫn được áp dụng")).toBeVisible();
+  await expect(dialog.getByText("yêu cầu vẫn tiếp tục")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Đóng — yêu cầu áp dụng vẫn tiếp tục" })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Quay lại, giữ lựa chọn cũ" })).toHaveCount(0);
   // The shopper leaves while the server is still working.
@@ -629,10 +629,11 @@ test("review 5a22b12: closing the dialog while a TYPED code is being applied sti
   // Nothing else is opened or closed: the saved choice and the totals outside the dialog catch up on their own.
   await expect.poll(async () => (await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).not.toBeNull();
   await expect(expected).toContainText("860.000");
+  await expect(page.getByText("Yêu cầu áp dụng ưu đãi chưa được thực hiện")).toHaveCount(0);
   // Once it has landed, the plain wording is back.
   await page.locator("[data-voucher-picker] > button").click();
   await expect(dialog.getByRole("button", { name: "Quay lại, giữ lựa chọn cũ" })).toBeVisible();
-  await expect(dialog.getByText("ưu đãi vẫn được áp dụng")).toHaveCount(0);
+  await expect(dialog.getByText("yêu cầu vẫn tiếp tục")).toHaveCount(0);
 });
 
 test("review 5a22b12: closing the dialog while the LINKED code is being applied still refreshes the cart and clears the used offer", async ({ page, context }) => {
@@ -652,7 +653,7 @@ test("review 5a22b12: closing the dialog while the LINKED code is being applied 
   await action.reached;
   // The back button no longer promises to "keep the old choice" while the request is still going to land.
   await expect(dialog.getByRole("button", { name: "Quay lại, giữ lựa chọn cũ" })).toHaveCount(0);
-  await expect(dialog.getByText("ưu đãi vẫn được áp dụng")).toBeVisible();
+  await expect(dialog.getByText("yêu cầu vẫn tiếp tục")).toBeVisible();
   await dialog.getByRole("button", { name: "Đóng — yêu cầu áp dụng vẫn tiếp tục" }).click();
   await expect(dialog).toBeHidden();
   action.release();
@@ -660,6 +661,54 @@ test("review 5a22b12: closing the dialog while the LINKED code is being applied 
   // The offer that was used is cleared, and the totals outside the dialog are the server's.
   await expect.poll(async () => (await context.cookies()).some((cookie) => cookie.name === "la_voucher_code")).toBe(false);
   await expect(expected).toContainText("860.000");
+});
+
+test("review a772560: a typed code refused after the dialog was closed is not promised while pending, and the refusal is shown outside the dialog", async ({ page }) => {
+  await prisma.cartVoucherSelection.deleteMany({ where: { cartId } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/cart`);
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await dialog.getByLabel("Nhập mã khuyến mãi").fill("WRONG123");
+  const action = await holdNextServerAction(page);
+  await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
+  await action.reached;
+  // While it runs the dialog promises the request continues, never that the voucher will apply.
+  await expect(dialog.getByText("yêu cầu vẫn tiếp tục")).toBeVisible();
+  await expect(dialog.getByText("ưu đãi chỉ có hiệu lực khi được xác nhận")).toBeVisible();
+  await expect(dialog).not.toContainText("vẫn được áp dụng");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  action.release();
+  // The server refuses: nothing is saved, and the cart says so without the shopper having to reopen anything.
+  await expect(page.getByText("Yêu cầu áp dụng ưu đãi chưa được thực hiện")).toBeVisible();
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId, merchandiseMode: "MANUAL" } })).toBe(0);
+  // Reopening shows the reason and clears the notice.
+  await page.locator("[data-voucher-picker] > button").click();
+  await expect(dialog).toContainText("Mã không hợp lệ");
+  await expect(page.getByText("Yêu cầu áp dụng ưu đãi chưa được thực hiện")).toHaveCount(0);
+});
+
+test("review a772560: a code that still needs the shopper's consent is not applied when they leave; the cart says it is not done", async ({ page }) => {
+  await seedCodeThatCostsAGift("KOL73");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/cart`);
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await dialog.getByLabel("Nhập mã khuyến mãi").fill("KOL73");
+  const action = await holdNextServerAction(page);
+  await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
+  await action.reached;
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  action.release();
+  await expect(page.getByText("Yêu cầu áp dụng ưu đãi chưa được thực hiện")).toBeVisible();
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
+  // Reopening shows the code waiting for the shopper's yes, with what it costs.
+  await page.locator("[data-voucher-picker] > button").click();
+  await expect(dialog.getByRole("button", { name: /Tiếp tục với voucher này/ })).toBeVisible();
+  await expect(dialog).toContainText("quà đã chọn sẽ được bỏ khỏi giỏ hàng");
 });
 
 test("review 04dea8b: the linked code applied while pricing cannot be re-read is a success the shopper is told about, not a closed dialog", async ({ page, context }) => {

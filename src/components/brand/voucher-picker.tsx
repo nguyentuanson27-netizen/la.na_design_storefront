@@ -85,11 +85,18 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   const [saving, setSaving] = useState(false);
   // `saving` is set OUTSIDE the transition on purpose: state set inside an async transition is only shown when the whole action ends,
   // and the point of it is to be shown while the action is still running.
+  // A write that ends while the dialog is closed and did NOT land (a refused code, a consent still owed, an offer that changed) leaves no
+  // dialog to say so: this flag shows a notice beside the trigger until the shopper opens the dialog again, where the reason is waiting.
+  const [lateRefusal, setLateRefusal] = useState(false);
+  const landed = useRef(false);
   const saveWith = (run: () => Promise<void>) => {
     setSaving(true);
+    setLateRefusal(false);
+    landed.current = false;
     startTransition(async () => {
       try {
         await run();
+        if (!openRef.current && !landed.current) setLateRefusal(true);
       } finally {
         setSaving(false);
       }
@@ -127,6 +134,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   // Escape are not blocked: nothing is lost by leaving), and then no later close will come, so the refresh and the clearing of a used
   // linked offer happen here instead.
   const settleIfClosed = () => {
+    landed.current = true;
     if (!openRef.current) settleCodeApplied();
   };
 
@@ -304,6 +312,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         setOpen(false);
         setConfirming(false);
         setMessage(null);
+        landed.current = true;
         settleCodeApplied();
       } else if (result.ok) {
         // Saved on the server, but the picker could not be re-read right now: not a failure, and not a promise about the price either.
@@ -353,10 +362,11 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
 
   return (
     <div data-voucher-picker>
-      <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 border border-black/30 px-4 py-3 text-left text-sm font-semibold hover:border-black focus-visible:outline-2 focus-visible:outline-offset-4" aria-haspopup="dialog" onClick={() => setOpen(true)}>
+      <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 border border-black/30 px-4 py-3 text-left text-sm font-semibold hover:border-black focus-visible:outline-2 focus-visible:outline-offset-4" aria-haspopup="dialog" onClick={() => { setLateRefusal(false); setOpen(true); }}>
         <span>Ưu đãi</span>
         <span className="text-right font-normal text-black/75">{summary}</span>
       </button>
+      {lateRefusal ? <p role="status" className="mt-2 text-sm text-black/80">Yêu cầu áp dụng ưu đãi chưa được thực hiện. Nàng mở lại “Ưu đãi” để xem lý do và thử lại.</p> : null}
 
       <dialog
         ref={dialog}
@@ -434,7 +444,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
           </div>
 
           <footer className="sticky bottom-0 border-t border-black/15 bg-[#fcf8f6] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
-            {saving ? <p role="status" className="mt-3 text-sm text-black/80">Đang áp dụng ưu đãi. Nếu nàng đóng hộp thoại, ưu đãi vẫn được áp dụng.</p> : null}
+            {saving ? <p role="status" className="mt-3 text-sm text-black/80">Đang xử lý yêu cầu áp dụng. Nếu nàng đóng hộp thoại, yêu cầu vẫn tiếp tục; ưu đãi chỉ có hiệu lực khi được xác nhận.</p> : null}
             <p role="status" aria-live="polite" className="sr-only">{message ?? ""}</p>
             {confirming ? (
               <div className="flex flex-col gap-2">
