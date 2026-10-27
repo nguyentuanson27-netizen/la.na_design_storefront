@@ -114,6 +114,12 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
+// Optional review screenshots (H4): written only when H4_SHOTS_DIR is set; CI never sets it, so this changes nothing there.
+const SHOTS_DIR = process.env.H4_SHOTS_DIR;
+async function shot(page: import("@playwright/test").Page, name: string) {
+  if (SHOTS_DIR) await page.screenshot({ path: `${SHOTS_DIR}/${name}.png`, fullPage: true });
+}
+
 const row = (page: import("@playwright/test").Page, name: string) => page.locator("article", { hasText: name });
 
 test("V07 the list renders, says the feature is OFF on the server, has no Axe violations and is keyboard reachable", async ({ page, context }) => {
@@ -126,6 +132,7 @@ test("V07 the list renders, says the feature is OFF on the server, has no Axe vi
   await expect(page.getByRole("note")).toContainText("LA_VOUCHER_ENABLED");
   await expect(row(page, seededName)).toContainText("Nháp");
   await expect(row(page, seededName)).toContainText("Giảm 50.000đ · Đơn từ 600.000đ");
+  await shot(page, "admin-list");
 
   const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibility.violations).toEqual([]);
@@ -157,6 +164,7 @@ test("V07 the create form has no Axe violations, and a campaign written through 
   await page.getByLabel(/^Giá trị đơn tối thiểu/).fill("700000");
   await page.getByLabel("Tổng số lượt dùng (tuỳ chọn)").fill("25");
   await page.getByLabel("Ngân sách tối đa (đồng, tuỳ chọn)").fill("1750000");
+  await shot(page, "admin-form-filled");
   const formAxeFilled = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(formAxeFilled.violations).toEqual([]);
   await page.getByRole("button", { name: "Lưu voucher" }).click();
