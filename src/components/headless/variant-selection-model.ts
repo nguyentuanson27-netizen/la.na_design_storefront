@@ -66,6 +66,13 @@ export const DEFAULT_ADD_TO_BAG_LABEL = "Thêm vào giỏ";
 export const PREORDER_ADD_TO_BAG_LABEL = PREORDER_LABEL;
 
 /**
+ * The sticky mobile bar skips the bag: a finished selection goes straight to checkout. A preorder
+ * keeps its §30 word for the same reason `addToBagLabel` does -- "buy now" on an item that ships in
+ * fifteen days is the misreading §30 forbids.
+ */
+export const DEFAULT_BUY_NOW_LABEL = "Mua ngay";
+
+/**
  * The accessible names for the same two buttons.
  *
  * A button whose visible word changes but whose accessible name does not would tell a screen-reader
@@ -365,6 +372,8 @@ export function resolveMobilePurchasePresentation(
   selection: VariantSelectionState,
 ): Readonly<{
   actionLabel: string;
+  /** What the sticky bar's button says: `actionLabel`, except a ready selection offers buy-now. */
+  stickyActionLabel: string;
   summary: string;
   readyToAdd: boolean;
   unavailableMessage: string;
@@ -414,12 +423,15 @@ export function resolveMobilePurchasePresentation(
       ? "Lựa chọn này tạm hết"
       : view.unavailableMessage;
 
+  const actionLabel = readyToAdd
+    ? view.addToBagLabel
+    : selectionComplete && unavailableMessage
+      ? unavailableMessage
+      : `Chọn ${(pendingLabels.length > 0 ? pendingLabels : dimensionLabels).join(" / ")}`;
+
   return Object.freeze({
-    actionLabel: readyToAdd
-      ? view.addToBagLabel
-      : selectionComplete && unavailableMessage
-        ? unavailableMessage
-        : `Chọn ${(pendingLabels.length > 0 ? pendingLabels : dimensionLabels).join(" / ")}`,
+    actionLabel,
+    stickyActionLabel: readyToAdd && !view.isPreorderSelection ? DEFAULT_BUY_NOW_LABEL : actionLabel,
     summary: selectedValues.join(" · "),
     readyToAdd,
     unavailableMessage,

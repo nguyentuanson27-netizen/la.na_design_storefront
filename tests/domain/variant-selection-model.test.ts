@@ -646,6 +646,7 @@ test("mobile complete summary follows kind, color, size and ready action becomes
 
   assert.deepEqual(resolveMobilePurchasePresentation(view, selection), {
     actionLabel: "Thêm vào giỏ",
+    stickyActionLabel: "Mua ngay",
     summary: "Nguyên bộ · Trắng · M",
     readyToAdd: true,
     unavailableMessage: "",

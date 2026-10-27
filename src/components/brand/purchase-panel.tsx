@@ -607,7 +607,8 @@ export function PurchasePanelView({
       openSheet();
       return;
     }
-    runPurchase("panel", () => addToBag(requestStorefrontCartDrawerOpen));
+    // The bar's one-tap path is buy-now: add the unit, then go straight to checkout.
+    runPurchase("panel", buyNow);
   }
 
   /**
@@ -1006,7 +1007,7 @@ export function PurchasePanelView({
             disabled={isPending}
             onClick={handleStickyAction}
           >
-            {mobilePresentation.actionLabel}
+            {mobilePresentation.stickyActionLabel}
           </button>
         </div>
       </section>
