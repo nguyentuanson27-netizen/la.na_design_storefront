@@ -775,6 +775,69 @@ test("review 8bfe958: a linked code whose response is lost after the server save
   expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(1);
 });
 
+test("review 399c689: when clearing a used linked offer fails, the cart is still refreshed, the saved code is not applied again, and the next close retries the clearing", async ({ page, context }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL70", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 70K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  await prisma.cartVoucherSelection.deleteMany({ where: { cartId } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/shop/${PREFIX}dress?voucher=KOL70`);
+  await page.goto(`${BASE}/cart`);
+  const expected = page.locator("[data-cart-voucher-total]").first();
+  await expect(expected).toContainText("880.000");
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await expect(dialog).toContainText("Đã áp dụng mã ưu đãi");
+  const kol70 = await prisma.voucherCampaign.findFirstOrThrow({ where: { code: "KOL70" }, select: { id: true } });
+  expect((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).toBe(kol70.id);
+  const cookieSet = async () => (await context.cookies()).some((cookie) => cookie.name === "la_voucher_code");
+  // Closing sends the clearing request; it fails in transport.
+  const clearing = await holdNextServerAction(page, "abort");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await clearing.reached;
+  clearing.release();
+  // The totals outside the dialog still catch up, and nothing was applied a second time.
+  await expect(expected).toContainText("860.000");
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(1);
+  expect(await cookieSet()).toBe(true);
+  // The next close retries the clearing (the offer is still offered meanwhile, and applying it again would change nothing).
+  await page.locator("[data-voucher-picker] > button").click();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect.poll(cookieSet).toBe(false);
+  expect((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).toBe(kol70.id);
+});
+
+test("review 399c689: a clearing request whose response is lost after the server cleared the offer ends with the cart refreshed and no offer left", async ({ page, context }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL70", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 70K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  await prisma.cartVoucherSelection.deleteMany({ where: { cartId } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/shop/${PREFIX}dress?voucher=KOL70`);
+  await page.goto(`${BASE}/cart`);
+  const expected = page.locator("[data-cart-voucher-total]").first();
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await expect(dialog).toContainText("Đã áp dụng mã ưu đãi");
+  const clearing = await holdNextServerAction(page, "lose-response");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await clearing.reached;
+  clearing.release();
+  await expect(expected).toContainText("860.000");
+  // The server did clear the offer; the retry on the next close finds nothing to clear and changes nothing.
+  await expect.poll(async () => (await context.cookies()).some((cookie) => cookie.name === "la_voucher_code")).toBe(false);
+  await page.locator("[data-voucher-picker] > button").click();
+  await expect(dialog.getByRole("button", { name: "Dùng mã từ liên kết" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(1);
+});
+
 test("review 04dea8b: the linked code applied while pricing cannot be re-read is a success the shopper is told about, not a closed dialog", async ({ page, context }) => {
   await prisma.voucherCampaign.create({
     data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL74", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 74K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },

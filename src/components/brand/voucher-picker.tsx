@@ -45,6 +45,9 @@ const GENERIC_ERROR = "Chưa cập nhật được ưu đãi. Nàng thử lại 
 // which would drop the notice with it. This survives a remount (and only a short while, so it never leaks into a later visit).
 const UNKNOWN_OUTCOME_TTL_MS = 30_000;
 let unknownOutcomeAt = 0;
+// Same reason: the clearing of a used linked offer that failed in transport. The re-read that follows remounts the picker (the saved choice
+// changed), which would forget it; this keeps the opaque handle so the next close can repeat the compare-and-clear. Never the code.
+let pendingOfferClearing: string | null = null;
 
 export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial: VoucherPickerModel; linkOffer?: string | null }>) {
   const { previewDraft, commitDraft, applyCode, applyLinkedCode, dismissLinkedOffer } = useVoucherPickerActions();
@@ -75,8 +78,8 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   const [linkUsed, setLinkUsed] = useState(false);
   // The opaque handle of the offer this page SHOWED; it goes back with the click so only that offer can be applied.
   const linkVisible = linkOffer !== null && !linkUsed;
-  const linkApplied = useRef(false);
-  const linkToken = useRef<string | null>(null);
+  const linkApplied = useRef(pendingOfferClearing !== null);
+  const linkToken = useRef<string | null>(pendingOfferClearing);
   // The token is an opaque handle the server gave back for the offer just used (never the code): it lets the close clear THAT offer only.
   const markLinkUsed = (result: unknown) => {
     linkApplied.current = true;
@@ -141,7 +144,19 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
       codeApplied.current = false;
       const token = linkToken.current;
       linkToken.current = null;
-      void (token === null ? Promise.resolve() : dismissLinkedOffer({ offerToken: token })).then(() => router.refresh());
+      // The page is re-read whether or not the cleanup answered: the code is already saved, and the totals outside the dialog must say so.
+      // If the cleanup itself failed (no network, a lost response) its outcome is unknown, so the same compare-and-clear is kept for the next
+      // close -- it is safe to repeat, because it only ever clears the offer THIS tab used -- and the saved code is never applied again.
+      pendingOfferClearing = null;
+      void (token === null ? Promise.resolve() : dismissLinkedOffer({ offerToken: token }))
+        .catch(() => {
+          pendingOfferClearing = token;
+          if (linkToken.current === null && !linkApplied.current) {
+            linkToken.current = token;
+            linkApplied.current = true;
+          }
+        })
+        .finally(() => router.refresh());
       return;
     }
     if (!codeApplied.current) return;
