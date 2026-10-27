@@ -585,8 +585,11 @@ test("review 735ff62: a replaced offer also drops a typed code that was waiting 
   expect((await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).not.toBe(kol73.id);
 });
 
-/** Holds the NEXT Server Action POST until released, so a test can close the dialog while it is still running. */
-async function holdNextServerAction(page: Page) {
+/**
+ * Holds the NEXT Server Action POST until released, so a test can close the dialog while it is still running. `how` says what then happens
+ * to it: it goes on normally, it never reaches the server ("abort"), or the server handles it and the response is lost ("lose-response").
+ */
+async function holdNextServerAction(page: Page, how: "continue" | "abort" | "lose-response" = "continue") {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   let held!: () => void;
@@ -598,6 +601,11 @@ async function holdNextServerAction(page: Page) {
     used = true;
     held();
     await gate;
+    if (how === "abort") return route.abort("failed");
+    if (how === "lose-response") {
+      await route.fetch();
+      return route.abort("failed");
+    }
     await route.fallback();
   });
   return { release, reached };
@@ -709,6 +717,62 @@ test("review a772560: a code that still needs the shopper's consent is not appli
   await page.locator("[data-voucher-picker] > button").click();
   await expect(dialog.getByRole("button", { name: /Tiếp tục với voucher này/ })).toBeVisible();
   await expect(dialog).toContainText("quà đã chọn sẽ được bỏ khỏi giỏ hàng");
+});
+
+test("review 8bfe958: a typed code whose request never reaches the server, with the dialog closed, is reported as unknown and nothing is saved or replayed", async ({ page }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL70", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 70K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  await prisma.cartVoucherSelection.deleteMany({ where: { cartId } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/cart`);
+  const expected = page.locator("[data-cart-voucher-total]").first();
+  await expect(expected).toContainText("880.000");
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await dialog.getByLabel("Nhập mã khuyến mãi").fill("KOL70");
+  const action = await holdNextServerAction(page, "abort");
+  await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
+  await action.reached;
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  action.release();
+  // Neither "applied" nor "not done": the outcome is unknown, and the page is still a working cart (no error screen).
+  await expect(page.locator("[data-voucher-picker] > p", { hasText: "Chưa xác định được kết quả" })).toBeVisible();
+  await expect(page.getByText("Yêu cầu áp dụng ưu đãi chưa được thực hiện")).toHaveCount(0);
+  await expect(expected).toContainText("880.000");
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId, merchandiseMode: "MANUAL" } })).toBe(0);
+  // Reopening shows the same neutral message, the notice goes away, and the shopper can try again by hand.
+  await page.locator("[data-voucher-picker] > button").click();
+  await expect(dialog).toContainText("Chưa xác định được kết quả");
+  await expect(dialog.getByRole("button", { name: "Áp dụng mã" })).toBeVisible();
+});
+
+test("review 8bfe958: a linked code whose response is lost after the server saved it, with the dialog closed, ends with the cart showing the saved choice and no false success or refusal", async ({ page }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL70", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 70K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  await prisma.cartVoucherSelection.deleteMany({ where: { cartId } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/shop/${PREFIX}dress?voucher=KOL70`);
+  await page.goto(`${BASE}/cart`);
+  const expected = page.locator("[data-cart-voucher-total]").first();
+  await expect(expected).toContainText("880.000");
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  const action = await holdNextServerAction(page, "lose-response");
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await action.reached;
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  action.release();
+  // The server saved it; the browser never heard. The cart re-reads the truth by itself and says the outcome was not known.
+  await expect.poll(async () => (await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).not.toBeNull();
+  await expect(expected).toContainText("860.000");
+  await expect(page.locator("[data-voucher-picker] > p", { hasText: "Chưa xác định được kết quả" })).toBeVisible();
+  await expect(page.getByText("Yêu cầu áp dụng ưu đãi chưa được thực hiện")).toHaveCount(0);
+  // Nothing was replayed: exactly one saved choice for the cart.
+  expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(1);
 });
 
 test("review 04dea8b: the linked code applied while pricing cannot be re-read is a success the shopper is told about, not a closed dialog", async ({ page, context }) => {

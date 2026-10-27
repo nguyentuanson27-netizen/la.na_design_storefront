@@ -36,9 +36,15 @@ const CODE_ERROR: Readonly<Record<string, string>> = {
   FEATURE_DISABLED: "Ưu đãi tạm thời chưa khả dụng.",
   CART_UNAVAILABLE: "Giỏ hàng không còn khả dụng. Nàng tải lại trang nhé.",
   QUOTE_UNAVAILABLE: "Chưa tính được giá cho ưu đãi này lúc này, nên chưa áp dụng. Nàng thử lại sau giây lát nhé.",
+  UNKNOWN_OUTCOME: "Chưa xác định được kết quả của yêu cầu áp dụng ưu đãi. Nàng kiểm tra lại ưu đãi đang dùng rồi thử lại nếu cần.",
   OFFER_CHANGED: "Mã ưu đãi từ liên kết vừa được thay bằng một mã khác ở trang khác, nên chưa áp dụng. Nàng xem lại mã đang được đề nghị rồi bấm lại nhé.",
 };
 const GENERIC_ERROR = "Chưa cập nhật được ưu đãi. Nàng thử lại sau giây lát nhé.";
+
+// When the outcome of a write is unknown the page is re-read, and if the saved choice differs the picker is REMOUNTED on the fresh model --
+// which would drop the notice with it. This survives a remount (and only a short while, so it never leaks into a later visit).
+const UNKNOWN_OUTCOME_TTL_MS = 30_000;
+let unknownOutcomeAt = 0;
 
 export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial: VoucherPickerModel; linkOffer?: string | null }>) {
   const { previewDraft, commitDraft, applyCode, applyLinkedCode, dismissLinkedOffer } = useVoucherPickerActions();
@@ -89,14 +95,27 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   // dialog to say so: this flag shows a notice beside the trigger until the shopper opens the dialog again, where the reason is waiting.
   const [lateRefusal, setLateRefusal] = useState(false);
   const landed = useRef(false);
+  // The request itself failed (no network, a response lost after the server may have committed, an unexpected error): the outcome is
+  // UNKNOWN, which is not the same as refused. Nothing is replayed and nothing is claimed; the cart is re-read and the shopper told to check.
+  const [unknownOutcome, setUnknownOutcomeState] = useState(() => Date.now() - unknownOutcomeAt < UNKNOWN_OUTCOME_TTL_MS);
+  const setUnknownOutcome = (value: boolean) => {
+    unknownOutcomeAt = value ? Date.now() : 0;
+    setUnknownOutcomeState(value);
+  };
   const saveWith = (run: () => Promise<void>) => {
     setSaving(true);
     setLateRefusal(false);
+    setUnknownOutcome(false);
     landed.current = false;
     startTransition(async () => {
       try {
         await run();
         if (!openRef.current && !landed.current) setLateRefusal(true);
+      } catch {
+        setError(CODE_ERROR.UNKNOWN_OUTCOME!);
+        setUnknownOutcome(true);
+        // Re-read what is persisted: the page behind (and, when it changed, the picker) catch up with the server's truth.
+        router.refresh();
       } finally {
         setSaving(false);
       }
@@ -362,10 +381,11 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
 
   return (
     <div data-voucher-picker>
-      <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 border border-black/30 px-4 py-3 text-left text-sm font-semibold hover:border-black focus-visible:outline-2 focus-visible:outline-offset-4" aria-haspopup="dialog" onClick={() => { setLateRefusal(false); setOpen(true); }}>
+      <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 border border-black/30 px-4 py-3 text-left text-sm font-semibold hover:border-black focus-visible:outline-2 focus-visible:outline-offset-4" aria-haspopup="dialog" onClick={() => { setLateRefusal(false); setUnknownOutcome(false); setOpen(true); }}>
         <span>Ưu đãi</span>
         <span className="text-right font-normal text-black/75">{summary}</span>
       </button>
+      {unknownOutcome && !open ? <p role="status" className="mt-2 text-sm text-black/80">Chưa xác định được kết quả của yêu cầu áp dụng ưu đãi. Nàng mở lại “Ưu đãi” để kiểm tra ưu đãi đang dùng rồi thử lại nếu cần.</p> : null}
       {lateRefusal ? <p role="status" className="mt-2 text-sm text-black/80">Yêu cầu áp dụng ưu đãi chưa được thực hiện. Nàng mở lại “Ưu đãi” để xem lý do và thử lại.</p> : null}
 
       <dialog
