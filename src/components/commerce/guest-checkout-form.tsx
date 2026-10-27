@@ -147,6 +147,8 @@ export function GuestCheckoutForm({
   totalsSlot,
   preorderSlot,
   desktopPreorderSlot,
+  voucherSlot,
+  submitBlockedReason,
   bankTransferEnabled = false,
 }: Readonly<{
   quoteProof: string | null;
@@ -165,6 +167,10 @@ export function GuestCheckoutForm({
   totalsSlot?: ReactNode;
   preorderSlot?: ReactNode;
   desktopPreorderSlot?: ReactNode;
+  /** V18: the vouchers' panel, above the receiving fields. */
+  voucherSlot?: ReactNode;
+  /** V18: while set the order cannot be placed, and this is why (an offered voucher the buyer has not decided on). */
+  submitBlockedReason?: string | null;
   /** Offer bank transfer beside COD. The server refuses the method too when it is off. */
   bankTransferEnabled?: boolean;
 }>) {
@@ -341,7 +347,7 @@ export function GuestCheckoutForm({
   // could not be loaded at all (the retry button is the way forward then).
   const waitingForNewRender = Boolean(submitState && !submitState.ok && (submitState.status === "PRICE_CHANGED" || (submitState.status === "RETRYABLE" && submitState.giftRepairRequired)) && submittedRenderId === quoteRenderId);
   const submitDisabled =
-    waitingForNewRender || !quoteProof || isSubmitting || giftPending || Boolean(geoError) || isRefreshingQuote || lockSubmission;
+    waitingForNewRender || !quoteProof || isSubmitting || giftPending || Boolean(geoError) || isRefreshingQuote || lockSubmission || Boolean(submitBlockedReason);
 
   // UX-08: a disabled button always says why, beside it, in the same words the bar below repeats.
   // A final outcome is already explained by the feedback block right above the button.
@@ -349,6 +355,7 @@ export function GuestCheckoutForm({
     : !quoteProof ? (unavailableNotice ? "Giỏ hàng cần xem lại một chút, nàng xem hướng dẫn ở đầu trang nhé." : "Giá chưa được cập nhật, nàng tải lại trang nhé.")
     : giftPending ? "Đang lưu quà tặng…"
     : isRefreshingQuote || waitingForNewRender ? "Đang cập nhật giá mới…"
+    : submitBlockedReason ? submitBlockedReason
     : geoError ? "Chưa tải được địa chỉ, nàng bấm “Thử lại” ở phần địa chỉ nhé."
     : null;
   const submitReasonId = useId();
@@ -520,6 +527,7 @@ export function GuestCheckoutForm({
       {/* UX-08: why the order cannot be placed, and how to fix it, before the first field. */}
       {unavailableNotice ? <div id="checkout-blocking-notice" tabIndex={-1} role="alert" className="border border-[#b42318]/50 px-4 py-3 text-sm"><p className="font-semibold">Giỏ hàng cần xem lại một chút</p><p className="mt-1 leading-6">{unavailableNotice}</p><div className="flex flex-wrap items-center gap-x-4"><button type="button" className="min-h-11 underline" disabled={isRefreshingQuote || giftPending || isSubmitting} onClick={refreshQuote}>Cập nhật giá</button><Link href="/cart" className="min-h-11 content-center underline">Quay lại giỏ hàng</Link></div></div> : null}
       {upsell ? <CheckoutUpsell model={upsell} locked={isSubmitting || lockSubmission} /> : null}
+      {voucherSlot}
       <h2 className="font-display text-2xl">Thông tin nhận hàng</h2>
 
       <div className="grid gap-3 sm:grid-cols-2">

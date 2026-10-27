@@ -259,7 +259,9 @@ function isCartChangedReason(reason: string): boolean {
     reason === "PRICE_UNAVAILABLE" ||
     reason === "STOCK_UNAVAILABLE" ||
     // GQ20: the quote the buyer proved no longer holds; the next submit creates a new order.
-    reason === "BENEFIT_REQUOTE_REQUIRED"
+    reason === "BENEFIT_REQUOTE_REQUIRED" ||
+    // V13: the voucher could not be accepted at the write boundary (expired, moved, not the quoted one).
+    reason === "VOUCHER_REQUOTE_REQUIRED"
   );
 }
 

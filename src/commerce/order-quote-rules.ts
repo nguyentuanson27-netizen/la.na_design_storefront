@@ -24,7 +24,8 @@ const MIN_INT = -2_147_483_648;
 
 export type QuoteDiscountStepFacts = Readonly<{
   campaignId: string;
-  source: "LEGACY" | "QUANTITY_TIER";
+  /** `VOUCHER` is the merchandise voucher segment (V18), always the last step of a line. */
+  source: "LEGACY" | "QUANTITY_TIER" | "VOUCHER";
   campaignKind: string;
   priority: number | null;
   inputPriceVnd: number;
@@ -141,7 +142,7 @@ function validateLine(line: QuoteLineFacts): QuoteStructureIssue | null {
     if (
       typeof step !== "object" ||
       step === null ||
-      (step.source !== "LEGACY" && step.source !== "QUANTITY_TIER") ||
+      (step.source !== "LEGACY" && step.source !== "QUANTITY_TIER" && step.source !== "VOUCHER") ||
       !isQuoteText(step.campaignId, 200) ||
       !isQuoteText(step.campaignKind, 40) ||
       !(step.priority === null || (typeof step.priority === "number" && Number.isInteger(step.priority) && step.priority >= MIN_INT && step.priority <= MAX_INT)) ||

@@ -164,6 +164,8 @@ test("live price or stock rejection becomes a cart-changed result while internal
   const cases = [
     { reason: "PRICE_CHANGED" as const, expectedReason: "CART_CHANGED" },
     { reason: "STOCK_UNAVAILABLE" as const, expectedReason: "CART_CHANGED" },
+    // V13: the voucher could not be accepted at the write boundary; the buyer re-quotes, nothing was sent.
+    { reason: "VOUCHER_REQUOTE_REQUIRED" as const, expectedReason: "CART_CHANGED" },
     { reason: "SHOP_SCOPE_UNVERIFIED" as const, expectedReason: "CHECKOUT_UNAVAILABLE" },
     { reason: "LOCAL_ORDER_INVALID" as const, expectedReason: "CHECKOUT_UNAVAILABLE" },
   ];
@@ -519,6 +521,9 @@ test("I6b an ambiguous write keeps holding and a rejection releases", async () =
   for (const [submission, endsBeforeWrite, expected] of [
     [{ ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" }, false, "UNKNOWN"],
     [{ ok: false, state: "REJECTED", reason: "STOCK_UNAVAILABLE" }, true, "RELEASED"],
+    // V13: refused by the website's own acceptance AFTER the hold became SUBMITTING and before any send;
+    // the rejection is evidence nothing landed, so the units go back at once.
+    [{ ok: false, state: "REJECTED", reason: "VOUCHER_REQUOTE_REQUIRED" }, false, "RELEASED"],
   ] as const) {
     const { capacity, rows } = createFakeCapacity();
     const service = createGuestCheckoutSubmitService({

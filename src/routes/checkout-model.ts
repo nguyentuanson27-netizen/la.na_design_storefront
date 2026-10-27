@@ -11,6 +11,7 @@ import type { TrustedProductImage } from "../commerce/product-media.ts";
 import { buildCheckoutPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
 import { describeLineDiscount } from "./line-discount-model.ts";
 import { buildOrderSummary, type OrderSummaryView } from "./order-summary-model.ts";
+import type { VoucherPickerModel } from "./voucher-picker-model.ts";
 
 /**
  * Everything the checkout route decides, as one pure function.
@@ -119,8 +120,39 @@ export type CheckoutBenefitView = Readonly<{
  */
 export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string | null }>;
 
+/** V18: one voucher line on the checkout: what it is called and what it takes off. */
+export type CheckoutVoucherLine = Readonly<{ id: string; title: string; amountText: string }>;
+
+/**
+ * V18: what the checkout says about vouchers. Exactly one of three situations, or `null` for "nothing to say":
+ *  - `HELD`    the cart holds vouchers that the quote below already includes; `heldUntilMs` is the earliest expiry.
+ *  - `OFFERED` the shopper's selection would save money but nothing is held yet. The form cannot be submitted until the
+ *              shopper confirms it (a deliberate POST) or drops the vouchers in the cart: a checkout must never place an
+ *              order without a voucher the shopper was just shown.
+ *  - `STALE`   the cart held vouchers that no longer describe it and none is on offer; the shopper is told, not charged for them.
+ */
+export type CheckoutVoucherView = Readonly<
+  | { state: "HELD"; lines: readonly CheckoutVoucherLine[]; heldUntilMs: number | null }
+  | {
+      state: "OFFERED";
+      /** The quote the shopper saw; the hold POST sends it back and the server recomputes it. */
+      digest: string;
+      lines: readonly CheckoutVoucherLine[];
+      /** Total after the vouchers, shipping included, as the hold will make it. */
+      totalText: string;
+      /** The consent the hold needs, in words: a gift that would be lost, a total that would go up. Null when there is nothing to accept. */
+      giftLossText: string | null;
+      totalIncreaseText: string | null;
+      /** The previous holds expired or stopped describing the cart. */
+      afterStale: boolean;
+    }
+  | { state: "STALE" }
+>;
+
 export type CheckoutViewModel = Readonly<{
   state: CheckoutState;
+  /** V18: absent unless the voucher feature has something to say about this cart. */
+  vouchers?: CheckoutVoucherView;
   giftPicker?: CartGiftPickerModel;
   attemptKey?: string;
   /** UI refresh identity, never a form key or quote authority. */
@@ -218,6 +250,28 @@ function paidLineDiscount(
     ...checkoutDiscountEntry(discount),
     ...(cartLine.price !== null && fact.unitPriceVnd < cartLine.price ? { promotionPriceText: currency.format(cartLine.price) } : {}),
   };
+}
+
+type QuoteLine = BenefitCheckoutFacts["lines"][number];
+type BenefitCheckoutFacts = Extract<BenefitCheckoutRender, { kind: "BENEFIT" }>["facts"];
+
+/** The line as it stood before the voucher: price and ledger without the final VOUCHER step. */
+function stripVoucherStep<L extends Pick<QuoteLine, "unitPriceVnd" | "discountSteps">>(line: L): L {
+  const last = line.discountSteps.at(-1);
+  if (last === undefined || last.source !== "VOUCHER") return line;
+  return { ...line, unitPriceVnd: last.inputPriceVnd, discountSteps: line.discountSteps.slice(0, -1) };
+}
+
+function stripVoucherSteps(facts: BenefitCheckoutFacts): BenefitCheckoutFacts {
+  return { ...facts, lines: facts.lines.map(stripVoucherStep) };
+}
+
+/** What the merchandise voucher took off the paid lines, whole VND. */
+function voucherSavingVnd(facts: BenefitCheckoutFacts): number {
+  return facts.lines.reduce((sum, line) => {
+    const last = line.discountSteps.at(-1);
+    return last !== undefined && last.source === "VOUCHER" ? sum + (last.inputPriceVnd - last.outputPriceVnd) * line.quantity : sum;
+  }, 0);
 }
 
 export function buildCheckoutViewModel(
@@ -377,7 +431,7 @@ export function buildBenefitCheckoutViewModel(
         optionLabel: cartLine ? [cartLine.color, cartLine.size].filter(Boolean).join(" / ") || "Biến thể" : "Biến thể",
         quantity: fact.quantity,
         unitPriceText: currency.format(fact.unitPriceVnd),
-        ...paidLineDiscount(cartLine, fact),
+        ...paidLineDiscount(cartLine, stripVoucherStep(fact)),
         lineTotalText: currency.format(fact.lineTotalVnd),
         preorderLabel: fact.fulfillmentState === "PREORDER" ? PREORDER_LABEL : null,
       }),
@@ -405,16 +459,33 @@ export function buildBenefitCheckoutViewModel(
   const listedValueVnd = paidFacts.every((fact) => listedUnitPrices.has(fact.pancakeVariationId))
     ? paidFacts.reduce((sum, fact) => sum + listedUnitPrices.get(fact.pancakeVariationId)! * fact.quantity, 0)
     : null;
-  const promotions = buildCheckoutPromotionView(facts, giftQuantity, render.campaignNames, listedUnitPrices);
-  const summary = listedValueVnd === null
+  // A merchandise voucher is the last step of each line it touched. The tier and promotion rows are measured on the
+  // price BEFORE it, or the voucher's saving would be booked under the tier's name.
+  const withoutVoucher = stripVoucherSteps(facts);
+  const promotions = buildCheckoutPromotionView(withoutVoucher, giftQuantity, render.campaignNames, listedUnitPrices);
+  const voucherSaving = voucherSavingVnd(facts);
+  const voucherRow = render.voucher && voucherSaving > 0 && render.voucher.merchandiseCampaignId !== null && voucherSaving === render.voucher.merchandiseDiscountVnd
+    ? Object.freeze({
+        id: `voucher:${render.voucher.merchandiseCampaignId}`,
+        label: render.voucher.names.get(render.voucher.merchandiseCampaignId) ?? "Voucher giảm giá",
+        amountVnd: voucherSaving,
+        amountText: currency.format(voucherSaving),
+      })
+    : null;
+  const voucherConsistent = (voucherSaving === 0) === (voucherRow === null);
+  const shippingVoucher = render.voucher && render.voucher.shippingWaivedVnd > 0 && render.voucher.shippingCampaignId !== null
+    ? { label: render.voucher.names.get(render.voucher.shippingCampaignId) ?? "Voucher vận chuyển", waivedVnd: render.voucher.shippingWaivedVnd }
+    : undefined;
+  const summary = listedValueVnd === null || !voucherConsistent
     ? null
     : buildOrderSummary({
         goodsAfterDiscountsVnd: facts.paidSubtotalVnd,
-        discounts: promotions?.savings ?? [],
+        discounts: [...(promotions?.savings ?? []), ...(voucherRow ? [voucherRow] : [])],
         shippingFeeVnd: facts.shippingFeeVnd,
         giftQuantity,
         expectedTotalVnd: facts.totalVnd,
         expectedValueVnd: listedValueVnd,
+        ...(shippingVoucher ? { shippingVoucher } : {}),
       });
 
   return Object.freeze({
@@ -447,4 +518,45 @@ export function buildBenefitCheckoutViewModel(
     ...(summary ? { summary } : {}),
     unavailableNotice: null,
   });
+}
+
+/**
+ * V18: the vouchers' part of the checkout page. Pure.
+ *
+ * Held vouchers are read from the SAME render the quote, the totals and the proof came from, so what is listed here is
+ * exactly what the order below includes. An offer is only ever the shopper's own selection previewed by the server; it
+ * becomes a hold by an explicit POST, never by rendering this page.
+ */
+export function buildCheckoutVoucherView(input: Readonly<{
+  /** Only what the vouchers need of the render: its kind, the held vouchers it quoted and whether stale holds were set aside. */
+  render: Readonly<{ kind: string; voucher?: Extract<BenefitCheckoutRender, { kind: "BENEFIT" }>["voucher"]; voucherStale?: true }>;
+  picker: VoucherPickerModel | null;
+  /** Earliest expiry of the cart's live holds (database clock), or null when it could not be read. */
+  heldUntilMs: number | null;
+  /** False when a NEW hold could not be granted here (gates, shop not verified): an offer would block an order nobody can unblock. */
+  offerAllowed?: boolean;
+}>): CheckoutVoucherView | null {
+  const { render } = input;
+  const picker = input.offerAllowed === false ? null : input.picker;
+  if (render.kind === "BENEFIT" && render.voucher) {
+    const v = render.voucher;
+    const lines: CheckoutVoucherLine[] = [];
+    if (v.merchandiseCampaignId !== null) lines.push({ id: v.merchandiseCampaignId, title: v.names.get(v.merchandiseCampaignId) ?? "Voucher giảm giá", amountText: `−${currency.format(v.merchandiseDiscountVnd)}` });
+    if (v.shippingCampaignId !== null) lines.push({ id: v.shippingCampaignId, title: v.names.get(v.shippingCampaignId) ?? "Voucher vận chuyển", amountText: `−${currency.format(v.shippingWaivedVnd)}` });
+    return Object.freeze({ state: "HELD", lines: Object.freeze(lines), heldUntilMs: input.heldUntilMs });
+  }
+  const stale = (render.kind === "LEGACY" || render.kind === "BENEFIT") && render.voucherStale === true;
+  if (picker !== null && picker.quoteDigest !== null && picker.footer.count > 0) {
+    const lines = picker.groups.flatMap((group) => group.items.filter((item) => item.selected).map((item) => ({ id: item.id, title: item.title, amountText: item.savingText ?? "" })));
+    return Object.freeze({
+      state: "OFFERED",
+      digest: picker.quoteDigest,
+      lines: Object.freeze(lines),
+      totalText: picker.summary.totalText,
+      giftLossText: picker.warnings.giftLoss,
+      totalIncreaseText: picker.warnings.totalIncrease,
+      afterStale: stale,
+    });
+  }
+  return stale ? Object.freeze({ state: "STALE" }) : null;
 }

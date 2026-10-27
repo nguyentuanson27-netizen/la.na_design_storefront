@@ -11,6 +11,9 @@ import { buildRenderedCheckoutQuoteFacts } from "@/commerce/checkout-quote";
 import { issueRenderedQuoteProof } from "@/commerce/checkout-quote-proof";
 import { getCurrentStorefrontCheckoutContext } from "@/commerce/storefront-cart-runtime";
 import { buildCheckoutBeginEvent } from "@/components/analytics/cart-funnel-tracking";
+import { loadCurrentVoucherPicker } from "@/commerce/voucher-picker-runtime";
+import { readCartHeldUntilMs } from "@/commerce/voucher-own-holds";
+import { canGrantHonourableVoucherHolds } from "@/commerce/voucher-gate";
 import { prisma } from "@/db/prisma";
 import { readPancakeShopId } from "@/integrations/pancake/config";
 
@@ -18,6 +21,7 @@ import {
   buildBenefitCheckoutViewModel,
   buildBenefitUnavailableCheckoutViewModel,
   buildCheckoutViewModel,
+  buildCheckoutVoucherView,
   benefitCheckoutPixelParameters,
   checkoutPixelContentIds,
   type CheckoutViewModel,
@@ -57,6 +61,17 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
           secret: readAuthServerConfig().secret,
         })
       : ({ kind: "LEGACY", giftPicker: undefined, shippingQuote: undefined } as const);
+  // V18: what the vouchers have to say about this cart. Read-only: a held voucher is already in the render's quote, an
+  // offer is the shopper's own selection previewed by the server, and nothing here can hold anything.
+  const voucherView = checkoutContext && lines.length > 0
+    ? buildCheckoutVoucherView({
+        render: benefitRender,
+        picker: await loadCurrentVoucherPicker(),
+        heldUntilMs: benefitRender.kind === "BENEFIT" && benefitRender.voucher ? await readCartHeldUntilMs(prisma, checkoutContext.cartId) : null,
+        // An offer is only worth showing (and blocking an order for) when the hold button can actually grant it.
+        offerAllowed: canGrantHonourableVoucherHolds(readPancakeShopId()),
+      })
+    : null;
   if (benefitRender.kind !== "LEGACY") {
     const data =
       benefitRender.kind === "BENEFIT"
@@ -69,7 +84,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
     // reported from the order, money paid only -- GQ22.)
     const benefitPixel = benefitRender.kind === "BENEFIT" ? benefitCheckoutPixelParameters(data, lines) : null;
     return sealRoute({
-      data: { ...await withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
+      data: { ...await withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined, ...(voucherView ? { vouchers: voucherView } : {}) },
       refreshAfterMs: 60_000,
       trackingEvent: null,
       structuredData: [],
@@ -120,7 +135,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
       : [];
 
   return sealRoute({
-    data: { ...await withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
+    data: { ...await withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined, ...(voucherView ? { vouchers: voucherView } : {}) },
     // Checkout prices are re-resolved on every request, so nothing here is promotion-cached; the
     // shared default cadence is what the shell mounts.
     refreshAfterMs: 60_000,

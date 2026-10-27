@@ -181,12 +181,15 @@ export function buildBenefitCheckoutQuoteFacts({
   entitlements,
   shippingQuote,
   shippingPolicy,
+  shippingWaivedVnd = 0,
 }: Readonly<{
   paid: readonly BenefitQuotePaidGroup[];
   gifts: readonly BenefitQuoteGift[];
   entitlements: readonly QuoteEntitlementFacts[];
   shippingQuote?: ShippingQuote;
   shippingPolicy?: GuestShippingPolicy;
+  /** V18: the fee a held shipping voucher waives. The ShippingQuote stays the campaign engine's own answer; the waiver is a separate, named reduction. */
+  shippingWaivedVnd?: number;
 }>): QuoteStructure | null {
   if (!Array.isArray(paid) || !Array.isArray(gifts) || !Array.isArray(entitlements)) return null;
   if (paid.length === 0 || paid.length + gifts.length > MAX_QUOTE_LINES) return null;
@@ -242,7 +245,9 @@ export function buildBenefitCheckoutQuoteFacts({
     }));
   }
 
-  const shippingFeeVnd = shippingFeeFromQuote(shippingQuote, shippingPolicy ?? readGuestShippingPolicy());
+  const engineShippingFeeVnd = shippingFeeFromQuote(shippingQuote, shippingPolicy ?? readGuestShippingPolicy());
+  if (!Number.isSafeInteger(shippingWaivedVnd) || shippingWaivedVnd < 0 || shippingWaivedVnd > engineShippingFeeVnd) return null;
+  const shippingFeeVnd = engineShippingFeeVnd - shippingWaivedVnd;
   const totalVnd = checkedAddVnd(paidSubtotalVnd, shippingFeeVnd);
   if (totalVnd === null) return null;
 

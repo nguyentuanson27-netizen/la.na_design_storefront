@@ -1,18 +1,18 @@
 # Storefront Voucher v1 — execution checklist
 
-**Status:** DRAFT / PLAN REVIEW — **no /build approval yet**, no implementation has started. All tasks and checkpoints are unchecked.
+**Status:** BUILD COMPLETE FOR REVIEW, NOT LAUNCHED — owner approved H0, H1-D, H2, H3-D (ADR 0019), H1-V (live POS probe 4/4) and H3-V. Built and verified: V00–V19 (checkout exposure V18 included) plus the V21 runbook and H5 readiness packet. V20 ran its live POS convergence on 2026-10-26 (2 orders, both cancelled, refunds observed); V07 browser/axe evidence, H4, H5, the owner's approval of the two newest migrations, and CI for the newest commits are still open. `LA_VOUCHER_ENABLED` exists and is OFF by default; **keep it unset in production until H5**; PR #214 is not approved for merge. Evidence: [verification status](../docs/verification/storefront-voucher-v1.md), [H5 packet](../docs/verification/storefront-voucher-v1-h5-packet.md).
 **Authority:** [Merged Voucher v1 spec](../docs/specs/storefront-voucher-v1.md) (PR #212, main@2c6e35d39d165064f5986ef901a5bb3efa464e1a).
 **Execution design:** [Voucher v1 implementation plan](./storefront-voucher-v1-plan.md); V00..V21 and H0..H5. This does **not** replace [master plan](./plan.md) or [master todo](./todo.md).
 **Quality:** [ADR 0005 PR sizing](../docs/decisions/0005-pr-scope-reviewability.md); checkout/Pancake/DB migrations require real test evidence, not a checked box on docs.
 
 ## Gate approvals — must be documented before dependent work
 
-- [ ] **H0 — Plan approved:** owner approves new implementation work; spec merge is not automatic /build approval.
-- [ ] **H1-D — Accepted/POS design (after V00, before V09):** accepted marker vs DRAFT, stock/quote transaction and offline exact-money vendor design; sandbox probe needs separate operator permission.
-- [ ] **H1-V — POS verification (after V09, before V12):** real canProjectExactMoney tests plus authorized sandbox write/readback; otherwise real holds stay OFF.
-- [ ] **H2 — Database/API authorization (after V00, before V04):** owner approves additive voucher ledger, accepted marker + immutable quote storage, selection storage if needed, and rollback.
-- [ ] **H3-D — Hold design (after V00/V10, before V11):** lock order, 10m TTL, GET read-only, POST idempotency/CSRF, proof/POS feasibility sequencing.
-- [ ] **H3-V — Hold verification (after V11/V12, before V13/V18):** actual DB/admin races, natural expiry/T+10, GET/prefetch no mutation, POST reuse and signed proof.
+- [x] **H0 — Plan approved:** owner approves new implementation work; spec merge is not automatic /build approval. _Evidence: owner asked for the PR #213 plan to be built end to end on 2026-10-25; scope taken as Slice A because later slices wait on H1-D / H2 below._
+- [x] **H1-D — Accepted/POS design (after V00, before V09):** accepted marker vs DRAFT, stock/quote transaction and offline exact-money vendor design; sandbox probe needs separate operator permission. _Approved by the owner 2026-10-25 against ADR 0018 ("duyệt H1-D, H2 theo ADR 0018"). The sandbox probe is NOT authorized by this._
+- [x] **H1-V — POS verification (after V09, before V12):** real canProjectExactMoney tests plus authorized sandbox write/readback; otherwise real holds stay OFF. _DONE 2026-10-26: F1–F4 4/4 PASS on shop 715077776 (owner-authorised, labelled test variation, all test orders cancelled, status 0→7). Evidence: [POS probe](../docs/verification/storefront-voucher-v1-pos-probe.md)._
+- [x] **H2 — Database/API authorization (after V00, before V04):** owner approves additive voucher ledger, accepted marker + immutable quote storage, selection storage if needed, and rollback. _Approved 2026-10-25 with H1-D; migration `20261025100000_voucher_v1_additive` written and applied only to a scratch database. Applying it to a real database is a deploy step._
+- [x] **H3-D — Hold design (after V00/V10, before V11):** lock order, 10m TTL, GET read-only, POST idempotency/CSRF, proof/POS feasibility sequencing. _Design drafted: [ADR 0019](../docs/decisions/0019-voucher-v1-hold-design.md) (**Accepted**, owner approval 2026-10-26)._
+- [x] **H3-V — Hold verification (after V11/V12, before V13/V18):** actual DB/admin races, natural expiry/T+10, GET/prefetch no mutation, POST reuse and signed proof. _Approved by the owner 2026-10-26 ("duyệt h3v") on the evidence in [the H3-V write-up](../docs/verification/storefront-voucher-v1-h3v.md): two review rounds fixed, production-build browser harness 6/6, CI 19/19 on `6e75c2a`. The approval covers V11–V12 / AC-42–43 only; V13 and V18 keep their own gates (voucher proof ↔ checkout/gift proof, accepted/consume, stock-failure rollback; real cart/checkout browser run; the >16 KiB proof UX)._
 - [ ] **H4 — UX review:** Grab-style responsive picker and gift-loss consent accepted before final UI sign-off.
 - [ ] **H5 — Launch AFTER V20+V21:** full CI/browser/DB/approved POS, security, rollback/on-call packet, owner go/no-go; does not block writing V21.
 
@@ -20,92 +20,93 @@
 
 ## Phase A — architecture and pure rules
 
-- [ ] **V00 — Accepted-order/POS architecture design** _(deps: none; produces H1-D/H2 design inputs)_
-  - [ ] Specify persisted accepted marker, immutable quote, stock-reservation-before-consume and rollback-on-capacity-failure; historical order migration boundary.
-  - [ ] Offline vendor fixtures, cancellation states, cart-bound selection storage; H1-D/H2 review, no unauthorized POS calls.
-- [ ] **V01 — Voucher scope and campaign validation** _(deps: V00)_
-  - [ ] Test ALL_SHOP+exclude, TARGETED category OR product include minus exclude, parent/child membership and bounds.
-  - [ ] Run focused scope/rule domain tests; verify existing Gift & Quantity scope unchanged.
-- [ ] **V02 — Merchandise money and allocation** _(deps: V01)_
-  - [ ] Test fixed/%/cap, per-unit >=1đ, exact VND conservation; TG-11 A EX-10 = 540K and no voucher = 620K.
-  - [ ] Run focused money + ORDER_SUBTOTAL ladder regression tests.
-- [ ] **V03 — Two-group optimizer and POS feasibility seam** _(deps: V02)_
-  - [ ] Test min total, nonstack shipping, gift tie, manual NONE, and injected infeasible POS candidate excluded/clearly rejected.
-  - [ ] Run domain optimizer/shipping tests (EX-01/02/06/07).
+- [x] **V00 — Accepted-order/POS architecture design** _(deps: none; produces H1-D/H2 design inputs)_ — **approved (H1-D/H2)**
+  - [x] Specify persisted accepted marker, immutable quote, stock-reservation-before-consume and rollback-on-capacity-failure; historical order migration boundary. _[ADR 0018](../docs/decisions/0018-voucher-v1-accepted-order-architecture.md), status Proposed._
+  - [x] Offline vendor fixtures, cancellation states, cart-bound selection storage; H1-D/H2 review, no unauthorized POS calls. _[doc](../docs/integrations/pancake-voucher-acceptance.md), `tests/domain/voucher-vendor-fixtures.test.ts`; reviewed and approved with ADR 0018._
+- [x] **V01 — Voucher scope and campaign validation** _(deps: V00)_
+  - [x] Test ALL_SHOP+exclude, TARGETED category OR product include minus exclude, parent/child membership and bounds. _`tests/domain/voucher-scope.test.ts`, `voucher-rule-validation.test.ts`._
+  - [x] Run focused scope/rule domain tests; verify existing Gift & Quantity scope unchanged. _`gift-quantity-scope.ts` is not modified; its tests pass._
+- [x] **V02 — Merchandise money and allocation** _(deps: V01)_
+  - [x] Test fixed/%/cap, per-unit >=1đ, exact VND conservation; TG-11 A EX-10 = 540K and no voucher = 620K. _`tests/domain/voucher-money.test.ts` (EX-10 runs through the real `priceStack` ladder)._
+  - [x] Run focused money + ORDER_SUBTOTAL ladder regression tests. _`gift-quantity-order-subtotal-tier.test.ts` passes._
+- [x] **V03 — Two-group optimizer and POS feasibility seam** _(deps: V02)_
+  - [x] Test min total, nonstack shipping, gift tie, manual NONE, and injected infeasible POS candidate excluded/clearly rejected. _`tests/domain/voucher-optimizer.test.ts`._
+  - [x] Run domain optimizer/shipping tests (EX-01/02/06/07). _`voucher-optimizer.test.ts`, `voucher-shipping.test.ts`; shipping engine exercised for real in the latter._
 
 ## Phase B — persistence and Admin (H2 required before writes)
 
-- [ ] **V04 — Voucher tables, accepted-marker persistence and default-OFF** _(deps: V00, H2)_
-  - [ ] H2-approved Voucher tables, durable local accepted marker + DB immutable accepted quote and historical compatibility; cart selection store if DB-backed.
-  - [ ] Prisma validation/generation, DRAFT-vs-ACCEPTED DB tests, flag OFF and migration rollback; split accepted schema into H2-approved sub-PR if needed.
-- [ ] **V05 — Candidate repository and PRIVATE code validation** _(deps: V01, V04)_
-  - [ ] Bounded shop-scoped lifecycle reads; private code not discoverable; own valid holds still recognizable.
-  - [ ] Run DB tests for code, expiry, shop ownership and rate-limit surfaces.
-- [ ] **V06 — Admin write service and quota/budget floor** _(deps: V04, V05)_
-  - [ ] RBAC, draft/publish, disable and revision audit; reject cap below used-not-refunded+live-held.
-  - [ ] Seeded Admin cap-floor/validation tests (AC-44); do not mark real Admin × checkout grant AC-45 complete until V11.
-- [ ] **V07 — Admin voucher UI** _(deps: V06)_
-  - [ ] Campaign create/edit/schedule/disable and clear validation; default not active.
-  - [ ] Browser a11y/action tests; no public exposure of private codes.
+- [x] **V04 — Voucher tables, accepted-marker persistence and default-OFF** _(deps: V00, H2)_
+  - [x] H2-approved Voucher tables, durable local accepted marker + DB immutable accepted quote and historical compatibility; cart selection store if DB-backed. _Migration `20261025100000_voucher_v1_additive` (tables, CHECKs, partial unique index, guards); `tests/database/voucher-schema.test.ts`._
+  - [x] Prisma validation/generation, DRAFT-vs-ACCEPTED DB tests, flag OFF and migration rollback; split accepted schema into H2-approved sub-PR if needed. _`prisma validate`/`generate` clean; DRAFT-vs-ACCEPTED, historical orders, absolute TTL, one-way refund tested; migration applied to a scratch PostgreSQL 16 and the full DB suite passes (only `auth-runtime`, which needs `BETTER_AUTH_SECRET`, fails). Not applied to any real database._
+- [x] **V05 — Candidate repository and PRIVATE code validation** _(deps: V01, V04)_
+  - [x] Bounded shop-scoped lifecycle reads; private code not discoverable; own valid holds still recognizable. _`voucher-candidate-repository.ts`; private codes never listed, uniform `INVALID_CODE`._
+  - [x] Run DB tests for code, expiry, shop ownership and rate-limit surfaces. _`tests/database/voucher-candidates.test.ts` (flag OFF reads nothing, window, shop, bound, idempotent, own held voucher survives expiry/disable/flag OFF)._
+- [x] **V06 — Admin write service and quota/budget floor** _(deps: V04, V05)_
+  - [x] RBAC, draft/publish, disable and revision audit; reject cap below used-not-refunded+live-held. _`voucher-admin-service.ts`: ADMIN-only, shop-scoped, optimistic revision, identity lock, Copy._
+  - [x] Seeded Admin cap-floor/validation tests (AC-44); do not mark real Admin × checkout grant AC-45 complete until V11. _`tests/database/voucher-admin-operations.test.ts`, `voucher-admin-cap-edit.test.ts` (AC-41/44; AC-45 grant race waits for V11)._
+- [ ] **V07 — Admin voucher UI** _(deps: V06)_ — **built; Admin browser/axe evidence pending**
+  - [x] Campaign create/edit/schedule/disable and clear validation; default not active. _`/admin/promotions/vouchers` list/create/edit/enable/disable/copy; strict parsing (`tests/domain/voucher-admin-input.test.ts`); flag-OFF notice._
+  - [ ] Browser a11y/action tests; no public exposure of private codes. _Server actions re-authorize and the service re-checks; no browser/axe run of the Admin screen yet._
 
 ## Phase C — canonical quote and POS projection
 
-- [ ] **V08 — Voucher-aware canonical benefit quote** _(deps: V02, V03, V05)_
-  - [ ] Tier-before-voucher quote, gift/shipping recompute and typed canProjectExactMoney seam; preview-only before V09.
-  - [ ] Run focused quote/DB tests including TG-11 A AC-39/46 and flag-OFF parity.
-- [ ] **V09 — POS canProjectExactMoney adapter** _(deps: V02, V08, H1-D; produces H1-V)_
-  - [ ] Exact line/quantity/gift/shipping projection; typed infeasible result excludes candidate before any hold.
-  - [ ] Domain/integration impossible-money case, then operator-authorized sandbox write/readback for H1-V; no V12 real holds without H1-V.
-- [ ] **V10 — Voucher-signed quote and immutable snapshot** _(deps: V04, V08)_
-  - [ ] Signed proof binds voucher/amount/hold/paidRevision, is tamper/ABA/cross-cart-safe and legacy compatible.
-  - [ ] Run proof/domain tests and security review; preview proof cannot submit held voucher.
+- [x] **V08 — Voucher-aware canonical benefit quote** _(deps: V02, V03, V05)_
+  - [x] Tier-before-voucher quote, gift/shipping recompute and typed canProjectExactMoney seam; preview-only before V09. _`voucher-quote.ts` (pure) + `voucher-preview.ts` (real cart/tier/gift/shipping engines, repeatable-read, read-only); preview-only (`held: false`)._
+  - [x] Run focused quote/DB tests including TG-11 A AC-39/46 and flag-OFF parity. _`tests/domain/voucher-quote.test.ts`; `tests/database/voucher-order-subtotal-checkout.test.ts` incl. EX-10 = 540K and EX-06 on the real engines._
+- [x] **V09 — POS canProjectExactMoney adapter** _(deps: V02, V08, H1-D; produces H1-V)_ — **done; H1-V live evidence recorded 2026-10-26**
+  - [x] Exact line/quantity/gift/shipping projection; typed infeasible result excludes candidate before any hold. _`pancake-voucher-projection.ts`: `canProjectExactMoney` + `createVoucherPosFeasibility`, wired as `isFeasibleOnLines`._
+  - [ ] Domain/integration impossible-money case, then operator-authorized sandbox write/readback for H1-V; no V12 real holds without H1-V. _Domain tests incl. lockstep with the order-submit projection and the AC-20 exclusion. **H1-V live write/readback PASSED 2026-10-26** (see POS probe doc); holds still need V11/V12 and the verified-shop gate._
+- [x] **V10 — Voucher-signed quote and immutable snapshot** _(deps: V04, V08)_
+  - [x] Signed proof binds voucher/amount/hold/paidRevision, is tamper/ABA/cross-cart-safe and legacy compatible. _`voucher-quote-proof.ts` (`lav1`) and `voucher-order-snapshot.ts` (strict v1)._
+  - [x] Run proof/domain tests and security review; preview proof cannot submit held voucher. _`tests/domain/voucher-quote-proof.test.ts` (tamper/ABA/cross-cart/preview-vs-held/expiry; legacy proofs unaffected)._
 
 ## Phase D — 10-minute hold, acceptance and cancellation
 
-- [ ] **V11 — Atomic holds and real Admin cap race** _(deps: V04, V05, V06, V10, H3-D)_
-  - [ ] Grant, swap, reuse and expire holds atomically across two groups; no rolling TTL, no oversubscribe.
-  - [ ] Run actual V06×V11 simultaneous cap edit/hold grant AC-45, plus T+3/T+5 natural expiry, T+10 and idempotent ledger.
-- [ ] **V12 — Verified-POS-only buyer POST hold** _(deps: V09, V10, V11, H1-V; produces H3-V)_
-  - [ ] GET/prefetch read-only; CSRF/idempotent POST invokes verified V09 canProjectExactMoney BEFORE any hold or submit-capable proof.
-  - [ ] DB/integration unrepresentable money→no hold/budget/proof/POS (AC-20), plus production prefetch-vs-POST browser evidence (AC-42/43), then H3-V review.
-- [ ] **V13 — Durable accepted state and consume once** _(deps: V04, V09, V11, V12, H1-V, H3-V)_
-  - [ ] Use V04 accepted marker/immutable quote, only after capacity reservation succeeds; stock fail/rollback means no accepted marker, no consumed voucher and no POS write.
-  - [ ] DB stock-failure injection, retry/2-tab/PRICE_CHANGED/UNKNOWN tests; accepted orders never reprice and analytics waits confirmed.
-- [ ] **V14 — Trusted cancellation, reject and reconciliation** _(deps: V13, H1-V)_
-  - [ ] Definitive reject/cancel refunds once including after shipped; UNKNOWN stays pending and alertable.
-  - [ ] Run DB reconciliation tests incl replay, out-of-order statuses and expired campaign.
-
-## Phase E — shopper UX and marketing
-
-- [ ] **V15 — Picker model + cart-bound manual/CODE selection** _(deps: V03, V05, V08)_
-  - [ ] Add cart-bound server AUTO/manual/NONE selection, CSRF-protected rate-limited CODE validation POST with no hold; preserve through reload and checkout.
-  - [ ] Domain/action tests for PRIVATE valid/invalid, manual NONE, cart-switch, reload, shop isolation and no quota mutation; split into small PRs if needed.
-- [ ] **V16 — Grab-style picker UI** _(deps: V15; gate H4)_
-  - [ ] Picker code/radio/NONE wired to V15 validated action; disabled reasons and sticky “Áp dụng • N ưu đãi”, no fake hold state.
-  - [ ] Browser keyboard/focus/contrast/mobile tests; back/cancel preserves selection.
-- [ ] **V17 — PDP/cart entry points** _(deps: V15, V16)_
-  - [ ] PDP/cart use same V15 selection state as checkout, no fake eligibility or holds on render.
-  - [ ] Product/cart domain + browser responsive and sticky checkout tests.
-- [ ] **V18 — Checkout selection and gift-loss consent** _(deps: V08, V12, V13, V15, V16, H3-V)_
-  - [ ] Checkout preserves COD fields and V15 selection, confirms gift-loss/ship price, never holds candidate without H1-V/H3-V.
-  - [ ] Checkout domain/a11y tests for submit/reprice/expired hold.
-- [ ] **V19 — Safe KOL/private-code links** _(deps: V05, V15, V17)_
-  - [ ] Marketing deep link uses same V15 validated CODE selection, sanitizes referrer/analytics URL, no duplicated state.
-  - [ ] Integration/referrer/network tests and shop/privacy/rate-limit security review.
+- [x] **V11 — Atomic holds and real Admin cap race** _(deps: V04, V05, V06, V10, H3-D)_ — **done 2026-10-26:** `src/commerce/voucher-hold-service.ts`, `tests/database/voucher-hold.test.ts` (15)
+  - [x] Grant, swap, reuse and expire holds atomically across two groups; no rolling TTL, no oversubscribe.
+  - [x] Run actual V06×V11 simultaneous cap edit/hold grant AC-45, plus T+3/T+5 natural expiry, T+10 and idempotent ledger. _Mutations checked: no self-credit, no lazy expiry and an unsorted lock order each make a test fail (the last with a real `deadlock detected`)._
+- [ ] **V12 — Verified-POS-only buyer POST hold** _(deps: V09, V10, V11, H1-V; produces H3-V)_ — **built 2026-10-26; revised after the H3-V review (3×P1 fixed: own holds stay in play, quote-digest consent, proof issued inside the hold transaction)** (`voucher-hold-flow.ts`, `voucher-hold-actions.ts`, `tests/database/voucher-hold-flow.test.ts` 15); **production-build browser evidence (AC-42/43) is recorded** via a test-only harness outside `src/` ([evidence](../docs/verification/storefront-voucher-v1-h3v.md)); **H3-V APPROVED 2026-10-26; second review: two more P1 fixed (NONE needs the digest; quote re-verified under the cart lock) with barrier race tests; harness re-run on the fixed code; CI green on `37f6de3` (19/19); H3-V approved by the owner 2026-10-26**
+  - [x] GET/prefetch read-only; CSRF/idempotent POST invokes verified V09 canProjectExactMoney BEFORE any hold or submit-capable proof. _The only grantor is a Server Action (POST-only, origin-checked, cookie-owned cart); gates, per-cart/per-shop throttle, expected-total agreement, exact-money check, atomic hold, then the HELD proof. Mutations (no exact-money check, no total check, no gates) each fail a test._
+  - [x] DB/integration unrepresentable money→no hold/budget/proof/POS (AC-20) **[done: database]**, plus production prefetch-vs-POST browser evidence (AC-42/43) **[done 2026-10-26: `pnpm voucher:hold-harness`, 6/6 + official artifact proved clean]**, then H3-V review **[approved by the owner 2026-10-26]**.
+- [x] **V13 — Durable accepted state and consume once** _(must also prove: the voucher proof and the checkout/gift proof stay consistent when the buyer switches gift A→B at the same count; the V12 proof binds only the gift slot count)_ — _(deps: V04, V09, V11, V12, H1-V, H3-V)_ — **built 2026-10-26** (`voucher-order-acceptance.ts`, `acceptAtWriteBoundary` in `pancake-order-submit.ts`, runtime wiring; new additive migration `20261026100000_voucher_order_snapshot`; `tests/database/voucher-order-acceptance.test.ts` 13 + `voucher-order-acceptance-boundary.test.ts` 4). **Needs a person's eye:** the migration adds storage the H2-approved one did not have (the order-side voucher declaration) — see [verification](../docs/verification/storefront-voucher-v1.md#v13--accepted-order-and-once-only-consume-2026-10-26). V18 is what writes the declaration and makes the benefit re-derivation voucher-aware; until then a voucher order cannot be created.
+  - [x] Use V04 accepted marker/immutable quote, only after capacity reservation succeeds; stock fail/rollback means no accepted marker, no consumed voucher and no POS write. _Acceptance runs inside the write-boundary transaction (after `reserveOrderCapacity` and the SUBMITTING claim, after the POS_SUBMITTING update, last statement before commit); a refusal rolls the whole transaction back. Capacity refusal never reaches `submit()` at all (existing domain test)._
+  - [x] DB stock-failure injection, retry/2-tab/PRICE_CHANGED/UNKNOWN tests; accepted orders never reprice and analytics waits confirmed. _Crash-in-transaction rollback, replay/4-way race, expiry by DB clock, cart ABA, quote mismatch (price, shipping, voucher not applied), gift A→B same count accepted / different count refused, released/swapped hold refused (never accepted as a plain order), SYNC_UNKNOWN keeps the redemption (no refund). Mutations on digest, expiry, paidRevision, plain-fallback and counter move each fail a test. A PRICE_CHANGED answer on an accepted order is V14's refund path (ADR 0018 D-2); purchase analytics already waits for CONFIRMED._
+- [x] **Review fix (PR #214 @ `5414e67`, P1) — a PRIVATE voucher cannot be selected by id alone.** `setGroup`/`applyBoth` now accept a PRIVATE campaign only if THIS cart's saved selection already names it (it got there through `applyCode`, which verifies the code under the rate limit); anything else answers `NOT_AVAILABLE`, like an id that does not exist. Two-cart DB test (B refused even knowing the ids, mixed drafts refused whole and nothing written, A keeps using it, unlock is per voucher and ends when the lock is dropped); both entry points mutation-checked. Consequence to remember for V18: dropping a private lock means entering the code again. _Second review (`f7bde69`): the same hole in the READ path — `previewStorefrontVoucherDraft` hydrated a PRIVATE campaign named only by an unsaved draft. Closed in `voucher-preview.ts`, the single choke point: a draft may name a PRIVATE id only if this cart's saved selection already does; otherwise the answer is byte-identical to an id that does not exist (`voucher-preview-private.test.ts`, mutation-checked)._
+- [x] **Review item (P2) — two totals on the cart page.** Fixed in the V18 UI slice: with a voucher preview the cart labels its total "Tổng (chưa tính ưu đãi)" and shows a separate "Dự kiến sau ưu đãi" block (also on the mobile sticky CTA) that says the voucher is not yet held. Browser test: `tests/a11y-runtime/checkout-voucher.spec.ts` (labels visible, nothing held, axe on the new block, mobile project).
+- [x] **V14 — Trusted cancellation, reject and reconciliation** _(deps: V13, H1-V)_ — **built 2026-10-26** (`voucher-redemption-service.ts`, hooks in `pancake-order-submit.ts`, `pancake-order-reconciliation.ts`, `pancake-order-status-reconciliation.ts` and their runtimes, `pnpm voucher:refund:sweep`; `tests/database/voucher-redemption-refund.test.ts` 10)
+  - [x] Definitive reject/cancel refunds once including after shipped; UNKNOWN stays pending and alertable. _Signals: local REJECTED (Pancake 4xx on create, or reconciliation's confirmed absence), mirrored Pancake status 7 on a complete shop-verified record, Admin cancel with audit evidence (service only, no screen). SYNC_UNKNOWN, timeouts, other status codes and half records are never a signal. "After shipped" means a status-7 cancel on a CONFIRMED order; shipped/returned codes are NOT mapped._
+  - [x] Run DB reconciliation tests incl replay, out-of-order statuses and expired campaign. _Replay and 5-way race refund once; older status is STALE and refunds nothing; a lost hook is retried by the next UNCHANGED status read and by the sweep; an expired/disabled campaign keeps its state while its counters return (AC-27). Mutations on the state check, the status check and the counter move each fail tests._
+  - [ ] Open evidence: a cancel made by staff inside Pancake (not by our own API call) has not been observed to produce status 7; until someone checks it on the live shop, such a cancel stays pending. The sweep is not scheduled anywhere yet (V21 runbook).
+- [x] **V15 — Picker model + cart-bound manual/CODE selection** _(deps: V03, V05, V08)_
+  - [x] Add cart-bound server AUTO/manual/NONE selection, CSRF-protected rate-limited CODE validation POST with no hold; preserve through reload and checkout. _`voucher-picker-model.ts`, `voucher-selection-service.ts` (`CartVoucherSelection`, atomic apply, throttled CODE), `voucher-selection-actions.ts`._
+  - [x] Domain/action tests for PRIVATE valid/invalid, manual NONE, cart-switch, reload, shop isolation and no quota mutation; split into small PRs if needed. _`tests/database/voucher-selection.test.ts`, `tests/domain/voucher-picker-model.test.ts`, `voucher-selection-input.test.ts`; ledger/holds byte-identical after selection writes._
+- [x] **V16 — Grab-style picker UI** _(deps: V15; gate H4)_
+  - [x] Picker code/radio/NONE wired to V15 validated action; disabled reasons and sticky “Áp dụng • N ưu đãi”, no fake hold state. _`voucher-picker.tsx`/`voucher-card.tsx` (native dialog, two radio groups + NONE, sticky `Áp dụng • N ưu đãi`, server answer governs)._
+  - [x] Browser keyboard/focus/contrast/mobile tests; back/cancel preserves selection. _`tests/a11y-runtime/voucher-picker.spec.ts` 8/8 on the 390px project: axe, ≥44px rows, Escape + focus return, draft not saved, atomic apply. Desktop viewport and H4 design review still open._
+- [x] **V17 — PDP/cart entry points** _(deps: V15, V16)_
+  - [x] PDP/cart use same V15 selection state as checkout, no fake eligibility or holds on render. _Cart block + PDP teaser use the same server selection; no hold on render (spec + DB)._
+  - [x] Product/cart domain + browser responsive and sticky checkout tests. _Browser: teaser axe clean, no hold created. Mobile sticky-CTA regression and desktop not exercised._
+- [ ] **V18 — Checkout selection and gift-loss consent** _(deps: V08, V12, V13, V15, V16, H3-V)_ — **server core built 2026-10-26** (`voucher-checkout-quote.ts`, voucher part of `resolveBenefitCheckoutQuote`, snapshot declaration, voucher-aware POS re-derivation and shipping recheck, `VOUCHER` discount-step source with migration `20261026120000_order_quote_step_voucher`; `tests/database/voucher-checkout.test.ts` 6). **Checkout page UI built and browser-tested 2026-10-26** (`checkout-voucher-panel.tsx`, `use-voucher-hold.ts`, `buildCheckoutVoucherView`; domain `checkout-voucher-model.test.ts` 7; `checkout-voucher.spec.ts` 4/4 on a production build: offer blocks ordering until confirmed, one hold click, bill adds up, typed COD fields survive the refresh, cart changed under a hold → offered again, gift-loss consent, cart totals). **Still open: the >16 KiB proof UX (message exists, no browser evidence), expiry-while-open and a desktop-viewport run of the new spec, H4 UX review.**
+  - [x] Server: a cart's HELD vouchers are applied to the checkout quote, the proof, the DRAFT (lines, quote rows with a `VOUCHER` step, declaration), the POS re-derivation and the vendor lines; stale or released holds are never applied. _EX-01 to the VND (merchandise + free shipping), uneven discount as two segments, stale holds priced without the voucher with the proof refused, holds released before the POS write close the order, gift loss refuses until the unearned choice is repaired. Mutations on the staleness check, the waiver, the declaration and the re-derivation each fail a test._
+  - [ ] Checkout page preserves COD fields and V15 selection, shows the voucher lines and the held-until time, confirms gift-loss/ship price, never holds a candidate without H1-V/H3-V.
+  - [ ] Checkout domain/a11y/browser tests for submit/reprice/expired hold.
+- [x] **V19 — Safe KOL/private-code links** _(deps: V05, V15, V17)_
+  - [x] Marketing deep link uses same V15 validated CODE selection, sanitizes referrer/analytics URL, no duplicated state. _`voucher-marketing-link.ts`, proxy hook, `/voucher-link`, pending-code cookie offered (not applied) on the cart._
+  - [x] Integration/referrer/network tests and shop/privacy/rate-limit security review. _Browser: clean URL, `no-referrer`/`no-store`, no code in page. Found and fixed the global Referrer-Policy override._
 
 ## Phase F — QA and release packet
 
-- [ ] **V20 — AC/TG convergence test evidence** _(deps: V07, V09, V13, V14, V16–V19)_
+- [ ] **V20 — AC/TG convergence test evidence** _(deps: V07, V09, V13, V14, V16–V19)_ — _live POS run done 2026-10-26 (`pnpm voucher:convergence:live`, 2 orders, owner-authorised up to 10; see the packet §2b); AC-47 flag-off test added; **still open: V07 browser/axe evidence, quote/POS performance baseline, one named run of the full AC/TG list**_
   - [ ] AC-01..47/TG-01..12 and H1-V/H3-V evidence includes impossible POS money no-hold, stock failure no-consume, Admin grant race and code/NONE persistence.
   - [ ] Run pnpm test:domain, pnpm test, pnpm test:db, prisma:validate/generate, typecheck, lint, build; browser a11y and authorized POS checks.
-- [ ] **V21 — Rollback/runbook (H5 afterwards)** _(deps: V20)_
-  - [ ] Runbook stops new holds without breaking valid existing holds, reconciles unknown/refunds, audits counters.
-  - [ ] Assemble CI/security/rollback packet FOR later H5 owner go/no-go; do not auto-enable/deploy.
+- [ ] **V21 — Rollback/runbook (H5 afterwards)** _(deps: V20)_ — _documents written 2026-10-26: [runbook](../docs/operations/storefront-voucher-runbook.md) and [H5 readiness packet](../docs/verification/storefront-voucher-v1-h5-packet.md); **stays open** because the packet lists items only a person can supply (migration approval, scheduled refund sweep, kill-switch decision, H4, H5)_
+  - [x] Runbook stops new holds without breaking valid existing holds, reconciles unknown/refunds, audits counters. _(switches, staged rollout, ledger queries run on a scratch DB, smallest-first rollback, refund/reconcile table, release checklist; gaps named: no scheduled refund sweep, no `ADMIN_CANCEL` caller, flag-flip-in-flight untested)_
+  - [x] Assemble CI/security/rollback packet FOR later H5 owner go/no-go; do not auto-enable/deploy. _(packet claims no release permission; local gates: 3630 tests / 0 fail, 137/137 voucher DB tests, lint clean on changed files; CI for the newest commits must be read from GitHub)_
 
 ## Milestone checkpoints
 
-- [ ] **C0:** H0 owner plan approval and H1-D/H2 reviewer assignment before implementation.
-- [ ] **C1:** V01–V05 covered by focused tests; tier-voucher ordering and OFF parity verified; migration gate satisfied.
+- [x] **C0:** H0 owner plan approval and H1-D/H2 reviewer assignment before implementation.
+- [x] **C1:** V01–V05 covered by focused tests; tier-voucher ordering and OFF parity verified; migration gate satisfied.
 - [ ] **C2:** H1-V after V09 exact POS proof; until then V12 real holds remain OFF.
 - [ ] **C3:** H3-V after V11/V12; V13 stock-failure rollback and V14 trusted refund verified.
 - [ ] **C4:** V15–V19 picker/checkout accessibility, gift consent, marketing URL privacy verified.
@@ -113,7 +114,7 @@
 
 ## Verification status of this PLAN PR
 
-- [ ] Owner approves the plan and authorizes /build.
+- [x] Owner approves the plan and authorizes /build. _(2026-10-25)_
 - [ ] No Critical/Required findings remain in plan review.
 - [ ] None of V00..V21 is marked complete without verification evidence.
 - [ ] No runtime code, schema, migration, test, browser interaction, POS write or deploy was performed by this **plan-only** PR.

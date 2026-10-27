@@ -7,6 +7,8 @@ import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
 import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
 import type { ProductPromotionOffer } from "@/commerce/product-promotion-offers";
 import { readProductPromotionOffers } from "@/commerce/product-promotion-offers-runtime";
+import type { VoucherTeaserItem } from "@/commerce/voucher-teaser";
+import { readProductVoucherTeaser } from "@/commerce/voucher-teaser-runtime";
 import { createSizeGuideMediaRepository } from "@/commerce/size-guide-media";
 import {
   getConfiguredStorefrontProductBySlug,
@@ -79,6 +81,8 @@ export type ProductRouteData = ProductViewModel &
     promotionOffers: readonly ProductPromotionOffer[];
     /** The Flash Sale countdown and "Còn x" facts; see `buildProductUrgency`. */
     urgency: ProductUrgency;
+    /** Up to two public vouchers covering this product; empty while the voucher feature is OFF. */
+    voucherTeaser: readonly VoucherTeaserItem[];
   }>;
 
 export async function loadProductRoute({
@@ -102,7 +106,7 @@ export async function loadProductRoute({
   // Related selection is membership-driven (ADR 0013 §7), so it does not depend on the request
   // clock; the promotion pass below is what applies `requestNow` to the products it returns.
   const sizeGuideId = product.sizeGuide;
-  const [relatedProducts, sizeGuideImageUrl, tryOn, feedback, promotionOffers] = await Promise.all([
+  const [relatedProducts, sizeGuideImageUrl, tryOn, feedback, promotionOffers, voucherTeaser] = await Promise.all([
     listConfiguredRelatedStorefrontProducts(product),
     isApprovedSizeGuideId(sizeGuideId)
       ? createSizeGuideMediaRepository(prisma).readImageUrl(sizeGuideId)
@@ -110,6 +114,7 @@ export async function loadProductRoute({
     resolveProductTryOn(product),
     readProductFeedback({ productId: product.id }),
     readProductPromotionOffers({ productId: product.id, now: requestNow }),
+    readProductVoucherTeaser({ productId: product.id, now: requestNow }),
   ]);
   const promotion = await resolveStorefrontPromotionForProducts({
     products: [product, ...relatedProducts],
@@ -176,6 +181,7 @@ export async function loadProductRoute({
       feedback: buildProductFeedbackSection(feedback, HOMEPAGE_CONFIG.feedback),
       promotionOffers,
       urgency,
+      voucherTeaser,
     },
     refreshAfterMs: promotion.refreshAfterMs,
     trackingEvent: buildProductPageViewEvent({

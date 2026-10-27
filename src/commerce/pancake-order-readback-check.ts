@@ -9,7 +9,7 @@
  * (`UNAVAILABLE`). Money is never compared "approximately": a one-đồng difference is a drift.
  */
 
-import { PANCAKE_ORDER_CANCELED_STATUS, type PancakeOrderReadBack } from "../integrations/pancake/order-readback.ts";
+import { isPancakeOrderCancelledStatus, type PancakeOrderReadBack } from "../integrations/pancake/order-readback.ts";
 
 export type ExpectedVendorLine = Readonly<{ pancakeVariationId: string; quantity: number; unitPriceVnd: number }>;
 
@@ -36,14 +36,15 @@ export function compareOrderReadBack(
 ): ReadBackVerdict {
   // Money can match on an order that is not the one we mean, or one that no longer exists. The order's
   // own id and shop must be reported and be the requested ones, its status must be a known code, and a
-  // canceled order (status 7) is never an order to confirm. No other status is given a meaning here: the
-  // repository has no evidence for one (docs/integrations/pancake-order-status-reconciliation.md).
+  // canceled order (status 7: the cancel the website issues; 6 "Đã hủy": a cancel by staff in the Pancake UI) is never an
+  // order to confirm. No other status is given a meaning here: the repository has no evidence for one
+  // (docs/integrations/pancake-order-status-reconciliation.md).
   if (identity !== undefined) {
     if (readBack.orderId !== identity.orderId || readBack.shopId !== identity.shopId) {
       return { kind: "UNAVAILABLE", detail: "the read-back does not identify the requested order and shop" };
     }
     if (readBack.status === null) return { kind: "UNAVAILABLE", detail: "the POS reported no readable order status" };
-    if (readBack.status === PANCAKE_ORDER_CANCELED_STATUS) return { kind: "DRIFT", detail: "the POS order is canceled" };
+    if (isPancakeOrderCancelledStatus(readBack.status)) return { kind: "DRIFT", detail: "the POS order is canceled" };
   }
   const want = summed(expected);
   const have = summed(readBack.lines);

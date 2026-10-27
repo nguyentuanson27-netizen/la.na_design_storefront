@@ -1,0 +1,704 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { PrismaPg } from "@prisma/adapter-pg";
+
+import { resolveBenefitCheckoutQuote } from "../../src/commerce/benefit-checkout-quote.ts";
+import { readBenefitCheckoutRender } from "../../src/commerce/benefit-checkout-render.ts";
+import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
+import { issueBenefitQuoteProof, verifyBenefitQuoteProof } from "../../src/commerce/checkout-quote-proof.ts";
+import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
+import { createGuestCheckoutSubmitService } from "../../src/commerce/guest-checkout-submit.ts";
+import { readOrderQuoteSnapshot } from "../../src/commerce/order-quote-snapshot.ts";
+import { createPancakeOrderSubmissionService } from "../../src/commerce/pancake-order-submit.ts";
+import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
+import { createVoucherHoldFlow } from "../../src/commerce/voucher-hold-flow.ts";
+import { createVoucherHoldService } from "../../src/commerce/voucher-hold-service.ts";
+import { createVoucherOrderAcceptance } from "../../src/commerce/voucher-order-acceptance.ts";
+import { applyVoucherCode, commitVoucherDraft } from "../../src/commerce/voucher-draft-commit.ts";
+import { readVoucherPreview } from "../../src/commerce/voucher-preview.ts";
+import { createVoucherSelectionService } from "../../src/commerce/voucher-selection-service.ts";
+import { selectionVersionOf } from "../../src/commerce/voucher-selection-version.ts";
+import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
+import type { PancakeCreateOrderRequest } from "../../src/integrations/pancake/order-create.ts";
+import type { PancakeOrderReadBack } from "../../src/integrations/pancake/order-readback.ts";
+import { createVoucherFixtures } from "../support/voucher-fixtures.ts";
+
+/**
+ * V18 server core against a real database: a cart that HOLDS vouchers is quoted, proven, drafted, accepted and sent to
+ * the POS with the voucher in every place the money lives -- the rendered quote and its proof, the DRAFT's lines and
+ * quote rows, the declaration, the acceptance and the vendor lines -- and never when the holds no longer describe it.
+ */
+
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
+
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+const SHOP = 940_016;
+const P = "vchr-co";
+const SECRET = "voucher-checkout-secret-at-least-32-chars-long";
+const ENV = {
+  LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true",
+  LA_VOUCHER_ENABLED: "true",
+  LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS: String(SHOP),
+  LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP),
+} as const;
+const PAST = new Date("2026-10-01T00:00:00.000Z");
+const FUTURE = new Date("2026-12-31T00:00:00.000Z");
+const f = createVoucherFixtures(prisma, SHOP, P);
+const flow = createVoucherHoldFlow(prisma, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: ENV });
+const holdService = createVoucherHoldService(prisma, { attemptSecret: SECRET, env: ENV });
+const acceptance = createVoucherOrderAcceptance({ readAttemptSecret: () => SECRET });
+const checkoutInput = { name: "Nguyễn Văn A", phone: "0901234567", provinceRef: "province-01", districtRef: "district-001", communeRef: "commune-0001", detail: "12 Đường A", note: null };
+
+let cartId = "";
+let paid = { variantId: "", variationId: "" };
+let giftItem = { variantId: "", variationId: "" };
+let counter = 0;
+
+async function cleanup() {
+  const orderIds = (await prisma.orderMirror.findMany({ where: { pancakeShopId: SHOP }, select: { id: true } })).map((order) => order.id);
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
+    if (orderIds.length > 0) {
+      await tx.$executeRaw`DELETE FROM "VoucherRedemption" WHERE "orderId" = ANY(${orderIds})`;
+      await tx.$executeRaw`DELETE FROM "OrderAcceptance" WHERE "orderId" = ANY(${orderIds})`;
+      await tx.$executeRaw`DELETE FROM "OrderVoucherSnapshot" WHERE "orderId" = ANY(${orderIds})`;
+      await tx.$executeRaw`DELETE FROM "OrderPreorderLineSnapshot" WHERE "snapshotId" IN (SELECT "id" FROM "OrderPreorderSnapshot" WHERE "orderId" = ANY(${orderIds}))`;
+      await tx.$executeRaw`DELETE FROM "OrderPreorderSnapshot" WHERE "orderId" = ANY(${orderIds})`;
+      await tx.$executeRaw`DELETE FROM "OrderQuoteDiscountStep" WHERE "lineRowId" IN (SELECT l."id" FROM "OrderQuoteLine" l JOIN "OrderQuoteSnapshot" s ON s."id" = l."snapshotId" WHERE s."orderId" = ANY(${orderIds}))`;
+      await tx.$executeRaw`DELETE FROM "OrderQuoteLine" WHERE "snapshotId" IN (SELECT "id" FROM "OrderQuoteSnapshot" WHERE "orderId" = ANY(${orderIds}))`;
+      await tx.$executeRaw`DELETE FROM "OrderQuoteEntitlement" WHERE "snapshotId" IN (SELECT "id" FROM "OrderQuoteSnapshot" WHERE "orderId" = ANY(${orderIds}))`;
+      await tx.$executeRaw`DELETE FROM "OrderQuoteSnapshot" WHERE "orderId" = ANY(${orderIds})`;
+      await tx.$executeRaw`DELETE FROM "CapacityReservationResource" WHERE "reservationId" IN (SELECT "id" FROM "VariantCapacityReservation" WHERE "orderId" = ANY(${orderIds}))`;
+      await tx.$executeRaw`DELETE FROM "VariantCapacityReservation" WHERE "orderId" = ANY(${orderIds})`;
+      await tx.$executeRaw`DELETE FROM "OrderLineSnapshot" WHERE "orderId" = ANY(${orderIds})`;
+      await tx.$executeRaw`DELETE FROM "OrderMirror" WHERE "id" = ANY(${orderIds})`;
+    }
+    await tx.$executeRaw`DELETE FROM "VoucherHold" WHERE "campaignId" IN (SELECT "id" FROM "VoucherCampaign" WHERE "pancakeShopId" = ${SHOP})`;
+    await tx.$executeRaw`DELETE FROM "VoucherCampaign" WHERE "pancakeShopId" = ${SHOP}`;
+  });
+  await prisma.cart.deleteMany({ where: { items: { some: { variant: { product: { pancakeShopId: SHOP } } } } } });
+  await prisma.cartGiftSelection.deleteMany({ where: { campaignId: { startsWith: `${P}-` } } });
+  await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: `${P}-` } } });
+  await prisma.shippingPromotionCampaign.deleteMany({ where: { pancakeShopId: SHOP } });
+  await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP } });
+}
+test.before(cleanup);
+test.beforeEach(cleanup);
+test.after(async () => {
+  await cleanup();
+  await prisma.$disconnect();
+});
+
+async function product(suffix: string, price: number, stock: number) {
+  const created = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP, pancakeProductId: `${P}-${suffix}`, slug: `${P}-${suffix}`, name: `Voucher checkout ${suffix}`, isActive: true, isPresent: true, syncedAt: PAST,
+      variants: { create: { pancakeVariationId: `${P}-${suffix}-var`, color: "Black", size: "M", isActive: true, isPresent: true, pancakeRetailPrice: price, pancakeRetailPriceAfterDiscount: price, syncedAt: PAST,
+        warehouseStocks: { create: { pancakeWarehouseId: `${P}-wh-${suffix}`, quantity: stock, syncedAt: PAST } } } },
+    },
+    include: { variants: true },
+  });
+  return { variantId: created.variants[0]!.id, variationId: created.variants[0]!.pancakeVariationId };
+}
+
+async function seed(options: Readonly<{ quantity?: number; unitPrice?: number; giftThreshold?: number }> = {}) {
+  const { quantity = 2, unitPrice = 450_000, giftThreshold } = options;
+  paid = await product("paid", unitPrice, 50);
+  giftItem = await product("gift", 40_000, 9);
+  cartId = (await prisma.cart.create({ data: { expiresAt: new Date(Date.now() + 86_400_000), items: { create: { variantId: paid.variantId, quantity } } } })).id;
+  if (giftThreshold !== undefined) {
+    await prisma.giftQuantityCampaign.create({
+      data: {
+        id: `${P}-gift`, kind: "GIFT_ITEM", name: "Gift", startsAt: PAST, endsAt: FUTURE, isEnabled: true, enabledAt: PAST,
+        scopeMode: "GLOBAL_ALL_PAID_LINES", giftTrigger: "ORDER_SUBTOTAL", minimumSubtotalVnd: giftThreshold, subtotalScope: "ALL_PAID_LINES",
+        awardMode: "REPEAT_PER_THRESHOLD", maxGiftsPerOrder: 1, allowDuplicateGifts: true, giftOptions: { create: [{ variantId: giftItem.variantId }] },
+      },
+    });
+  }
+}
+
+const fixedVoucher = (amountVnd: number, min: number, extra: Record<string, unknown> = {}) =>
+  f.campaign({ fixedAmountVnd: BigInt(amountVnd), minEligibleSubtotalVnd: BigInt(min), maxUses: 5, maxBudgetVnd: BigInt(5_000_000), ...extra });
+const freeShipVoucher = (min: number) => f.shippingCampaign({ minEligibleSubtotalVnd: BigInt(min), maxUses: 5, maxBudgetVnd: BigInt(5_000_000) });
+
+async function hold(acknowledged = false) {
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: await holdService.readOwnLiveHolds(cartId) });
+  assert.ok(preview.enabled && preview.ok, JSON.stringify(preview, (_k, v) => (typeof v === "bigint" ? String(v) : v)));
+  if (!preview.enabled || !preview.ok) throw new Error("unreachable");
+  const result = await flow.hold({ cartId, expectedQuoteDigest: preview.quoteDigest!, acknowledged });
+  assert.equal(result.ok && result.state === "HELD", true, JSON.stringify(result));
+  return result;
+}
+
+/** What the checkout page does: the same derivation the DRAFT step uses, with the proof that binds it. */
+async function render() {
+  const items = await prisma.cartItem.findMany({ where: { cartId }, select: { variantId: true, quantity: true } });
+  const lines = await createStorefrontCartRepository(prisma).getLines({ shopId: SHOP, items, now: new Date() });
+  return readBenefitCheckoutRender({ client: prisma, cartId, lines, shopId: SHOP, now: new Date(), secret: SECRET, env: ENV });
+}
+
+type Calls = { create: PancakeCreateOrderRequest[] };
+function fakePancake() {
+  const calls: Calls = { create: [] };
+  const gateway = {
+    async fetchVariations(_shopId: number, variationIds: readonly string[]) {
+      const rows = await prisma.variantMirror.findMany({ where: { pancakeVariationId: { in: [...variationIds] } }, include: { warehouseStocks: true } });
+      return rows.map((row): PancakeCatalogVariation => ({
+        id: row.pancakeVariationId, productId: "p", displayId: null, barcode: "b", fields: [], imageUrls: [], isHidden: false, isLocked: false,
+        retailPrice: Number(row.pancakeRetailPrice), retailPriceAfterDiscount: Number(row.pancakeRetailPrice), product: { id: "p", name: "P" }, warehouseStocks: [],
+        sellableStock: row.warehouseStocks.reduce((sum, entry) => sum + entry.quantity, 0),
+      }));
+    },
+    async resolveTwoLevelAddressNames() { return { provinceName: "Hà Nội", communeName: "Phường Test" }; },
+    async createOrder(request: PancakeCreateOrderRequest) { calls.create.push(request); return { id: 800_000 + calls.create.length }; },
+    async readOrder(_shopId: number, orderId: string): Promise<PancakeOrderReadBack> {
+      const request = calls.create.at(-1);
+      return {
+        orderId, shopId: SHOP, status: 0,
+        lines: (request?.items ?? []).map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })),
+        totalPriceVnd: (request?.items ?? []).reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0),
+      };
+    },
+  };
+  return { gateway, calls };
+}
+
+const events: string[] = [];
+function checkoutService(pancake: ReturnType<typeof fakePancake>, proof: unknown, options: Readonly<{ withVoucher?: boolean; env?: Readonly<Record<string, string | undefined>> }> = {}) {
+  const { withVoucher = true, env = ENV } = options;
+  const snapshot = createGuestCheckoutSnapshotService(prisma, {
+    checkoutInputValidated: true,
+    env,
+    ...(withVoucher ? { voucher: { attemptSecret: SECRET } } : {}),
+    // A benefit proof is never a legacy proof: a cart that has fallen back to the plain format cannot be confirmed with it.
+    verifyRenderedQuote: () => ({ ok: false, reason: "PROOF_UNVERIFIED" }) as never,
+    benefits: {
+      verifyBenefitQuote: (currentQuote) => verifyBenefitQuoteProof({ proof, cartId, currentQuote, secret: SECRET }),
+      verifyNonclaimAcknowledgement: () => ({ ok: false, reason: "ACK_MISSING" }) as never,
+    },
+  });
+  const pos = createPancakeOrderSubmissionService(prisma, pancake.gateway, {
+    lineLevelPricingVerifiedShopIds: [SHOP],
+    env,
+    ...(withVoucher ? { voucher: { attemptSecret: SECRET } } : {}),
+    onEvent: (event) => events.push(event.name),
+    onConfirmed: async () => undefined,
+    async acceptAtWriteBoundary(tx, order) { return (await acceptance.acceptWithin(tx, { orderId: order.id })).ok; },
+  });
+  return createGuestCheckoutSubmitService({
+    snapshot,
+    orderSubmission: pos,
+    generatePublicCode: () => `${P}-order-${process.pid}-${(counter += 1)}`,
+    capacity: createCapacityReservationRepository(prisma),
+    clock: () => new Date(),
+  });
+}
+const submit = (service: ReturnType<typeof checkoutService>) => service.submit({ cartId, shopId: SHOP, checkoutInput, now: new Date() });
+const lastOrder = () => prisma.orderMirror.findFirstOrThrow({ where: { sourceCartId: cartId }, orderBy: { createdAt: "desc" } });
+const holdsNow = () => prisma.voucherHold.findMany({ where: { campaign: { pancakeShopId: SHOP } }, orderBy: { kind: "asc" } });
+const items = (request: PancakeCreateOrderRequest) => request.items.map((item) => [item.variation_id, item.quantity, item.variation_info.retail_price]);
+
+test("EX-01: held merchandise + free-shipping vouchers reach the quote, the proof, the DRAFT, the acceptance and the POS lines to the VND", async () => {
+  await seed();
+  const m = await fixedVoucher(50_000, 600_000);
+  const s = await freeShipVoucher(600_000);
+  await hold();
+
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT", JSON.stringify(rendered, (_k, v) => (typeof v === "bigint" ? String(v) : v instanceof Map ? [...v] : v)).slice(0, 300));
+  if (rendered.kind !== "BENEFIT") return;
+  assert.equal(rendered.facts.paidSubtotalVnd, 850_000);
+  assert.equal(rendered.facts.shippingFeeVnd, 0, "the 30.000đ fee is waived by the shipping voucher");
+  assert.equal(rendered.facts.totalVnd, 850_000);
+  assert.deepEqual(rendered.facts.lines.map((line) => [line.quantity, line.unitPriceVnd, line.discountSteps.map((step) => step.source)]), [[2, 425_000, ["VOUCHER"]]]);
+
+  const pancake = fakePancake();
+  const result = await submit(checkoutService(pancake, issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })));
+  const order = await lastOrder();
+  assert.deepEqual(result, { ok: true, status: "CONFIRMED", orderCode: order.publicCode });
+  assert.equal(order.state, "CONFIRMED");
+  assert.deepEqual([order.merchandiseSubtotalVnd, order.shippingFeeVnd, order.totalVnd], [BigInt(850_000), BigInt(0), BigInt(850_000)]);
+
+  // The vendor sees the voucher-priced line and the waived fee, so its total equals the website's.
+  assert.equal(pancake.calls.create.length, 1);
+  assert.deepEqual(items(pancake.calls.create[0]!), [[paid.variationId, 2, 425_000]]);
+  assert.equal(pancake.calls.create[0]!.shipping_fee, 0);
+
+  // Accepted and consumed once, exactly what was quoted.
+  assert.equal((await prisma.orderAcceptance.findUniqueOrThrow({ where: { orderId: order.id } })).orderId, order.id);
+  assert.deepEqual((await holdsNow()).map((h) => [h.state, h.orderId]), [["CONSUMED", order.id], ["CONSUMED", order.id]]);
+  const redemptions = await prisma.voucherRedemption.findMany({ where: { orderId: order.id }, orderBy: { kind: "asc" } });
+  assert.deepEqual(redemptions.map((r) => [r.kind, r.campaignId, r.amountVnd]), [["MERCHANDISE", m.id, BigInt(50_000)], ["SHIPPING_FREE", s.id, BigInt(30_000)]]);
+  for (const [id, vnd] of [[m.id, 50_000], [s.id, 30_000]] as const) {
+    const row = await prisma.voucherCampaign.findUniqueOrThrow({ where: { id } });
+    assert.deepEqual([row.reservedUses, row.redeemedUses, row.redeemedVnd], [0, 1, BigInt(vnd)]);
+  }
+  // The stored quote walks base -> voucher price, and the declaration is the frozen provenance.
+  const stored = (await readOrderQuoteSnapshot(prisma, order.id))!;
+  assert.deepEqual(stored.lines[0]!.discountSteps.map((step) => [step.source, step.campaignId, step.inputPriceVnd, step.outputPriceVnd]), [["VOUCHER", m.id, 450_000, 425_000]]);
+  const declared = await prisma.orderVoucherSnapshot.findUniqueOrThrow({ where: { orderId: order.id } });
+  assert.equal((declared.snapshot as { totalVnd: number }).totalVnd, 850_000);
+});
+
+test("a discount that does not divide evenly becomes two price segments, each with the voucher step, and the POS lines still sum exactly", async () => {
+  await seed({ quantity: 3 });
+  await fixedVoucher(50_000, 600_000);
+  await hold();
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") return;
+  assert.equal(rendered.facts.paidSubtotalVnd, 1_350_000 - 50_000);
+  assert.equal(rendered.facts.lines.length, 2, "16.666đ x 2 units + 16.667đ x 1 unit");
+  assert.ok(rendered.facts.lines.every((line) => line.discountSteps.length === 1 && line.discountSteps[0]!.source === "VOUCHER"));
+
+  const pancake = fakePancake();
+  const result = await submit(checkoutService(pancake, issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })));
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(pancake.calls.create[0]!.items.reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0), 1_300_000);
+});
+
+test("TG-05 / AC-31: the holds stop describing the cart (it changed) -> priced WITHOUT the voucher, the old proof is refused, nothing is consumed", async () => {
+  await seed();
+  await fixedVoucher(50_000, 600_000);
+  await hold();
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT", "sanity: rendered with the voucher");
+  if (rendered.kind !== "BENEFIT") return;
+  const proof = issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })!;
+
+  // The buyer adds a unit in another tab: paidRevision moves, the holds no longer describe the cart.
+  await prisma.cartItem.updateMany({ where: { cartId }, data: { quantity: 3 } });
+  await prisma.$executeRaw`UPDATE "Cart" SET "paidRevision" = "paidRevision" + 1 WHERE "id" = ${cartId}`;
+  // The stale hold is NOT applied: the cart is priced as it is (3 x 450.000đ + the plain fee) and the buyer is told.
+  const after = await render();
+  assert.equal(after.kind, "LEGACY");
+  assert.equal(after.kind === "LEGACY" && after.voucherStale, true);
+  const direct = await prisma.$transaction((tx) => resolveBenefitCheckoutQuote({ tx, cartId, shopId: SHOP, now: new Date(), env: ENV, voucher: { attemptSecret: SECRET } }));
+  assert.equal(direct.kind, "LEGACY");
+  assert.equal(direct.kind === "LEGACY" && direct.shippingQuote.feeVnd, 30_000);
+  const pancake = fakePancake();
+  const result = await submit(checkoutService(pancake, proof));
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.status, "PRICE_CHANGED");
+  assert.deepEqual(pancake.calls.create, []);
+  assert.deepEqual((await holdsNow()).map((h) => h.state), ["HELD"], "the stale hold is left for its own expiry, not consumed");
+  assert.equal(await prisma.orderAcceptance.count({ where: { order: { sourceCartId: cartId } } }), 0);
+});
+
+test("review f3eed3a: the gift/quantity gate is switched OFF inside the 10 minutes: the hold is set aside and SAID so, the old proof cannot place a plain order, nothing is consumed", async () => {
+  await seed();
+  await fixedVoucher(50_000, 600_000);
+  await hold();
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") return;
+  const proof = issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })!;
+
+  const noGq = { ...ENV, LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: undefined };
+  const items2 = await prisma.cartItem.findMany({ where: { cartId }, select: { variantId: true, quantity: true } });
+  const lines = await createStorefrontCartRepository(prisma).getLines({ shopId: SHOP, items: items2, now: new Date() });
+  const after = await readBenefitCheckoutRender({ client: prisma, cartId, lines, shopId: SHOP, now: new Date(), secret: SECRET, env: noGq });
+  assert.equal(after.kind, "LEGACY", "the benefit pipeline is off, so the cart is priced plainly");
+  assert.equal(after.kind === "LEGACY" && after.voucherStale, true, "and the page is told the buyer's holds were set aside, never silently dropped");
+
+  const pancake = fakePancake();
+  const result = await submit(checkoutService(pancake, proof, { env: noGq }));
+  assert.equal(result.ok, false, "the proof the buyer saw (with the voucher) cannot place a plain order");
+  assert.deepEqual(pancake.calls.create, []);
+  assert.deepEqual((await holdsNow()).map((h) => h.state), ["HELD"], "the hold is not consumed; it expires on its own");
+  assert.equal(await prisma.voucherRedemption.count({ where: { campaign: { pancakeShopId: SHOP } } }), 0);
+});
+
+test("AC-47: flag switched OFF while a voucher checkout is in flight: the live hold is still honoured and settles; no NEW hold is granted", async () => {
+  await seed();
+  const m = await fixedVoucher(50_000, 600_000);
+  await hold();
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") return;
+  const proof = issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })!;
+
+  // The operator unsets LA_VOUCHER_ENABLED (runbook section 4); the shopper presses "Đặt hàng" with the proof they saw.
+  const off = { ...ENV, LA_VOUCHER_ENABLED: undefined };
+  const pancake = fakePancake();
+  const result = await submit(checkoutService(pancake, proof, { env: off }));
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const order = await lastOrder();
+  assert.equal(order.totalVnd, BigInt(880_000), "850.000đ goods + the 30.000đ fee: the voucher the buyer held was honoured");
+  assert.deepEqual(items(pancake.calls.create[0]!), [[paid.variationId, 2, 425_000]]);
+  assert.deepEqual((await holdsNow()).map((h) => h.state), ["CONSUMED"]);
+  assert.equal((await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: m.id } })).redeemedUses, 1);
+
+  // What OFF does stop: a NEW hold, and the preview that would offer one.
+  const offFlow = createVoucherHoldFlow(prisma, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: off });
+  const before = await prisma.voucherHold.count({ where: { campaign: { pancakeShopId: SHOP } } });
+  const refused = await offFlow.hold({ cartId, expectedQuoteDigest: "0".repeat(64), acknowledged: false });
+  assert.equal(refused.ok, false);
+  assert.equal(await prisma.voucherHold.count({ where: { campaign: { pancakeShopId: SHOP } } }), before);
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: off });
+  assert.equal(preview.enabled, false);
+});
+
+test("no hold -> the checkout is exactly the plain checkout: no voucher, no declaration, no acceptance", async () => {
+  await seed();
+  await fixedVoucher(50_000, 600_000);
+  const rendered = await render();
+  assert.equal(rendered.kind, "LEGACY");
+  const result = await (async () => {
+    // The legacy checkout proof path is unchanged; here it is enough that nothing voucher-shaped appears.
+    const order = await prisma.orderMirror.count({ where: { sourceCartId: cartId } });
+    return order;
+  })();
+  assert.equal(result, 0);
+  assert.equal(await prisma.orderVoucherSnapshot.count(), 0);
+});
+
+test("holds released between the DRAFT and the POS write: the order is closed for a new attempt, nothing sent, nothing consumed", async () => {
+  await seed();
+  await fixedVoucher(50_000, 600_000);
+  await hold();
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") return;
+  const proof = issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })!;
+  const pancake = fakePancake();
+  const snapshot = createGuestCheckoutSnapshotService(prisma, {
+    checkoutInputValidated: true, env: ENV, voucher: { attemptSecret: SECRET }, verifyRenderedQuote: () => ({ ok: false, reason: "PROOF_UNVERIFIED" }) as never,
+    benefits: { verifyBenefitQuote: (currentQuote) => verifyBenefitQuoteProof({ proof, cartId, currentQuote, secret: SECRET }), verifyNonclaimAcknowledgement: () => ({ ok: false, reason: "ACK_MISSING" }) as never },
+  });
+  const draft = await snapshot.create({ cartId, shopId: SHOP, publicCode: `${P}-draft-${process.pid}`, checkoutInput, now: new Date() });
+  assert.ok(draft.ok);
+  assert.equal(await prisma.orderVoucherSnapshot.count({ where: { order: { sourceCartId: cartId } } }), 1);
+
+  // Another tab clears the voucher (hold RELEASED) before the POS submission re-derives the quote.
+  const revision = Number((await prisma.cart.findUniqueOrThrow({ where: { id: cartId } })).paidRevision);
+  assert.equal((await holdService.hold({ shopId: SHOP, cartId, paidRevision: revision, quoteDigest: f.hex("none"), grants: [], releaseKinds: ["MERCHANDISE", "SHIPPING_FREE"] })).ok, true);
+
+  const pos = createPancakeOrderSubmissionService(prisma, pancake.gateway, {
+    lineLevelPricingVerifiedShopIds: [SHOP], env: ENV, voucher: { attemptSecret: SECRET }, onConfirmed: async () => undefined,
+    async acceptAtWriteBoundary(tx, order) { return (await acceptance.acceptWithin(tx, { orderId: order.id })).ok; },
+  });
+  const result = await pos.submit({ publicCode: draft.order.publicCode, shopId: SHOP });
+  assert.deepEqual(result, { ok: false, state: "REJECTED", reason: "BENEFIT_REQUOTE_REQUIRED" });
+  assert.deepEqual(pancake.calls.create, [], "nothing reaches Pancake");
+  assert.equal(await prisma.orderAcceptance.count({ where: { order: { sourceCartId: cartId } } }), 0);
+  assert.equal(await prisma.voucherRedemption.count({ where: { order: { sourceCartId: cartId } } }), 0);
+  assert.equal((await lastOrder()).state, "REJECTED");
+});
+
+test("AC-08 / AC-35: a voucher that takes the cart below a gift threshold never removes the gift until the buyer consents; the consent repairs the choice in the same transaction", async () => {
+  await seed({ giftThreshold: 880_000 });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  await fixedVoucher(50_000, 600_000);
+  // 900.000đ earns the gift; 850.000đ after the voucher does not. The hold needs the buyer's explicit consent.
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [] });
+  assert.ok(preview.enabled && preview.ok);
+  const refused = await flow.hold({ cartId, expectedQuoteDigest: (preview.enabled && preview.ok ? preview.quoteDigest : "")!, acknowledged: false });
+  assert.deepEqual(refused.ok === false && refused.reason, "CONFIRMATION_REQUIRED");
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "no consent: the saved choice is untouched");
+  assert.deepEqual(await holdsNow(), []);
+
+  await hold(true);
+  // The consent carried out the change: the unearned choice is gone, the hold is the one the buyer agreed to, checkout works.
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0, "the choice the voucher made unearned was removed with the hold");
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT", JSON.stringify(rendered, (_k, v) => (typeof v === "bigint" ? String(v) : v instanceof Map ? [...v] : v)).slice(0, 300));
+  if (rendered.kind !== "BENEFIT") return;
+  assert.equal(rendered.facts.paidSubtotalVnd, 850_000);
+  assert.deepEqual(rendered.facts.lines.map((line) => line.role), ["PAID"]);
+
+  // And the order can be placed from that very state, with no manual repair step in between.
+  const pancake = fakePancake();
+  const result = await submit(checkoutService(pancake, issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })));
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(items(pancake.calls.create[0]!), [[paid.variationId, 2, 425_000]]);
+});
+
+/** The picker's "Áp dụng" for the draft "this voucher, shipping AUTO", with the digest of the quote the picker showed. */
+async function pickerCommit(voucherId: string, consent: "none" | "current" | "stale") {
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { mode: "MANUAL", voucherId }, shipping: { mode: "AUTO" } } });
+  assert.ok(preview.enabled && preview.ok);
+  const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
+  return commitVoucherDraft({
+    client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, expectedSelectionVersion: null,
+    draft: { merchandise: { mode: "MANUAL", voucherId }, shipping: { mode: "AUTO", voucherId: null } },
+    consentDigest: consent === "none" ? null : consent === "current" ? digest : "0".repeat(64),
+  });
+}
+
+test("AC-35 at the picker: 'Áp dụng' that costs a chosen gift is refused without consent, refused for a stale quote, and with consent saves the voucher AND repairs the gift together", async () => {
+  await seed({ giftThreshold: 880_000 });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  const m = await fixedVoucher(50_000, 600_000);
+
+  assert.deepEqual(await pickerCommit(m.id, "none"), { ok: false, reason: "CONFIRMATION_REQUIRED" });
+  assert.deepEqual(await pickerCommit(m.id, "stale"), { ok: false, reason: "QUOTE_CHANGED" });
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0, "a refusal writes nothing");
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "and the gift choice is untouched");
+
+  const saved = await pickerCommit(m.id, "current");
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0, "the confirmed loss was carried out with the voucher");
+  const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
+  assert.deepEqual([row.merchandiseMode, row.merchandiseVoucherId], ["MANUAL", m.id]);
+});
+
+test("AC-35 at the picker: a draft that costs no gift needs no consent and touches no gift", async () => {
+  await seed({ giftThreshold: 100_000 });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  const m = await fixedVoucher(50_000, 600_000);
+  const saved = await pickerCommit(m.id, "none");
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1);
+});
+
+test("EX-06 / AC-29 at the picker: a voucher that makes the total RISE (it costs a non-stacking free-ship campaign) is refused without consent, saved only with it", async () => {
+  await seed();
+  const variant = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paid.variantId }, select: { productId: true } });
+  await prisma.productCategoryMembership.create({ data: { productId: variant.productId, categoryKey: "vayDam" } });
+  await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: SHOP, name: "Freeship vay", isEnabled: true, enabledAt: PAST, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] } });
+  const m = await fixedVoucher(10_000, 600_000);
+  // The cart ships free by the campaign; the 10.000đ voucher would bring the 30.000đ fee back: the total rises by 20.000đ.
+  const risen = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "AUTO" } } });
+  assert.ok(risen.enabled && risen.ok);
+  assert.deepEqual(risen.enabled && risen.ok ? risen.quote.confirmation : null, { totalIncreaseVnd: 20_000, shippingFeeIncreaseVnd: 30_000 });
+
+  assert.deepEqual(await pickerCommit(m.id, "none"), { ok: false, reason: "CONFIRMATION_REQUIRED" });
+  assert.deepEqual(await pickerCommit(m.id, "stale"), { ok: false, reason: "QUOTE_CHANGED" });
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0, "a refusal writes nothing");
+  const saved = await pickerCommit(m.id, "current");
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, m.id);
+});
+
+test("a consent for a quote that is no longer the server's is refused even when the draft itself needs none", async () => {
+  await seed({ giftThreshold: 100_000 });
+  const m = await fixedVoucher(50_000, 600_000);
+  assert.deepEqual(await pickerCommit(m.id, "stale"), { ok: false, reason: "QUOTE_CHANGED" });
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0);
+  assert.equal((await pickerCommit(m.id, "none")).ok, true, "and with no consent offered, a draft that costs nothing is saved as before");
+});
+
+/** A typed code, with the digest of the quote the picker showed for the verified voucher (it is previewable for this request only). */
+async function codeCommit(campaignId: string, consent: "none" | "current" | "stale") {
+  await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "voucher-code-" } } });
+  const preview = await readVoucherPreview({
+    client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], verifiedPrivateIds: [campaignId],
+    selectionOverride: { merchandise: { mode: "MANUAL", voucherId: campaignId }, shipping: { mode: "AUTO" } },
+  });
+  assert.ok(preview.enabled && preview.ok);
+  const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
+  return applyVoucherCode({
+    client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, rawCode: "kol50",
+    consentDigest: consent === "none" ? null : consent === "current" ? digest : "0".repeat(64),
+  });
+}
+
+test("review 5a62d20 / AC-35: a typed CODE that costs a chosen gift is verified but NOT saved without consent; with the current consent the voucher and the gift change are written together", async () => {
+  await seed({ giftThreshold: 880_000 });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  const priv = await fixedVoucher(50_000, 600_000, { issuance: "CODE", visibility: "PRIVATE", code: "KOL50" });
+
+  const refused = await codeCommit(priv.id, "none");
+  assert.deepEqual(refused.ok === false && [refused.reason, "pending" in refused ? refused.pending : null], ["CONFIRMATION_REQUIRED", { campaignId: priv.id, group: "MERCHANDISE" }]);
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0, "a valid code is not saved before the consent");
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "and the gift choice is untouched");
+  const stale = await codeCommit(priv.id, "stale");
+  assert.equal(stale.ok === false && stale.reason, "QUOTE_CHANGED");
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0);
+
+  const saved = await codeCommit(priv.id, "current");
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0, "the confirmed loss was carried out with the code");
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, priv.id);
+});
+
+test("review 5a62d20 / EX-06: a typed CODE that raises the total needs consent too, and an unknown code still answers INVALID_CODE", async () => {
+  await seed();
+  const variant = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paid.variantId }, select: { productId: true } });
+  await prisma.productCategoryMembership.create({ data: { productId: variant.productId, categoryKey: "vayDam" } });
+  await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: SHOP, name: "Freeship vay", isEnabled: true, enabledAt: PAST, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] } });
+  const priv = await fixedVoucher(10_000, 600_000, { issuance: "CODE", visibility: "PRIVATE", code: "KOL50" });
+  assert.equal((await codeCommit(priv.id, "none")).ok, false);
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0);
+  assert.equal((await codeCommit(priv.id, "current")).ok, true);
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, priv.id);
+  await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "voucher-code-" } } });
+  const wrong = await applyVoucherCode({ client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, rawCode: "nope1234", consentDigest: null });
+  assert.deepEqual(wrong.ok === false && wrong.reason, "INVALID_CODE");
+});
+
+/** A server that cannot read its shipping policy cannot derive a quote: the preview is unavailable, not free. */
+const NO_QUOTE_ENV = { ...ENV, LA_SHIPPING_FEE_VND: "not-a-number" } as const;
+
+test("review 8bdb2f0 / P1: when the server cannot derive a quote nothing that could cost is saved, a digest does not open the gate, and the shopper can still drop a voucher", async () => {
+  await seed({ giftThreshold: 880_000 });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  const m = await fixedVoucher(50_000, 600_000);
+  const priv = await fixedVoucher(50_000, 600_000, { issuance: "CODE", visibility: "PRIVATE", code: "KOL50" });
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "AUTO" } } });
+  assert.ok(preview.enabled && preview.ok);
+  const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
+  const draftWith = (consentDigest: string | null, env: Readonly<Record<string, string | undefined>>) => commitVoucherDraft({
+    expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env, attemptSecret: SECRET, consentDigest,
+    draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "AUTO", voucherId: null } },
+  });
+
+  // The picker's draft, with and without the digest the picker showed: neither is saved while no quote can be derived.
+  assert.deepEqual(await draftWith(null, NO_QUOTE_ENV), { ok: false, reason: "QUOTE_UNAVAILABLE" });
+  assert.deepEqual(await draftWith(digest, NO_QUOTE_ENV), { ok: false, reason: "QUOTE_UNAVAILABLE" });
+  // The typed code (rate-counted, verified) is refused outright; nothing is pending because there is nothing to show.
+  await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "voucher-code-" } } });
+  const typed = await applyVoucherCode({ client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, rawCode: "kol50", consentDigest: digest });
+  assert.deepEqual(typed, { ok: false, reason: "QUOTE_UNAVAILABLE" });
+  // The one-group action keeps the other group as saved and meets the same rule.
+  const oneGroup = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: null } });
+  assert.deepEqual(oneGroup, { ok: false, reason: "QUOTE_UNAVAILABLE" });
+  assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0, "no write at all");
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "the gift choice is untouched");
+
+  // Retry once the authority is back: the same consent is judged against a quote the server can derive, and carried out.
+  assert.deepEqual(await draftWith(null, ENV), { ok: false, reason: "CONFIRMATION_REQUIRED" });
+  assert.equal((await draftWith(digest, ENV)).ok, true);
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0);
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, m.id);
+
+  // While no quote can be derived the shopper can still drop the voucher (a choice that only removes cannot cost a gift) ...
+  const dropped = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: null }, shipping: { mode: "AUTO", voucherId: null } } });
+  assert.equal(dropped.ok, true, JSON.stringify(dropped));
+  const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
+  assert.deepEqual([row.merchandiseMode, row.merchandiseVoucherId], ["MANUAL", null]);
+  // ... but not swap it for another one.
+  const swapped = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: priv.id }, shipping: { mode: "AUTO", voucherId: null } } });
+  assert.equal(swapped.ok, false);
+});
+
+test("review 8bdb2f0 / P2: the one-group action keeps the other group as saved UNDER the cart lock: a change another tab saves while it waits is not overwritten", async () => {
+  await seed();
+  const m = await fixedVoucher(50_000, 600_000);
+  let locked!: () => void;
+  const hasLock = new Promise<void>((resolve) => { locked = resolve; });
+  let release!: () => void;
+  const mayCommit = new Promise<void>((resolve) => { release = resolve; });
+  // Tab B holds the cart lock and is about to save SHIPPING = "no voucher".
+  const tabB = prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Cart" WHERE "id" = ${cartId} FOR UPDATE`;
+    locked();
+    await mayCommit;
+    await tx.cartVoucherSelection.upsert({
+      where: { cartId },
+      create: { cartId, expiresAt: new Date(Date.now() + 86_400_000), shippingMode: "MANUAL", shippingVoucherId: null },
+      update: { shippingMode: "MANUAL", shippingVoucherId: null },
+    });
+  });
+  await hasLock;
+  // Tab A changes MERCHANDISE only; it must wait for the lock, then read SHIPPING as tab B left it.
+  const tabA = commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: null } });
+  const early = await Promise.race([tabA.then(() => "finished"), new Promise((resolve) => setTimeout(() => resolve("waiting"), 400))]);
+  assert.equal(early, "waiting", "tab A is blocked on the cart lock, so its read of the other group cannot precede tab B's write");
+  release();
+  await tabB;
+  const result = await tabA;
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
+  assert.deepEqual([row.merchandiseMode, row.merchandiseVoucherId], ["MANUAL", m.id]);
+  assert.deepEqual([row.shippingMode, row.shippingVoucherId], ["MANUAL", null], "tab B's choice survived");
+});
+
+test("review beca608: a picker built on a choice another tab has changed since is refused whole; a version is a choice, not a price", async () => {
+  await seed();
+  const a = await fixedVoucher(50_000, 600_000);
+  const b = await fixedVoucher(50_000, 600_000); // the same saving: a price-only check could not tell them apart
+  const ship = await freeShipVoucher(600_000);
+  const read = () => createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV }).read(cartId);
+  const versionOpened = selectionVersionOf(await read()); // both tabs open the picker here: nothing saved, both groups AUTO
+  assert.notEqual(selectionVersionOf({ merchandise: { mode: "MANUAL", voucherId: a.id }, shipping: { mode: "AUTO" } }), selectionVersionOf({ merchandise: { mode: "MANUAL", voucherId: b.id }, shipping: { mode: "AUTO" } }));
+
+  const draft = (merchandiseId: string | null, shippingMode: "AUTO" | "MANUAL", shippingId: string | null) => ({
+    merchandise: { mode: "MANUAL" as const, voucherId: merchandiseId }, shipping: { mode: shippingMode, voucherId: shippingId },
+  });
+  const commit = (d: ReturnType<typeof draft>, expectedSelectionVersion: string | null) =>
+    commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, expectedSelectionVersion, draft: d });
+
+  // Tab B chooses "no free-shipping voucher" and applies: saved (it was built on what was saved).
+  assert.equal((await commit(draft(null, "MANUAL", null), versionOpened)).ok, true);
+  // Tab A, opened before that, picks a merchandise voucher; its draft still says shipping AUTO. It is refused, whole.
+  assert.deepEqual(await commit(draft(a.id, "AUTO", null), versionOpened), { ok: false, reason: "SELECTION_CHANGED" });
+  const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
+  assert.deepEqual([row.merchandiseMode, row.merchandiseVoucherId, row.shippingMode, row.shippingVoucherId], ["MANUAL", null, "MANUAL", null], "tab B's choice is untouched, including the half tab A did not mean to change");
+  // Tab A is shown what is saved, chooses again from it, and now it saves.
+  const versionNow = selectionVersionOf(await read());
+  assert.notEqual(versionNow, versionOpened);
+  assert.equal((await commit(draft(a.id, "MANUAL", null), versionNow)).ok, true);
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, a.id);
+  // The same stale version cannot be replayed after it has been used.
+  assert.deepEqual(await commit(draft(b.id, "MANUAL", null), versionNow), { ok: false, reason: "SELECTION_CHANGED" });
+  void ship;
+});
+
+test("review 26f6d3a: the version a picker carries belongs to the SAME snapshot as the quote it shows, even if another tab saves right after that snapshot", async () => {
+  await seed();
+  const a = await fixedVoucher(50_000, 600_000);
+  await freeShipVoucher(600_000);
+  const read = () => createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV }).read(cartId);
+  const opened = await read(); // S0: both groups AUTO
+  const draft = (merchandiseId: string | null, shippingMode: "AUTO" | "MANUAL", shippingId: string | null) => ({
+    merchandise: { mode: "MANUAL" as const, voucherId: merchandiseId }, shipping: { mode: shippingMode, voucherId: shippingId },
+  });
+  const commit = (d: ReturnType<typeof draft>, expectedSelectionVersion: string | null) =>
+    commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, expectedSelectionVersion, draft: d });
+
+  // Tab B saves SHIPPING = none the instant after tab A's preview has read its snapshot and before anything else A does.
+  const racing = new Proxy(prisma, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target);
+      if (prop !== "$transaction") return typeof value === "function" ? value.bind(target) : value;
+      return async (...args: unknown[]) => {
+        const out = await (value as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+        assert.equal((await commit(draft(null, "MANUAL", null), selectionVersionOf(opened))).ok, true);
+        return out;
+      };
+    },
+  }) as typeof prisma;
+  const preview = await readVoucherPreview({ client: racing, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [] });
+  assert.ok(preview.enabled && preview.ok);
+  if (!preview.enabled || !preview.ok) return;
+  const savedNow = await read();
+  assert.notDeepEqual(savedNow, opened, "tab B's choice is now saved");
+  assert.equal(preview.savedSelectionVersion, selectionVersionOf(opened), "the version is the one of the choice in the quote's own snapshot");
+  assert.notEqual(preview.savedSelectionVersion, selectionVersionOf(savedNow));
+  // So a picker built from that preview is refused when it commits: it never saw tab B's choice.
+  assert.deepEqual(await commit(draft(a.id, "AUTO", null), preview.savedSelectionVersion), { ok: false, reason: "SELECTION_CHANGED" });
+  assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).shippingMode, "MANUAL");
+});
+
+test("AC-35: fewer slots than were chosen reduces the choice (newest first) instead of removing it; unrelated choices stay", async () => {
+  await seed({ giftThreshold: 440_000 });
+  // 900.000đ = 2 slots; 850.000đ after the voucher = 1 slot.
+  await prisma.giftQuantityCampaign.update({ where: { id: `${P}-gift` }, data: { maxGiftsPerOrder: 2 } });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 2, campaignRevision: 1 } });
+  await fixedVoucher(50_000, 600_000);
+  await hold(true);
+  const rows = await prisma.cartGiftSelection.findMany({ where: { cartId } });
+  assert.deepEqual(rows.map((row) => row.quantity), [1], "two chosen, one earned after the voucher: reduced to one, not erased");
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") return;
+  assert.equal(rendered.facts.lines.filter((line) => line.role === "GIFT").reduce((sum, line) => sum + line.quantity, 0), 1);
+});
+
+test("AC-35: the gift change is atomic with the hold: a refusal after the repair rolls both back", async () => {
+  await seed({ giftThreshold: 880_000 });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
+  await fixedVoucher(50_000, 600_000);
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [] });
+  assert.ok(preview.enabled && preview.ok);
+  const failingProof = createVoucherHoldFlow(prisma, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: ENV, issueProof: () => { throw new Error("proof unavailable"); } });
+  const result = await failingProof.hold({ cartId, expectedQuoteDigest: (preview.enabled && preview.ok ? preview.quoteDigest : "")!, acknowledged: true });
+  assert.deepEqual(result.ok === false && result.reason, "PROOF_UNAVAILABLE");
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "the saved gift choice is exactly as it was");
+  assert.deepEqual(await holdsNow(), [], "and nothing is held");
+});

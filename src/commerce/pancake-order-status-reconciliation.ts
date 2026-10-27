@@ -5,6 +5,7 @@ import {
   isCanonicalPancakeOrderId,
   type PancakeOrderStatus,
 } from "../integrations/pancake/order-status.ts";
+import { isPancakeOrderCancelledStatus } from "../integrations/pancake/order-readback.ts";
 
 const MAX_LOCAL_ORDER_ID_LENGTH = 128;
 const MAX_CAS_ATTEMPTS = 4;
@@ -28,6 +29,12 @@ type PancakeOrderStatusGateway = Readonly<{
 
 type ReconciliationOptions = Readonly<{
   shopId: number;
+  /**
+   * V14: called after a successful reconcile whose stored status is now the cancelled code, so the website can refund
+   * the order's voucher. It runs again on every later `UNCHANGED` reconcile (the refund is a compare-and-set), so a
+   * lost call is retried by the next status read. Best effort: a failure never changes the status result.
+   */
+  onTrustedCancel?: (input: Readonly<{ orderId: string }>) => Promise<void>;
 }>;
 
 const localOrderSelect = {
@@ -123,7 +130,22 @@ export function createPancakeOrderStatusReconciliationService(
     return { ok: true, pancakeOrderId: local.pancakeOrderId };
   }
 
-  async function reconcile({ orderId: rawOrderId }: { orderId: string }): Promise<PancakeOrderStatusReconcileResult> {
+  async function reconcile(input: { orderId: string }): Promise<PancakeOrderStatusReconcileResult> {
+    const result = await reconcileStatus(input);
+    if (result.ok && result.outcome !== "STALE" && options.onTrustedCancel) {
+      try {
+        // The stored record is the authority, not the remote answer: only a complete, shop-verified mirror at the
+        // cancelled code is a signal, and the refund re-checks it under the order lock.
+        const stored = await client.orderMirror.findUnique({ where: { id: input.orderId }, select: { pancakeStatus: true } });
+        if (isPancakeOrderCancelledStatus(stored?.pancakeStatus)) await options.onTrustedCancel({ orderId: input.orderId });
+      } catch {
+        // Retried by the next status read; never a reason to fail the reconcile.
+      }
+    }
+    return result;
+  }
+
+  async function reconcileStatus({ orderId: rawOrderId }: { orderId: string }): Promise<PancakeOrderStatusReconcileResult> {
     const orderId = requireLocalOrderId(rawOrderId);
     let current = await readLocalOrder(orderId);
     const initialIdentity = validateLocalIdentity(current);

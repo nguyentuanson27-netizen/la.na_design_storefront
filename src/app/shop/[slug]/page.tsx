@@ -199,15 +199,29 @@ function render(data: ProductRouteData) {
   // Promotions this product takes part in, named under the price by the campaign's own name and
   // nothing else (owner request 2026-10-18). The cart quote computes them; the page states no amount,
   // threshold or explanation of its own.
-  const purchaseOffers = data.promotionOffers.length === 0 ? null : (
-    <ul aria-label="Ưu đãi áp dụng" className="mt-3 space-y-1.5 text-sm text-[#3B2219]" data-pdp-offers="">
-      {data.promotionOffers.map((offer) => (
-        <li key={offer.id} className="flex items-start gap-2.5">
-          <AssuranceIcon kind={offer.kind === "GIFT" ? "gift" : "tier"} />
-          <span className="font-medium">{offer.label}</span>
-        </li>
-      ))}
-    </ul>
+  const purchaseOffers = data.promotionOffers.length === 0 && data.voucherTeaser.length === 0 ? null : (
+    <>
+      {data.promotionOffers.length === 0 ? null : (
+        <ul aria-label="Ưu đãi áp dụng" className="mt-3 space-y-1.5 text-sm text-[#3B2219]" data-pdp-offers="">
+          {data.promotionOffers.map((offer) => (
+            <li key={offer.id} className="flex items-start gap-2.5">
+              <AssuranceIcon kind={offer.kind === "GIFT" ? "gift" : "tier"} />
+              <span className="font-medium">{offer.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {/* Voucher teaser: states the voucher's own conditions only; whether a cart qualifies is decided in the cart. */}
+      {data.voucherTeaser.length === 0 ? null : (
+        <div className="mt-3 text-sm text-[#3B2219]" data-pdp-vouchers="">
+          <p className="font-medium">Voucher có thể áp dụng cho giỏ hàng:</p>
+          <ul aria-label="Voucher" className="mt-1.5 space-y-1">
+            {data.voucherTeaser.map((item) => <li key={item.id}>{item.text}</li>)}
+          </ul>
+          <p className="mt-1.5 text-xs text-[#3B2219]/70">Nàng chọn voucher trong giỏ hàng. Voucher chỉ áp dụng khi giỏ đủ điều kiện.</p>
+        </div>
+      )}
+    </>
   );
 
   // The buying facts, repeated where the decision is made; the full policies stay further down.

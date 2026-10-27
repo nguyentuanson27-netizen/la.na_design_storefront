@@ -13,7 +13,9 @@ import { OrderSummary } from "@/components/brand/order-summary";
 import { OrderTrustLine } from "@/components/brand/order-trust-line";
 import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
-import { loadCartRoute, type CartRouteProps } from "@/routes/cart";
+import { loadCartRoute, type CartRouteProps, type CartRouteViewModel } from "@/routes/cart";
+import { voucherPickerKey } from "@/routes/voucher-picker-model";
+import { VoucherPicker } from "@/components/brand/voucher-picker";
 import type { CartLineView, CartViewModel } from "@/routes/cart-model";
 import { createStorefrontRoute } from "@/routes/factory";
 import { buildCartMetadata } from "@/routes/metadata/cart";
@@ -48,7 +50,7 @@ function LineVisual({ line, priority }: Readonly<{ line: CartLineView; priority:
   );
 }
 
-function render(data: CartViewModel) {
+function render(data: CartRouteViewModel) {
   if (data.isEmpty) {
     return (
       <PageShell>
@@ -81,6 +83,11 @@ function render(data: CartViewModel) {
       }
     : data.promotions;
   const problemLines = data.lines.filter((line) => !line.available);
+  // V18 / review P2: the bill above is the cart WITHOUT vouchers; the picker previews what they would do. Both are
+  // shown, each named for what it is, so no screen carries two different "totals" under one label. The preview is
+  // only offered beside a bill on the same basis (shipping included).
+  const voucherSummary = data.vouchers?.summary;
+  const voucherPreview = data.summary && voucherSummary && (voucherSummary.merchandiseDiscountText !== null || voucherSummary.shippingDiscountText !== null) ? voucherSummary : null;
 
   return (
     <PageShell>
@@ -180,9 +187,26 @@ function render(data: CartViewModel) {
           </div>
         </div>
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
+          {data.vouchers ? (
+            <section aria-label="Ưu đãi" className="mb-6" data-cart-vouchers>
+              <VoucherPicker key={voucherPickerKey(data.vouchers)} initial={data.vouchers} linkOffer={data.voucherLinkOffer} />
+              <p className="mt-2 text-xs leading-5 text-black/65">Ưu đãi được xác nhận lại khi nàng đặt hàng.</p>
+            </section>
+          ) : null}
           <p className="text-xs font-semibold uppercase tracking-[0.14em]">Tóm tắt</p>
           {data.summary ? (
-            <OrderSummary className="mt-5" summary={data.summary} />
+            <>
+              <OrderSummary className="mt-5" summary={data.summary} totalLabel={voucherPreview ? "Tổng (chưa tính ưu đãi)" : "Tổng thanh toán"} />
+              {voucherPreview ? (
+                <div className="mt-4 border-t border-black/15 pt-4 text-sm" data-cart-voucher-total>
+                  <p className="flex items-baseline justify-between gap-5">
+                    <span className="font-semibold">Dự kiến sau ưu đãi</span>
+                    <strong className="text-xl font-semibold tracking-[-0.02em]">{voucherPreview.totalText}</strong>
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-black/65">Ưu đãi chưa được giữ: nàng xác nhận ở bước thanh toán.</p>
+                </div>
+              ) : null}
+            </>
           ) : (
             <>
             <div className="mt-5 flex items-baseline justify-between gap-6 border-b border-black/15 pb-5">
@@ -259,8 +283,8 @@ function render(data: CartViewModel) {
           <div aria-hidden="true" className="h-24 lg:hidden" />
           <MobileStickyCta
             targetId={CHECKOUT_CTA_ID}
-            totalText={data.summary?.totalText ?? data.subtotalText}
-            totalLabel={data.summary ? "Tổng thanh toán" : "Tạm tính"}
+            totalText={voucherPreview ? voucherPreview.totalText : (data.summary?.totalText ?? data.subtotalText)}
+            totalLabel={voucherPreview ? "Dự kiến sau ưu đãi" : data.summary ? "Tổng thanh toán" : "Tạm tính"}
             footnote={ORDER_TRUST_SHORT}
           >
             <Link className="btn btn--primary px-4" href="/checkout">Thanh toán</Link>
@@ -271,7 +295,7 @@ function render(data: CartViewModel) {
   );
 }
 
-const route = createStorefrontRoute<CartRouteProps, CartViewModel>({ load: loadCartRoute, render });
+const route = createStorefrontRoute<CartRouteProps, CartRouteViewModel>({ load: loadCartRoute, render });
 
 export const metadata = buildCartMetadata();
 export default route.Page;

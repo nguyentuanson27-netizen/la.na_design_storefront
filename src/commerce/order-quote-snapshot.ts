@@ -320,7 +320,7 @@ export async function readOrderQuoteSnapshot(client: ReadClient, orderId: string
       campaign: line.campaignId === null || line.campaignRevision === null ? null : { id: line.campaignId, revision: line.campaignRevision },
       discountSteps: line.discountSteps.map((step) => ({
         campaignId: step.campaignId,
-        source: step.source as "LEGACY" | "QUANTITY_TIER",
+        source: step.source as "LEGACY" | "QUANTITY_TIER" | "VOUCHER",
         campaignKind: step.campaignKind,
         priority: step.priority,
         inputPriceVnd: Number(step.inputPriceVnd),

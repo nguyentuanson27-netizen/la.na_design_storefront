@@ -30,6 +30,17 @@ export type PancakeOrderReadBack = Readonly<{
 /** Pancake's numeric status for a canceled order (the same code `cancelOrder` writes and reads back). */
 export const PANCAKE_ORDER_CANCELED_STATUS = 7;
 
+/**
+ * The Pancake statuses that mean "this order was cancelled" for the voucher ledger: 7 is the cancel the website issues itself
+ * through the API (observed in V20); 6 ("Đã hủy") is what Pancake reports when staff cancel by hand in its UI (observed
+ * 2026-10-26, shop 715077776). Every other code, terminal-looking ones included, is NOT a cancel.
+ */
+export const PANCAKE_ORDER_CANCELLED_STATUSES: readonly number[] = Object.freeze([6, PANCAKE_ORDER_CANCELED_STATUS]);
+
+export function isPancakeOrderCancelledStatus(status: number | null | undefined): boolean {
+  return typeof status === "number" && PANCAKE_ORDER_CANCELLED_STATUSES.includes(status);
+}
+
 export class PancakeOrderReadBackError extends Error {
   constructor(message: string) {
     super(message);

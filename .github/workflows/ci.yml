@@ -492,3 +492,72 @@ jobs:
         env:
           LA_E2E_PREBUILT_DIST_DIR: .next-e2e
         run: npx playwright test --config playwright.config.ts --shard=${{ matrix.shard }}/4
+
+  # H3-V (Voucher v1, AC-42 / AC-43): the REAL hold Server Action driven from a browser against a production
+  # build (`next build` + `next start`). The test-only route lives in tests/fixtures/voucher-hold-harness and is
+  # copied into a temporary worktree of this very commit; the script also builds the commit WITHOUT it and proves
+  # the official artifact has no harness route and no hold action, and that the harness URL is 404 even with
+  # LA_VOUCHER_TEST_HARNESS=true. Nothing it builds is uploaded or deployed. Playwright traces, video and
+  # screenshots are off so no cookie or signed proof can reach a log or an artifact.
+  voucher-hold-harness:
+    needs: identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ${{ needs.identity.outputs.database-name }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ${{ needs.identity.outputs.database-name }}"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ needs.identity.outputs.database-name }}
+      BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install application from lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Deploy database migrations
+        run: pnpm prisma:migrate:deploy
+
+      - name: Install pinned browser tooling
+        working-directory: tests/a11y-runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        working-directory: tests/a11y-runtime
+        run: npx playwright install chromium
+
+      # `runner` is a step-level context, so the evidence path is set per step rather than in the job `env`.
+      - name: Prove the official artifact is clean and drive the real hold action
+        env:
+          HARNESS_EVIDENCE_OUT: ${{ runner.temp }}/voucher-hold-harness-evidence.json
+        run: pnpm voucher:hold-harness
+
+      - name: Show the sanitized evidence
+        if: always()
+        env:
+          HARNESS_EVIDENCE_OUT: ${{ runner.temp }}/voucher-hold-harness-evidence.json
+        run: test -f "$HARNESS_EVIDENCE_OUT" && cat "$HARNESS_EVIDENCE_OUT" || true

@@ -1,4 +1,4 @@
-import type { PrismaClient } from "../generated/prisma/client.ts";
+import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../integrations/pancake/catalog-contract.ts";
 import {
   buildPancakeCreateOrderRequest,
@@ -65,7 +65,14 @@ export type PancakeOrderSubmissionReason =
    * The order is closed as REJECTED with nothing written to Pancake (a quote-bearing order cannot
    * return to DRAFT); the buyer's next submit creates a new order from a fresh quote.
    */
-  | "BENEFIT_REQUOTE_REQUIRED";
+  | "BENEFIT_REQUOTE_REQUIRED"
+  /**
+   * V13 -- the order carries a voucher and the website could not accept it at the write boundary (hold
+   * expired or no longer the one the quote promised, cart moved, quote not the promised one). The whole
+   * boundary transaction rolled back, so nothing was accepted, consumed or sent; the order is closed as
+   * REJECTED (a quote-bearing order cannot return to DRAFT) and the next submit starts a new attempt.
+   */
+  | "VOUCHER_REQUOTE_REQUIRED";
 
 type PancakeOrderValidationRejectionReason = Extract<
   PancakeOrderSubmissionReason,
@@ -122,6 +129,12 @@ export type PancakeOrderSubmissionEvent =
       correlationId: string;
       state: "REJECTED";
       reason: "BENEFIT_REQUOTE_REQUIRED";
+    }
+  | {
+      name: "pancake_order.voucher_requote_required";
+      correlationId: string;
+      state: "REJECTED";
+      reason: "VOUCHER_REQUOTE_REQUIRED";
     }
   | {
       name: "pancake_order.quote_repriced";
@@ -233,7 +246,26 @@ export type PancakeOrderSubmissionOptions = {
   now?: () => Date;
   /** Pancake POS order source ID stamped on every created order; omitted when not configured. */
   orderSourceId?: number;
+  /**
+   * V13 -- the website's acceptance of the order (the `OrderAcceptance` marker and the once-only voucher
+   * consume), run INSIDE the write-boundary transaction, after the order moved to `POS_SUBMITTING` and
+   * immediately before that transaction commits. Returning `false` rolls the whole transaction back: no marker,
+   * no consumption, nothing sent, and the order is closed for a new attempt. Throwing does the same as any other
+   * boundary failure. A no-voucher order must return `true` without writing.
+   */
+  acceptAtWriteBoundary?: (tx: Prisma.TransactionClient, order: Readonly<{ id: string }>) => Promise<boolean>;
+  /**
+   * V14 -- the order was definitively refused by Pancake (a 4xx on create) after the website had accepted it, so the
+   * voucher consumed at acceptance is to be refunded. Best effort and idempotent: a failure here never changes the
+   * outcome, and a periodic sweep settles any REJECTED order whose hook was lost.
+   */
+  onRejectedAfterAcceptance?: (order: Readonly<{ id: string }>) => Promise<void>;
+  /** V18: apply the vouchers the order's cart holds when its benefit quote is re-derived (the secret only finds the cart's own holds). */
+  voucher?: Readonly<{ attemptSecret: string }>;
 };
+
+/** Thrown inside the boundary transaction to roll it back when the website cannot accept the order. */
+class AcceptanceRefused extends Error {}
 
 function emitSafely(
   observer: PancakeOrderSubmissionOptions["onEvent"],
@@ -314,7 +346,8 @@ function existingResult(order: {
       reason === "COMPOSITE_SELLING_MODE_UNSUPPORTED" ||
       reason === "VALIDATION_UNAVAILABLE" ||
       reason === "BENEFIT_SUBMISSION_UNAVAILABLE" ||
-      reason === "BENEFIT_REQUOTE_REQUIRED"
+      reason === "BENEFIT_REQUOTE_REQUIRED" ||
+      reason === "VOUCHER_REQUOTE_REQUIRED"
     ) {
       return { ok: false, state: "REJECTED", reason };
     }
@@ -655,7 +688,7 @@ export function createPancakeOrderSubmissionService(
      * the caller and the buyer's next submit creates a new order from a fresh quote.
      */
     async function closeBenefitOrder(
-      reason: "VALIDATION_UNAVAILABLE" | "BENEFIT_SUBMISSION_UNAVAILABLE" | "BENEFIT_REQUOTE_REQUIRED",
+      reason: "VALIDATION_UNAVAILABLE" | "BENEFIT_SUBMISSION_UNAVAILABLE" | "BENEFIT_REQUOTE_REQUIRED" | "VOUCHER_REQUOTE_REQUIRED",
       mirrorRefresh: ReadonlyArray<{ variantId: string; freshBaseVnd: number; freshAfterDiscountVnd: number }> = [],
     ): Promise<boolean> {
       return client.$transaction(async (tx) => {
@@ -732,6 +765,8 @@ export function createPancakeOrderSubmissionService(
       shippingQuote?: ShippingQuote;
       shippingPaidItems?: readonly { variantId: string; quantity: number }[];
       shippingHasOtherPromotions?: boolean;
+      /** V18: the fee a held shipping voucher waives; the engine's own fee is still what is re-asked at the boundary. */
+      shippingVoucherWaivedVnd?: number;
       requoteShipping?: () => Promise<PancakeOrderSubmissionResult>;
       requestLines: ReadonlyArray<{ pancakeVariationId: string; quantity: number; unitPriceVnd: number }>;
       /**
@@ -770,6 +805,7 @@ export function createPancakeOrderSubmissionService(
       shippingQuote: providedShippingQuote,
       shippingPaidItems = freshLines,
       shippingHasOtherPromotions = freshLines.some((line) => line.pricing.isDiscounted),
+      shippingVoucherWaivedVnd = 0,
       requoteShipping,
       requestLines,
       verifyCreatedOrder,
@@ -819,7 +855,8 @@ export function createPancakeOrderSubmissionService(
         policy: readGuestShippingPolicy(options.env),
       }));
     } catch { return resetValidation(); }
-    const shippingFeeVnd = shippingQuote.feeVnd;
+    const shippingFeeVnd = shippingQuote.feeVnd - shippingVoucherWaivedVnd;
+    if (!Number.isSafeInteger(shippingFeeVnd) || shippingFeeVnd < 0) return reject("LOCAL_ORDER_INVALID");
     // A campaign ending or changing is a legitimate quote change, not a corrupt order.
     // The benefit path has already compared its complete fresh quote above; legacy needs this check.
     if (providedShippingQuote === undefined && order.shippingFeeVnd !== BigInt(shippingFeeVnd)) {
@@ -901,14 +938,28 @@ export function createPancakeOrderSubmissionService(
           client: tx, shopId: contact.persistedShopId, now: readNow(), paidItems: shippingPaidItems,
           hasOtherPromotions: shippingHasOtherPromotions, policy: readGuestShippingPolicy(options.env),
         });
-        if (currentShipping.feeVnd !== shippingFeeVnd) return "SHIPPING_CHANGED" as const;
+        if (currentShipping.feeVnd - shippingVoucherWaivedVnd !== shippingFeeVnd) return "SHIPPING_CHANGED" as const;
         if (beforeExternalWrite && !(await beforeExternalWrite())) return "CAPACITY_REFUSED" as const;
-        return tx.orderMirror.updateMany({
+        const moved = await tx.orderMirror.updateMany({
           where: { id: order.id, state: "VALIDATING" },
           data: { state: "POS_SUBMITTING", syncErrorCode: null, purchaseOccurredAt: readNow(), ...shippingQuoteAudit(currentShipping) },
         });
+        // Last statement of the boundary: the shipping audit above is part of the money that freezes at
+        // acceptance, so acceptance cannot come earlier. Only the claimant of the state change accepts.
+        if (moved.count === 1 && options.acceptAtWriteBoundary && !(await options.acceptAtWriteBoundary(tx, { id: order.id }))) {
+          throw new AcceptanceRefused("The website could not accept the order");
+        }
+        return moved;
       });
-    } catch { return resetValidation(); }
+    } catch (error) {
+      if (error instanceof AcceptanceRefused) {
+        // The rolled-back transaction left the order VALIDATING, which is what the close below requires.
+        await closeBenefitOrder("VOUCHER_REQUOTE_REQUIRED");
+        emitSafely(options.onEvent, { name: "pancake_order.voucher_requote_required", correlationId, state: "REJECTED", reason: "VOUCHER_REQUOTE_REQUIRED" });
+        return { ok: false, state: "REJECTED", reason: "VOUCHER_REQUOTE_REQUIRED" };
+      }
+      return resetValidation();
+    }
     if (submitting === "SHIPPING_CHANGED") return requoteShipping ? requoteShipping() : repriceDraft(freshLines);
     if (submitting === "CAPACITY_REFUSED") return resetValidation();
     if (submitting.count !== 1) {
@@ -953,6 +1004,7 @@ export function createPancakeOrderSubmissionService(
           state: "REJECTED",
           reason: "ORDER_REJECTED",
         });
+        try { await options.onRejectedAfterAcceptance?.({ id: order.id }); } catch { /* the sweep settles it */ }
         return { ok: false, state: "REJECTED", reason: "ORDER_REJECTED" };
       }
 
@@ -1326,6 +1378,7 @@ export function createPancakeOrderSubmissionService(
                 now,
                 excludeOrderHolds: order.id,
                 ...(options.env === undefined ? {} : { env: options.env }),
+                ...(options.voucher === undefined ? {} : { voucher: options.voucher }),
               }),
             );
           } catch {
@@ -1348,7 +1401,8 @@ export function createPancakeOrderSubmissionService(
         totalQuantity: snapshot.paidQuantity,
         shippingQuote: benefitFresh?.kind === "BENEFIT" ? benefitFresh.shippingQuote : undefined,
         shippingPaidItems: benefitFresh?.kind === "BENEFIT" ? benefitFresh.paid : [],
-        shippingHasOtherPromotions: benefitFresh?.kind === "BENEFIT" && (benefitFresh.gifts.length > 0 || benefitFresh.facts.lines.some((line) => line.discountSteps.some((step) => step.outputPriceVnd < step.inputPriceVnd))),
+        shippingHasOtherPromotions: benefitFresh?.kind === "BENEFIT" && benefitFresh.shippingHasOtherPromotions,
+        shippingVoucherWaivedVnd: benefitFresh?.kind === "BENEFIT" ? benefitFresh.voucher?.shippingWaivedVnd ?? 0 : 0,
         requoteShipping: () => requoteBenefitOrder(mirrorRefresh),
         requestLines: projection.lines,
         verifyCreatedOrder: async (pancakeOrderId) => {
