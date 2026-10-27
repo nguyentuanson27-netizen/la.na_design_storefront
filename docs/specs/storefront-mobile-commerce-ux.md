@@ -166,13 +166,13 @@ When required options are incomplete:
 When all required choices are valid:
 - sticky summary shows the selected values in one compact string, e.g. **`Nguyên bộ · Trắng · M`**;
 - omit dimensions that do not exist for the product rather than rendering placeholders;
-- the sticky action is **`Mua ngay`** (**`Đặt trước`** while the selected variant is a preorder, per master spec §30). One tap adds the selected unit through the existing add mutation and navigates to `/checkout`; it does not open the cart drawer;
+- the sticky action is **`Mua ngay`** (**`Đặt trước · Thanh toán`** while the selected variant is a preorder, per master spec §30), and it carries the buy-now accessible name. One tap adds the selected unit through the existing add mutation and navigates to `/checkout`; it does not open the cart drawer. A rejected or failed add keeps the shopper on the page and shows the purchase feedback inside the sticky bar, because the panel's status is off screen while the bar is showing;
 - **`Mua ngay` checks out the whole cart**, not just this item: a cart that already holds A plus a `Mua ngay` on B reaches checkout with A + B. Cart/checkout authority is unchanged;
 - incomplete selection still opens the sheet, and a genuinely unavailable selection still reads **`Lựa chọn này tạm hết`**.
 
 Inside the bottom sheet:
 - there is **no separate "Xác nhận lựa chọn" step**;
-- once selection is complete, the bottom of the sheet offers **`Mua ngay`** (primary, first; `Đặt trước` for a preorder) and **`Thêm vào giỏ`** (outline). The accessible name of the preorder buy-now button is `Đặt trước và thanh toán ngay`;
+- once selection is complete, the bottom of the sheet offers **`Mua ngay`** (primary, first) and **`Thêm vào giỏ`** (outline). For a preorder the two read `Đặt trước · Thanh toán` and `Đặt trước · Thêm vào giỏ`, so the shared §30 word never stands alone on two buttons that do different things; their accessible names (`Đặt trước · Thanh toán ngay`, `Đặt trước · Thêm vào giỏ hàng`) each contain the visible label;
 - **server-confirmed success is the only hand-off seam:** opening the cart (`Thêm vào giỏ`) or navigating to `/checkout` (`Mua ngay`, sticky or sheet) must happen only after the existing async add mutation resolves with `result.ok === true` (or an equivalent controller success signal derived from that result). The current synchronous `"submitted"` return value means only that the request started and must not open the cart or navigate;
 - on server rejection/failure, do not navigate; keep the selection sheet open (when it is open) and show the existing purchase feedback; do not create a second mutation path;
 - the controller may expose a success callback/signal if needed, but the existing cart/server mutation remains the single authority;

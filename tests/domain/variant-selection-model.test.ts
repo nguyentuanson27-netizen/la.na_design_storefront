@@ -685,7 +685,7 @@ test("the sticky bar offers buy-now only for a ready selection and keeps its oth
   assert.equal(ready.actionLabel, "Thêm vào giỏ");
 });
 
-test("a preorder selection never reads Mua ngay: label and accessible name follow isPreorderSelection", () => {
+test("a preorder selection never reads Mua ngay: each button says its own destination", () => {
   const preorderOptions = [option({ id: "pre-m", color: "Đen", size: "M", isPreorderSale: true })];
   const readyOptions = [option({ id: "ready-m", color: "Đen", size: "M" })];
   const selection = { kindKey: null, color: "Đen", size: "M" } as const;
@@ -696,17 +696,26 @@ test("a preorder selection never reads Mua ngay: label and accessible name follo
 
   const preorder = resolve(preorderOptions);
   assert.equal(preorder.view.isPreorderSelection, true);
-  // One word for every buy-now surface, and it is the §30 one.
-  assert.equal(preorder.view.buyNowLabel, "Đặt trước");
+  // §30's word leads both buttons, and each one says where it goes -- a bare "Đặt trước" on both
+  // would leave only the colour to tell a shopper which button checks the whole cart out.
+  assert.equal(preorder.view.buyNowLabel, "Đặt trước · Thanh toán");
+  assert.equal(preorder.view.addToBagLabel, "Đặt trước · Thêm vào giỏ");
+  assert.notEqual(preorder.view.buyNowLabel, preorder.view.addToBagLabel);
+  // One word for every buy-now surface.
   assert.equal(preorder.mobile.stickyActionLabel, preorder.view.buyNowLabel);
-  // The accessible name contains the visible word and tells the two buttons apart.
-  assert.equal(preorder.view.buyNowAccessibleName, "Đặt trước và thanh toán ngay");
+  assert.equal(preorder.mobile.actionLabel, preorder.view.addToBagLabel);
+  // Each accessible name contains its own visible label, and the two names stay apart.
+  assert.equal(preorder.view.buyNowAccessibleName, "Đặt trước · Thanh toán ngay");
+  assert.equal(preorder.view.addToBagAccessibleName, "Đặt trước · Thêm vào giỏ hàng");
   assert.ok(preorder.view.buyNowAccessibleName.includes(preorder.view.buyNowLabel));
+  assert.ok(preorder.view.addToBagAccessibleName.includes(preorder.view.addToBagLabel));
   assert.notEqual(preorder.view.buyNowAccessibleName, preorder.view.addToBagAccessibleName);
 
   const ready = resolve(readyOptions);
   assert.equal(ready.view.buyNowLabel, "Mua ngay");
   assert.equal(ready.view.buyNowAccessibleName, "Mua ngay");
+  assert.equal(ready.view.addToBagAccessibleName, "Thêm vào giỏ hàng");
+  assert.ok(ready.view.addToBagAccessibleName.includes(ready.view.addToBagLabel));
   assert.equal(ready.mobile.stickyActionLabel, "Mua ngay");
 });
 

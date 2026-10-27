@@ -36,6 +36,10 @@ const SHOP_ID = 920_011;
 const runId = `${Date.now()}${process.pid}`;
 
 const PREORDER = "Đặt trước";
+// Two preorder buttons that do different things must not share one visible word: each says where
+// it goes, and each accessible name contains its visible label.
+const PREORDER_ADD = `${PREORDER} · Thêm vào giỏ`;
+const PREORDER_BUY = `${PREORDER} · Thanh toán`;
 const OUT_OF_STOCK = "Hết hàng";
 const FLOOR = -20;
 
@@ -213,7 +217,7 @@ async function addSelectedToBag(page: Page, slug: string, size: string) {
   const panel = page.getByRole("region", { name: "Mua sản phẩm" });
   await selectOption(page, size);
   await selectOption(page, "Black");
-  await panel.getByRole("button", { name: /Thêm vào giỏ hàng|Đặt trước sản phẩm này/ }).click();
+  await panel.getByRole("button", { name: /Thêm vào giỏ hàng/ }).click();
   await expect(panel.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
 }
 
@@ -307,10 +311,57 @@ test("F8a a preorder PDP shows the state, and its CTA says so too", async ({ pag
 
   // Two separate things §30 requires: the state is visible, and the button communicates it.
   await expect(panel.locator('[data-purchase-state="preorder"]')).toHaveText(PREORDER);
-  const cta = panel.getByRole("button", { name: `${PREORDER} sản phẩm này`, exact: true });
+  const cta = panel.getByRole("button", { name: `${PREORDER_ADD} hàng`, exact: true });
   await expect(cta).toBeVisible();
   await expect(cta).toBeEnabled();
-  await expect(cta).toHaveText(PREORDER);
+  await expect(cta).toHaveText(PREORDER_ADD);
+  // The primary button checks the whole cart out, and says so beside the preorder word.
+  const buyNow = panel.getByRole("button", { name: `${PREORDER_BUY} ngay`, exact: true });
+  await expect(buyNow).toBeVisible();
+  await expect(buyNow).toBeEnabled();
+  await expect(buyNow).toHaveText(PREORDER_BUY);
+  expect(await cta.innerText()).not.toBe(await buyNow.innerText());
+
+  await assertPageQuality(page);
+  expect(health.browserErrors).toEqual([]);
+  expect(health.failedResponses).toEqual([]);
+});
+
+test("F8a on a phone the preorder sheet and sticky bar keep the two actions apart, by sight and by name", async ({
+  page,
+}) => {
+  const health = watchPageHealth(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/shop/${slugs.preorder}`, { waitUntil: "networkidle" });
+
+  const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
+  const stickyCta = stickyBar.getByRole("button");
+  const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
+
+  // Incomplete: the bar still asks for the choices and opens the sheet.
+  await stickyCta.click();
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
+  await sheet.getByRole("group", { name: "Kích cỡ" }).getByText("M", { exact: true }).click();
+
+  // Complete: two preorder buttons side by side, each naming its destination, each name containing
+  // what is printed on it.
+  const buyNow = sheet.getByRole("button", { name: `${PREORDER_BUY} ngay`, exact: true });
+  const addToBag = sheet.getByRole("button", { name: `${PREORDER_ADD} hàng`, exact: true });
+  await expect(buyNow).toHaveText(PREORDER_BUY);
+  await expect(addToBag).toHaveText(PREORDER_ADD);
+  for (const button of [buyNow, addToBag]) {
+    const box = (await button.boundingBox())!;
+    expect(box.x, "button starts inside the viewport").toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width, "button ends inside the viewport").toBeLessThanOrEqual(390);
+  }
+
+  // The sticky bar's own button is the buy-now action and carries its accessible name.
+  await sheet.getByRole("button", { name: "Đóng lựa chọn sản phẩm", exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  const readySticky = stickyBar.getByRole("button", { name: `${PREORDER_BUY} ngay`, exact: true });
+  await expect(readySticky).toBeVisible();
+  await expect(readySticky).toHaveText(PREORDER_BUY);
 
   await assertPageQuality(page);
   expect(health.browserErrors).toEqual([]);

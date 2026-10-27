@@ -1084,6 +1084,12 @@ test("a failed add from the phone sticky bar does not navigate to checkout", asy
   // Only a server-confirmed add may leave the product page.
   await expect(page).toHaveURL(`${BASE_URL}/shop/${productSlug}`);
   await expect(ready).toBeEnabled();
+  // The shopper is told why, beside the button they pressed and inside the viewport: the panel's
+  // own status is far above the fold while the sticky bar is showing.
+  const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
+  const feedback = stickyBar.getByText("Chưa thêm được vào giỏ hàng. Nàng thử lại nhé.", { exact: true });
+  await expect(feedback).toBeVisible();
+  await expect(feedback).toBeInViewport();
   expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
 
   await page.unroute("**/shop/**");

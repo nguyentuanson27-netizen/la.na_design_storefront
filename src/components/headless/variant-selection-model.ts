@@ -63,7 +63,12 @@ function defaultPriceLabel(options: readonly StorefrontProjectionOption[]): stri
  * will not ship for fifteen days is precisely the misreading §30 forbids.
  */
 export const DEFAULT_ADD_TO_BAG_LABEL = "Thêm vào giỏ";
-export const PREORDER_ADD_TO_BAG_LABEL = PREORDER_LABEL;
+/**
+ * A preorder keeps §30's word, but the two buttons that carry it do different things -- one adds to
+ * the bag, the other checks the whole bag out -- so each says where it goes. With a bare "Đặt trước"
+ * on both, only the button's colour told a shopper looking at the screen which was which.
+ */
+export const PREORDER_ADD_TO_BAG_LABEL = `${PREORDER_LABEL} · Thêm vào giỏ`;
 
 /**
  * The buy-now wording, which follows the same §30 rule as add-to-bag: a button that still said
@@ -72,7 +77,7 @@ export const PREORDER_ADD_TO_BAG_LABEL = PREORDER_LABEL;
  * reads "Đặt trước" on one surface and "Mua ngay" on another.
  */
 export const DEFAULT_BUY_NOW_LABEL = "Mua ngay";
-export const PREORDER_BUY_NOW_LABEL = PREORDER_LABEL;
+export const PREORDER_BUY_NOW_LABEL = `${PREORDER_LABEL} · Thanh toán`;
 
 /**
  * The accessible names for the same two buttons.
@@ -83,16 +88,15 @@ export const PREORDER_BUY_NOW_LABEL = PREORDER_LABEL;
  */
 export const ADD_TO_BAG_NAMES = {
   ready: "Thêm vào giỏ hàng",
-  preorder: `${PREORDER_LABEL} sản phẩm này`,
+  preorder: `${PREORDER_ADD_TO_BAG_LABEL} hàng`,
 } as const;
 /**
- * The accessible names for the buy-now button. A preorder's visible word is the same "Đặt trước" as
- * its add-to-bag button, so the name says what this one does differently while still containing the
- * visible word (label-in-name).
+ * The accessible names for the buy-now button. Each one contains its visible label (label-in-name),
+ * so speech-control users can say what they read, and the two preorder buttons stay apart by name.
  */
-const BUY_NOW_NAMES = {
+export const BUY_NOW_NAMES = {
   ready: DEFAULT_BUY_NOW_LABEL,
-  preorder: `${PREORDER_LABEL} và thanh toán ngay`,
+  preorder: `${PREORDER_BUY_NOW_LABEL} ngay`,
 } as const;
 const QUICK_ADD_NAMES = {
   ready: "Thêm vào giỏ từ thanh mua nhanh",

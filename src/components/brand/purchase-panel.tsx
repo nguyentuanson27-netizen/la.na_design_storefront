@@ -913,7 +913,7 @@ export function PurchasePanelView({
 
         <div ref={panelActionsRef} className="mt-8 grid grid-cols-2 gap-3">
           <button
-            className="btn btn--primary w-full px-4"
+            className="btn btn--primary w-full px-4 text-balance"
             type="button"
             aria-label={view.buyNowAccessibleName}
             disabled={!canAttemptPurchase}
@@ -923,7 +923,7 @@ export function PurchasePanelView({
             {view.buyNowLabel}
           </button>
           <button
-            className="btn btn--outline w-full px-4"
+            className="btn btn--outline w-full px-4 text-balance"
             type="button"
             aria-label={view.addToBagAccessibleName}
             disabled={!canAttemptPurchase}
@@ -985,6 +985,20 @@ export function PurchasePanelView({
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
         {mobileNudge}
+        {/*
+          A rejected buy-now from this bar happens with the sheet closed and the panel's own status
+          far off screen, so the failure is said here, beside the button that was pressed. It is not
+          a second live region: the panel's status already announces the same message to assistive
+          technology, and a duplicate would read it twice.
+        */}
+        {message !== "" && !justAdded && !isSheetOpen ? (
+          <p
+            className="mx-auto mb-2 w-full max-w-[42rem] text-sm font-medium text-[#9A3324]"
+            data-mobile-purchase-feedback=""
+          >
+            {message}
+          </p>
+        ) : null}
         <div className="mx-auto flex w-full max-w-[42rem] min-w-0 items-center gap-3">
           {/*
             The price column never yields to the button: the button may take at most 60% of the bar
@@ -1002,6 +1016,7 @@ export function PurchasePanelView({
             ref={stickyTriggerRef}
             className="btn btn--primary min-w-0 max-w-[60%] shrink px-3 text-balance"
             type="button"
+            aria-label={mobilePresentation.readyToAdd ? view.buyNowAccessibleName : undefined}
             aria-haspopup={mobilePresentation.readyToAdd ? undefined : "dialog"}
             aria-expanded={mobilePresentation.readyToAdd ? undefined : isSheetOpen}
             aria-busy={isPending}
@@ -1069,7 +1084,7 @@ export function PurchasePanelView({
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         type="button"
-                        className="btn btn--primary w-full px-3"
+                        className="btn btn--primary w-full px-3 text-balance"
                         aria-label={view.buyNowAccessibleName}
                         disabled={isPending}
                         aria-busy={isPending}
@@ -1079,7 +1094,8 @@ export function PurchasePanelView({
                       </button>
                       <button
                         type="button"
-                        className="btn btn--outline w-full px-3"
+                        className="btn btn--outline w-full px-3 text-balance"
+                        aria-label={view.addToBagAccessibleName}
                         disabled={isPending}
                         aria-busy={isPending}
                         onClick={() => runPurchase("sheet", () => addToBag(handleSheetAddAccepted))}
