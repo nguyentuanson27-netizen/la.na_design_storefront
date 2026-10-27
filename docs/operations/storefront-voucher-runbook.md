@@ -111,5 +111,8 @@ Decisions recorded for v1 (owner, 2026-10-26, "theo khuyến nghị"): (1) while
 - [ ] The refund sweep is scheduled (§5) and a first run printed `0 … 0` or its real numbers.
 - [ ] The §3 queries return no drift on the target database.
 - [ ] `LA_VOUCHER_TEST_HARNESS` is absent from `.env.production`.
+- [ ] **H4 UX acceptance** by the owner (checkout panel, cart totals wording, picker, gift-loss consent, the Admin screens), on a real phone and a desktop. Evidence link: ______ · signed by: ______ · date: ______
+- [ ] **Independent security review** of this feature (not the author; `/security-review` has not been run on the branch). Report link: ______ · reviewer: ______ · date: ______ · every P1/P2 closed or accepted in writing
+- [ ] **Production env and secrets review** of the four gates in §1, the absence of `LA_VOUCHER_TEST_HARNESS`, and that the auth secret used for the opaque offer handle is the production one. Record link: ______ · reviewed by: ______ · date: ______
 - [ ] A named person is on call for the first day and knows §4.
-- [ ] H5 go/no-go recorded by the owner. **A separate `/ship` approval is required to deploy.**
+- [ ] H5 go/no-go recorded by the owner. It does **not** replace the evidence for each box above; every one needs its own link and signature. **A separate `/ship` approval is required to deploy.**
