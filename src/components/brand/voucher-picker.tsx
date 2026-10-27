@@ -53,6 +53,11 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   const [model, setModel] = useState(initial);
   const [draft, setDraft] = useState<Draft>(() => draftOf(initial));
   const [open, setOpen] = useState(false);
+  // Whether the dialog is open RIGHT NOW (a Server Action that resolves after the shopper closed it must still settle what it saved).
+  const openRef = useRef(false);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +109,15 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
     router.refresh();
   };
 
+  // A code is recorded as saved only when its Server Action RESOLVES. The shopper may have closed the dialog while it was running (Back or
+  // Escape are not blocked: nothing is lost by leaving), and then no later close will come, so the refresh and the clearing of a used
+  // linked offer happen here instead.
+  const settleIfClosed = () => {
+    if (!openRef.current) settleCodeApplied();
+  };
+
   const close = () => {
+    openRef.current = false;
     settleCodeApplied();
     setPendingCode(null);
     setPendingLink(false);
@@ -163,6 +176,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         setConfirming(false);
         codeApplied.current = true;
         setMessage("Đã áp dụng mã ưu đãi.");
+        settleIfClosed();
       } else if (result.ok) {
         // Saved on the server, but the picker could not be re-read right now: it is NOT a failure. Say what happened and let the
         // page behind the dialog show the server's numbers when the dialog closes.
@@ -172,6 +186,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         setConfirming(false);
         codeApplied.current = true;
         setMessage("Đã áp dụng mã ưu đãi. Giá dự kiến sẽ được cập nhật khi nàng đóng hộp thoại.");
+        settleIfClosed();
       } else if (!result.ok && (result.reason === "CONFIRMATION_REQUIRED" || result.reason === "QUOTE_CHANGED")) {
         // The code is valid but nothing is saved yet: show what the server derives for it and ask for the shopper's yes.
         if (result.picker) {
@@ -219,6 +234,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         codeApplied.current = true;
         markLinkUsed(result);
         setMessage("Đã áp dụng mã ưu đãi.");
+        settleIfClosed();
       } else if (result.ok) {
         setPendingCode(null);
         setPendingLink(false);
@@ -226,6 +242,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         codeApplied.current = true;
         markLinkUsed(result);
         setMessage("Đã áp dụng mã ưu đãi. Giá dự kiến sẽ được cập nhật khi nàng đóng hộp thoại.");
+        settleIfClosed();
       } else if (!result.ok && (result.reason === "CONFIRMATION_REQUIRED" || result.reason === "QUOTE_CHANGED")) {
         if (result.picker) {
           setModel(result.picker);
@@ -284,6 +301,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         setConfirming(false);
         codeApplied.current = true;
         setMessage("Đã lưu lựa chọn ưu đãi. Hiện chưa tính được giá, nên giá cuối cùng sẽ được báo lại trước khi nàng đặt hàng.");
+        settleIfClosed();
       } else if (pendingLink && !result.ok && (result.reason === "OFFER_CHANGED" || result.reason === "INVALID_CODE")) {
         offerGone(result.reason);
       } else if (!result.ok && result.reason === "SELECTION_CHANGED") {

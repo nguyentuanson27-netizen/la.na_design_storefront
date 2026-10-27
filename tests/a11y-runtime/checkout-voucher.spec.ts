@@ -585,6 +585,72 @@ test("review 735ff62: a replaced offer also drops a typed code that was waiting 
   expect((await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).not.toBe(kol73.id);
 });
 
+/** Holds the NEXT Server Action POST until released, so a test can close the dialog while it is still running. */
+async function holdNextServerAction(page: Page) {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let held!: () => void;
+  const reached = new Promise<void>((resolve) => { held = resolve; });
+  let used = false;
+  await page.route("**/cart", async (route) => {
+    const request = route.request();
+    if (used || request.method() !== "POST" || request.headers()["next-action"] === undefined) return route.fallback();
+    used = true;
+    held();
+    await gate;
+    await route.fallback();
+  });
+  return { release, reached };
+}
+
+test("review 5a22b12: closing the dialog while a TYPED code is being applied still refreshes the cart behind it when the action resolves", async ({ page }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL70", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 70K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  await prisma.cartVoucherSelection.deleteMany({ where: { cartId } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/cart`);
+  const expected = page.locator("[data-cart-voucher-total]").first();
+  await expect(expected).toContainText("880.000");
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await dialog.getByLabel("Nhập mã khuyến mãi").fill("KOL70");
+  const action = await holdNextServerAction(page);
+  await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
+  await action.reached;
+  // The shopper leaves while the server is still working.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  action.release();
+  // Nothing else is opened or closed: the saved choice and the totals outside the dialog catch up on their own.
+  await expect.poll(async () => (await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).not.toBeNull();
+  await expect(expected).toContainText("860.000");
+});
+
+test("review 5a22b12: closing the dialog while the LINKED code is being applied still refreshes the cart and clears the used offer", async ({ page, context }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL70", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 70K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  await prisma.cartVoucherSelection.deleteMany({ where: { cartId } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/shop/${PREFIX}dress?voucher=KOL70`);
+  await page.goto(`${BASE}/cart`);
+  const expected = page.locator("[data-cart-voucher-total]").first();
+  await expect(expected).toContainText("880.000");
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  const action = await holdNextServerAction(page);
+  await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
+  await action.reached;
+  await dialog.getByRole("button", { name: "Quay lại, giữ lựa chọn cũ" }).click();
+  await expect(dialog).toBeHidden();
+  action.release();
+  await expect.poll(async () => (await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).not.toBeNull();
+  // The offer that was used is cleared, and the totals outside the dialog are the server's.
+  await expect.poll(async () => (await context.cookies()).some((cookie) => cookie.name === "la_voucher_code")).toBe(false);
+  await expect(expected).toContainText("860.000");
+});
+
 test("review 04dea8b: the linked code applied while pricing cannot be re-read is a success the shopper is told about, not a closed dialog", async ({ page, context }) => {
   await prisma.voucherCampaign.create({
     data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "CODE", visibility: "PRIVATE", code: "KOL74", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "KOL 74K", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) },
