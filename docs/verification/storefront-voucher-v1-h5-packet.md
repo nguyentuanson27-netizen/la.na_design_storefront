@@ -9,7 +9,7 @@
 | Area | Tasks | State |
 | --- | --- | --- |
 | Rules, money, optimizer, scope, shipping, proof | V00–V03, V08, V10 | built, domain + DB tests |
-| Schema, Admin, caps | V04–V07 | built; **V07 Admin browser/axe evidence still missing** |
+| Schema, Admin, caps | V04–V07 | built; V07 Admin browser/axe evidence **done** (`tests/a11y-runtime/admin-voucher.spec.ts`, in CI; see the verification dossier) |
 | POS projection and exact-money probe | V09 | built; H1-V live probe 4/4 PASS on shop 715077776 ([evidence](./storefront-voucher-v1-pos-probe.md)) |
 | Holds (10 min absolute, reuse, swap, lazy expiry) | V11, V12 | built; H3-V approved ([evidence](./storefront-voucher-v1-h3v.md)) |
 | Accepted order, once-only consume | V13 | built (acceptance inside the POS write-boundary transaction) |
@@ -56,13 +56,13 @@ Acceptance criteria, refreshed (the AC table in the verification doc was written
 | C1: 2 units, merchandise voucher 10.000đ + free-shipping voucher | goods 1.688.000đ, fee waived to 0 | order 9: 2 × 844.000đ, total 1.688.000đ (list 849.000đ − 5.000đ per unit) | after the POS cancel the real status reconciliation read status 7 and refunded both vouchers once; counters back to 0/0; a second reconciliation changed nothing |
 | C2: 3 units, 10.000đ voucher that does not divide, no free-shipping voucher | goods 2.537.000đ, fee 30.000đ kept, total 2.567.000đ | order 10: 2 × 845.667đ + 1 × 845.666đ, total 2.537.000đ | same: refunded once, counters returned, second pass a no-op |
 
-Both orders read back **status 7** after the run (read-only check), and a first attempt that failed on a fixture rule before any create left no order. Not covered by this run: a gift line (covered by the H1-V probe fixture F3), a staff-made cancel in the Pancake UI, and `SYNC_UNKNOWN`.
+Both orders read back **status 7** after the run (read-only check), and a first attempt that failed on a fixture rule before any create left no order. Not covered by this run: a gift line (covered by the H1-V probe fixture F3), a staff-made cancel in the Pancake UI (observed later: **done**, §16–17) and `SYNC_UNKNOWN`.
 
 ## 3. What only a person can supply
 
 1. **Owner approval of the two migrations beyond H2:** `20261026100000_voucher_order_snapshot` (new table `OrderVoucherSnapshot`, index on `VoucherHold.orderId`) and `20261026120000_order_quote_step_voucher` (the `VOUCHER` step source). Neither has touched a real database.
 2. ~~A live end-to-end convergence run (V20)~~ — **done 2026-10-26** with the owner's explicit permission ("chạy v20 đi", "10 đơn"): see §2b. Any further live run needs its own permission.
-3. **A staff-made cancel in the Pancake UI**, observed once, to learn which status code it produces. Only status `7` (the cancel we issue ourselves) refunds today; anything else stays pending by design.
+3. ~~A staff-made cancel in the Pancake UI, observed once~~ — **done 2026-10-26** (live order `11`, cancelled by the owner in the Pancake UI → status **6**; §16). The owner accepted status 6 as a trusted cancel (§17): a **status 6 or 7 on a complete, shop-verified record** returns the voucher's use and budget **once** (reconciliation and `pnpm voucher:refund:sweep`); **every other code stays pending** by design. Order `11` was refunded once by the sweep (§17). Nothing further is owed here.
 4. **The refund sweep schedule** (runbook §5): nothing in `deploy/vps` runs `voucher:refund:sweep`.
 5. **H4 UX review** of the checkout panel, the cart totals wording and the gift-loss consent, ideally on a real phone and a desktop.
 6. **Production secrets/env review** for the four gates in runbook §1 and the absence of `LA_VOUCHER_TEST_HARNESS`.
@@ -70,11 +70,11 @@ Both orders read back **status 7** after the run (read-only check), and a first 
 
 ## 4. Open engineering items (not blockers by themselves, each needs a decision)
 
-- **V07 Admin browser + axe evidence** is missing; Admin behaviour is covered by database tests only.
+- ~~V07 Admin browser + axe evidence is missing~~ — done (`admin-voucher.spec.ts`; the form keeps what the Admin typed on a refusal, §15 onward).
 - **>16 KiB proof UX**: a cart whose voucher proof would exceed the limit gets `PROOF_UNAVAILABLE` and a message; there is no browser evidence for that state.
 - **Hold expiry while the checkout page is open**: the panel refreshes at expiry (code path exists), not browser-tested; the desktop viewport of `checkout-voucher.spec.ts` is also only exercised inside the mobile project.
-- **`ADMIN_CANCEL` has no caller** (no screen, no script). Decide whether v1 ships without it (manual reconciliation) or gets an operator command.
-- **No instant kill switch**: with the flag off, held vouchers still settle for up to 10 minutes (tested, deliberate). Decide whether that is acceptable or an explicit kill switch is wanted before H5.
+- ~~`ADMIN_CANCEL` has no caller~~ — decided and built: an **operator command** (`pnpm voucher:refund:admin-cancel`, not a screen); see the decision table.
+- ~~No instant kill switch~~ — decided: **not for v1** (the flag OFF stops new holds at once; held vouchers finish within 10 minutes, tested, deliberate); see the decision table and runbook §1.
 - **Cart-gift-picker axe findings** need a CI check with the pinned axe to confirm they do not reproduce.
 - **`capacity-handoff-reconcile.ts` typecheck error** is pre-existing; confirm in CI.
 
@@ -253,3 +253,9 @@ Also from this review, for H4/release: the PR title and body still describe the 
 | Finding | Verified | Change |
 | --- | --- | --- |
 | P2 `saveWith` only handled a Server Action that RESOLVED. If the call rejects (no network, the response lost after the server committed, an unexpected error) control went straight to `finally`: no read-back, no message, `settleIfClosed` never ran (stale totals, a used linked offer's cookie kept), and the exception could reach the error boundary | yes, by reading the code; reproduced in the browser by aborting / dropping the POST (with the previous picker both new tests fail) | The outcome of a failed request is neither "applied" nor "not applied", so nothing is claimed and nothing is replayed. `saveWith` now catches it: the dialog gets "Chưa xác định được kết quả của yêu cầu áp dụng ưu đãi. Nàng kiểm tra lại ưu đãi đang dùng rồi thử lại nếu cần.", the page is re-read (`router.refresh()`, which also remounts the picker on the fresh model when what is saved differs), and with the dialog closed the same neutral sentence is shown beside the trigger until the dialog is opened again. The notice survives that remount (a module-level timestamp valid for 30 s, so it never leaks into a later visit). The shopper retries by hand; no mutation is re-sent. A linked offer's cookie is deliberately NOT cleared on an unknown outcome (the code may not have been used): applying the same code again is idempotent. Tests: browser, POST held then (a) never reaching the server: with the dialog closed, the neutral notice shows (not "chưa được thực hiện"), the cart is still a working page with the old total, nothing is saved, reopening shows the message and "Áp dụng mã" is available; (b) handled by the server and the response dropped, linked code: the saved choice is picked up by the page by itself (expected total 860.000đ), the neutral notice shows, no false success or refusal, exactly one saved choice (no double apply). Rethrowing instead of handling fails both. Local: lint, typecheck, `pnpm test` 3695/3695, production build, Playwright 40/40. Not covered: a transport failure of "Áp dụng" for a draft (same wrapper, same handling), a real flaky network |
+
+## 29. Re-review of PR #214 at `9b98325` (owner account, 2026-10-27): the packet's open-items list must match what was done
+
+| Finding | Verified | Change |
+| --- | --- | --- |
+| P2 (documentation) §3 item 3 still asked for a staff-made cancel to be observed and said "only status 7 refunds today; anything else stays pending", although §16 records the live observation (order `11` → status 6) and §17 the owner's decision and the refund | yes: `PANCAKE_ORDER_CANCELLED_STATUSES = [6, 7]` in `order-readback.ts`; the refund/sweep use it; `voucher-redemption-refund.test.ts` covers the code matrix; runbook §5 and the checklist already said so. A release record that is wrong about a gate is a defect even when the runtime is right | §3 item 3 is marked done and now states the current rule (status 6 or 7 on a complete, shop-verified record returns the voucher's use and budget once; every other code stays pending) with the links to §16–17. While there, the same kind of drift was fixed in four other places: the summary row for V07 (Admin browser/axe evidence is done), the §2b "not covered" sentence (the staff cancel was observed later), and the §4 items "V07 evidence is missing", "ADMIN_CANCEL has no caller" (an operator command exists) and "no instant kill switch" (decided: not for v1). §16 and §19 are left as the history of what was true when they were written. Docs only; no code change |
