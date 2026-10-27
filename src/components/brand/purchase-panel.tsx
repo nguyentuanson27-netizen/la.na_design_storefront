@@ -913,7 +913,7 @@ export function PurchasePanelView({
 
         <div ref={panelActionsRef} className="mt-8 grid grid-cols-2 gap-3">
           <button
-            className="btn btn--primary w-full px-4"
+            className="btn btn--outline w-full px-4"
             type="button"
             aria-label={view.addToBagAccessibleName}
             disabled={!canAttemptPurchase}
@@ -923,7 +923,7 @@ export function PurchasePanelView({
             {view.addToBagLabel}
           </button>
           <button
-            className="btn btn--outline w-full px-4"
+            className="btn btn--primary w-full px-4"
             type="button"
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
@@ -1068,7 +1068,7 @@ export function PurchasePanelView({
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         type="button"
-                        className="btn btn--primary w-full px-3"
+                        className="btn btn--outline w-full px-3"
                         disabled={isPending}
                         aria-busy={isPending}
                         onClick={() => runPurchase("sheet", () => addToBag(handleSheetAddAccepted))}
@@ -1077,7 +1077,7 @@ export function PurchasePanelView({
                       </button>
                       <button
                         type="button"
-                        className="btn btn--outline w-full px-3"
+                        className="btn btn--primary w-full px-3"
                         disabled={isPending}
                         aria-busy={isPending}
                         onClick={() => runPurchase("sheet", buyNow)}
