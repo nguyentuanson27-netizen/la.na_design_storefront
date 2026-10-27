@@ -618,6 +618,10 @@ test("review 5a22b12: closing the dialog while a TYPED code is being applied sti
   const action = await holdNextServerAction(page);
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   await action.reached;
+  // While the write is running the dialog says so: leaving does NOT cancel it.
+  await expect(dialog.getByText("ưu đãi vẫn được áp dụng")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Đóng — yêu cầu áp dụng vẫn tiếp tục" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Quay lại, giữ lựa chọn cũ" })).toHaveCount(0);
   // The shopper leaves while the server is still working.
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
@@ -625,6 +629,10 @@ test("review 5a22b12: closing the dialog while a TYPED code is being applied sti
   // Nothing else is opened or closed: the saved choice and the totals outside the dialog catch up on their own.
   await expect.poll(async () => (await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).not.toBeNull();
   await expect(expected).toContainText("860.000");
+  // Once it has landed, the plain wording is back.
+  await page.locator("[data-voucher-picker] > button").click();
+  await expect(dialog.getByRole("button", { name: "Quay lại, giữ lựa chọn cũ" })).toBeVisible();
+  await expect(dialog.getByText("ưu đãi vẫn được áp dụng")).toHaveCount(0);
 });
 
 test("review 5a22b12: closing the dialog while the LINKED code is being applied still refreshes the cart and clears the used offer", async ({ page, context }) => {
@@ -642,7 +650,10 @@ test("review 5a22b12: closing the dialog while the LINKED code is being applied 
   const action = await holdNextServerAction(page);
   await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
   await action.reached;
-  await dialog.getByRole("button", { name: "Quay lại, giữ lựa chọn cũ" }).click();
+  // The back button no longer promises to "keep the old choice" while the request is still going to land.
+  await expect(dialog.getByRole("button", { name: "Quay lại, giữ lựa chọn cũ" })).toHaveCount(0);
+  await expect(dialog.getByText("ưu đãi vẫn được áp dụng")).toBeVisible();
+  await dialog.getByRole("button", { name: "Đóng — yêu cầu áp dụng vẫn tiếp tục" }).click();
   await expect(dialog).toBeHidden();
   action.release();
   await expect.poll(async () => (await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).not.toBeNull();

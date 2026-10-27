@@ -81,6 +81,20 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   // same "Áp dụng" press that carries the consent (the server re-verifies the code and the quote then).
   const [pendingCode, setPendingCode] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // A write (a code or a choice being applied) is in flight. Leaving stays possible, but then it does NOT cancel: the request still lands.
+  const [saving, setSaving] = useState(false);
+  // `saving` is set OUTSIDE the transition on purpose: state set inside an async transition is only shown when the whole action ends,
+  // and the point of it is to be shown while the action is still running.
+  const saveWith = (run: () => Promise<void>) => {
+    setSaving(true);
+    startTransition(async () => {
+      try {
+        await run();
+      } finally {
+        setSaving(false);
+      }
+    });
+  };
 
   useEffect(() => {
     const element = dialog.current;
@@ -163,7 +177,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
 
   const submitCode = () => {
     setError(null);
-    startTransition(async () => {
+    saveWith(async () => {
       const result = await applyCode({ code });
       if (result.ok && result.picker) {
         setSaved(result.picker);
@@ -219,7 +233,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   // The code a marketing link left on the server. The browser never has it: this asks the server to use it.
   const submitLinked = () => {
     setError(null);
-    startTransition(async () => {
+    saveWith(async () => {
       const result = await applyLinkedCode({ offerToken: linkOffer });
       if (result.ok && result.picker) {
         setSaved(result.picker);
@@ -266,7 +280,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
       return;
     }
     setError(null);
-    startTransition(async () => {
+    saveWith(async () => {
       // The consent is the digest of the quote the shopper just read and a yes; the server recomputes what is lost.
       const consent = confirming && model.quoteDigest !== null ? { acknowledged: true as const, expectedQuoteDigest: model.quoteDigest } : undefined;
       // A verified code waiting for the shopper's yes is saved through the code path (the server re-verifies the code and the quote).
@@ -352,7 +366,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
       >
         <div className="flex h-dvh flex-col sm:h-auto sm:max-h-[85dvh]">
           <header className="flex items-center gap-3 border-b border-black/15 px-4 py-3">
-            <button type="button" className="inline-flex h-11 w-11 items-center justify-center text-xl focus-visible:outline-2 focus-visible:outline-offset-2" aria-label="Quay lại, giữ lựa chọn cũ" onClick={close}>
+            <button type="button" className="inline-flex h-11 w-11 items-center justify-center text-xl focus-visible:outline-2 focus-visible:outline-offset-2" aria-label={saving ? "Đóng — yêu cầu áp dụng vẫn tiếp tục" : "Quay lại, giữ lựa chọn cũ"} onClick={close}>
               <span aria-hidden="true">←</span>
             </button>
             <h2 id={titleId} ref={heading} tabIndex={-1} className="font-display text-xl">Ưu đãi</h2>
@@ -420,6 +434,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
           </div>
 
           <footer className="sticky bottom-0 border-t border-black/15 bg-[#fcf8f6] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+            {saving ? <p role="status" className="mt-3 text-sm text-black/80">Đang áp dụng ưu đãi. Nếu nàng đóng hộp thoại, ưu đãi vẫn được áp dụng.</p> : null}
             <p role="status" aria-live="polite" className="sr-only">{message ?? ""}</p>
             {confirming ? (
               <div className="flex flex-col gap-2">
