@@ -80,9 +80,11 @@ export async function loadCollectionRoute({
   // the order the shopper sees, so the same array feeds the tracking and the view model. Pins lead
   // only in the merchandiser's own order: under a sort the shopper picked they would sit above a
   // list that claims to be ordered by price or name.
+  const isDefaultSort = isCollectionDefaultSort(collection.slug, discovery.sort);
   const ordered = orderByFeaturedSlugs(
     products,
-    isCollectionDefaultSort(collection.slug, discovery.sort) ? collection.featuredProductSlugs : [],
+    isDefaultSort ? collection.featuredProductSlugs : [],
+    { inStockFirst: isDefaultSort },
   );
   const listTracking = buildProductListTracking({
     products: ordered,

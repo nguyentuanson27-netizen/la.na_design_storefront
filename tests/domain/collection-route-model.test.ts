@@ -195,11 +195,23 @@ test("in-stock products always precede out-of-stock products, even if out-of-sto
   const ordered = orderByFeaturedSlugs(
     [outOfStockUnpinned, inStockUnpinned, outOfStockPinned, inStockPinned],
     ["out-of-stock-pinned", "in-stock-pinned"],
+    { inStockFirst: true },
   );
 
   assert.deepEqual(
     ordered.map((p) => p.slug),
     ["in-stock-pinned", "in-stock-unpinned", "out-of-stock-pinned", "out-of-stock-unpinned"],
+  );
+});
+
+test("without inStockFirst a sold-out product keeps its place, so a shopper's sort is not regrouped", () => {
+  const soldOut = { ...product("sold-out"), variants: [{ ...variant(1), sellableStock: 0 }] };
+  const onSale = { ...product("on-sale"), variants: [{ ...variant(2), sellableStock: 4 }] };
+
+  assert.deepEqual(orderByFeaturedSlugs([soldOut, onSale], []).map((p) => p.slug), ["sold-out", "on-sale"]);
+  assert.deepEqual(
+    orderByFeaturedSlugs([soldOut, onSale], [], { inStockFirst: true }).map((p) => p.slug),
+    ["on-sale", "sold-out"],
   );
 });
 

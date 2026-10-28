@@ -153,46 +153,45 @@ function sameSize(a: string | null, b: string | null): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-function hasSellableStock(product: unknown): boolean {
-  if (typeof product !== "object" || product === null) return true;
-  if ("variants" in product && Array.isArray((product as any).variants)) {
-    const variants = (product as any).variants;
-    if (variants.length === 0) return true;
-    return variants.some((v: any) => typeof v?.sellableStock === "number" && v.sellableStock > 0);
-  }
-  return true;
+type StockedProduct = Readonly<{
+  variants?: readonly Readonly<{ sellableStock?: number }>[];
+}>;
+
+/** A product with no variant facts is not known to be sold out, so it keeps its place. */
+function hasSellableStock(product: StockedProduct): boolean {
+  const variants = product.variants;
+  if (variants === undefined || variants.length === 0) return true;
+  return variants.some(({ sellableStock }) => typeof sellableStock === "number" && sellableStock > 0);
 }
 
 /**
- * The grid, with the merchandiser's pinned slugs first and in-stock products leading.
+ * The grid, with the merchandiser's pinned slugs first.
  *
  * Pinning reorders what this page already returned; it never reaches for a product the query did not
  * match, because that would put an item in front of someone who filtered it out. A pinned slug that
- * is absent from the page is simply not on it.
+ * is not on the page is ignored, and a slug pinned twice keeps its first position. Without pins the
+ * order is untouched.
  *
- * Applied once, by the loader, before the grid's tracking is built. Both the rendered cards and the
  * `view_item_list`/`select_item` indices come from this one ordered array: building tracking from
  * the repository order and then reordering the cards would report a pinned product at the index it
  * would have had, not the position it is shown in.
  *
- * In-stock products always precede out-of-stock products, so an out-of-stock item never leapfrogs
- * an in-stock item even if pinned.
+ * With `inStockFirst`, in-stock products always precede out-of-stock ones, so a pinned sold-out
+ * product never leapfrogs a product that is on sale. Only the collection's default sort sets it:
+ * under a sort the shopper picked, partitioning by stock would break the order the list claims.
  */
 export function orderByFeaturedSlugs<T extends Readonly<{ slug: string }>>(
   products: readonly T[],
   featuredSlugs: readonly string[],
+  { inStockFirst = false }: Readonly<{ inStockFirst?: boolean }> = {},
 ): readonly T[] {
-  if (products.length === 0) return products;
-
   const rank = new Map<string, number>();
-  if (featuredSlugs.length > 0) {
-    featuredSlugs.forEach((slug, index) => {
-      if (!rank.has(slug)) rank.set(slug, index);
-    });
-  }
+  featuredSlugs.forEach((slug, index) => {
+    if (!rank.has(slug)) rank.set(slug, index);
+  });
 
-  const orderGroup = (items: readonly T[]) => {
-    if (items.length <= 1 || rank.size === 0) return items;
+  const pinFirst = (items: readonly T[]): readonly T[] => {
+    if (rank.size === 0) return items;
     const pinned: T[] = [];
     const rest: T[] = [];
     for (const item of items) {
@@ -202,15 +201,15 @@ export function orderByFeaturedSlugs<T extends Readonly<{ slug: string }>>(
     return [...pinned, ...rest];
   };
 
+  if (!inStockFirst) return pinFirst(products);
+
   const inStock: T[] = [];
   const outOfStock: T[] = [];
   for (const product of products) {
-    (hasSellableStock(product) ? inStock : outOfStock).push(product);
+    (hasSellableStock(product as StockedProduct) ? inStock : outOfStock).push(product);
   }
-
-  if (outOfStock.length === 0 && featuredSlugs.length === 0) return products;
-
-  return [...orderGroup(inStock), ...orderGroup(outOfStock)];
+  if (outOfStock.length === 0) return pinFirst(products);
+  return [...pinFirst(inStock), ...pinFirst(outOfStock)];
 }
 
 /** Editorial media, with anything that fails the trusted-URL contract dropped. */
