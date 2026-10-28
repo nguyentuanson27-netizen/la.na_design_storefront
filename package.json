@@ -50,10 +50,10 @@
     "pancake:t7:accept": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-t7-confirmed-purchase-acceptance.ts"
   },
   "dependencies": {
-    "@better-auth/prisma-adapter": "1.6.25",
+    "@better-auth/prisma-adapter": "1.7.7",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
-    "better-auth": "1.6.25",
+    "better-auth": "1.7.7",
     "dotenv": "17.4.2",
     "google-auth-library": "11.1.0",
     "next": "16.4.1",
