@@ -52,6 +52,14 @@ async function cleanup() { await prisma.promotionCampaign.deleteMany({ where: { 
 async function state(pancakeVideoSyncState: "READY" | "UNKNOWN" | "NONE" | "CONFLICT" | "UNSUPPORTED", pancakeVideoUrl: string | null = VIDEO_A) {
   await prisma.productMirror.update({ where: { pancakeProductId: externalId }, data: { pancakeVideoSyncState, pancakeVideoUrl } });
 }
+async function serveVideo(page: Page, onRequest: () => void = () => undefined) {
+  await page.route(VIDEO_A, (route) => {
+    onRequest();
+    const range = route.request().headers().range;
+    const start = Number(range?.match(/bytes=(\d+)-/)?.[1] ?? 0);
+    return route.fulfill({ status: range ? 206 : 200, contentType: "video/mp4", headers: { "Accept-Ranges": "bytes", ...(range ? { "Content-Range": `bytes ${start}-${mp4.length - 1}/${mp4.length}` } : {}) }, body: mp4.subarray(start) });
+  });
+}
 function collectedPlayback() { return summarizePdpVideoPlaybackLogs(output.split("\n")); }
 async function images(page: Page) {
   await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => route.fulfill({ contentType: "image/png", body: image }));
@@ -72,49 +80,106 @@ test.beforeEach(async ({ page }) => { output = ""; await state("READY"); await i
 test.afterAll(async () => { await stop(); await cleanup(); await prisma.$disconnect(); });
 
 for (const width of [320, 390, 768, 1024, 1440]) {
-  test(`one overlay, photo count, collision-free layout and no media network at ${width}px`, async ({ page }) => {
+  const floatingLayout = width >= 1024;
+  test(`one overlay, photo count and collision-free layout at ${width}px: ${floatingLayout ? "floating mini-player" : "9:16 frame on the photo"}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    const requests: string[] = [];
-    page.on("request", (r) => { if (/\.(mp4|mov)(?:[?#]|$)/.test(r.url())) requests.push(r.url()); });
+    await serveVideo(page);
     await page.goto(`${BASE}/shop/${slug}`);
     const tile = page.getByRole("button", { name: "Xem video", exact: true });
     await expect(tile).toHaveCount(1);
     await expect(tile).toBeVisible();
-    await expect(page.locator("video, source")).toHaveCount(0);
-    const counter = page.locator(width < 1024 ? ".pdp-mobile-gallery__counter" : ".pdp-stage__counter");
-    await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
+    await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
+    // The preview starts by itself once the page has loaded: muted, looping, inline, decorative.
+    const preview = tile.locator("video");
+    await expect(preview).toHaveCount(1);
+    await expect(preview).toHaveAttribute("aria-hidden", "true");
+    expect(await preview.evaluate((element: HTMLVideoElement) => [element.muted, element.loop, element.playsInline])).toEqual([true, true, true]);
+    await expect(preview).toHaveAttribute("data-playing", "true");
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.3);
+    const counter = page.locator(floatingLayout ? ".pdp-stage__counter" : ".pdp-mobile-gallery__counter");
+    await expect(counter).toHaveText(floatingLayout ? "Trang ảnh 1 / 2" : "1/3");
     const t = (await tile.boundingBox())!;
-    if (width >= 1024) {
-      const primaryPhoto = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
-      expect(t.x, "tile starts inside the primary photo").toBeGreaterThanOrEqual(primaryPhoto.x - 1);
-      expect(t.y, "tile starts inside the primary photo").toBeGreaterThanOrEqual(primaryPhoto.y - 1);
-      expect(t.x + t.width, "tile ends inside the primary photo, not the second photo").toBeLessThanOrEqual(primaryPhoto.x + primaryPhoto.width + 1);
-      expect(t.y + t.height, "tile ends inside the primary photo").toBeLessThanOrEqual(primaryPhoto.y + primaryPhoto.height + 1);
-      expect(primaryPhoto.x + primaryPhoto.width - t.x - t.width).toBeCloseTo(16, 0);
-    }
-    const c = (await counter.boundingBox())!;
-    expect(t.y + t.height).toBeLessThanOrEqual(c.y);
-    const flash = (await page.locator(".pdp-flash-tag").boundingBox())!;
-    expect(flash.x + flash.width <= t.x || flash.y >= t.y + t.height).toBeTruthy();
+    expect(t.height / t.width, "the frame is 9:16 portrait").toBeCloseTo(16 / 9, 1);
     expect(t.width).toBeGreaterThanOrEqual(44);
     expect(t.x + t.width).toBeLessThanOrEqual(width);
-    await page.waitForTimeout(200);
-    expect(requests).toEqual([]);
+    const c = (await counter.boundingBox())!;
+    const flash = (await page.locator(".pdp-flash-tag").boundingBox())!;
+    expect(flash.x + flash.width <= t.x || flash.y >= t.y + t.height).toBeTruthy();
+    // At every width the shopper can stop the motion (WCAG 2.2.2) and keep using the page.
+    const stop = page.getByRole("button", { name: "Đóng video nhỏ", exact: true });
+    await expect(stop).toBeVisible();
+    const slotAxe = await new AxeBuilder({ page }).include(".pdp-video-slot").withTags(BUYER_AXE_TAGS).analyze();
+    expect(slotAxe.violations).toEqual([]);
+    if (floatingLayout) {
+      // A mini-player pinned to the viewport's bottom right, clear of the counter, with a close button.
+      expect(await tile.evaluate((element) => getComputedStyle(element.parentElement!).position)).toBe("fixed");
+      expect(t.width).toBe(168);
+      expect(width - t.x - t.width).toBeCloseTo(24, 0);
+      expect(t.y + t.height).toBeLessThanOrEqual(c.y);
+      // It floats while the photographs are in view, then docks back onto them instead of sitting
+      // over the price and buy buttons in the purchase panel.
+      const slot = page.locator(".pdp-video-slot");
+      await page.mouse.wheel(0, 200);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(100);
+      await expect(slot).toHaveAttribute("data-float", "true");
+      await page.mouse.wheel(0, 700);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
+      await expect(slot).toHaveAttribute("data-float", "false");
+      await expect(stop).toHaveCount(0);
+      await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect(slot).toHaveAttribute("data-float", "true");
+      await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
+    } else {
+      expect(t.y + t.height).toBeLessThanOrEqual(c.y);
+    }
+
+    // Opening carries on from where the preview was, with sound controls, and does not restart.
+    const before = await preview.evaluate((element: HTMLVideoElement) => element.currentTime);
     await tile.click();
     const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
     await expect(dialog).toBeVisible();
-    await expect(dialog.locator("video")).toHaveAttribute("preload", "none");
+    const watched = dialog.locator("video");
+    await expect(watched).toHaveAttribute("preload", "none");
+    await expect.poll(() => watched.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThanOrEqual(before - 0.1);
+    await expect.poll(() => watched.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
+    const box = (await watched.boundingBox())!;
+    expect(box.height / box.width, "the dialog player is 9:16 portrait").toBeCloseTo(16 / 9, 1);
+    // The dialog holds the shopper's attention: the inline preview stands still until it closes.
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
     await page.keyboard.press("Escape");
     await expect(dialog).not.toBeVisible();
     await expect(tile).toBeFocused();
-    await expect(page.locator("video, source")).toHaveCount(0);
-    await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
-    if (width >= 1024) {
+    await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
+
+    if (floatingLayout) {
+      // Closing the mini-player leaves the original small poster tile inside the primary photo.
+      await stop.click();
+      await expect(stop).toHaveCount(0);
+      await expect(page.locator("video, source")).toHaveCount(0);
+      await expect(tile).toBeFocused();
+      const small = (await tile.boundingBox())!;
+      expect([small.width, small.height]).toEqual([96, 76]);
+      const primaryPhoto = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
+      expect(small.x).toBeGreaterThanOrEqual(primaryPhoto.x - 1);
+      expect(small.y).toBeGreaterThanOrEqual(primaryPhoto.y - 1);
+      expect(small.x + small.width).toBeLessThanOrEqual(primaryPhoto.x + primaryPhoto.width + 1);
+      expect(small.y + small.height).toBeLessThanOrEqual(primaryPhoto.y + primaryPhoto.height + 1);
+      expect(primaryPhoto.x + primaryPhoto.width - small.x - small.width).toBeCloseTo(16, 0);
+      expect(small.y + small.height).toBeLessThanOrEqual(c.y);
       await page.getByRole("button", { name: "Ảnh tiếp theo", exact: true }).click();
       await expect(counter).toHaveText("Trang ảnh 2 / 2");
       await page.getByRole("button", { name: "Ảnh trước", exact: true }).click();
       await expect(counter).toHaveText("Trang ảnh 1 / 2");
     } else {
+      // Stopping leaves the 9:16 poster frame, which stays stopped, and the page stays usable.
+      await stop.click();
+      await expect(stop).toHaveCount(0);
+      await expect(page.locator("video, source")).toHaveCount(0);
+      await expect(tile).toBeFocused();
+      const poster = (await tile.boundingBox())!;
+      expect(poster.height / poster.width).toBeCloseTo(16 / 9, 1);
       await page.locator(".pdp-mobile-gallery__image").first().focus();
       await page.keyboard.press("ArrowRight");
       await expect(counter).toHaveText("2/3");
@@ -124,15 +189,21 @@ for (const width of [320, 390, 768, 1024, 1440]) {
   });
 }
 
-test("one-photo desktop gallery anchors the tile inside its centered primary photo", async ({ page }) => {
+test("one-photo desktop gallery anchors the fallback tile inside its centered primary photo", async ({ page }) => {
+  // Reduced motion leaves the desktop frame a poster: the original small tile on the photograph.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await prisma.variantMirror.updateMany({ where: { product: { pancakeProductId: externalId } }, data: { pancakeImageUrls: [] } });
   try {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${BASE}/shop/${slug}`);
     const tile = page.getByRole("button", { name: "Xem video", exact: true });
     await expect(tile).toHaveCount(1);
+    await page.waitForLoadState("load");
+    await expect(page.locator("video")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toHaveCount(0);
     const photo = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
     const t = (await tile.boundingBox())!;
+    expect([t.width, t.height]).toEqual([96, 76]);
     expect(t.x).toBeGreaterThanOrEqual(photo.x - 1);
     expect(t.y).toBeGreaterThanOrEqual(photo.y - 1);
     expect(t.x + t.width).toBeLessThanOrEqual(photo.x + photo.width + 1);
@@ -147,21 +218,227 @@ test("one-photo desktop gallery anchors the tile inside its centered primary pho
   }
 });
 
+test("on a phone the shopper can stop the preview and opening or closing the dialog never restarts it", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  await expect(tile.locator("video")).toHaveAttribute("data-playing", "true");
+  await page.getByRole("button", { name: "Đóng video nhỏ", exact: true }).click();
+  await expect(page.locator("video")).toHaveCount(0);
+  await tile.click();
+  const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(page.locator("video")).toHaveCount(0);
+  await page.getByRole("group", { name: /^Kích cỡ/ }).getByText("L", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "L", exact: true })).toBeChecked();
+});
+
+test("the preview plays only while a quarter of it is on screen and not when the dialog closes out of view", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  const preview = tile.locator("video");
+  await expect(preview).toHaveAttribute("data-playing", "true");
+  const box = (await tile.boundingBox())!;
+  const paused = () => preview.evaluate((element: HTMLVideoElement) => element.paused);
+  // Only a sliver (10%) of the frame is left at the top of the viewport: it stands still.
+  await page.evaluate((y) => window.scrollTo(0, y), box.y + box.height * 0.9);
+  await expect.poll(paused).toBe(true);
+  // Half of it back on screen: it plays again.
+  await page.evaluate((y) => window.scrollTo(0, y), box.y + box.height * 0.5);
+  await expect.poll(paused).toBe(false);
+  // Closing the dialog while the frame is out of view must not start it in the background.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await tile.click();
+  await expect(page.getByRole("dialog", { name: `Video ${productName}` })).toBeVisible();
+  await page.evaluate((y) => window.scrollTo(0, y), box.y + box.height * 0.95);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+  expect(await paused()).toBe(true);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect.poll(paused).toBe(false);
+});
+
+test("turning on reduced motion while the page is open stops and removes the preview", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  await expect(tile.locator("video")).toHaveAttribute("data-playing", "true");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator("video")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toHaveCount(0);
+  await expect(tile).toBeVisible();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(tile.locator("video")).toHaveAttribute("data-playing", "true");
+});
+
+test("a remounted preview keeps its poster until the new player actually plays", async ({ page }) => {
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  const preview = page.locator(".pdp-video-tile video");
+  await expect(preview).toHaveAttribute("data-playing", "true");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(preview).toHaveCount(0);
+  // The new player cannot start yet, even if the previous instance had already played.
+  await page.evaluate(() => {
+    const original = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function play() {
+      return this.controls ? original.call(this) : new Promise<void>(() => undefined);
+    };
+  });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(preview).toHaveCount(1);
+  await expect(preview).toHaveAttribute("data-playing", "false");
+  expect(await preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+});
+
+test("the first dialog frame resumes a later preview position and close hands its position back", async ({ page }) => {
+  await page.addInitScript(() => {
+    const firstFrames: number[] = [];
+    (window as unknown as { __dialogFirstFrames: number[] }).__dialogFirstFrames = firstFrames;
+    document.addEventListener("playing", (event) => {
+      const target = event.target;
+      if (target instanceof HTMLVideoElement && target.controls) firstFrames.push(target.currentTime);
+    }, true);
+  });
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  const preview = page.locator(".pdp-video-tile video");
+  await expect(preview).toHaveAttribute("data-playing", "true");
+  await preview.evaluate((element: HTMLVideoElement) => { element.pause(); element.currentTime = 2.5; });
+  await page.getByRole("button", { name: "Xem video", exact: true }).click();
+  const frames = () => page.evaluate(() => (window as unknown as { __dialogFirstFrames: number[] }).__dialogFirstFrames);
+  await expect.poll(async () => (await frames()).length).toBeGreaterThan(0);
+  expect((await frames())[0]).toBeGreaterThanOrEqual(2.4);
+  await page.locator("dialog video").evaluate((element: HTMLVideoElement) => { element.pause(); element.currentTime = 1.5; });
+  await page.keyboard.press("Escape");
+  await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
+  const handedBack = await preview.evaluate((element: HTMLVideoElement) => element.currentTime);
+  expect(handedBack).toBeGreaterThanOrEqual(1.4);
+  expect(handedBack, "close must hand back the dialog position, not the old 2.5s preview position").toBeLessThan(2.4);
+});
+
+for (const [width, height] of [[1280, 520], [1440, 560]] as const) {
+  test(`at ${width}x${height} the floating mini-player and its stop button are fully inside the window and clickable`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await serveVideo(page);
+    await page.goto(`${BASE}/shop/${slug}`);
+    const tile = page.getByRole("button", { name: "Xem video", exact: true });
+    await expect(tile.locator("video")).toHaveAttribute("data-playing", "true");
+    const stop = page.getByRole("button", { name: "Đóng video nhỏ", exact: true });
+    await expect(stop).toBeVisible();
+    for (const target of [tile, stop]) {
+      const box = (await target.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+    }
+    // The stop button is the element a tap at its centre reaches, not something laid over it (the
+    // sticky header is the one thing that could be: it is taller than the 17px a short window leaves).
+    const centre = (await stop.boundingBox())!;
+    expect(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest("button")?.getAttribute("aria-label"), [centre.x + centre.width / 2, centre.y + centre.height / 2])).toBe("Đóng video nhỏ");
+    await stop.click();
+    await expect(stop).toHaveCount(0);
+  });
+}
+
+test("in a window too short for the mini-player it stays a small poster tile on the photograph", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 500 });
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  await expect(tile).toBeVisible();
+  await page.waitForLoadState("load");
+  await page.waitForTimeout(400);
+  await expect(page.locator(".pdp-video-slot")).toHaveAttribute("data-float", "false");
+  await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toHaveCount(0);
+  const box = (await tile.boundingBox())!;
+  expect([box.width, box.height]).toEqual([96, 76]);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(500);
+  // No preview at all: nothing is requested or plays out of sight.
+  await expect(page.locator("video")).toHaveCount(0);
+  await tile.click();
+  await expect(page.getByRole("dialog", { name: `Video ${productName}` })).toBeVisible();
+});
+
+test("a browser that refuses sound without its own gesture leaves the player on its controls with a hint", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.addInitScript(() => {
+    const original = HTMLMediaElement.prototype.play;
+    (window as unknown as { __blockPlay: boolean }).__blockPlay = true;
+    HTMLMediaElement.prototype.play = function play() {
+      if (this.controls && (window as unknown as { __blockPlay: boolean }).__blockPlay) return Promise.reject(new DOMException("blocked", "NotAllowedError"));
+      return original.call(this);
+    };
+  });
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  await page.getByRole("button", { name: "Xem video", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
+  await expect(dialog.getByRole("status")).toHaveText("Bấm nút Play để xem video.");
+  await expect(dialog.locator("video")).toHaveAttribute("controls", "");
+  expect(collectedPlayback().failures).toBe(0);
+  await page.evaluate(() => { (window as unknown as { __blockPlay: boolean }).__blockPlay = false; });
+  await dialog.locator("video").evaluate((element: HTMLVideoElement) => element.play());
+  await expect(dialog.getByRole("status")).toHaveCount(0);
+  await expect.poll(() => dialog.locator("video").evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
+});
+
+test("the preview does not play while the tab is hidden, and never revives a stopped or held one", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.addInitScript(() => {
+    let hidden = false;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
+    (window as unknown as { __setHidden: (value: boolean) => void }).__setHidden = (value) => {
+      hidden = value;
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+  });
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  const preview = tile.locator("video");
+  const paused = () => preview.evaluate((element: HTMLVideoElement) => element.paused);
+  const setHidden = (value: boolean) => page.evaluate((hidden) => (window as unknown as { __setHidden: (value: boolean) => void }).__setHidden(hidden), value);
+  await expect(preview).toHaveAttribute("data-playing", "true");
+  await setHidden(true);
+  await expect.poll(paused).toBe(true);
+  await setHidden(false);
+  await expect.poll(paused).toBe(false);
+  // Closing the dialog while the tab is hidden must not start it in the background.
+  await tile.click();
+  await expect(page.getByRole("dialog", { name: `Video ${productName}` })).toBeVisible();
+  await setHidden(true);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  expect(await paused()).toBe(true);
+  await setHidden(false);
+  await expect.poll(paused).toBe(false);
+  // A stopped preview is gone and a tab switch does not bring it back.
+  await page.getByRole("button", { name: "Đóng video nhỏ", exact: true }).click();
+  await setHidden(true);
+  await setHidden(false);
+  await page.waitForTimeout(300);
+  await expect(page.locator("video")).toHaveCount(0);
+});
+
 test("explicit play fetches/decodes fixture MP4, seeks, closes and reopens accessibly", async ({ page }) => {
   let mediaRequests = 0;
-  await page.route(VIDEO_A, (route) => {
-    mediaRequests++;
-    const range = route.request().headers().range;
-    const start = Number(range?.match(/bytes=(\d+)-/)?.[1] ?? 0);
-    return route.fulfill({ status: range ? 206 : 200, contentType: "video/mp4", headers: { "Accept-Ranges": "bytes", ...(range ? { "Content-Range": `bytes ${start}-${mp4.length - 1}/${mp4.length}` } : {}) }, body: mp4.subarray(start) });
-  });
+  await serveVideo(page, () => { mediaRequests++; });
   await page.goto(`${BASE}/shop/${slug}`);
   const tile = page.getByRole("button", { name: "Xem video", exact: true });
   await tile.click();
   const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
   const video = dialog.locator("video");
-  expect(mediaRequests).toBe(0);
-  expect(collectedPlayback().attempts).toBe(0);
   await video.evaluate((element: HTMLVideoElement) => element.play());
   await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
   expect(await video.evaluate((element: HTMLVideoElement) => element.videoWidth)).toBeGreaterThan(0);
@@ -177,7 +454,7 @@ test("explicit play fetches/decodes fixture MP4, seeks, closes and reopens acces
   expect(axe.violations).toEqual([]);
   await dialog.getByRole("button", { name: "Đóng", exact: true }).click();
   await expect(tile).toBeFocused();
-  await expect(page.locator("video, source")).toHaveCount(0);
+  await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
   await tile.click();
   await expect(dialog).toBeVisible();
   await page.keyboard.press("Escape");
@@ -190,12 +467,12 @@ test("playback failure retains photos and size selection", async ({ page }) => {
   const size = page.getByRole("radio", { name: "L", exact: true });
   await page.getByRole("region", { name: "Mua sản phẩm" }).getByRole("group", { name: /^Kích cỡ/ }).getByText("L", { exact: true }).click();
   await page.getByRole("button", { name: "Xem video", exact: true }).click();
-  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+  await page.locator("dialog video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
   await expect(page.getByRole("alert").filter({ hasText: "Chưa phát được video" })).toBeVisible();
   await expect.poll(() => collectedPlayback().failures).toBe(1);
   await expect.poll(() => collectedPlayback().attempts).toBe(1);
   // Native source and player callbacks may both fire; neither adds another failure.
-  await page.locator("video").evaluate((element) => {
+  await page.locator("dialog video").evaluate((element) => {
     element.dispatchEvent(new Event("error"));
     element.querySelector("source")?.dispatchEvent(new Event("error"));
   });
@@ -205,7 +482,7 @@ test("playback failure retains photos and size selection", async ({ page }) => {
   await expect(page.locator(".pdp-mobile-gallery__counter")).toHaveText("1/3");
   await expect(page.getByRole("button", { name: "Thêm vào giỏ", exact: false }).first()).toBeEnabled();
   await page.getByRole("button", { name: "Xem video", exact: true }).click();
-  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+  await page.locator("dialog video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
   await expect.poll(() => collectedPlayback().failures).toBe(2);
   expect(collectedPlayback().attempts).toBe(2);
 });
@@ -214,12 +491,11 @@ test("an audio-only container is counted as unsupported video and stopped", asyn
   await page.route(VIDEO_A, (route) => route.fulfill({ contentType: "video/mp4", body: audioOnlyMp4 }));
   await page.goto(`${BASE}/shop/${slug}`);
   await page.getByRole("button", { name: "Xem video", exact: true }).click();
-  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
   await expect(page.getByRole("alert").filter({ hasText: "Chưa phát được video" })).toBeVisible();
   await expect.poll(() => collectedPlayback().errors.unsupported).toBe(1);
   await expect.poll(() => collectedPlayback().attempts).toBe(1);
-  expect(await page.locator("video").evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
-  await expect(page.locator("video source")).not.toHaveAttribute("src");
+  expect(await page.locator("dialog video").evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+  await expect(page.locator("dialog video source")).not.toHaveAttribute("src");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Xem video", exact: true })).toBeFocused();
 });
@@ -232,7 +508,7 @@ test("startup waiting forever without error times out once and unloads the playe
   try {
     await page.goto(`${BASE}/shop/${slug}`);
     await page.getByRole("button", { name: "Xem video", exact: true }).click();
-    const video = page.locator("video");
+    const video = page.locator("dialog video");
     await video.evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
     await expect.poll(() => collectedPlayback().attempts).toBe(1);
     await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
@@ -254,7 +530,7 @@ test("startup waiting forever without error times out once and unloads the playe
   } finally { finish(); }
 });
 
-test("closing a waiting player cancels timeout and opening alone does not start a deadline", async ({ page }) => {
+test("opening autoplays the dialog once and closing a waiting player cancels the timeout", async ({ page }) => {
   await page.clock.install();
   let finish: () => void = () => undefined;
   const held = new Promise<void>((resolve) => { finish = resolve; });
@@ -262,12 +538,14 @@ test("closing a waiting player cancels timeout and opening alone does not start 
   try {
     await page.goto(`${BASE}/shop/${slug}`);
     const tile = page.getByRole("button", { name: "Xem video", exact: true });
-    await tile.click();
+    // The inline preview is silent: only the shopper's own opening is an attempt.
     await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
     expect(collectedPlayback().attempts).toBe(0);
     expect(collectedPlayback().failures).toBe(0);
-    await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+    await tile.click();
     await expect.poll(() => collectedPlayback().attempts).toBe(1);
+    await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS - 1000);
+    expect(collectedPlayback().failures).toBe(0);
     await page.keyboard.press("Escape");
     await expect(tile).toBeFocused();
     await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
@@ -275,16 +553,39 @@ test("closing a waiting player cancels timeout and opening alone does not start 
   } finally { finish(); }
 });
 
+test("a failing inline preview falls back to the poster and sends no telemetry", async ({ page }) => {
+  await page.route(VIDEO_A, (route) => route.abort());
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  await expect(tile).toBeVisible();
+  await expect(tile.locator("video")).toHaveCount(0);
+  expect(collectedPlayback().attempts).toBe(0);
+  expect(collectedPlayback().failures).toBe(0);
+});
+
+test("reduced motion keeps the frame a poster and requests no video until it is opened", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const requests: string[] = [];
+  page.on("request", (r) => { if (/\.(mp4|mov)(?:[?#]|$)/.test(r.url())) requests.push(r.url()); });
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  await expect(tile).toBeVisible();
+  await page.waitForLoadState("load");
+  await page.waitForTimeout(500);
+  await expect(page.locator("video")).toHaveCount(0);
+  expect(requests).toEqual([]);
+});
+
 test("successful playing cancels the startup deadline", async ({ page }) => {
   await page.clock.install();
   await page.route(VIDEO_A, (route) => route.fulfill({ contentType: "video/mp4", body: mp4 }));
   await page.goto(`${BASE}/shop/${slug}`);
   await page.getByRole("button", { name: "Xem video", exact: true }).click();
-  await page.locator("video").evaluate((element: HTMLVideoElement) => element.play());
+  await page.locator("dialog video").evaluate((element: HTMLVideoElement) => element.play());
   await expect.poll(() => collectedPlayback().attempts).toBe(1);
-  await expect.poll(() => page.locator("video").evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(3);
+  await expect.poll(() => page.locator("dialog video").evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(3);
   // A network stalled event is not a playback stall while future data is buffered.
-  await page.locator("video").evaluate((element) => element.dispatchEvent(new Event("stalled")));
+  await page.locator("dialog video").evaluate((element) => element.dispatchEvent(new Event("stalled")));
   await page.clock.fastForward(PDP_VIDEO_PLAYBACK_TIMEOUT_MS * 2);
   expect(collectedPlayback().failures).toBe(0);
   await expect(page.getByRole("alert").filter({ hasText: "Chưa phát được video" })).toHaveCount(0);
@@ -317,7 +618,7 @@ test("telemetry sends only fixed fields without cookies/referrer and collection 
   await page.route(VIDEO_A, (route) => route.abort());
   await page.goto(`${BASE}/shop/${slug}`);
   await page.getByRole("button", { name: "Xem video", exact: true }).click();
-  await page.locator("video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
+  await page.locator("dialog video").evaluate((element: HTMLVideoElement) => { void element.play().catch(() => undefined); });
   await expect.poll(() => bodies.length).toBe(2);
   expect(bodies[0]).toEqual({ kind: "attempt" });
   expect(bodies[1]).toEqual({ kind: "failure", reason: expect.stringMatching(/^(network|decode|unsupported|timeout|unknown)$/) });
@@ -347,9 +648,9 @@ test("one own parent variation video renders the tile when another SKU has no vi
   const tile = page.getByRole("button", { name: "Xem video", exact: true });
   await expect(tile).toHaveCount(1);
   await expect(tile).toBeVisible();
-  await expect(page.locator("video, source")).toHaveCount(0);
+  await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
   await tile.click();
-  await expect(page.locator("video source")).toHaveAttribute("src", VIDEO_A);
+  await expect(page.locator("dialog video source")).toHaveAttribute("src", VIDEO_A);
   await page.keyboard.press("Escape");
   await expect(tile).toBeFocused();
 });

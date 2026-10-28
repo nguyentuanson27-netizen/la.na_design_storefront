@@ -873,6 +873,41 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   expect(failedResponses).toEqual([]);
 });
 
+test("the purchase button keeps readable contrast throughout entering and leaving hover", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  const button = page.getByRole("region", { name: "Mua sản phẩm" }).getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
+  const minimumContrast = () => button.evaluate(async (element) => {
+    const rgba = (value: string) => value.match(/[\d.]+/g)!.map(Number);
+    const luminance = (rgb: number[]) => rgb.slice(0, 3).reduce((sum, value, i) => {
+      const channel = value / 255;
+      return sum + (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4) * [0.2126, 0.7152, 0.0722][i]!;
+    }, 0);
+    let minimum = Infinity;
+    const until = performance.now() + 250;
+    do {
+      let background = [255, 255, 255];
+      const ancestors: Element[] = [];
+      for (let node: Element | null = element; node; node = node.parentElement) ancestors.unshift(node);
+      for (const node of ancestors) {
+        const color = rgba(getComputedStyle(node).backgroundColor);
+        const alpha = color[3] ?? 1;
+        background = background.map((value, i) => color[i]! * alpha + value * (1 - alpha));
+      }
+      const foreground = rgba(getComputedStyle(element).color);
+      const light = luminance(foreground);
+      const dark = luminance(background);
+      minimum = Math.min(minimum, (Math.max(light, dark) + 0.05) / (Math.min(light, dark) + 0.05));
+      await new Promise(requestAnimationFrame);
+    } while (performance.now() < until);
+    return minimum;
+  });
+  await button.hover();
+  expect(await minimumContrast(), "hover entry must keep 4.5:1 text contrast").toBeGreaterThanOrEqual(4.5);
+  await page.mouse.move(0, 0);
+  expect(await minimumContrast(), "hover exit must keep 4.5:1 text contrast").toBeGreaterThanOrEqual(4.5);
+});
+
 test("desktop purchase panel is not sticky and validates size before add-to-cart", async ({ page }) => {
   // Keep a desktop width but enough vertical scroll budget to scroll the panel out of view.
   await page.setViewportSize({ width: 1440, height: 700 });

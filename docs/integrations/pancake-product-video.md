@@ -55,15 +55,59 @@ The PDP detail repository reads video fields only when the flag is exactly
 items, photo counts and variant-to-photo mappings do not acquire video fields.
 The route passes that small projection to the existing media stage.
 
-One bottom-right tile sits above the photo counter and outside desktop navigation
-and mobile swipe tracks. On desktop its containing frame matches the first
-photograph's portrait cell in the left half, or the centered photo for a one-image
-gallery. Clicking opens a native modal dialog. Only that explicit click mounts `<video controls playsInline preload="none">` with an MP4 source.
-There is no page-load autoplay or video preload. Closing or pressing Escape
-pauses the player, removes its source, unloads it and restores focus. Unmounting
-also releases playback. Media errors show a short message and leave selection,
-photography and purchasing available. No CSP expansion, remote fetch/proxy,
-transcoding or new polling job is needed.
+The video is one 9:16 frame at every width; where it sits depends on the layout. Below `lg` (phone)
+it is a frame on the photograph's right edge, about a quarter of the photo's height above its bottom,
+outside the swipe track. From `lg` up it is a floating mini-player (168 px wide, pinned 1.5 rem from
+the viewport's right and 6.5 rem from its bottom, in the column above the chat button, z-index 44,
+under the header and dialogs) with a close button (`Đóng video nhỏ`). It needs a window at least 520px
+tall (299px player + 104px offset + the ~88px sticky header); a shorter desktop window (`dock`) gets
+only the small poster tile on the photograph, with no preview.
+
+The frame is a muted, looping, `playsInline` preview that starts by itself (supersedes v0.3's "no
+page-load autoplay"; the owner asked for it). It is built to cost the photographs nothing:
+
+- The poster is an optimized photograph (`sizes="120px"`) that paints with the page; the preview
+  fades in over it only once it is really `playing`, so a slow start shows the photo, not black.
+- The `<video>` is mounted only after the window `load` event, so it never competes with the hero
+  image, and `react-dom`'s `preconnect` warms the video origin during SSR.
+- It plays only while at least 25% of it is on screen (`intersectionRatio`, the observer is the single controller; no `autoplay` attribute, `preload="none"`, so nothing starts or loads outside it) and pauses while the dialog is open. It also pauses while the tab is hidden or the window minimised (`visibilitychange`; the observer only measures geometry). One decision (visible enough, dialog not holding it, tab visible) is shared by the observer, `visibilitychange` and closing the dialog, which resumes it only if all hold.
+- It is not mounted at all under `prefers-reduced-motion`, Data Saver or a 2G link
+  (`use-inline-video-allowed.ts`, which also follows the shopper changing reduced motion or the
+  connection while the page is open); the frame stays a poster and the dialog is one tap away.
+- At every width a close button (`Đóng video nhỏ`) on the frame's corner stops and unmounts the preview
+  (WCAG 2.2.2 pause/stop/hide for motion that starts by itself); the poster frame stays, and the
+  preview stays stopped through opening and closing the dialog.
+- A load error, or metadata with no picture (HEVC discarded by the browser), removes the preview and
+  leaves the poster. It sends no telemetry, so attempt/failure counters still mean explicit openings.
+
+Desktop mini-player rules. It floats only while the photographs are in view (the gallery's bottom edge
+is in the top three quarters of the viewport); scrolling on towards the purchase panel docks it back
+onto the photograph, where it would otherwise sit over the price and the buy buttons, and scrolling
+back up floats it again. Stopping it with the button ends the preview for that page view: on desktop the original
+small 96x76 poster tile (no preview) stays on the photograph's right edge, as it does when the
+preview is not allowed; on a phone the 9:16 poster frame stays. Before the page has loaded the tile is that same small poster tile.
+Dismissal is not remembered across pages.
+
+Tapping the frame opens a native modal dialog with a 9:16 player (`max-w-md`, the same on every width).
+Only that tap mounts `<video controls playsInline preload="none">` with an MP4 source and calls
+`play()` explicitly, synchronously inside the tap (the player is mounted with `flushSync` so a browser
+that gates sound on a user gesture still sees the gesture; not the `autoplay` attribute, so `play`
+fires at once and the 15 s startup deadline runs even if no byte arrives). If the browser refuses with
+`NotAllowedError` the player stays on its controls with a short "press Play" hint and no failure is
+counted. This path is untested on real Safari/iOS (Chromium-only suite): a real-device gate. It carries on from the second the preview had reached (the
+default playback start position is set before any data) rather than from 0, and closing hands the
+second it left off at back to the preview. Closing or pressing Escape pauses the player, removes its
+source, unloads it and restores focus. Unmounting also releases playback. Media errors show a short
+message and leave selection, photography and purchasing available. No CSP expansion, remote
+fetch/proxy, transcoding or new polling job is needed.
+
+### Keeping the first frame fast
+
+What the page controls is done above. What it cannot is the file itself, so the source video matters
+most: H.264 (not HEVC) in an MP4 with `-movflags +faststart` (moov atom first, so playback starts
+without reading the tail), about 540x960 at roughly 600-900 kbps, ideally a 5-10 s loop since the
+preview repeats, served with `Accept-Ranges` and long-lived `Cache-Control` from the CDN. The dialog
+then re-uses the preview's cached bytes.
 
 ## Regression coverage
 
@@ -74,7 +118,7 @@ transcoding or new polling job is needed.
 | Defaults, transitions, atomic rollback, idempotence, shop ownership, hidden/locked/zero-stock variants, reactivation and unchanged commerce/editorial facts | `tests/database/pancake-product-video.test.ts` |
 | Failed/incomplete pagination leaves READY unchanged | `tests/database/pancake-product-video.test.ts`, `tests/integrations/catalog-sync.test.ts` |
 | Flag/state/MP4/photo gate; UNKNOWN retention suppressed | Domain, database and rendered-browser tests |
-| One tile inside the primary photo (two-photo and single-photo desktop layouts); counters/navigation/Flash Sale; 320/390/768/1024/1440 px; zero video requests before click | `tests/a11y-runtime/pdp-pancake-video.spec.ts` |
+| One 9:16 frame inside the primary photo (two-photo and single-photo desktop layouts); counters/navigation/Flash Sale; 320/390/768/1024/1440 px; muted autoplaying preview, desktop floating mini-player (docks on scroll, closes to the small tile), resume-from-preview, poster fallback, reduced-motion opt-out | `tests/a11y-runtime/pdp-pancake-video.spec.ts` |
 | Native playback/seek, close/Escape/focus, Axe, media failure, retained size and usable purchase controls | Same Playwright suite, against a production build |
 
 The 2.2 KB synthetic browser MP4 fixture was generated without audio or external
