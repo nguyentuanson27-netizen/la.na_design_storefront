@@ -392,6 +392,45 @@ test("a browser that refuses sound without its own gesture leaves the player on 
   await expect.poll(() => dialog.locator("video").evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
 });
 
+test("the preview does not play while the tab is hidden, and never revives a stopped or held one", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.addInitScript(() => {
+    let hidden = false;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
+    (window as unknown as { __setHidden: (value: boolean) => void }).__setHidden = (value) => {
+      hidden = value;
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+  });
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  const preview = tile.locator("video");
+  const paused = () => preview.evaluate((element: HTMLVideoElement) => element.paused);
+  const setHidden = (value: boolean) => page.evaluate((hidden) => (window as unknown as { __setHidden: (value: boolean) => void }).__setHidden(hidden), value);
+  await expect(preview).toHaveAttribute("data-playing", "true");
+  await setHidden(true);
+  await expect.poll(paused).toBe(true);
+  await setHidden(false);
+  await expect.poll(paused).toBe(false);
+  // Closing the dialog while the tab is hidden must not start it in the background.
+  await tile.click();
+  await expect(page.getByRole("dialog", { name: `Video ${productName}` })).toBeVisible();
+  await setHidden(true);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  expect(await paused()).toBe(true);
+  await setHidden(false);
+  await expect.poll(paused).toBe(false);
+  // A stopped preview is gone and a tab switch does not bring it back.
+  await page.getByRole("button", { name: "Đóng video nhỏ", exact: true }).click();
+  await setHidden(true);
+  await setHidden(false);
+  await page.waitForTimeout(300);
+  await expect(page.locator("video")).toHaveCount(0);
+});
+
 test("explicit play fetches/decodes fixture MP4, seeks, closes and reopens accessibly", async ({ page }) => {
   let mediaRequests = 0;
   await serveVideo(page, () => { mediaRequests++; });

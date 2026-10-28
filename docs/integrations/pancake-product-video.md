@@ -70,7 +70,7 @@ page-load autoplay"; the owner asked for it). It is built to cost the photograph
   fades in over it only once it is really `playing`, so a slow start shows the photo, not black.
 - The `<video>` is mounted only after the window `load` event, so it never competes with the hero
   image, and `react-dom`'s `preconnect` warms the video origin during SSR.
-- It plays only while at least 25% of it is on screen (`intersectionRatio`, the observer is the single controller; no `autoplay` attribute, `preload="none"`, so nothing starts or loads outside it) and pauses while the dialog is open. Closing the dialog resumes it only if it is still visible enough.
+- It plays only while at least 25% of it is on screen (`intersectionRatio`, the observer is the single controller; no `autoplay` attribute, `preload="none"`, so nothing starts or loads outside it) and pauses while the dialog is open. It also pauses while the tab is hidden or the window minimised (`visibilitychange`; the observer only measures geometry). One decision (visible enough, dialog not holding it, tab visible) is shared by the observer, `visibilitychange` and closing the dialog, which resumes it only if all hold.
 - It is not mounted at all under `prefers-reduced-motion`, Data Saver or a 2G link
   (`use-inline-video-allowed.ts`, which also follows the shopper changing reduced motion or the
   connection while the page is open); the frame stays a poster and the dialog is one tap away.

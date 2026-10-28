@@ -69,15 +69,23 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
   useEffect(() => {
     const element = preview.current;
     if (!element) return;
+    // One decision for every trigger: it plays only while it is visible enough, the dialog is not
+    // holding the shopper's attention and the tab is actually being looked at.
+    const sync = () => {
+      if (previewVisible.current && !previewHeld.current && !document.hidden) void element.play().catch(() => undefined);
+      else element.pause();
+    };
     const observer = new IntersectionObserver((entries) => {
       const entry = entries[entries.length - 1];
       previewVisible.current = !!entry && entry.intersectionRatio >= PREVIEW_MIN_VISIBLE_RATIO;
-      if (previewVisible.current && !previewHeld.current) void element.play().catch(() => undefined);
-      else element.pause();
+      sync();
     }, { threshold: [0, PREVIEW_MIN_VISIBLE_RATIO] });
     observer.observe(element);
+    // The observer measures geometry only: a background tab or a minimised window still "intersects".
+    document.addEventListener("visibilitychange", sync);
     return () => {
       observer.disconnect();
+      document.removeEventListener("visibilitychange", sync);
       previewVisible.current = false;
       releaseVideo(element);
       // A replacement preview has not painted a frame, even if this instance had been playing.
@@ -149,7 +157,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
     dialog.current?.close();
     opener.current?.focus({ preventScroll: true });
     previewHeld.current = false;
-    if (previewVisible.current) void preview.current?.play().catch(() => undefined);
+    if (previewVisible.current && !document.hidden) void preview.current?.play().catch(() => undefined);
   }
 
   return (
