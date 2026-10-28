@@ -31,7 +31,7 @@ async function run(operation: Operation, form: FormData): Promise<VoucherFormRef
     else if (operation === "createType" && parsed?.ok) result = await service.createType(session, parsed.input);
     else if (operation === "editType" && parsed?.ok) {
       const typeIdentity = parseVoucherTypeIdentity(form);
-      result = typeIdentity === null ? { ok: false, reason: "TYPE_NOT_FOUND" } : await service.editType(session, typeIdentity.id, parsed.input);
+      result = typeIdentity === null ? { ok: false, reason: "STALE_REVISION" } : await service.editType(session, typeIdentity.id, typeIdentity.revision, parsed.input);
     } else if (operation === "create" && parsed?.ok) result = await service.create(session, parsed.input);
     else if (identity === null) result = { ok: false, reason: "STALE_REVISION" };
     else if (operation === "edit" && parsed?.ok) result = await service.edit(session, identity.id, identity.revision, parsed.input);

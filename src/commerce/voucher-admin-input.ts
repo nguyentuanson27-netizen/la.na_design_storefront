@@ -111,7 +111,11 @@ export function parseVoucherTypeForm(form: FormData): VoucherFormParse {
   };
 }
 
-export function parseVoucherTypeIdentity(form: FormData): { id: string } | null {
+/** The type being edited and the revision of the form's copy (the optimistic token); null when either is missing, repeated or malformed. */
+export function parseVoucherTypeIdentity(form: FormData): { id: string; revision: number } | null {
   const id = single(form, "typeId");
-  return id !== null && /^[A-Za-z0-9_-]{1,64}$/.test(id) ? { id } : null;
+  const revision = single(form, "revision");
+  if (id === null || !/^[A-Za-z0-9_-]{1,64}$/.test(id) || revision === null || !/^[1-9][0-9]{0,9}$/.test(revision)) return null;
+  const number = Number(revision);
+  return number < 2_147_483_647 ? { id, revision: number } : null;
 }

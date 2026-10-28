@@ -13,6 +13,8 @@ export type VoucherTypeFormInitial = Readonly<{
   issuance: "AUTO" | "CODE";
   visibility: "PUBLIC" | "PRIVATE";
   code: string | null;
+  /** The revision this form was opened at; sent back so a stale form is refused instead of overwriting a newer save. */
+  revision: number;
   tierCount: number;
 }>;
 
@@ -46,7 +48,7 @@ export function VoucherTypeForm({ initial, action }: Readonly<{
   };
   return <form onSubmit={submit} className="mt-8 max-w-3xl space-y-7">
     {refusal ? <p ref={refusalNote} tabIndex={-1} role="alert" className="border-l-2 border-black bg-black/5 p-4 focus-visible:outline-2 focus-visible:outline-offset-2">{describeVoucherAdminReason(refusal.reason, refusal.issue)}</p> : null}
-    {initial ? <input type="hidden" name="typeId" value={initial.id} /> : null}
+    {initial ? <><input type="hidden" name="typeId" value={initial.id} /><input type="hidden" name="revision" value={initial.revision} /></> : null}
     <p className="border-l-2 border-black pl-4 text-sm leading-6" role="note">
       {"Loại voucher gom các mốc của cùng một kiểu ưu đãi (ví dụ “Giảm theo giá trị đơn”). Mỗi đơn dùng tối đa một mốc của mỗi loại; hệ thống tự chọn mốc cao nhất khách đạt. Nhiều loại có thể dùng cùng lúc, theo thứ tự áp dụng bên dưới."}
     </p>

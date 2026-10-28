@@ -53,8 +53,8 @@ test("the type form parses to the validation input and refuses a repeated or non
   }
   const repeated = parseVoucherTypeForm(form({ name: ["A", "B"], priority: "1", issuance: "AUTO", visibility: "PUBLIC" }));
   assert.equal(validateVoucherType((repeated as { input: unknown }).input).ok, false);
-  assert.deepEqual(parseVoucherTypeIdentity(form({ typeId: "type_1-A" })), { id: "type_1-A" });
-  const badIdentities: Array<Record<string, string | string[]>> = [{}, { typeId: "bad id" }, { typeId: ["a", "b"] }, { typeId: "x".repeat(65) }];
+  assert.deepEqual(parseVoucherTypeIdentity(form({ typeId: "type_1-A", revision: "3" })), { id: "type_1-A", revision: 3 });
+  const badIdentities: Array<Record<string, string | string[]>> = [{}, { typeId: "ok" }, { typeId: "ok", revision: "0" }, { typeId: "ok", revision: "1.5" }, { typeId: "ok", revision: ["1", "2"] }, { typeId: "ok", revision: "2147483647" }, { typeId: "bad id", revision: "1" }, { typeId: ["a", "b"], revision: "1" }, { typeId: "x".repeat(65), revision: "1" }];
   for (const bad of badIdentities) assert.equal(parseVoucherTypeIdentity(form(bad)), null);
 });
 
@@ -109,12 +109,26 @@ test("ladder rule counts the cap of a percentage rung: a higher percent with a L
   const lower = [percentTier("p5", 500_000, 5, "all", 50_000)];
   assert.equal(findLadderConflict(percentTier("p10-low-cap", 1_000_000, 10, "all", 10_000), lower), "p5");
   assert.equal(findLadderConflict(percentTier("p10-no-cap", 1_000_000, 10), lower), null, "no cap is the highest cap");
-  assert.equal(findLadderConflict(percentTier("p10-same-cap", 1_000_000, 10, "all", 50_000), lower), null);
+  assert.equal(findLadderConflict(percentTier("p10-same-cap", 1_000_000, 10, "all", 50_000), lower), "p5", "at 1M both already save the 50K cap: the upper rung adds nothing (review of #222)");
   assert.equal(findLadderConflict(percentTier("p10-high-cap", 1_000_000, 10, "all", 100_000), lower), null);
   // Judged from the other side too: adding the LOWER rung against a live upper one.
   const upper = [percentTier("p10", 1_000_000, 10, "all", 10_000)];
   assert.equal(findLadderConflict(percentTier("p5-big-cap", 500_000, 5, "all", 50_000), upper), "p10");
   assert.equal(findLadderConflict(percentTier("p5-small-cap", 500_000, 5, "all", 5_000), upper), null);
+});
+
+test("ladder rule judges benefit where the rung is reached, not only the percent and the cap on paper", () => {
+  const lower = [percentTier("p5-cap50", 500_000, 5, "all", 50_000)];
+  // From 1M up both give exactly 50K (the cap), whatever the percents say.
+  assert.equal(findLadderConflict(percentTier("p10-cap50", 1_000_000, 10, "all", 50_000), lower), "p5-cap50");
+  assert.equal(findLadderConflict(percentTier("p20-cap50", 2_000_000, 20, "all", 50_000), lower), "p5-cap50");
+  // A higher threshold that is reached before the lower rung's cap does save more at its threshold: 300K x 5% = 15K, 400K x 10% = 40K.
+  assert.equal(findLadderConflict(percentTier("p10-early", 400_000, 10, "all", 50_000), [percentTier("p5-low", 300_000, 5, "all", 50_000)]), null);
+  // Equal cap but the lower rung's cap is out of reach at the upper threshold, so the extra percent is real.
+  assert.equal(findLadderConflict(percentTier("p10-cap100", 1_000_000, 10, "all", 100_000), [percentTier("p5-cap100", 500_000, 5, "all", 100_000)]), null, "1M: 50K vs 100K");
+  // No cap on either: only a higher percent is better.
+  assert.equal(findLadderConflict(percentTier("p10", 1_000_000, 10), [percentTier("p5", 500_000, 5)]), null);
+  assert.equal(findLadderConflict(percentTier("p5-again", 1_000_000, 5), [percentTier("p5", 500_000, 5)]), "p5");
 });
 
 test("ladder rule: the same percent is fine when the higher rung has a higher cap, never when it adds nothing", () => {

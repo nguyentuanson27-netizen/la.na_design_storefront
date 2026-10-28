@@ -31,11 +31,12 @@ CREATE TABLE "VoucherType" (
   "issuance" "VoucherIssuance" NOT NULL,
   "visibility" "VoucherVisibility" NOT NULL,
   "code" TEXT,
+  "revision" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMPTZ(3) NOT NULL,
   CONSTRAINT "VoucherType_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "VoucherType_values_check" CHECK (
-    "pancakeShopId" > 0 AND length(btrim("name")) BETWEEN 1 AND 120 AND "priority" BETWEEN 1 AND 1000
+    "pancakeShopId" > 0 AND length(btrim("name")) BETWEEN 1 AND 120 AND "priority" BETWEEN 1 AND 1000 AND "revision" > 0
     AND "id" ~ '^[A-Za-z0-9_-]{1,64}$'
   ),
   CONSTRAINT "VoucherType_issuance_check" CHECK (

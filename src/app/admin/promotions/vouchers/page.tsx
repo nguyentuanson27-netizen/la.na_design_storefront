@@ -67,8 +67,8 @@ export default async function VoucherAdminPage({ searchParams }: { searchParams:
     {reason ? <p role="alert" className="mt-6 border-l-2 border-black bg-black/5 p-4">{describeVoucherAdminReason(reason, single(query.issue) || undefined)}</p> : single(query.status) === "ok" ? <p role="status" className="mt-6">{"Đã lưu thay đổi."}</p> : null}
     {editId && !initial ? <p role="alert" className="mt-6">{describeVoucherAdminReason("NOT_FOUND")}</p> : null}
     {editTypeId && !typeInitial ? <p role="alert" className="mt-6">{describeVoucherAdminReason("TYPE_NOT_FOUND")}</p> : null}
-    {newType || typeInitial ? <VoucherTypeForm key={typeInitial ? `${typeInitial.id}:${typeInitial.name}:${typeInitial.priority}` : "new-type"}
-      initial={typeInitial ? { id: typeInitial.id, name: typeInitial.name, priority: typeInitial.priority, issuance: typeInitial.issuance, visibility: typeInitial.visibility, code: typeInitial.code, tierCount: typeInitial._count.tiers } : null}
+    {newType || typeInitial ? <VoucherTypeForm key={typeInitial ? `${typeInitial.id}:${typeInitial.revision}` : "new-type"}
+      initial={typeInitial ? { id: typeInitial.id, name: typeInitial.name, priority: typeInitial.priority, issuance: typeInitial.issuance, visibility: typeInitial.visibility, code: typeInitial.code, revision: typeInitial.revision, tierCount: typeInitial._count.tiers } : null}
       action={typeInitial ? editVoucherTypeAction : createVoucherTypeAction} />
       : isNew || initial ? <VoucherCampaignForm key={initial ? `${initial.id}:${initial.revision}` : `new:${presetTypeId}`} initial={initial}
       included={refs(initial?.includeProductIds ?? [])} excluded={refs(initial?.excludeProductIds ?? [])}

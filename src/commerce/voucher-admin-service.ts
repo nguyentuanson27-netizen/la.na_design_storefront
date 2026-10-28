@@ -42,6 +42,8 @@ export type VoucherAdminReason =
   | "CODE_TAKEN"
   | "TYPE_NOT_FOUND"
   | "TYPE_LIMIT_REACHED"
+  /** A type's stacking order cannot change while a shopper still holds one of its vouchers. */
+  | "HOLDS_LIVE"
   | "IDENTITY_LOCKED"
   | "NOT_EDITABLE"
   | "NOT_RE_ENABLEABLE"
@@ -120,7 +122,7 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
 
   /** The type a typed tier belongs to, in this shop. */
   async function readType(tx: Pick<Prisma.TransactionClient, "voucherType">, typeId: string) {
-    return tx.voucherType.findFirst({ where: { id: typeId, pancakeShopId: shopId }, select: { id: true, name: true, priority: true, issuance: true, visibility: true, code: true } });
+    return tx.voucherType.findFirst({ where: { id: typeId, pancakeShopId: shopId }, select: { id: true, name: true, priority: true, issuance: true, visibility: true, code: true, revision: true } });
   }
 
   /** A tier owns neither its distribution nor its code: it takes both from its type, whatever the form sent. */
@@ -327,9 +329,10 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
    * Renames a type or moves it in the stack. Its distribution (AUTO/CODE, visibility) is fixed once it has tiers, because they carry
    * copies of it, and its code is fixed once any tier has been enabled (a code printed on a flyer keeps meaning one thing).
    */
-  async function editType(session: Session, id: string, input: unknown, now = new Date()): Promise<VoucherAdminResult> {
+  async function editType(session: Session, id: string, revision: number, input: unknown, now = new Date()): Promise<VoucherAdminResult> {
     authorize(session, now);
     if (!ID_PATTERN.test(id)) return { ok: false, reason: "TYPE_NOT_FOUND" };
+    if (!validRevision(revision)) return { ok: false, reason: "STALE_REVISION" };
     const parsed = validateVoucherType(input);
     if (!parsed.ok) return { ok: false, reason: "VALIDATION", issues: parsed.issues };
     try {
@@ -337,6 +340,18 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
         await lockShop(tx);
         const old = await readType(tx, id);
         if (old === null) return { ok: false, reason: "TYPE_NOT_FOUND" } as const;
+        // Optimistic: a form opened before another Admin saved is refused, never allowed to write its old values back.
+        if (old.revision !== revision) return { ok: false, reason: "STALE_REVISION" } as const;
+        if (old.priority !== parsed.value.priority) {
+          // The order is part of every quote and of the digest a hold stores: moving a type while a shopper holds one of its
+          // vouchers would turn that hold stale in checkout although nothing the shopper saw has changed. The tier rows are locked
+          // first (a hold grant takes the same row lock), so no hold can be granted between this check and the commit.
+          const tierIds = (await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "VoucherCampaign" WHERE "typeId" = ${id} AND "pancakeShopId" = ${shopId} ORDER BY "id" FOR UPDATE`).map((row) => row.id);
+          if (tierIds.length > 0) {
+            const live = await tx.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS "count" FROM "VoucherHold" WHERE "campaignId" = ANY(${tierIds}) AND "state" = 'HELD' AND "expiresAt" > clock_timestamp()`;
+            if ((live[0]?.count ?? 0) > 0) return { ok: false, reason: "HOLDS_LIVE" } as const;
+          }
+        }
         const distributionChanged = old.issuance !== parsed.value.issuance || old.visibility !== parsed.value.visibility || old.code !== parsed.value.code;
         if (distributionChanged) {
           const tiers = await tx.voucherCampaign.count({ where: { typeId: id, pancakeShopId: shopId } });
@@ -346,8 +361,8 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
             if (!onlyCodeChanged || everEnabled > 0) return { ok: false, reason: "IDENTITY_LOCKED" } as const;
           }
         }
-        await tx.voucherType.update({ where: { id }, data: parsed.value });
-        return { ok: true, id, revision: 1 } as const;
+        const updated = await tx.voucherType.updateMany({ where: { id, pancakeShopId: shopId, revision }, data: { ...parsed.value, revision: { increment: 1 } } });
+        return updated.count === 1 ? ({ ok: true, id, revision: revision + 1 } as const) : ({ ok: false, reason: "STALE_REVISION" } as const);
       });
     } catch (error) {
       if (isUniqueViolation(error)) return { ok: false, reason: "CODE_TAKEN" };
@@ -359,7 +374,7 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
     authorize(session, new Date());
     return client.voucherType.findMany({
       where: { pancakeShopId: shopId },
-      select: { id: true, name: true, priority: true, issuance: true, visibility: true, code: true, _count: { select: { tiers: true } } },
+      select: { id: true, name: true, priority: true, issuance: true, visibility: true, code: true, revision: true, _count: { select: { tiers: true } } },
       orderBy: [{ priority: "asc" }, { id: "asc" }],
       take: MAX_VOUCHER_TYPES_PER_SHOP,
     });

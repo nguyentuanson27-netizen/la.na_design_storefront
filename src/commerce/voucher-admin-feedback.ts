@@ -7,6 +7,7 @@ const reasons: Readonly<Record<string, string>> = {
   WINDOW_ENDED: "Voucher đã hết hạn. Sửa lịch trước khi bật.",
   CODE_TAKEN: "Mã này đã được dùng ở voucher hoặc loại voucher khác. Chọn mã khác.",
   TYPE_NOT_FOUND: "Không tìm thấy loại voucher.",
+  HOLDS_LIVE: "Đang có khách giữ ưu đãi của loại này (tối đa 10 phút). Chờ hết hạn rồi đổi thứ tự áp dụng; đổi tên thì không bị chặn.",
   TYPE_LIMIT_REACHED: "Đã đạt giới hạn 6 loại voucher. Gộp hoặc dùng lại loại cũ.",
   IDENTITY_LOCKED: "Loại voucher, cách phát hành, hiển thị và mã không đổi được sau khi đã bật. Hãy sao chép thành voucher mới.",
   NOT_EDITABLE: "Voucher đã kết thúc hoặc đã chạy rồi tắt nên chỉ đọc. Hãy sao chép thành voucher mới.",

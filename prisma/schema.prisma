@@ -1349,6 +1349,8 @@ model VoucherType {
   issuance      VoucherIssuance
   visibility    VoucherVisibility
   code          String?
+  /// Optimistic concurrency token of the Admin form (like `VoucherCampaign.revision`).
+  revision      Int               @default(1)
   createdAt     DateTime          @default(now()) @db.Timestamptz(3)
   updatedAt     DateTime          @updatedAt @db.Timestamptz(3)
   tiers         VoucherCampaign[]

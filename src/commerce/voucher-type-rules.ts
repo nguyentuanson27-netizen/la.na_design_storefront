@@ -75,26 +75,36 @@ export type LadderTier = Readonly<{
 
 const CAP_UNLIMITED = Number.POSITIVE_INFINITY;
 
+/** What a percentage rung takes off an in-scope subtotal `E`: round-half-up(E x percent / 100), then the cap. */
+const percentSaving = (rung: Readonly<{ percent: number; maxDiscountVnd: number | null }>, eligibleSubtotalVnd: number): number =>
+  Math.min(Math.floor((2 * eligibleSubtotalVnd * rung.percent + 100) / 200), rung.maxDiscountVnd ?? CAP_UNLIMITED);
+
 /**
- * Does the rung with the HIGHER threshold (`high`) always save the shopper at least as much as the lower one, and more somewhere?
- * A fixed amount: strictly more. A percentage saves `min(round(E x percent / 100), cap)` on the in-scope subtotal E, so it is only
- * never worse when BOTH the percent and the cap are not lower (no cap is the highest cap), and better when either is higher.
- * A rung that is better on small carts but capped lower on big ones would make AUTO pick the lower rung where the higher one is
- * reached, so it is refused rather than left to surprise the shopper.
+ * Does the rung with the HIGHER threshold (`high`, reached from `highThresholdVnd` up) save the shopper at least as much as the
+ * lower one on every cart that reaches it, and strictly more on some? A fixed amount: strictly more. A percentage saves
+ * `min(round(E x percent / 100), cap)` on the in-scope subtotal E, so it is never worse only when BOTH its percent and its cap are
+ * not lower (no cap is the highest cap); and it is better somewhere only if it saves more at the first cart that reaches it
+ * (`E = highThresholdVnd`) or, on big carts, through a higher cap (or no cap against a cap, or a higher percent with no cap on
+ * either). The extra percent of a rung whose cap is already reached by the lower rung at its threshold adds nothing: such a rung
+ * is refused, since AUTO could not tell it from the lower one and would not reliably pick "the highest rung reached".
  */
-function higherRungBeats(high: NonNullable<LadderTier["discount"]>, low: NonNullable<LadderTier["discount"]>): boolean {
+function higherRungBeats(high: NonNullable<LadderTier["discount"]>, low: NonNullable<LadderTier["discount"]>, highThresholdVnd: number): boolean {
   if (high.type === "FIXED_AMOUNT_VND" && low.type === "FIXED_AMOUNT_VND") return high.amountVnd > low.amountVnd;
   if (high.type === "PERCENTAGE" && low.type === "PERCENTAGE") {
     const highCap = high.maxDiscountVnd ?? CAP_UNLIMITED;
     const lowCap = low.maxDiscountVnd ?? CAP_UNLIMITED;
-    return high.percent >= low.percent && highCap >= lowCap && (high.percent > low.percent || highCap > lowCap);
+    if (high.percent < low.percent || highCap < lowCap) return false;
+    const betterAtItsThreshold = percentSaving(high, highThresholdVnd) > percentSaving(low, highThresholdVnd);
+    const betterOnBigCarts = highCap > lowCap || (highCap === CAP_UNLIMITED && lowCap === CAP_UNLIMITED && high.percent > low.percent);
+    return betterAtItsThreshold || betterOnBigCarts;
   }
   return true;
 }
 
 /**
  * The ladder rule (ADR 0020 D-7): between two tiers of one type that have the same scope and the same kind of discount, a higher
- * threshold must give a discount that is never lower and somewhere higher (see `higherRungBeats`), and no two share a threshold --
+ * threshold must give a discount that is never lower and somewhere higher WITHIN the carts that reach it (see `higherRungBeats`), and
+ * no two share a threshold --
  * otherwise the lower rung can never be reached (it is always beaten) or the higher one is pointless. Tiers of different scope or
  * discount kind are not compared: the optimizer evaluates them as they are. Returns the id of the first tier `candidate`
  * conflicts with, or null.
@@ -107,7 +117,7 @@ export function findLadderConflict(candidate: LadderTier, others: readonly Ladde
     const theirThreshold = other.minEligibleSubtotalVnd ?? 0;
     if (theirThreshold === threshold) return other.id;
     const candidateIsHigher = threshold > theirThreshold;
-    if (!higherRungBeats(candidateIsHigher ? candidate.discount : other.discount, candidateIsHigher ? other.discount : candidate.discount)) return other.id;
+    if (!higherRungBeats(candidateIsHigher ? candidate.discount : other.discount, candidateIsHigher ? other.discount : candidate.discount, Math.max(threshold, theirThreshold))) return other.id;
   }
   return null;
 }

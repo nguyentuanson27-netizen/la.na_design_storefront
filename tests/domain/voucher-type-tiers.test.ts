@@ -207,3 +207,13 @@ test("the grid is bounded: too many slots or cells fails closed instead of searc
   const result = buildVoucherQuote({ lines: [line("a", 1, 100_000)], campaigns: many, existingOtherPromotions: false, campaignShippingFeeVnd: () => 0, giftOutcome: noGifts });
   assert.deepEqual(result, { ok: false, reason: "INVALID_INPUT" });
 });
+
+test("a ladder the Admin accepts picks the highest rung reached on every cart size, caps included (review of #222)", () => {
+  // 5% cap 50K from 500K, 10% cap 100K from 1M: the upper rung is strictly better wherever it is reached.
+  const rungs = [percent("low", "P", 1, 5, 500_000, 50_000), percent("high", "P", 1, 10, 1_000_000, 100_000)];
+  for (const [subtotal, expected, discount] of [[600_000, "low", 30_000], [999_999, "low", 50_000], [1_000_000, "high", 100_000], [2_000_000, "high", 100_000], [5_000_000, "high", 100_000]] as const) {
+    const result = quote({ lines: [line("a", 1, subtotal)], campaigns: rungs });
+    assert.deepEqual(result.selection.merchandiseIds, [expected], String(subtotal));
+    assert.equal(result.merchandiseDiscountVnd, discount, String(subtotal));
+  }
+});
