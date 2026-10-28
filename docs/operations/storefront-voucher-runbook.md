@@ -1,7 +1,8 @@
 # Voucher v1 — operations runbook
 
 - **Status:** READY FOR REVIEW (V21, 2026-10-26). It describes the controls that exist in the code on PR #214 and says plainly what an operator still has to prove. It is **not** a go-live approval and nothing here was run against a production system. The launch decision is gate H5; the evidence packet is [the H5 readiness packet](../verification/storefront-voucher-v1-h5-packet.md).
-- **Spec / ADRs:** [spec](../specs/storefront-voucher-v1.md), [ADR 0018](../decisions/0018-voucher-v1-accepted-order-architecture.md), [ADR 0019](../decisions/0019-voucher-v1-hold-design.md). Vendor boundary: [Pancake acceptance](../integrations/pancake-voucher-acceptance.md).
+- **Types and tiers (PR #222, 2026-10-28):** the Admin can also create merchandise voucher **types**, each a ladder of tiers; a cart takes one tier per type and several types stack in order of type priority. Same switches, same ledger, same refund path; §3 to §7 below carry the additions. Not run against any real database yet, and its migration (`20261028100000_voucher_types_and_tiers`) has no recorded owner approval to apply (§7).
+- **Spec / ADRs:** [spec](../specs/storefront-voucher-v1.md), [ADR 0018](../decisions/0018-voucher-v1-accepted-order-architecture.md), [ADR 0019](../decisions/0019-voucher-v1-hold-design.md), [ADR 0020](../decisions/0020-voucher-types-and-tiers.md) (types and tiers, Proposed). Vendor boundary: [Pancake acceptance](../integrations/pancake-voucher-acceptance.md).
 
 ## 1. Switches (all server-side, read from `.env.production`; a change needs the `app` container restarted)
 
@@ -29,6 +30,8 @@ To stop vouchers from being *applied* sooner than 10 minutes there is no switch 
 3. Only then publish real vouchers. A voucher is created inactive and never activates itself; the Admin presses Bật after checking it.
 
 Stop at any step by §4.
+
+Types and tiers add one step before step 3: create a **type** (`/admin/promotions/vouchers`, "Loại voucher"), add two tiers to it, enable them, and place a real COD order as the owner on a cart that reaches the upper tier, then again on one that reaches only the lower tier. Check that the order carries one voucher per type (§3, last query) and that the POS lines add up to the paid total. Do this with two types on one cart once, to see the stacking order (the type with the smaller priority number goes first and the next type is computed on what is left).
 
 ## 3. What to watch
 
@@ -63,7 +66,23 @@ WHERE r."refundedAt" IS NULL AND o.state = 'REJECTED';
 SELECT count(*) FROM "VoucherHold" WHERE state = 'HELD' AND "expiresAt" < now();
 ```
 
-Alert on: any row from the two drift queries; any row from the last-but-one query (should be empty); a `SYNC_UNKNOWN` redemption older than the reconciliation window; a rising rate of `RATE_LIMITED` answers on voucher codes (guessing).
+Types and tiers (read-only):
+
+```sql
+-- more than one live hold or redemption in one slot for the same attempt/order must never exist (the unique indexes forbid it; a row here means an index is missing)
+SELECT "attemptKey", slot, count(*) FROM "VoucherHold" WHERE state = 'HELD' GROUP BY 1, 2 HAVING count(*) > 1;
+SELECT "orderId", slot, count(*) FROM "VoucherRedemption" GROUP BY 1, 2 HAVING count(*) > 1;
+
+-- a typed tier must carry its type's distribution and no code of its own (the trigger enforces it; a row means a script bypassed it)
+SELECT c.id FROM "VoucherCampaign" c JOIN "VoucherType" t ON t.id = c."typeId"
+WHERE c.issuance <> t.issuance OR c.visibility <> t.visibility OR c.code IS NOT NULL;
+
+-- accepted orders with more than one voucher, and the slots they used
+SELECT r."orderId", count(*) vouchers, string_agg(r.slot, ', ' ORDER BY r.slot) slots
+FROM "VoucherRedemption" r WHERE r."refundedAt" IS NULL GROUP BY 1 HAVING count(*) > 1 ORDER BY 1 DESC LIMIT 50;
+```
+
+The two drift queries above already cover typed tiers (each tier keeps its own counters). Alert on: any row from the first three queries above; any row from the last-but-one query (should be empty); a `SYNC_UNKNOWN` redemption older than the reconciliation window; a rising rate of `RATE_LIMITED` answers on voucher codes (guessing).
 
 ## 4. Stopping and rolling back, smallest first
 
@@ -72,8 +91,9 @@ Alert on: any row from the two drift queries; any row from the last-but-one quer
 | Feature | unset `LA_VOUCHER_ENABLED`, restart `app` | New exposure and new holds stop; existing holds are honoured until they expire (≤ 10 minutes), settlement continues. No data change. |
 | One shop | remove it from `LA_PANCAKE_VOUCHER_VERIFIED_SHOP_IDS`, restart `app` | No new holds for that shop; existing holds honoured until they expire. |
 | One campaign | disable in Admin | New grants stop for it; live holds and the ledger are untouched (TG-05 A). There is deliberately no force-revoke. |
+| One type | disable each of its tiers in Admin | The type contributes nothing to new carts; the other types keep working. There is no "delete type" screen (a type with tiers or orders must stay). |
 | Code | revert the deploy (`release-and-rollback.md`) | The tables are additive and ignored by old code. Orders that carry an `OrderAcceptance` row keep their frozen money; an old release would not apply the voucher to a NEW order, which is why the flag is switched off first. |
-| Schema | the commented rollback list at the top of each voucher migration | **Only while no accepted order references the tables.** Dry run on an empty scratch ledger done 2026-10-26. After real redemptions a schema rollback needs a data decision by the owner; never drop after launch, disable instead. |
+| Schema | the commented rollback list at the top of each voucher migration (for types and tiers: the `DROP` list at the top of `20261028100000_voucher_types_and_tiers`) | **Only while no accepted order references the tables.** Dry run on an empty scratch ledger done 2026-10-26. After real redemptions a schema rollback needs a data decision by the owner; never drop after launch, disable instead. |
 
 Order for an incident: unset the flag → restart → run §5 → decide on code rollback. Do not roll the code back first with live redemptions.
 
@@ -100,16 +120,23 @@ Decisions recorded for v1 (owner, 2026-10-26, "theo khuyến nghị"): (1) while
 
 - A campaign that has run and was switched off, or has ended, is read-only; **Sao chép** makes a new draft.
 - Caps cannot be set below *redeemed-not-refunded + live holds*. The screen shows the committed budget; the database refuses a lower cap even if a script tries.
+- **Types and tiers.** A type has a name, a stacking priority (1 to 1000, smaller goes first), and its own distribution (AUTO, or CODE with PUBLIC or PRIVATE and **one code for the whole type**). Up to 6 types per shop. Its tiers are ordinary vouchers that belong to it; they copy its distribution and have no code of their own.
+- The distribution of a type is locked once it has a tier, and its code can change only until a tier was ever enabled.
+- **Priority cannot change while any tier of the type has a live hold** (`HOLDS_LIVE`, ten minutes at most): the order is part of every quote a hold stored. Renaming is never blocked. Two people editing the same type: the second save is refused (`STALE_REVISION`); reload the form.
+- **Ladder rule.** Among the enabled tiers of one type with the same scope and discount kind, thresholds are distinct and a higher threshold must save more where it is reached (a higher fixed amount, or a percentage whose percent and cap are not lower and that is better at its own threshold or on larger carts). A tier that breaks it cannot be enabled or edited while enabled (the screen says which tier it conflicts with); drafts are free so **Sao chép** works. When two tiers cost the shopper the same, the higher threshold wins.
+- Each tier keeps its own quota and budget. When a tier is used up, AUTO falls back to the highest tier that still has quota.
+- Thresholds are judged on the cart's in-scope subtotal before any voucher; the discount of a later type is computed on what the earlier types left (a percentage type after a fixed type takes its percentage of the remainder).
 - A PRIVATE voucher is reachable only through its code (rate-limited); a link `?voucher=CODE` is only **offered**: the parameter is stripped by redirect, the code waits in an HttpOnly cookie and **stays on the server** (the cart page is told only that a code is waiting: the code is in no HTML, RSC payload or DOM, so scripts on the page such as GTM never see it), and **nothing is saved by the link** (a GET is a navigation, not a confirmation); the shopper presses "Dùng mã từ liên kết", a Server Action that reads the cookie itself and verifies, rate-counts, quotes and asks for consent before saving, then clears the cookie. The code never reaches a rendered page or a later request URL (AC-40).
 
 ## 7. Release checklist for the person flipping the switch
 
 - [x] Owner approved the two migrations beyond H2 (`20261026100000_voucher_order_snapshot`, `20261026120000_order_quote_step_voucher`) on 2026-10-27 ([comment](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/214#issuecomment-6433999206)). That is approval of the SQL only, not of running it on production.
+- [ ] **Owner approval of the types-and-tiers migration** (`20261028100000_voucher_types_and_tiers`, ADR 0020 is still *Proposed*). Not recorded: PR #222 was reviewed as code only ("CODE ACCEPTABLE", 2026-10-28) and the reviewer states that approval of the migration and Admin schema is separate. Link: ______ · signed by: ______ · date: ______ · then set ADR 0020 to *Accepted*.
 - [ ] Before applying them to the real database: backup taken; earlier migrations in the expected state; table sizes and a maintenance window agreed (`CREATE INDEX` on `VoucherHold` can block writes while it builds; the `CHECK` change on `OrderQuoteDiscountStep` locks the table and scans it); both rollback lists dry-run on a scratch/staging database with representative data.
 - [ ] CI green on the exact release SHA, including the database and browser jobs.
 - [ ] `pnpm pancake:voucher:accept` passed for the shop within the agreed window; a staff-made cancel was observed on 2026-10-26 (status 6, order `11`; the owner accepted it as a cancel).
 - [ ] The refund sweep is scheduled (§5) and a first run printed `0 … 0` or its real numbers.
-- [ ] The §3 queries return no drift on the target database.
+- [ ] The §3 queries (including the types-and-tiers ones) return no rows on the target database; the staged-rollout step with a type and two tiers was run by the owner (§2).
 - [ ] `LA_VOUCHER_TEST_HARNESS` is absent from `.env.production`.
 - [ ] **H4 UX acceptance** by the owner (checkout panel, cart totals wording, picker, gift-loss consent, the Admin screens), on a real phone and a desktop. Evidence link: ______ · signed by: ______ · date: ______
 - [ ] **Independent security review** of this feature (not the author; `/security-review` has not been run on the branch). Report link: ______ · reviewer: ______ · date: ______ · every P1/P2 closed or accepted in writing
