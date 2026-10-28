@@ -9,6 +9,9 @@ import { pdpProductImageLoader } from "@/components/headless/pdp-image-loader";
 import { useDocumentLoaded } from "@/components/headless/use-document-loaded";
 import { useDesktopVideoLayout, useInlineVideoAllowed } from "@/components/headless/use-inline-video-allowed";
 
+/** A preview that is less than this much on screen stands still. */
+const PREVIEW_MIN_VISIBLE_RATIO = 0.25;
+
 function releaseVideo(video: HTMLVideoElement | null) {
   if (!video) return;
   video.pause();
@@ -22,8 +25,9 @@ function releaseVideo(video: HTMLVideoElement | null) {
  *
  * The frame is a 9:16 muted, looping preview that starts by itself: on the photograph below `lg`, a
  * floating mini-player pinned to the viewport's bottom right from `lg` while the photographs are in
- * view (with a close button that leaves the small poster tile on the photograph; scrolling on to the
- * purchase panel docks it there too). Tapping it opens the same video in a dialog with
+ * view (scrolling on to the purchase panel docks it back onto the photograph). At every width a
+ * close button on its corner stops the preview (WCAG 2.2.2) and leaves the poster, which stays
+ * stopped through opening and closing the dialog. Tapping the frame opens the same video in a dialog with
  * sound and controls, which carries on from the second the preview had reached rather than
  * restarting, and hands the second it left off at back to the preview. The preview costs the photographs nothing: the poster is an
  * optimised photograph that paints with the page, and the video is requested only once the document
@@ -48,26 +52,32 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
   const documentLoaded = useDocumentLoaded();
   const inlineAllowed = useInlineVideoAllowed();
   const desktop = useDesktopVideoLayout();
-  const [dismissed, setDismissed] = useState(false);
+  const [stopped, setStopped] = useState(false);
   const resumeAt = useRef(0);
   const [galleryInView, setGalleryInView] = useState(true);
-  const floating = desktop && documentLoaded && inlineAllowed && !previewFailed && !dismissed && galleryInView;
-  const showPreview = documentLoaded && inlineAllowed && !previewFailed && !(desktop && dismissed);
+  const floating = desktop && documentLoaded && inlineAllowed && !previewFailed && !stopped && galleryInView;
+  const showPreview = documentLoaded && inlineAllowed && !previewFailed && !stopped;
 
   // The connection (DNS, TLS) is warm by the time the preview asks for its first bytes.
   preconnect(new URL(video.src).origin);
 
-  // The preview runs only while it is on screen and the dialog is not holding the shopper's attention.
+  // The preview runs only while at least a quarter of it is on screen and the dialog is not holding
+  // the shopper's attention. The observer is the one controller: it keeps whether the preview is
+  // visible enough, and anything that wants to resume it (closing the dialog) asks that answer.
+  const previewVisible = useRef(false);
   useEffect(() => {
     const element = preview.current;
     if (!element) return;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry?.isIntersecting && !previewHeld.current) void element.play().catch(() => undefined);
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      previewVisible.current = !!entry && entry.intersectionRatio >= PREVIEW_MIN_VISIBLE_RATIO;
+      if (previewVisible.current && !previewHeld.current) void element.play().catch(() => undefined);
       else element.pause();
-    }, { threshold: 0.25 });
+    }, { threshold: [0, PREVIEW_MIN_VISIBLE_RATIO] });
     observer.observe(element);
     return () => {
       observer.disconnect();
+      previewVisible.current = false;
       releaseVideo(element);
     };
   }, [showPreview]);
@@ -132,7 +142,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
     dialog.current?.close();
     opener.current?.focus({ preventScroll: true });
     previewHeld.current = false;
-    void preview.current?.play().catch(() => undefined);
+    if (previewVisible.current) void preview.current?.play().catch(() => undefined);
   }
 
   return (
@@ -162,9 +172,8 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
             src={video.src}
             muted
             loop
-            autoPlay
             playsInline
-            preload="auto"
+            preload="none"
             disablePictureInPicture
             disableRemotePlayback
             aria-hidden="true"
@@ -186,13 +195,13 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
           Xem video
         </span>
       </button>
-      {floating ? (
+      {showPreview && (!desktop || floating) ? (
         <button
           type="button"
           className="pdp-video-slot__close"
           aria-label="Đóng video nhỏ"
           onClick={() => {
-            setDismissed(true);
+            setStopped(true);
             opener.current?.focus({ preventScroll: true });
           }}
         >

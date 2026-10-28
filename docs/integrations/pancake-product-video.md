@@ -68,18 +68,22 @@ page-load autoplay"; the owner asked for it). It is built to cost the photograph
   fades in over it only once it is really `playing`, so a slow start shows the photo, not black.
 - The `<video>` is mounted only after the window `load` event, so it never competes with the hero
   image, and `react-dom`'s `preconnect` warms the video origin during SSR.
-- It plays only while at least 25% on screen and pauses while the dialog is open.
+- It plays only while at least 25% of it is on screen (`intersectionRatio`, the observer is the single controller; no `autoplay` attribute, `preload="none"`, so nothing starts or loads outside it) and pauses while the dialog is open. Closing the dialog resumes it only if it is still visible enough.
 - It is not mounted at all under `prefers-reduced-motion`, Data Saver or a 2G link
-  (`use-inline-video-allowed.ts`); the frame stays a poster and the dialog is one tap away.
+  (`use-inline-video-allowed.ts`, which also follows the shopper changing reduced motion or the
+  connection while the page is open); the frame stays a poster and the dialog is one tap away.
+- At every width a close button (`Đóng video nhỏ`) on the frame's corner stops and unmounts the preview
+  (WCAG 2.2.2 pause/stop/hide for motion that starts by itself); the poster frame stays, and the
+  preview stays stopped through opening and closing the dialog.
 - A load error, or metadata with no picture (HEVC discarded by the browser), removes the preview and
   leaves the poster. It sends no telemetry, so attempt/failure counters still mean explicit openings.
 
 Desktop mini-player rules. It floats only while the photographs are in view (the gallery's bottom edge
 is in the top three quarters of the viewport); scrolling on towards the purchase panel docks it back
 onto the photograph, where it would otherwise sit over the price and the buy buttons, and scrolling
-back up floats it again. Closing it with the button dismisses it for that page view: the original
-small 96x76 poster tile (no preview) stays on the photograph's right edge, and so does the tile when
-the preview is not allowed. Before the page has loaded the tile is that same small poster tile.
+back up floats it again. Stopping it with the button ends the preview for that page view: on desktop the original
+small 96x76 poster tile (no preview) stays on the photograph's right edge, as it does when the
+preview is not allowed; on a phone the 9:16 poster frame stays. Before the page has loaded the tile is that same small poster tile.
 Dismissal is not remembered across pages.
 
 Tapping the frame opens a native modal dialog with a 9:16 player (`max-w-md`, the same on every width).

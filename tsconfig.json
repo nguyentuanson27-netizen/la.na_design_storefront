@@ -134,9 +134,7 @@
     ".next-test/voucher-picker/types/**/*.ts",
     ".next-test/voucher-picker/dev/types/**/*.ts",
     ".next-test/pdp-pancake-video/types/**/*.ts",
-    ".next-test/pdp-pancake-video/dev/types/**/*.ts",
-    ".next-e2e/types/**/*.ts",
-    ".next-e2e/dev/types/**/*.ts"
+    ".next-test/pdp-pancake-video/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

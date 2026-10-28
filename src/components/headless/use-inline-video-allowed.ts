@@ -2,7 +2,9 @@
 
 import { useSyncExternalStore } from "react";
 
-type ConnectionHints = Readonly<{ saveData?: boolean; effectiveType?: string }>;
+type ConnectionHints = EventTarget & Readonly<{ saveData?: boolean; effectiveType?: string }>;
+
+const REDUCED_MOTION_MEDIA = "(prefers-reduced-motion: reduce)";
 
 const SLOW_CONNECTIONS = new Set(["slow-2g", "2g"]);
 
@@ -15,11 +17,27 @@ function subscribeToLayout(onStoreChange: () => void) {
   return () => query.removeEventListener("change", onStoreChange);
 }
 
+function networkConnection(): ConnectionHints | undefined {
+  return (navigator as Navigator & { connection?: ConnectionHints }).connection;
+}
+
+/** The two settings a shopper can change while the page is open: motion, and Data Saver / link speed. */
+function subscribeToAllowance(onStoreChange: () => void) {
+  const motion = window.matchMedia(REDUCED_MOTION_MEDIA);
+  const connection = networkConnection();
+  motion.addEventListener("change", onStoreChange);
+  connection?.addEventListener("change", onStoreChange);
+  return () => {
+    motion.removeEventListener("change", onStoreChange);
+    connection?.removeEventListener("change", onStoreChange);
+  };
+}
+
 function inlineVideoAllowed(): boolean {
   // Motion that starts by itself and never stops needs the shopper's consent (WCAG 2.2.2); the
   // operating system's reduced-motion setting is that consent withheld.
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
-  const connection = (navigator as Navigator & { connection?: ConnectionHints }).connection;
+  if (window.matchMedia(REDUCED_MOTION_MEDIA).matches) return false;
+  const connection = networkConnection();
   if (connection?.saveData) return false;
   return !(connection?.effectiveType && SLOW_CONNECTIONS.has(connection.effectiveType));
 }
@@ -30,7 +48,7 @@ function inlineVideoAllowed(): boolean {
  * afford. False on the server and during hydration, so the markup both render agrees.
  */
 export function useInlineVideoAllowed(): boolean {
-  return useSyncExternalStore(subscribeToLayout, inlineVideoAllowed, () => false);
+  return useSyncExternalStore(subscribeToAllowance, inlineVideoAllowed, () => false);
 }
 
 function desktopLayout(): boolean {
