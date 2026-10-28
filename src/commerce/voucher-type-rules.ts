@@ -73,25 +73,41 @@ export type LadderTier = Readonly<{
   scopeKey: string;
 }>;
 
-/** The magnitude the ladder compares: the fixed amount, or the percent (a cap only lowers it, so it is compared as the percent). */
-const magnitude = (tier: LadderTier): number | null => (tier.discount === null ? null : tier.discount.type === "FIXED_AMOUNT_VND" ? tier.discount.amountVnd : tier.discount.percent);
+const CAP_UNLIMITED = Number.POSITIVE_INFINITY;
+
+/**
+ * Does the rung with the HIGHER threshold (`high`) always save the shopper at least as much as the lower one, and more somewhere?
+ * A fixed amount: strictly more. A percentage saves `min(round(E x percent / 100), cap)` on the in-scope subtotal E, so it is only
+ * never worse when BOTH the percent and the cap are not lower (no cap is the highest cap), and better when either is higher.
+ * A rung that is better on small carts but capped lower on big ones would make AUTO pick the lower rung where the higher one is
+ * reached, so it is refused rather than left to surprise the shopper.
+ */
+function higherRungBeats(high: NonNullable<LadderTier["discount"]>, low: NonNullable<LadderTier["discount"]>): boolean {
+  if (high.type === "FIXED_AMOUNT_VND" && low.type === "FIXED_AMOUNT_VND") return high.amountVnd > low.amountVnd;
+  if (high.type === "PERCENTAGE" && low.type === "PERCENTAGE") {
+    const highCap = high.maxDiscountVnd ?? CAP_UNLIMITED;
+    const lowCap = low.maxDiscountVnd ?? CAP_UNLIMITED;
+    return high.percent >= low.percent && highCap >= lowCap && (high.percent > low.percent || highCap > lowCap);
+  }
+  return true;
+}
 
 /**
  * The ladder rule (ADR 0020 D-7): between two tiers of one type that have the same scope and the same kind of discount, a higher
- * threshold must give a strictly higher discount, and no two share a threshold -- otherwise the lower rung can never be reached
- * (it is always beaten) or the higher one is pointless. Tiers of different scope or discount kind are not compared: the optimizer
- * evaluates them as they are. Returns the id of the first tier `candidate` conflicts with, or null.
+ * threshold must give a discount that is never lower and somewhere higher (see `higherRungBeats`), and no two share a threshold --
+ * otherwise the lower rung can never be reached (it is always beaten) or the higher one is pointless. Tiers of different scope or
+ * discount kind are not compared: the optimizer evaluates them as they are. Returns the id of the first tier `candidate`
+ * conflicts with, or null.
  */
 export function findLadderConflict(candidate: LadderTier, others: readonly LadderTier[]): string | null {
-  const mine = magnitude(candidate);
-  if (mine === null || candidate.discount === null) return null;
+  if (candidate.discount === null) return null;
   const threshold = candidate.minEligibleSubtotalVnd ?? 0;
   for (const other of others) {
     if (other.id === candidate.id || other.scopeKey !== candidate.scopeKey || other.discount === null || other.discount.type !== candidate.discount.type) continue;
-    const theirs = magnitude(other)!;
     const theirThreshold = other.minEligibleSubtotalVnd ?? 0;
     if (theirThreshold === threshold) return other.id;
-    if (theirThreshold < threshold ? theirs >= mine : theirs <= mine) return other.id;
+    const candidateIsHigher = threshold > theirThreshold;
+    if (!higherRungBeats(candidateIsHigher ? candidate.discount : other.discount, candidateIsHigher ? other.discount : candidate.discount)) return other.id;
   }
   return null;
 }

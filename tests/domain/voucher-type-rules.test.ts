@@ -75,7 +75,7 @@ test("a tier form carries its type; only a merchandise voucher can have one", ()
 });
 
 const fixedTier = (id: string, min: number | null, amountVnd: number, scopeKey = "all"): LadderTier => ({ id, minEligibleSubtotalVnd: min, discount: { type: "FIXED_AMOUNT_VND", amountVnd }, scopeKey });
-const percentTier = (id: string, min: number | null, percent: number, scopeKey = "all"): LadderTier => ({ id, minEligibleSubtotalVnd: min, discount: { type: "PERCENTAGE", percent, maxDiscountVnd: null }, scopeKey });
+const percentTier = (id: string, min: number | null, percent: number, scopeKey = "all", maxDiscountVnd: number | null = null): LadderTier => ({ id, minEligibleSubtotalVnd: min, discount: { type: "PERCENTAGE", percent, maxDiscountVnd }, scopeKey });
 
 test("ladder rule: a higher threshold must give a strictly higher discount, and thresholds are distinct", () => {
   const live = [fixedTier("a500", 500_000, 30_000), fixedTier("a1m", 1_000_000, 80_000)];
@@ -102,4 +102,25 @@ test("ladder rule compares like with like: same scope and the same kind of disco
 test("the Admin says what each new refusal means, in plain words", () => {
   for (const reason of ["TYPE_NOT_FOUND", "TYPE_LIMIT_REACHED"]) assert.notEqual(describeVoucherAdminReason(reason), describeVoucherAdminReason("NOPE"), reason);
   for (const issue of ["type-invalid", "type-not-allowed", "type-priority-invalid", "ladder-conflict"]) assert.notEqual(describeVoucherAdminReason("VALIDATION", issue), describeVoucherAdminReason("VALIDATION"), issue);
+});
+
+test("ladder rule counts the cap of a percentage rung: a higher percent with a LOWER cap is refused (review of #222)", () => {
+  // 500K: 5% capped at 50K; 1M: 10% capped at 10K. On a 1M cart the upper rung saves 10K and the lower 50K, so AUTO would pick the lower one.
+  const lower = [percentTier("p5", 500_000, 5, "all", 50_000)];
+  assert.equal(findLadderConflict(percentTier("p10-low-cap", 1_000_000, 10, "all", 10_000), lower), "p5");
+  assert.equal(findLadderConflict(percentTier("p10-no-cap", 1_000_000, 10), lower), null, "no cap is the highest cap");
+  assert.equal(findLadderConflict(percentTier("p10-same-cap", 1_000_000, 10, "all", 50_000), lower), null);
+  assert.equal(findLadderConflict(percentTier("p10-high-cap", 1_000_000, 10, "all", 100_000), lower), null);
+  // Judged from the other side too: adding the LOWER rung against a live upper one.
+  const upper = [percentTier("p10", 1_000_000, 10, "all", 10_000)];
+  assert.equal(findLadderConflict(percentTier("p5-big-cap", 500_000, 5, "all", 50_000), upper), "p10");
+  assert.equal(findLadderConflict(percentTier("p5-small-cap", 500_000, 5, "all", 5_000), upper), null);
+});
+
+test("ladder rule: the same percent is fine when the higher rung has a higher cap, never when it adds nothing", () => {
+  const lower = [percentTier("p10-cap50", 500_000, 10, "all", 50_000)];
+  assert.equal(findLadderConflict(percentTier("p10-cap100", 1_000_000, 10, "all", 100_000), lower), null, "the cap rises: better on big carts");
+  assert.equal(findLadderConflict(percentTier("p10-cap50-again", 1_000_000, 10, "all", 50_000), lower), "p10-cap50", "identical saving at a higher threshold");
+  assert.equal(findLadderConflict(percentTier("p10-nocap", 1_000_000, 10), [percentTier("p10-nocap-low", 500_000, 10)]), "p10-nocap-low", "no cap on both and the same percent");
+  assert.equal(findLadderConflict(percentTier("p8-nocap", 1_000_000, 8), [percentTier("p10-cap", 500_000, 10, "all", 50_000)]), "p10-cap", "a lower percent never beats a higher one");
 });

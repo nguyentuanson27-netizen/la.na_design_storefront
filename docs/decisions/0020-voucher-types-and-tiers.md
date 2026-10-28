@@ -90,7 +90,7 @@ Selection is per slot (AUTO, MANUAL tier, or explicit NONE). A CODE type is unlo
 
 ### D-7 Admin
 
-The Admin creates a type (name, priority, AUTO or CODE/PUBLIC|PRIVATE, code) and adds tiers to it (threshold, discount, optional scope, window, caps). Tiers of a type must have strictly increasing thresholds and non-decreasing discounts for the same discount type; the form rejects a tier that a lower threshold already beats. Types and tiers follow the same revision, activation and cap-floor rules as v1 campaigns.
+The Admin creates a type (name, priority, AUTO or CODE/PUBLIC|PRIVATE, code) and adds tiers to it (threshold, discount, optional scope, window, caps). Among the enabled tiers of a type with the same scope and discount kind, thresholds are distinct and a higher threshold must never save less: a higher fixed amount, or for a percentage a percent and a cap that are both not lower (no cap is the highest cap) and one of them higher. A rung that is better on small carts but capped lower on big ones is refused, so AUTO never picks a lower rung where a higher one is reached. Types and tiers follow the same revision, activation and cap-floor rules as v1 campaigns.
 
 ## Consequences
 

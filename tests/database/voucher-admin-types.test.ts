@@ -161,3 +161,18 @@ test("editing a tier ignores the form's distribution and type; an enabled tier's
   const row = await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: tier.id } });
   assert.deepEqual([row.typeId, row.issuance, row.visibility, row.code, row.fixedAmountVnd, row.revision], [type.id, "CODE", "PRIVATE", null, BigInt(35_000), edited.revision]);
 });
+
+test("a capped percentage rung that would save less than the rung below it is refused when enabled (review of #222)", async () => {
+  const type = good(await service.createType(admin, typeForm({ name: "Phần trăm", priority: 3 }), NOW));
+  const percentTier = (percent: number, cap: number | null, min: number) => ({
+    name: `${percent}% từ ${min}`, typeId: type.id, kind: "MERCHANDISE", discount: { type: "PERCENTAGE", percent, maxDiscountVnd: cap }, minEligibleSubtotalVnd: min, scope: { mode: "ALL_SHOP", excludeProductIds: [] },
+  });
+  const low = good(await service.create(admin, percentTier(5, 50_000, 500_000), NOW));
+  const high = good(await service.create(admin, percentTier(10, 10_000, 1_000_000), NOW));
+  good(await service.setEnabled(admin, low.id, low.revision, true, NOW));
+  refused(await service.setEnabled(admin, high.id, high.revision, true, NOW), "VALIDATION", "ladder-conflict");
+  // Raising its cap to at least the lower rung's makes it a real rung.
+  good(await service.edit(admin, high.id, high.revision, percentTier(10, 100_000, 1_000_000), NOW));
+  const fixed = await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: high.id } });
+  good(await service.setEnabled(admin, fixed.id, fixed.revision, true, NOW));
+});

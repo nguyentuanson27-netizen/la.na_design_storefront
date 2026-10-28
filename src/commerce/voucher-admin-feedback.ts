@@ -51,7 +51,7 @@ const issues: Readonly<Record<string, string>> = {
   "type-invalid": "Loại voucher không hợp lệ.",
   "type-not-allowed": "Voucher vận chuyển không thuộc loại voucher nào.",
   "type-priority-invalid": "Thứ tự áp dụng phải là số nguyên từ 1 đến 1000 (số nhỏ được áp dụng trước).",
-  "ladder-conflict": "Mốc này trùng hoặc không có lợi hơn một mốc khác đang bật của cùng loại: mốc cao hơn phải giảm nhiều hơn và hai mốc không được cùng ngưỡng.",
+  "ladder-conflict": "Mốc này trùng hoặc không có lợi hơn một mốc khác đang bật của cùng loại: mốc cao hơn phải giảm nhiều hơn (với giảm % thì phần trăm và mức giảm tối đa đều không được thấp hơn) và hai mốc không được cùng ngưỡng.",
   "input-invalid": "Thông tin voucher chưa hợp lệ.",
 };
 
