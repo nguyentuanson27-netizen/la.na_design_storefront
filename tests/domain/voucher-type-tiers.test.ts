@@ -217,3 +217,24 @@ test("a ladder the Admin accepts picks the highest rung reached on every cart si
     assert.equal(result.merchandiseDiscountVnd, discount, String(subtotal));
   }
 });
+
+test("two rungs that cost the same: the cart that reached the higher rung gets it, whatever the ids sort like (review of #222)", () => {
+  // At exactly 1.000.000 both give 50.000 (5% of 1M against a 50K cap); the Admin accepts the pair because the cap rises.
+  const sameAtThreshold = [percent("a_lower", "P", 1, 5, 500_000, 50_000), percent("z_higher", "P", 1, 5, 1_000_000, 100_000)];
+  for (const subtotal of [1_000_000, 1_000_001]) {
+    const result = quote({ lines: [line("a", 1, subtotal)], campaigns: sameAtThreshold });
+    assert.deepEqual(result.selection.merchandiseIds, ["z_higher"], String(subtotal));
+  }
+  assert.deepEqual(quote({ lines: [line("a", 1, 999_999)], campaigns: sameAtThreshold }).selection.merchandiseIds, ["a_lower"]);
+
+  // Both capped at 80.000 from 1.6M up: still a tie in money, still the higher rung.
+  const bothCapped = [percent("a_lower", "P", 1, 5, 500_000, 80_000), percent("z_higher", "P", 1, 10, 1_000_000, 80_000)];
+  assert.deepEqual(quote({ lines: [line("a", 1, 2_000_000)], campaigns: bothCapped }).selection.merchandiseIds, ["z_higher"]);
+
+  // Untyped v1 vouchers have no rung: equal money keeps the stable-id order.
+  const untyped = [
+    tier({ id: "u_b", discount: { type: "FIXED_AMOUNT_VND", amountVnd: 20_000 }, minEligibleSubtotalVnd: 100_000 }, null),
+    tier({ id: "u_a", discount: { type: "FIXED_AMOUNT_VND", amountVnd: 20_000 }, minEligibleSubtotalVnd: 500_000 }, null),
+  ];
+  assert.deepEqual(quote({ lines: [line("a", 1, 600_000)], campaigns: untyped }).selection.merchandiseIds, ["u_a"]);
+});

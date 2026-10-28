@@ -40,6 +40,11 @@ export type MerchandiseOption = Readonly<{
   slot?: string;
   /** Application order across slots, smaller first. Absent means 0. */
   priority?: number;
+  /**
+   * A tier's own threshold. When two combinations cost the same, the one that reaches the higher rung wins, so a cart
+   * that reached a type's top tier is never served (and never spends the quota) from a lower one. Absent means 0.
+   */
+  rank?: number;
 }>;
 export type ShippingOption = Readonly<{ id: string; minEligibleSubtotalVnd: number | null }>;
 
@@ -220,6 +225,7 @@ function validOptions(options: readonly { id: string }[], limit = MAX_VOUCHER_CA
 }
 
 const slotOf = (option: MerchandiseOption) => option.slot ?? MERCHANDISE_SLOT;
+const rankOf = (options: readonly MerchandiseOption[]) => options.reduce((sum, option) => sum + (option.rank ?? 0), 0);
 const idsKey = (options: readonly MerchandiseOption[]) => options.map((option) => option.id).join(",");
 
 /** TG-09 order. `a` before `b` means `a` is the better choice. */
@@ -231,6 +237,7 @@ function compareCells(left: OkCell, right: OkCell): number {
     b.gifts.retainedSelectedSlots - a.gifts.retainedSelectedSlots ||
     b.gifts.entitledSlots - a.gifts.entitledSlots ||
     a.voucherCount - b.voucherCount ||
+    rankOf(right.merchandise) - rankOf(left.merchandise) ||
     compareText(idsKey(left.merchandise), idsKey(right.merchandise)) ||
     compareText(left.shipping?.id ?? "", right.shipping?.id ?? "")
   );

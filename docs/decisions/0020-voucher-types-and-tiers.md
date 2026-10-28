@@ -74,7 +74,7 @@ Shipping is unchanged: the fee is re-evaluated per candidate with `hasOtherPromo
 
 ### D-4 Optimizer
 
-The grid becomes `(prod over slots of (NONE + that slot's candidates)) x (NONE + shipping)`. Ranking is the existing TG-09 order (lowest total, then gifts kept, then fewer vouchers, then stable ids). `NONE` everywhere remains a candidate, so AUTO is never dearer than no voucher. Bounds: at most 8 slots and 50 merchandise candidates in play and at most 20.000 cells, otherwise `INVALID_INPUT` (fail closed). Manual locks are per slot; when a combination cannot honour every lock the shipping lock is dropped first, then merchandise locks from the lowest priority up, each with a notice.
+The grid becomes `(prod over slots of (NONE + that slot's candidates)) x (NONE + shipping)`. Ranking is the existing TG-09 order (lowest total, then gifts kept, then fewer vouchers, then the higher rung of a type's ladder, then stable ids). When two tiers of one type cost the shopper the same (for example both are at their cap), the tier with the higher threshold wins, so AUTO never serves a cart that reached the top tier from a lower one and never spends the lower tier's quota. Untyped v1 vouchers have no rung and keep the stable-id tie-break. `NONE` everywhere remains a candidate, so AUTO is never dearer than no voucher. Bounds: at most 8 slots and 50 merchandise candidates in play and at most 20.000 cells, otherwise `INVALID_INPUT` (fail closed). Manual locks are per slot; when a combination cannot honour every lock the shipping lock is dropped first, then merchandise locks from the lowest priority up, each with a notice.
 
 ### D-5 Holds, proof, redemption, snapshot
 

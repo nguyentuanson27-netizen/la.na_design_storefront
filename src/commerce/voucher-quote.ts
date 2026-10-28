@@ -176,7 +176,11 @@ export function buildVoucherQuote(input: VoucherQuoteInput): VoucherQuote {
   for (const campaign of merchandiseCampaigns) {
     const quote = merchandiseQuotes.get(campaign.id)!;
     if (quote.ok && takeable(campaign, quote.discountVnd)) {
-      merchandiseOptions.push({ id: campaign.id, discountVnd: quote.discountVnd, slot: slotOfId.get(campaign.id)!, priority: priorityOf(campaign) });
+      merchandiseOptions.push({ id: campaign.id, discountVnd: quote.discountVnd, slot: slotOfId.get(campaign.id)!,
+        priority: priorityOf(campaign),
+        // Only a type's ladder has rungs; untyped v1 vouchers keep the id tie-break unchanged.
+        ...(campaign.type ? { rank: campaign.minEligibleSubtotalVnd ?? 0 } : {}),
+      });
     }
   }
   const shippingOptions: ShippingOption[] = shippingCampaigns
