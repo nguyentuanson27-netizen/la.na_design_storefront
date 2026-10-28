@@ -36,6 +36,10 @@ export function parseVoucherCampaignForm(form: FormData): VoucherFormParse {
     return { ok: false, issues: [{ code: "window-invalid", field: "window" }] };
   }
 
+  // A tier names the type it belongs to; blank is an ordinary voucher. A repeated field is refused like any other.
+  const typeRaw = single(form, "typeId");
+  if (typeRaw === null) return { ok: false, issues: [{ code: "type-invalid", field: "typeId" }] };
+
   const kind = single(form, "kind");
   const issuance = single(form, "issuance");
   const discountType = single(form, "discountType");
@@ -59,6 +63,7 @@ export function parseVoucherCampaignForm(form: FormData): VoucherFormParse {
     ok: true,
     input: {
       name: single(form, "name"),
+      typeId: typeRaw.trim() === "" ? null : typeRaw.trim(),
       kind,
       issuance,
       visibility: single(form, "visibility"),
@@ -89,4 +94,24 @@ export function parseVoucherIdentity(form: FormData): { id: string; revision: nu
 export function parseVoucherCopyCode(form: FormData): string | null {
   const raw = single(form, "code");
   return raw === null || raw.trim() === "" ? null : raw;
+}
+
+/** The Admin's type form: a name, the place in the stack, and the distribution. Parsing only; `validateVoucherType` is the contract. */
+export function parseVoucherTypeForm(form: FormData): VoucherFormParse {
+  const issuance = single(form, "issuance");
+  return {
+    ok: true,
+    input: {
+      name: single(form, "name"),
+      priority: optionalWhole(single(form, "priority"), 4),
+      issuance,
+      visibility: single(form, "visibility"),
+      code: issuance === "CODE" ? single(form, "code") : null,
+    },
+  };
+}
+
+export function parseVoucherTypeIdentity(form: FormData): { id: string } | null {
+  const id = single(form, "typeId");
+  return id !== null && /^[A-Za-z0-9_-]{1,64}$/.test(id) ? { id } : null;
 }

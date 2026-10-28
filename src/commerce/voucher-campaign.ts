@@ -106,6 +106,7 @@ export function voucherRowToInput(row: VoucherCampaignRow): Record<string, unkno
     issuance: row.issuance,
     visibility: typeAgrees ? row.visibility : "INVALID",
     code: type === null ? row.code : type.code,
+    typeId: row.typeId,
     discount,
     minEligibleSubtotalVnd: toSafeNumber(row.minEligibleSubtotalVnd),
     scope:

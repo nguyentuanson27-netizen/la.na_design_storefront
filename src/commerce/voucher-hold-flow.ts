@@ -109,7 +109,7 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
     const { quote, campaigns, paidRevision } = preview;
     if (paidRevision > BigInt(Number.MAX_SAFE_INTEGER)) return { ok: false, reason: "QUOTE_UNAVAILABLE" };
 
-    const facts = buildVoucherQuoteFacts({ quote, campaigns, lines: preview.lines, variationOfLine: preview.variationOfLine, paidRevision });
+    const facts = buildVoucherQuoteFacts({ quote, campaigns, variationOfLine: preview.variationOfLine, paidRevision });
     if (facts === null) return { ok: false, reason: "QUOTE_UNAVAILABLE" };
 
     // 3. The buyer saw THIS quote -- also when that quote is "no voucher" -- and agreed to anything it costs them.

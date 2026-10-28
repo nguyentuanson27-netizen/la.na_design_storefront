@@ -22,8 +22,13 @@ export type VoucherCampaignValues = Readonly<{
   kind: VoucherKind;
   issuance: VoucherIssuance;
   visibility: VoucherVisibility;
-  /** Canonical code, present exactly when `issuance` is CODE. */
+  /**
+   * Canonical code, present exactly when `issuance` is CODE. A tier of a type carries its TYPE's code here when it is validated
+   * (the stored tier row keeps `code` empty: the type owns it).
+   */
   code: string | null;
+  /** The voucher type this campaign is a tier of (ADR 0020); only a MERCHANDISE voucher can have one. */
+  typeId: string | null;
   /** Present exactly when `kind` is MERCHANDISE. SHIPPING_FREE always waives 100% of the remaining fee. */
   discount: VoucherDiscount | null;
   /** Threshold on the in-scope paid subtotal before this voucher, shipping excluded. */
@@ -103,6 +108,13 @@ export function validateVoucherCampaign(input: unknown): VoucherRuleValidation {
     issue("code-not-allowed", "code");
   }
 
+  let typeId: string | null = null;
+  if (!absent(input.typeId)) {
+    if (typeof input.typeId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(input.typeId)) typeId = input.typeId;
+    else issue("type-invalid", "typeId");
+    if (kind === "SHIPPING_FREE") issue("type-not-allowed", "typeId");
+  }
+
   const minimum = input.minEligibleSubtotalVnd;
   let minEligibleSubtotalVnd: number | null = null;
   if (!absent(minimum)) {
@@ -147,6 +159,7 @@ export function validateVoucherCampaign(input: unknown): VoucherRuleValidation {
       issuance: issuance as VoucherIssuance,
       visibility: visibility as VoucherVisibility,
       code,
+      typeId,
       discount,
       minEligibleSubtotalVnd,
       scope: scope.scope,

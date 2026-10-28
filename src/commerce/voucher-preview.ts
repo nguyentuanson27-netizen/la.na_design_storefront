@@ -255,7 +255,7 @@ export async function readVoucherPreviewWithin(
   const entries = quote.cards.map((state) => ({ card: cardById.get(state.campaignId)!, state }));
   return {
     enabled: true, ok: true, quote, entries, selectionIntent, savedSelectionVersion: selectionVersionOf(savedIntent), campaigns, lines, paidRevision: cart.paidRevision, variationOfLine,
-    quoteDigest: buildVoucherQuoteFacts({ quote, campaigns, lines, variationOfLine, paidRevision: cart.paidRevision })?.digest ?? null,
+    quoteDigest: buildVoucherQuoteFacts({ quote, campaigns, variationOfLine, paidRevision: cart.paidRevision })?.digest ?? null,
     giftState,
     stackedGroups,
   };

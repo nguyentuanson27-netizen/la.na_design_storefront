@@ -4,7 +4,7 @@ import test from "node:test";
 import type { VoucherPaidLine } from "../../src/commerce/voucher-allocation.ts";
 import type { VoucherCampaign } from "../../src/commerce/voucher-campaign.ts";
 import type { GiftOutcome } from "../../src/commerce/voucher-optimizer.ts";
-import { applyAllocationToLines, buildVoucherQuote, type VoucherQuote, type VoucherQuoteInput } from "../../src/commerce/voucher-quote.ts";
+import { buildVoucherQuote, type VoucherQuote, type VoucherQuoteInput } from "../../src/commerce/voucher-quote.ts";
 import { validateVoucherCampaign } from "../../src/commerce/voucher-rule-validation.ts";
 
 const SHOP = 940_010;

@@ -5,7 +5,9 @@ const reasons: Readonly<Record<string, string>> = {
   TARGET_INVALID: "Một số sản phẩm không tồn tại hoặc không thuộc cửa hàng.",
   LIMIT_REACHED: "Đã đạt giới hạn 50 voucher đang bật. Tắt voucher cũ trước khi bật thêm.",
   WINDOW_ENDED: "Voucher đã hết hạn. Sửa lịch trước khi bật.",
-  CODE_TAKEN: "Mã này đã được dùng ở voucher khác. Chọn mã khác.",
+  CODE_TAKEN: "Mã này đã được dùng ở voucher hoặc loại voucher khác. Chọn mã khác.",
+  TYPE_NOT_FOUND: "Không tìm thấy loại voucher.",
+  TYPE_LIMIT_REACHED: "Đã đạt giới hạn 6 loại voucher. Gộp hoặc dùng lại loại cũ.",
   IDENTITY_LOCKED: "Loại voucher, cách phát hành, hiển thị và mã không đổi được sau khi đã bật. Hãy sao chép thành voucher mới.",
   NOT_EDITABLE: "Voucher đã kết thúc hoặc đã chạy rồi tắt nên chỉ đọc. Hãy sao chép thành voucher mới.",
   NOT_RE_ENABLEABLE: "Voucher đã từng chạy nên không bật lại được. Hãy sao chép thành voucher mới.",
@@ -46,6 +48,10 @@ const issues: Readonly<Record<string, string>> = {
   "scope-excluded-too-many": "Loại trừ tối đa 500 sản phẩm.",
   "scope-product-id-invalid": "Danh sách sản phẩm không hợp lệ.",
   "scope-duplicate-entry": "Có mục bị trùng trong danh sách.",
+  "type-invalid": "Loại voucher không hợp lệ.",
+  "type-not-allowed": "Voucher vận chuyển không thuộc loại voucher nào.",
+  "type-priority-invalid": "Thứ tự áp dụng phải là số nguyên từ 1 đến 1000 (số nhỏ được áp dụng trước).",
+  "ladder-conflict": "Mốc này trùng hoặc không có lợi hơn một mốc khác đang bật của cùng loại: mốc cao hơn phải giảm nhiều hơn và hai mốc không được cùng ngưỡng.",
   "input-invalid": "Thông tin voucher chưa hợp lệ.",
 };
 

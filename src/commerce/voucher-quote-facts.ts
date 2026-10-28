@@ -1,4 +1,4 @@
-import { stripVoucherSegments, type VoucherPaidLine } from "./voucher-allocation.ts";
+import { stripVoucherSegments } from "./voucher-allocation.ts";
 import type { VoucherCampaign } from "./voucher-campaign.ts";
 import { voucherProofFactsFromQuote, voucherQuoteDigest, type VoucherProofFacts, type VoucherProofLine } from "./voucher-quote-proof.ts";
 import type { VoucherQuote } from "./voucher-quote.ts";
@@ -30,11 +30,10 @@ export type VoucherQuoteFacts = Readonly<{
 export function buildVoucherQuoteFacts(input: Readonly<{
   quote: Extract<VoucherQuote, { ok: true }>;
   campaigns: readonly VoucherCampaign[];
-  lines: readonly VoucherPaidLine[];
   variationOfLine: ReadonlyMap<string, string>;
   paidRevision: bigint;
 }>): VoucherQuoteFacts | null {
-  const { quote, campaigns, lines, variationOfLine, paidRevision } = input;
+  const { quote, campaigns, variationOfLine, paidRevision } = input;
   const paidLines = quote.linesAfter.map((line) => ({
     lineId: line.lineId,
     pancakeVariationId: variationOfLine.get(stripSegment(line.lineId)) ?? "",

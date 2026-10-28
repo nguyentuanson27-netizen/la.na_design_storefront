@@ -287,7 +287,7 @@ test("AC-20: even when the preview thought it fine, money the POS cannot take le
   const real = await shown(c.id);
   // 99.999 gift slots cannot be carved out of two paid units: the vendor projection must refuse the whole cart.
   const poisoned = { ...real, quote: { ...real.quote, gifts: { ...real.quote.gifts, retainedSelectedSlots: 99_999 } } };
-  const digest = buildVoucherQuoteFacts({ quote: poisoned.quote, campaigns: poisoned.campaigns, lines: poisoned.lines, variationOfLine: poisoned.variationOfLine, paidRevision: poisoned.paidRevision })!.digest;
+  const digest = buildVoucherQuoteFacts({ quote: poisoned.quote, campaigns: poisoned.campaigns, variationOfLine: poisoned.variationOfLine, paidRevision: poisoned.paidRevision })!.digest;
   const guarded = createVoucherHoldFlow(prisma, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: ENV, readPreview: async () => poisoned });
   assert.deepEqual(await guarded.hold({ cartId: c.id, expectedQuoteDigest: digest }), { ok: false, reason: "POS_INFEASIBLE" });
   assert.equal((await holdsOf()).length, 0);

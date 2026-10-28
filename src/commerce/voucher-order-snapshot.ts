@@ -1,4 +1,3 @@
-import type { VoucherAllocation } from "./voucher-allocation.ts";
 import type { VoucherQuote } from "./voucher-quote.ts";
 
 /**
