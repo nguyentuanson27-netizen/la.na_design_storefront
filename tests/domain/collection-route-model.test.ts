@@ -174,6 +174,35 @@ test("a slug pinned twice keeps its first position rather than being ranked twic
   assert.deepEqual(ordered.map((p) => p.slug), ["b", "a"]);
 });
 
+test("in-stock products always precede out-of-stock products, even if out-of-stock products are pinned", () => {
+  const inStockUnpinned = {
+    ...product("in-stock-unpinned"),
+    variants: [{ ...variant(1), sellableStock: 5 }],
+  };
+  const inStockPinned = {
+    ...product("in-stock-pinned"),
+    variants: [{ ...variant(2), sellableStock: 3 }],
+  };
+  const outOfStockPinned = {
+    ...product("out-of-stock-pinned"),
+    variants: [{ ...variant(3), sellableStock: 0 }],
+  };
+  const outOfStockUnpinned = {
+    ...product("out-of-stock-unpinned"),
+    variants: [{ ...variant(4), sellableStock: 0 }],
+  };
+
+  const ordered = orderByFeaturedSlugs(
+    [outOfStockUnpinned, inStockUnpinned, outOfStockPinned, inStockPinned],
+    ["out-of-stock-pinned", "in-stock-pinned"],
+  );
+
+  assert.deepEqual(
+    ordered.map((p) => p.slug),
+    ["in-stock-pinned", "in-stock-unpinned", "out-of-stock-pinned", "out-of-stock-unpinned"],
+  );
+});
+
 test("the grid renders exactly the order it was handed, without reordering again", () => {
   // The loader applies `orderByFeaturedSlugs` once, before building the grid's tracking. Reordering
   // a second time here is what would put the cards and the analytics indices out of step.

@@ -153,8 +153,18 @@ function sameSize(a: string | null, b: string | null): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
+function hasSellableStock(product: unknown): boolean {
+  if (typeof product !== "object" || product === null) return true;
+  if ("variants" in product && Array.isArray((product as any).variants)) {
+    const variants = (product as any).variants;
+    if (variants.length === 0) return true;
+    return variants.some((v: any) => typeof v?.sellableStock === "number" && v.sellableStock > 0);
+  }
+  return true;
+}
+
 /**
- * The grid, with the merchandiser's pinned slugs first.
+ * The grid, with the merchandiser's pinned slugs first and in-stock products leading.
  *
  * Pinning reorders what this page already returned; it never reaches for a product the query did not
  * match, because that would put an item in front of someone who filtered it out. A pinned slug that
@@ -164,26 +174,43 @@ function sameSize(a: string | null, b: string | null): boolean {
  * `view_item_list`/`select_item` indices come from this one ordered array: building tracking from
  * the repository order and then reordering the cards would report a pinned product at the index it
  * would have had, not the position it is shown in.
+ *
+ * In-stock products always precede out-of-stock products, so an out-of-stock item never leapfrogs
+ * an in-stock item even if pinned.
  */
 export function orderByFeaturedSlugs<T extends Readonly<{ slug: string }>>(
   products: readonly T[],
   featuredSlugs: readonly string[],
 ): readonly T[] {
-  if (featuredSlugs.length === 0) return products;
+  if (products.length === 0) return products;
 
   const rank = new Map<string, number>();
-  featuredSlugs.forEach((slug, index) => {
-    if (!rank.has(slug)) rank.set(slug, index);
-  });
-
-  const pinned: T[] = [];
-  const rest: T[] = [];
-  for (const product of products) {
-    (rank.has(product.slug) ? pinned : rest).push(product);
+  if (featuredSlugs.length > 0) {
+    featuredSlugs.forEach((slug, index) => {
+      if (!rank.has(slug)) rank.set(slug, index);
+    });
   }
-  pinned.sort((a, b) => rank.get(a.slug)! - rank.get(b.slug)!);
 
-  return [...pinned, ...rest];
+  const orderGroup = (items: readonly T[]) => {
+    if (items.length <= 1 || rank.size === 0) return items;
+    const pinned: T[] = [];
+    const rest: T[] = [];
+    for (const item of items) {
+      (rank.has(item.slug) ? pinned : rest).push(item);
+    }
+    pinned.sort((a, b) => rank.get(a.slug)! - rank.get(b.slug)!);
+    return [...pinned, ...rest];
+  };
+
+  const inStock: T[] = [];
+  const outOfStock: T[] = [];
+  for (const product of products) {
+    (hasSellableStock(product) ? inStock : outOfStock).push(product);
+  }
+
+  if (outOfStock.length === 0 && featuredSlugs.length === 0) return products;
+
+  return [...orderGroup(inStock), ...orderGroup(outOfStock)];
 }
 
 /** Editorial media, with anything that fails the trusted-URL contract dropped. */

@@ -139,11 +139,13 @@ export async function listConfiguredStorefrontDiscoveryPage({
   discovery,
   pageSize,
   allowCuratedComponents = false,
+  inStockFirst,
   now,
 }: {
   discovery: StorefrontDiscoveryQuery;
   pageSize: number;
   allowCuratedComponents?: boolean;
+  inStockFirst?: boolean;
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
@@ -152,6 +154,7 @@ export async function listConfiguredStorefrontDiscoveryPage({
     discovery,
     pageSize,
     allowCuratedComponents,
+    inStockFirst,
     now,
   });
 }

@@ -4,6 +4,7 @@ import { resolveStorefrontPromotionRefresh } from "./storefront-promotion-freshn
 import { withListingFlashSale } from "./storefront-listing-flash-sale.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
+import { isCollectionDefaultSort } from "./collection-discovery-url.ts";
 import { toStorefrontCollectionTitle } from "./collection-definition.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { withAdvisorySellableStock } from "./capacity-advisory.ts";
@@ -646,6 +647,25 @@ function buildSortPrice(variantFilters: readonly Prisma.Sql[]) {
   `;
 }
 
+function buildInStockOrder(variantFilters: readonly Prisma.Sql[]) {
+  const extraFilters =
+    variantFilters.length > 0
+      ? Prisma.sql`AND ${Prisma.join([...variantFilters], " AND ")}`
+      : Prisma.sql``;
+  return Prisma.sql`
+    CASE
+      WHEN EXISTS (
+        SELECT 1
+        FROM "variant_stock" vf
+        WHERE vf."productId" = p."id"
+          AND vf."sellableStock" > 0
+          ${extraFilters}
+      ) THEN 0
+      ELSE 1
+    END ASC,
+  `;
+}
+
 function buildDiscoveryOrder(
   sort: StorefrontDiscoveryQuery["sort"],
   categoryKey?: string | null,
@@ -913,6 +933,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     pageSize,
     discovery,
     allowCuratedComponents = false,
+    inStockFirst,
     now = new Date(),
   }: {
     shopId: number;
@@ -920,6 +941,11 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     discovery: StorefrontDiscoveryQuery;
     /** Trusted collection-route opt-in; never derived from URL search parameters. */
     allowCuratedComponents?: boolean;
+    /**
+     * Whether in-stock products lead before out-of-stock products.
+     * Defaults to true for collections under their default sort.
+     */
+    inStockFirst?: boolean;
     /**
      * One request clock. Count, ordering, hydration and query-wide transition aggregation all use
      * this instant so a window cannot open halfway through one response.
@@ -931,6 +957,10 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     const { productPredicate, variantFilters } = buildProductPredicate(shopId, discovery, allowCuratedComponents);
     const transitionProductPredicate = buildTransitionProductPredicate(shopId, discovery, allowCuratedComponents);
     const sortPrice = buildSortPrice(variantFilters);
+    const shouldSortInStockFirst =
+      inStockFirst ??
+      Boolean(discovery.collection && isCollectionDefaultSort(discovery.collection, discovery.sort));
+    const inStockOrder = shouldSortInStockFirst ? buildInStockOrder(variantFilters) : Prisma.sql``;
     const orderBy = buildDiscoveryOrder(discovery.sort, discovery.categoryKey);
     const variantStockCte = buildVariantStockCte(now);
 
@@ -948,7 +978,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
         FROM "ProductMirror" p
         LEFT JOIN "ProductContent" pc ON pc."productId" = p."id"
         WHERE ${productPredicate}
-        ORDER BY ${orderBy}
+        ORDER BY ${inStockOrder} ${orderBy}
         LIMIT ${safePageSize}
         OFFSET ${offset}
       `),

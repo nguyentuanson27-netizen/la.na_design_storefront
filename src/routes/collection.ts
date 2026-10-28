@@ -57,11 +57,13 @@ export async function loadCollectionRoute({
     const query = await searchParams;
     discovery = parseCollectionDiscoverySearchParams(collection.slug, query);
     const requestNow = new Date();
+    const inStockFirst = isCollectionDefaultSort(collection.slug, discovery.sort);
     [catalogPage, facets] = await Promise.all([
       listConfiguredStorefrontDiscoveryPage({
         discovery,
         pageSize: COLLECTION_PAGE_SIZE,
         allowCuratedComponents: true,
+        inStockFirst,
         now: requestNow,
       }),
       listConfiguredCollectionDiscoveryFacets({ discovery, now: requestNow }),

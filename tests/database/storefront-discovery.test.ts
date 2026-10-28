@@ -546,6 +546,30 @@ test("discovery collection filter requires published CollectionDefinition while 
   assert.deepEqual(essentialsFiltered.products.map(({ name }) => name), ["Stone Trouser"]);
 });
 
+test("collection default sort orders in-stock products first before out-of-stock products", async () => {
+  await seedProduct({
+    id: "a-out-of-stock",
+    name: "A Out Of Stock",
+    collectionSlugs: ["city-uniform"],
+    color: "Black",
+    size: "M",
+    price: 500_000,
+    stock: 0,
+  });
+
+  const page = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ collection: "city-uniform" }),
+  });
+
+  assert.deepEqual(page.products.map(({ name }) => name), [
+    "Linen Overshirt",
+    "Olive Shirt",
+    "A Out Of Stock",
+  ]);
+});
+
 test("scoped facets offer only sizes the grid could still list, and keep the one picked", async () => {
   await seedProduct({
     id: "scoped-sold-out",
