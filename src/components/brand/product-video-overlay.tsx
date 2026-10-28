@@ -7,7 +7,7 @@ import { createPdpVideoPlaybackReporter } from "@/components/headless/pdp-video-
 import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
 import { pdpProductImageLoader } from "@/components/headless/pdp-image-loader";
 import { useDocumentLoaded } from "@/components/headless/use-document-loaded";
-import { DESKTOP_VIDEO_MEDIA, useInlineVideoAllowed } from "@/components/headless/use-inline-video-allowed";
+import { useDesktopVideoLayout, useInlineVideoAllowed } from "@/components/headless/use-inline-video-allowed";
 
 function releaseVideo(video: HTMLVideoElement | null) {
   if (!video) return;
@@ -20,8 +20,12 @@ function releaseVideo(video: HTMLVideoElement | null) {
 /**
  * One product-wide overlay, outside both photo tracks and their navigation hit areas.
  *
- * The frame is a 9:16 muted, looping preview that starts by itself; tapping it opens the same video
- * in a dialog with sound and controls. The preview costs the photographs nothing: the poster is an
+ * The frame is a 9:16 muted, looping preview that starts by itself: on the photograph below `lg`, a
+ * floating mini-player pinned to the viewport's bottom right from `lg` while the photographs are in
+ * view (with a close button that leaves the small poster tile on the photograph; scrolling on to the
+ * purchase panel docks it there too). Tapping it opens the same video in a dialog with
+ * sound and controls, which carries on from the second the preview had reached rather than
+ * restarting, and hands the second it left off at back to the preview. The preview costs the photographs nothing: the poster is an
  * optimised photograph that paints with the page, and the video is requested only once the document
  * has loaded, so it never competes with the hero image. It is left out entirely under reduced
  * motion, Data Saver or a 2G link, where the frame stays a poster and the dialog remains one tap away.
@@ -43,7 +47,12 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const documentLoaded = useDocumentLoaded();
   const inlineAllowed = useInlineVideoAllowed();
-  const showPreview = documentLoaded && inlineAllowed && !previewFailed;
+  const desktop = useDesktopVideoLayout();
+  const [dismissed, setDismissed] = useState(false);
+  const resumeAt = useRef(0);
+  const [galleryInView, setGalleryInView] = useState(true);
+  const floating = desktop && documentLoaded && inlineAllowed && !previewFailed && !dismissed && galleryInView;
+  const showPreview = documentLoaded && inlineAllowed && !previewFailed && !(desktop && dismissed);
 
   // The connection (DNS, TLS) is warm by the time the preview asks for its first bytes.
   preconnect(new URL(video.src).origin);
@@ -63,6 +72,29 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
     };
   }, [showPreview]);
 
+  // The mini-player floats while the photographs are being looked at and docks back onto them once
+  // the shopper scrolls on towards the purchase panel, which is where it would otherwise sit over the
+  // price and the buy buttons.
+  useEffect(() => {
+    if (!desktop) return;
+    const gallery = opener.current?.closest(".pdp-stage");
+    if (!gallery) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      setGalleryInView(gallery.getBoundingClientRect().bottom >= window.innerHeight * 0.75);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [desktop]);
+
   function failPreview() {
     releaseVideo(preview.current);
     setPreviewPlaying(false);
@@ -78,15 +110,22 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
     };
   }, [requested, video.src, reporting]);
 
-  // On the phone layout the shopper's tap is the request to play, so it plays at once; desktop keeps
-  // its player waiting for the shopper's own play. An explicit `play()` rather than
-  // the `autoplay` attribute: it raises `play` immediately, which starts the startup deadline even
-  // when the first byte never arrives.
+  // The shopper's tap is the request to play, so it plays at once, from where the preview was. An
+  // explicit `play()` rather than the `autoplay` attribute: it raises `play` immediately, which
+  // starts the startup deadline even when the first byte never arrives.
   useEffect(() => {
-    if (requested && !window.matchMedia(DESKTOP_VIDEO_MEDIA).matches) void player.current?.play().catch(() => undefined);
+    const element = player.current;
+    if (!requested || !element) return;
+    // Set before any data: the browser applies it as the start position once the metadata is in.
+    if (resumeAt.current > 0) element.currentTime = resumeAt.current;
+    void element.play().catch(() => undefined);
   }, [requested]);
 
   function close() {
+    const watched = player.current;
+    if (preview.current && watched && !watched.ended && watched.currentTime > 0) {
+      preview.current.currentTime = watched.currentTime;
+    }
     reporting.close();
     releaseVideo(player.current);
     setRequested(false);
@@ -97,7 +136,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
   }
 
   return (
-    <>
+    <div className="pdp-video-slot" data-float={floating ? "true" : "false"}>
       <button
         ref={opener}
         type="button"
@@ -109,6 +148,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
             releaseVideo(player.current);
           }));
           setFailed(false);
+          resumeAt.current = preview.current?.currentTime ?? 0;
           setRequested(true);
           previewHeld.current = true;
           preview.current?.pause();
@@ -146,10 +186,23 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
           Xem video
         </span>
       </button>
+      {floating ? (
+        <button
+          type="button"
+          className="pdp-video-slot__close"
+          aria-label="Đóng video nhỏ"
+          onClick={() => {
+            setDismissed(true);
+            opener.current?.focus({ preventScroll: true });
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+      ) : null}
       <dialog
         ref={dialog}
         aria-labelledby={titleId}
-        className="pointer-events-auto m-auto max-h-[92dvh] w-[92vw] max-w-md overflow-y-auto lg:max-w-3xl border-0 bg-[#FAF7F2] p-4 text-[#3B2219] shadow-2xl backdrop:bg-black/60"
+        className="pointer-events-auto m-auto max-h-[92dvh] w-[92vw] max-w-md overflow-y-auto border-0 bg-[#FAF7F2] p-4 text-[#3B2219] shadow-2xl backdrop:bg-black/60"
         onCancel={(event) => { event.preventDefault(); close(); }}
         onClose={() => { if (!dialog.current?.open) close(); }}
       >
@@ -158,7 +211,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
           <button type="button" className="min-h-11 min-w-11 px-2 underline focus-visible:outline-2 focus-visible:outline-offset-2" onClick={close}>Đóng</button>
         </div>
         {requested ? (
-          <video ref={player} controls playsInline preload="none" poster={video.poster} tabIndex={0} aria-label={`Video ${productName}`} className="mx-auto block aspect-[9/16] h-[min(78dvh,720px)] max-w-full bg-black object-contain lg:aspect-auto lg:h-auto lg:max-h-[70dvh] lg:w-full" onLoadedMetadata={(event) => {
+          <video ref={player} controls playsInline preload="none" poster={video.poster} tabIndex={0} aria-label={`Video ${productName}`} className="mx-auto block aspect-[9/16] h-auto w-[min(100%,calc(min(78dvh,720px)*9/16))] bg-black object-contain" onLoadedMetadata={(event) => {
             const element = event.currentTarget;
             // Some browsers accept an HEVC container's AAC track but silently discard the video.
             // A running audio clock is not evidence that the shopper can see a product video.
@@ -175,6 +228,6 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
         ) : null}
         {failed ? <p role="alert" className="mt-3 text-sm">Chưa phát được video. Nàng có thể đóng để xem ảnh và tiếp tục mua hàng.</p> : null}
       </dialog>
-    </>
+    </div>
   );
 }

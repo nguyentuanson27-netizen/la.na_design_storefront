@@ -3293,6 +3293,24 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   font-weight: 600;
 }
 .pdp-video-tile__label svg { width: 16px; height: 16px; }
+/* The slot only groups the tile with its close button: no box of its own, so the tile positions
+   against the photograph exactly as before. */
+.pdp-video-slot { display: contents; }
+.pdp-video-slot__close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #000a;
+  color: white;
+}
+.pdp-video-slot__close svg { width: 16px; height: 16px; }
+.pdp-video-slot__close:focus-visible { outline: 3px solid var(--paper); outline-offset: 2px; box-shadow: 0 0 0 6px var(--chocolate); }
 @media (min-width: 1024px) {
   .pdp-video-anchor {
     right: auto;
@@ -3301,6 +3319,23 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     justify-content: center;
   }
   .pdp-video-anchor[data-single-image="true"] { width: 100%; }
-  /* Desktop keeps the original small poster tile; the 9:16 preview is the phone layout's. */
+  /* The small poster tile on the photograph: the desktop layout before the preview is up, and after
+     the shopper has closed the mini-player. */
   .pdp-video-tile { right: 1rem; bottom: 4.5rem; width: 96px; height: 76px; aspect-ratio: auto; }
+  /* The mini-player: pinned to the viewport's bottom right, in the column above the chat button,
+     so it stays with the shopper while the product is read. Under the header, menus and dialogs
+     (50), over the page. */
+  .pdp-video-slot[data-float="true"] {
+    display: block;
+    position: fixed;
+    z-index: 44;
+    right: 1.5rem;
+    bottom: 6.5rem;
+    width: 168px;
+    aspect-ratio: 9 / 16;
+    pointer-events: auto;
+  }
+  /* Docked back on the photograph: a poster tile again, its preview resting until it floats again. */
+  .pdp-video-slot[data-float="false"] .pdp-video-tile__preview { display: none; }
+  .pdp-video-slot[data-float="true"] .pdp-video-tile { inset: 0; width: 100%; height: 100%; aspect-ratio: auto; box-shadow: 0 4px 16px #0005; }
 }

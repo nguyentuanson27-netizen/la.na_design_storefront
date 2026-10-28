@@ -80,7 +80,8 @@ test.beforeEach(async ({ page }) => { output = ""; await state("READY"); await i
 test.afterAll(async () => { await stop(); await cleanup(); await prisma.$disconnect(); });
 
 for (const width of [320, 390, 768, 1024, 1440]) {
-  test(`one overlay, photo count and collision-free layout at ${width}px: ${width < 1024 ? "9:16 muted autoplaying preview" : "the original poster tile"}`, async ({ page }) => {
+  const floatingLayout = width >= 1024;
+  test(`one overlay, photo count and collision-free layout at ${width}px: ${floatingLayout ? "floating mini-player" : "9:16 frame on the photo"}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await serveVideo(page);
     await page.goto(`${BASE}/shop/${slug}`);
@@ -88,57 +89,83 @@ for (const width of [320, 390, 768, 1024, 1440]) {
     await expect(tile).toHaveCount(1);
     await expect(tile).toBeVisible();
     await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
+    // The preview starts by itself once the page has loaded: muted, looping, inline, decorative.
     const preview = tile.locator("video");
-    if (width < 1024) {
-      // The preview starts by itself once the page has loaded: muted, looping, inline, decorative.
-      await expect(preview).toHaveCount(1);
-      await expect(preview).toHaveAttribute("aria-hidden", "true");
-      expect(await preview.evaluate((element: HTMLVideoElement) => [element.muted, element.loop, element.playsInline])).toEqual([true, true, true]);
-      await expect(preview).toHaveAttribute("data-playing", "true");
-      await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
-    } else {
-      // Desktop is the original poster tile: no preview, no video request before the shopper asks.
-      await page.waitForLoadState("load");
-      await page.waitForTimeout(300);
-      await expect(page.locator("video, source")).toHaveCount(0);
-    }
-    const counter = page.locator(width < 1024 ? ".pdp-mobile-gallery__counter" : ".pdp-stage__counter");
-    await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
+    await expect(preview).toHaveCount(1);
+    await expect(preview).toHaveAttribute("aria-hidden", "true");
+    expect(await preview.evaluate((element: HTMLVideoElement) => [element.muted, element.loop, element.playsInline])).toEqual([true, true, true]);
+    await expect(preview).toHaveAttribute("data-playing", "true");
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.3);
+    const counter = page.locator(floatingLayout ? ".pdp-stage__counter" : ".pdp-mobile-gallery__counter");
+    await expect(counter).toHaveText(floatingLayout ? "Trang ảnh 1 / 2" : "1/3");
     const t = (await tile.boundingBox())!;
-    if (width < 1024) expect(t.height / t.width, "the phone frame is 9:16 portrait").toBeCloseTo(16 / 9, 1);
-    else expect([t.width, t.height], "the desktop tile is the original 96x76").toEqual([96, 76]);
-    if (width >= 1024) {
-      const primaryPhoto = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
-      expect(t.x, "tile starts inside the primary photo").toBeGreaterThanOrEqual(primaryPhoto.x - 1);
-      expect(t.y, "tile starts inside the primary photo").toBeGreaterThanOrEqual(primaryPhoto.y - 1);
-      expect(t.x + t.width, "tile ends inside the primary photo, not the second photo").toBeLessThanOrEqual(primaryPhoto.x + primaryPhoto.width + 1);
-      expect(t.y + t.height, "tile ends inside the primary photo").toBeLessThanOrEqual(primaryPhoto.y + primaryPhoto.height + 1);
-      expect(primaryPhoto.x + primaryPhoto.width - t.x - t.width).toBeCloseTo(16, 0);
-    }
-    const c = (await counter.boundingBox())!;
-    expect(t.y + t.height).toBeLessThanOrEqual(c.y);
-    const flash = (await page.locator(".pdp-flash-tag").boundingBox())!;
-    expect(flash.x + flash.width <= t.x || flash.y >= t.y + t.height).toBeTruthy();
+    expect(t.height / t.width, "the frame is 9:16 portrait").toBeCloseTo(16 / 9, 1);
     expect(t.width).toBeGreaterThanOrEqual(44);
     expect(t.x + t.width).toBeLessThanOrEqual(width);
+    const c = (await counter.boundingBox())!;
+    const flash = (await page.locator(".pdp-flash-tag").boundingBox())!;
+    expect(flash.x + flash.width <= t.x || flash.y >= t.y + t.height).toBeTruthy();
+    if (floatingLayout) {
+      // A mini-player pinned to the viewport's bottom right, clear of the counter, with a close button.
+      expect(await tile.evaluate((element) => getComputedStyle(element.parentElement!).position)).toBe("fixed");
+      expect(t.width).toBe(168);
+      expect(width - t.x - t.width).toBeCloseTo(24, 0);
+      expect(t.y + t.height).toBeLessThanOrEqual(c.y);
+      await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toBeVisible();
+      const slotAxe = await new AxeBuilder({ page }).include(".pdp-video-slot").withTags(BUYER_AXE_TAGS).analyze();
+      expect(slotAxe.violations).toEqual([]);
+      // It floats while the photographs are in view, then docks back onto them instead of sitting
+      // over the price and buy buttons in the purchase panel.
+      const slot = page.locator(".pdp-video-slot");
+      await page.mouse.wheel(0, 200);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(100);
+      await expect(slot).toHaveAttribute("data-float", "true");
+      await page.mouse.wheel(0, 700);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
+      await expect(slot).toHaveAttribute("data-float", "false");
+      await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toHaveCount(0);
+      await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect(slot).toHaveAttribute("data-float", "true");
+      await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
+    } else {
+      expect(t.y + t.height).toBeLessThanOrEqual(c.y);
+    }
+
+    // Opening carries on from where the preview was, with sound controls, and does not restart.
+    const before = await preview.evaluate((element: HTMLVideoElement) => element.currentTime);
     await tile.click();
     const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
     await expect(dialog).toBeVisible();
-    await expect(dialog.locator("video")).toHaveAttribute("preload", "none");
-    if (width < 1024) {
-      // The dialog holds the shopper's attention: the inline preview stands still until it closes.
-      await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
-    } else {
-      // Desktop waits for the shopper's own play.
-      expect(await dialog.locator("video").evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
-    }
+    const watched = dialog.locator("video");
+    await expect(watched).toHaveAttribute("preload", "none");
+    await expect.poll(() => watched.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThanOrEqual(before - 0.1);
+    await expect.poll(() => watched.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
+    const box = (await watched.boundingBox())!;
+    expect(box.height / box.width, "the dialog player is 9:16 portrait").toBeCloseTo(16 / 9, 1);
+    // The dialog holds the shopper's attention: the inline preview stands still until it closes.
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
     await page.keyboard.press("Escape");
     await expect(dialog).not.toBeVisible();
     await expect(tile).toBeFocused();
     await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
-    if (width < 1024) await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
-    await expect(counter).toHaveText(width < 1024 ? "1/3" : "Trang ảnh 1 / 2");
-    if (width >= 1024) {
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
+
+    if (floatingLayout) {
+      // Closing the mini-player leaves the original small poster tile inside the primary photo.
+      await page.getByRole("button", { name: "Đóng video nhỏ", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toHaveCount(0);
+      await expect(page.locator("video, source")).toHaveCount(0);
+      await expect(tile).toBeFocused();
+      const small = (await tile.boundingBox())!;
+      expect([small.width, small.height]).toEqual([96, 76]);
+      const primaryPhoto = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
+      expect(small.x).toBeGreaterThanOrEqual(primaryPhoto.x - 1);
+      expect(small.y).toBeGreaterThanOrEqual(primaryPhoto.y - 1);
+      expect(small.x + small.width).toBeLessThanOrEqual(primaryPhoto.x + primaryPhoto.width + 1);
+      expect(small.y + small.height).toBeLessThanOrEqual(primaryPhoto.y + primaryPhoto.height + 1);
+      expect(primaryPhoto.x + primaryPhoto.width - small.x - small.width).toBeCloseTo(16, 0);
+      expect(small.y + small.height).toBeLessThanOrEqual(c.y);
       await page.getByRole("button", { name: "Ảnh tiếp theo", exact: true }).click();
       await expect(counter).toHaveText("Trang ảnh 2 / 2");
       await page.getByRole("button", { name: "Ảnh trước", exact: true }).click();
@@ -153,15 +180,21 @@ for (const width of [320, 390, 768, 1024, 1440]) {
   });
 }
 
-test("one-photo desktop gallery anchors the tile inside its centered primary photo", async ({ page }) => {
+test("one-photo desktop gallery anchors the fallback tile inside its centered primary photo", async ({ page }) => {
+  // Reduced motion leaves the desktop frame a poster: the original small tile on the photograph.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await prisma.variantMirror.updateMany({ where: { product: { pancakeProductId: externalId } }, data: { pancakeImageUrls: [] } });
   try {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${BASE}/shop/${slug}`);
     const tile = page.getByRole("button", { name: "Xem video", exact: true });
     await expect(tile).toHaveCount(1);
+    await page.waitForLoadState("load");
+    await expect(page.locator("video")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toHaveCount(0);
     const photo = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
     const t = (await tile.boundingBox())!;
+    expect([t.width, t.height]).toEqual([96, 76]);
     expect(t.x).toBeGreaterThanOrEqual(photo.x - 1);
     expect(t.y).toBeGreaterThanOrEqual(photo.y - 1);
     expect(t.x + t.width).toBeLessThanOrEqual(photo.x + photo.width + 1);

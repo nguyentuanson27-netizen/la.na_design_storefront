@@ -6,7 +6,7 @@ type ConnectionHints = Readonly<{ saveData?: boolean; effectiveType?: string }>;
 
 const SLOW_CONNECTIONS = new Set(["slow-2g", "2g"]);
 
-/** The `lg` seam: the preview belongs to the phone layout, desktop keeps its poster tile. */
+/** The `lg` seam: below it the preview is a frame on the photograph, from it a floating mini-player. */
 export const DESKTOP_VIDEO_MEDIA = "(min-width: 1024px)";
 
 function subscribeToLayout(onStoreChange: () => void) {
@@ -16,7 +16,6 @@ function subscribeToLayout(onStoreChange: () => void) {
 }
 
 function inlineVideoAllowed(): boolean {
-  if (window.matchMedia(DESKTOP_VIDEO_MEDIA).matches) return false;
   // Motion that starts by itself and never stops needs the shopper's consent (WCAG 2.2.2); the
   // operating system's reduced-motion setting is that consent withheld.
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
@@ -26,11 +25,19 @@ function inlineVideoAllowed(): boolean {
 }
 
 /**
- * Whether a looping, muted preview may start without being asked for: on the phone layout only, not
- * under reduced motion, not with Data Saver on and not on a 2G link, where the photographs alone are
- * what the shopper can afford. False on the server and during hydration, so the markup both render
- * agrees.
+ * Whether a looping, muted preview may start without being asked for: not under reduced motion, not
+ * with Data Saver on and not on a 2G link, where the photographs alone are what the shopper can
+ * afford. False on the server and during hydration, so the markup both render agrees.
  */
 export function useInlineVideoAllowed(): boolean {
   return useSyncExternalStore(subscribeToLayout, inlineVideoAllowed, () => false);
+}
+
+function desktopLayout(): boolean {
+  return window.matchMedia(DESKTOP_VIDEO_MEDIA).matches;
+}
+
+/** Whether the desktop layout is showing. False on the server and during hydration. */
+export function useDesktopVideoLayout(): boolean {
+  return useSyncExternalStore(subscribeToLayout, desktopLayout, () => false);
 }

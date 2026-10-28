@@ -55,32 +55,42 @@ The PDP detail repository reads video fields only when the flag is exactly
 items, photo counts and variant-to-photo mappings do not acquire video fields.
 The route passes that small projection to the existing media stage.
 
-Below `lg` (phone layout) the video is one 9:16 frame on the photograph's right edge, about a quarter
-of the photo's height above its bottom. From `lg` up the original 96x76 poster tile above the counter
-is kept unchanged: no preview, and the dialog stays landscape and waits for the shopper's own play.
-Both sit outside desktop navigation and mobile swipe tracks. On desktop the containing frame matches the first photograph's portrait cell in the left half, or the
-centered photo for a one-image gallery.
+The video is one 9:16 frame at every width; where it sits depends on the layout. Below `lg` (phone)
+it is a frame on the photograph's right edge, about a quarter of the photo's height above its bottom,
+outside the swipe track. From `lg` up it is a floating mini-player (168 px wide, pinned 1.5 rem from
+the viewport's right and 6.5 rem from its bottom, in the column above the chat button, z-index 44,
+under the header and dialogs) with a close button (`Đóng video nhỏ`).
 
-On the phone layout the frame is a muted, looping, `playsInline` preview that starts by itself
-(supersedes v0.3's "no page-load autoplay" there only; the owner asked for it). It is built to cost the photographs nothing:
+The frame is a muted, looping, `playsInline` preview that starts by itself (supersedes v0.3's "no
+page-load autoplay"; the owner asked for it). It is built to cost the photographs nothing:
 
 - The poster is an optimized photograph (`sizes="120px"`) that paints with the page; the preview
   fades in over it only once it is really `playing`, so a slow start shows the photo, not black.
 - The `<video>` is mounted only after the window `load` event, so it never competes with the hero
   image, and `react-dom`'s `preconnect` warms the video origin during SSR.
 - It plays only while at least 25% on screen and pauses while the dialog is open.
-- It is not mounted at all on desktop (`min-width: 1024px`), nor under `prefers-reduced-motion`, Data Saver or a 2G link
+- It is not mounted at all under `prefers-reduced-motion`, Data Saver or a 2G link
   (`use-inline-video-allowed.ts`); the frame stays a poster and the dialog is one tap away.
 - A load error, or metadata with no picture (HEVC discarded by the browser), removes the preview and
   leaves the poster. It sends no telemetry, so attempt/failure counters still mean explicit openings.
 
-Tapping the frame opens a native modal dialog (9:16, `max-w-md`). Only that tap mounts
-`<video controls playsInline preload="none">` with an MP4 source and calls `play()` explicitly (not the
-`autoplay` attribute, so `play` fires at once and the 15 s startup deadline runs even if no byte
-arrives). Closing or pressing Escape pauses the player, removes its source, unloads it and restores
-focus. Unmounting also releases playback. Media errors show a short message and leave selection,
-photography and purchasing available. No CSP expansion, remote fetch/proxy, transcoding or new
-polling job is needed.
+Desktop mini-player rules. It floats only while the photographs are in view (the gallery's bottom edge
+is in the top three quarters of the viewport); scrolling on towards the purchase panel docks it back
+onto the photograph, where it would otherwise sit over the price and the buy buttons, and scrolling
+back up floats it again. Closing it with the button dismisses it for that page view: the original
+small 96x76 poster tile (no preview) stays on the photograph's right edge, and so does the tile when
+the preview is not allowed. Before the page has loaded the tile is that same small poster tile.
+Dismissal is not remembered across pages.
+
+Tapping the frame opens a native modal dialog with a 9:16 player (`max-w-md`, the same on every width).
+Only that tap mounts `<video controls playsInline preload="none">` with an MP4 source and calls
+`play()` explicitly (not the `autoplay` attribute, so `play` fires at once and the 15 s startup
+deadline runs even if no byte arrives). It carries on from the second the preview had reached (the
+default playback start position is set before any data) rather than from 0, and closing hands the
+second it left off at back to the preview. Closing or pressing Escape pauses the player, removes its
+source, unloads it and restores focus. Unmounting also releases playback. Media errors show a short
+message and leave selection, photography and purchasing available. No CSP expansion, remote
+fetch/proxy, transcoding or new polling job is needed.
 
 ### Keeping the first frame fast
 
@@ -99,7 +109,7 @@ then re-uses the preview's cached bytes.
 | Defaults, transitions, atomic rollback, idempotence, shop ownership, hidden/locked/zero-stock variants, reactivation and unchanged commerce/editorial facts | `tests/database/pancake-product-video.test.ts` |
 | Failed/incomplete pagination leaves READY unchanged | `tests/database/pancake-product-video.test.ts`, `tests/integrations/catalog-sync.test.ts` |
 | Flag/state/MP4/photo gate; UNKNOWN retention suppressed | Domain, database and rendered-browser tests |
-| One 9:16 frame inside the primary photo (two-photo and single-photo desktop layouts); counters/navigation/Flash Sale; 320/390/768/1024/1440 px; muted autoplaying preview, poster fallback, reduced-motion opt-out | `tests/a11y-runtime/pdp-pancake-video.spec.ts` |
+| One 9:16 frame inside the primary photo (two-photo and single-photo desktop layouts); counters/navigation/Flash Sale; 320/390/768/1024/1440 px; muted autoplaying preview, desktop floating mini-player (docks on scroll, closes to the small tile), resume-from-preview, poster fallback, reduced-motion opt-out | `tests/a11y-runtime/pdp-pancake-video.spec.ts` |
 | Native playback/seek, close/Escape/focus, Axe, media failure, retained size and usable purchase controls | Same Playwright suite, against a production build |
 
 The 2.2 KB synthetic browser MP4 fixture was generated without audio or external
