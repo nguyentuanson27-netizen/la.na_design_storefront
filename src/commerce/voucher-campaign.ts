@@ -20,6 +20,8 @@ export const voucherCampaignSelection = {
   issuance: true,
   visibility: true,
   code: true,
+  typeId: true,
+  type: { select: { id: true, name: true, priority: true, issuance: true, visibility: true, code: true } },
   discountType: true,
   fixedAmountVnd: true,
   percent: true,
@@ -45,6 +47,14 @@ export const voucherCampaignSelection = {
 
 export type VoucherCampaignRow = Prisma.VoucherCampaignGetPayload<{ select: typeof voucherCampaignSelection }>;
 
+/** The type a typed tier belongs to (ADR 0020): the unit that decides "only one voucher of this type". */
+export type VoucherTypeRef = Readonly<{
+  id: string;
+  name: string;
+  /** Application order across types, smaller first. */
+  priority: number;
+}>;
+
 export type VoucherLedger = Readonly<{
   redeemedUses: number;
   redeemedVnd: number;
@@ -61,7 +71,15 @@ export type VoucherCampaign = VoucherCampaignValues &
     isEnabled: boolean;
     enabledAt: Date | null;
     disabledAt: Date | null;
+    /** Present for a tier of a type; absent or null for a v1 campaign and for SHIPPING_FREE. */
+    type?: VoucherTypeRef | null;
   }>;
+
+/** The one-per-checkout key of a campaign (ADR 0020 D-1). */
+export function voucherSlotOf(campaign: Readonly<{ kind: "MERCHANDISE" | "SHIPPING_FREE"; type?: VoucherTypeRef | null }>): string {
+  if (campaign.kind === "SHIPPING_FREE") return "SHIPPING_FREE";
+  return campaign.type ? `MERCHANDISE:${campaign.type.id}` : "MERCHANDISE";
+}
 
 function toSafeNumber(value: bigint | null): number | null {
   if (value === null) return null;
@@ -72,6 +90,10 @@ function toSafeNumber(value: bigint | null): number | null {
 
 /** The validation input an Admin form would send for this row; the inverse of the write mapping. */
 export function voucherRowToInput(row: VoucherCampaignRow): Record<string, unknown> {
+  // A tier owns neither a code nor its own distribution: it reads them from its type, and a copy that disagrees with
+  // the type is a corrupt row, which validation then refuses (the database keeps them equal by trigger).
+  const type = row.type;
+  const typeAgrees = type === null || (type.issuance === row.issuance && type.visibility === row.visibility && row.code === null);
   const discount =
     row.kind === "SHIPPING_FREE"
       ? null
@@ -82,8 +104,8 @@ export function voucherRowToInput(row: VoucherCampaignRow): Record<string, unkno
     name: row.name,
     kind: row.kind,
     issuance: row.issuance,
-    visibility: row.visibility,
-    code: row.code,
+    visibility: typeAgrees ? row.visibility : "INVALID",
+    code: type === null ? row.code : type.code,
     discount,
     minEligibleSubtotalVnd: toSafeNumber(row.minEligibleSubtotalVnd),
     scope:
@@ -100,8 +122,10 @@ export function voucherRowToInput(row: VoucherCampaignRow): Record<string, unkno
 export function toVoucherCampaign(row: VoucherCampaignRow): VoucherCampaign {
   const parsed = validateVoucherCampaign(voucherRowToInput(row));
   if (!parsed.ok) throw new RangeError("Invalid persisted voucher campaign");
+  if ((row.typeId === null) !== (row.type === null) || (row.type !== null && row.kind !== "MERCHANDISE")) throw new RangeError("Invalid persisted voucher tier");
   return Object.freeze({
     ...parsed.value,
+    type: row.type === null ? null : Object.freeze({ id: row.type.id, name: row.type.name, priority: row.type.priority }),
     id: row.id,
     pancakeShopId: row.pancakeShopId,
     revision: row.revision,

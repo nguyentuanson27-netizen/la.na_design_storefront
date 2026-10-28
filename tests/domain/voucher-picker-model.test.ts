@@ -6,7 +6,7 @@ import type { VoucherCampaign } from "../../src/commerce/voucher-campaign.ts";
 import { toVoucherCard } from "../../src/commerce/voucher-candidate-repository.ts";
 import { buildVoucherQuote, type VoucherQuote, type VoucherQuoteInput } from "../../src/commerce/voucher-quote.ts";
 import { validateVoucherCampaign } from "../../src/commerce/voucher-rule-validation.ts";
-import { buildVoucherPickerModel, formatVoucherVnd } from "../../src/routes/voucher-picker-model.ts";
+import { buildVoucherPickerModel, formatVoucherVnd, voucherPickerKey } from "../../src/routes/voucher-picker-model.ts";
 
 const SHOP = 940_013;
 const line = (lineId: string, quantity: number, unitPriceVnd: number): VoucherPaidLine => ({ lineId, product: { productId: lineId, shopId: String(SHOP), categoryKeys: [] }, quantity, unitPriceVnd });
@@ -25,7 +25,7 @@ function model(campaigns: VoucherCampaign[], lines: VoucherPaidLine[], overrides
   assert.equal(quote.ok, true);
   const ok = quote as Extract<VoucherQuote, { ok: true }>;
   const cards = new Map(campaigns.map((c) => [c.id, toVoucherCard(c)]));
-  return { ok, view: buildVoucherPickerModel({ quote: ok, entries: ok.cards.map((state) => ({ card: cards.get(state.campaignId)!, state })) }) };
+  return { ok, view: buildVoucherPickerModel({ quote: ok, entries: ok.cards.map((state) => ({ card: cards.get(state.campaignId)!, state })), ...(overrides.selection ? { intent: overrides.selection } : {}) }) };
 }
 
 test("money is formatted the way the storefront does: 30.000đ", () => {
@@ -90,7 +90,7 @@ test("the selected card and the NONE option follow the server's choice; the foot
 test("the summary reconciles and words every line: subtotal, discounts, fee, total", () => {
   const { view } = model([fixed("m", 30_000, 100_000), freeship("s", null)], [line("a", 1, 620_000)]);
   assert.deepEqual(view.summary, {
-    paidBeforeText: "620.000đ", merchandiseDiscountText: "-30.000đ", shippingFeeText: "0đ", shippingDiscountText: "-30.000đ", totalText: "590.000đ", totalVnd: 590_000,
+    paidBeforeText: "620.000đ", merchandiseDiscountText: "-30.000đ", merchandiseLines: [], shippingFeeText: "0đ", shippingDiscountText: "-30.000đ", totalText: "590.000đ", totalVnd: 590_000,
   });
 });
 
@@ -105,13 +105,13 @@ test("warnings: a lost gift, and the manual choice that raises the total with it
 
   const ex06 = model([fixed("m10", 10_000, 50_000)], [line("a", 1, 100_000)], {
     campaignShippingFeeVnd: (hasOther) => (hasOther ? 30_000 : 0),
-    selection: { merchandise: { mode: "MANUAL", voucherId: "m10" }, shipping: { mode: "AUTO" } },
+    selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: "m10" } }, shipping: { mode: "AUTO" } },
   });
   assert.equal(ex06.view.warnings.totalIncrease, "Phí vận chuyển tăng 30.000đ; tổng đơn tăng 20.000đ so với không dùng voucher.");
 });
 
 test("a stale manual choice becomes a plain notice, never an internal code", () => {
-  const { view } = model([fixed("m", 30_000, 100_000)], [line("a", 1, 620_000)], { selection: { merchandise: { mode: "MANUAL", voucherId: "gone" }, shipping: { mode: "AUTO" } } });
+  const { view } = model([fixed("m", 30_000, 100_000)], [line("a", 1, 620_000)], { selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: "gone" } }, shipping: { mode: "AUTO" } } });
   assert.deepEqual(view.warnings.notices, ["Voucher giảm tiền hàng đã chọn không còn dùng được cho giỏ này, nên đã chọn lại ưu đãi tốt nhất."]);
 });
 
@@ -128,4 +128,44 @@ test("a private code is never shown in the model; a public code voucher exposes 
 test("the model carries no internal fields: ledger, budget, shop id, campaign revision or amounts the browser could trust", () => {
   const { view } = model([fixed("m", 30_000, 100_000, { maxUses: 5, maxBudgetVnd: 1_000_000 })], [line("a", 1, 620_000)]);
   assert.doesNotMatch(JSON.stringify(view), /maxUses|maxBudget|reserved|redeemed|pancakeShopId|revision/i);
+});
+
+// --- ADR 0020: one group per type ------------------------------------------------------------------------------------
+
+const withType = (c: VoucherCampaign, id: string, name: string, priority: number): VoucherCampaign => ({ ...c, type: { id, name, priority } });
+const tierOf = (id: string, typeId: string, name: string, priority: number, amountVnd: number, min: number) => withType(fixed(id, amountVnd, min), typeId, name, priority);
+
+test("ADR 0020: one group per type in application order, then shipping; each tier is a radio of its own type", () => {
+  const campaigns = [tierOf("b500", "B", "Theo danh mục", 2, 10_000, 500_000), tierOf("a500", "A", "Theo đơn hàng", 1, 30_000, 500_000), tierOf("a1m", "A", "Theo đơn hàng", 1, 80_000, 1_000_000), freeship("s", null)];
+  const { view } = model(campaigns, [line("a", 1, 1_020_000)]);
+  assert.deepEqual(view.groups.map((g) => [g.slot, g.kind, g.heading, g.hint]), [
+    ["MERCHANDISE:A", "MERCHANDISE", "Theo đơn hàng", "Chọn 1 mốc"],
+    ["MERCHANDISE:B", "MERCHANDISE", "Theo danh mục", "Chọn 1 mốc"],
+    ["SHIPPING_FREE", "SHIPPING_FREE", "Voucher vận chuyển", "Chọn 1"],
+  ]);
+  assert.deepEqual(view.groups[0]!.items.map((i) => [i.id, i.selected]).sort(), [["a1m", true], ["a500", false]]);
+  assert.equal(view.groups[0]!.noneLabel, "Không dùng voucher “Theo đơn hàng”");
+  assert.equal(view.groups[1]!.items[0]!.selected, true);
+});
+
+test("ADR 0020: the summary lists every applied merchandise voucher when more than one applies", () => {
+  const campaigns = [tierOf("a1m", "A", "Theo đơn hàng", 1, 80_000, 1_000_000), tierOf("b1m", "B", "Theo danh mục", 2, 10_000, 1_000_000)];
+  const { view } = model(campaigns, [line("a", 1, 1_020_000)]);
+  assert.deepEqual(view.summary.merchandiseLines.map((l) => [l.label, l.amountText]), [["Theo đơn hàng", "-80.000đ"], ["Theo danh mục", "-10.000đ"]]);
+  assert.equal(view.summary.merchandiseDiscountText, "-90.000đ");
+  const single = model([tierOf("a1m", "A", "Theo đơn hàng", 1, 80_000, 1_000_000)], [line("a", 1, 1_020_000)]);
+  assert.deepEqual(single.view.summary.merchandiseLines, [], "one voucher keeps the v1 single line");
+});
+
+test("ADR 0020: a locked slot is MANUAL in its own group only; the picker key changes when any slot changes", () => {
+  const campaigns = [tierOf("a500", "A", "Theo đơn hàng", 1, 30_000, 500_000), tierOf("a1m", "A", "Theo đơn hàng", 1, 80_000, 1_000_000), tierOf("b500", "B", "Theo danh mục", 2, 10_000, 500_000)];
+  const auto = model(campaigns, [line("a", 1, 1_020_000)]);
+  const locked = model(campaigns, [line("a", 1, 1_020_000)], { selection: { merchandise: { "MERCHANDISE:A": { mode: "MANUAL", voucherId: "a500" } }, shipping: { mode: "AUTO" } } });
+  assert.deepEqual(locked.view.groups.map((g) => [g.slot, g.mode]), [["MERCHANDISE:A", "MANUAL"], ["MERCHANDISE:B", "AUTO"], ["SHIPPING_FREE", "AUTO"]]);
+  assert.equal(voucherPickerKey(auto.view) === voucherPickerKey(locked.view), false);
+});
+
+test("ADR 0020: with no card at all the untyped merchandise group is still listed, empty (v1 shape)", () => {
+  const { view } = model([], [line("a", 1, 100_000)]);
+  assert.deepEqual(view.groups.map((g) => [g.slot, g.items.length]), [["MERCHANDISE", 0], ["SHIPPING_FREE", 0]]);
 });

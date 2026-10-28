@@ -464,15 +464,18 @@ export function buildBenefitCheckoutViewModel(
   const withoutVoucher = stripVoucherSteps(facts);
   const promotions = buildCheckoutPromotionView(withoutVoucher, giftQuantity, render.campaignNames, listedUnitPrices);
   const voucherSaving = voucherSavingVnd(facts);
-  const voucherRow = render.voucher && voucherSaving > 0 && render.voucher.merchandiseCampaignId !== null && voucherSaving === render.voucher.merchandiseDiscountVnd
-    ? Object.freeze({
-        id: `voucher:${render.voucher.merchandiseCampaignId}`,
-        label: render.voucher.names.get(render.voucher.merchandiseCampaignId) ?? "Voucher giảm giá",
-        amountVnd: voucherSaving,
-        amountText: currency.format(voucherSaving),
-      })
-    : null;
-  const voucherConsistent = (voucherSaving === 0) === (voucherRow === null);
+  const voucherRows = render.voucher
+    ? render.voucher.merchandise.map((entry) =>
+        Object.freeze({
+          id: `voucher:${entry.campaignId}`,
+          label: render.voucher!.names.get(entry.campaignId) ?? "Voucher giảm giá",
+          amountVnd: entry.amountVnd,
+          amountText: currency.format(entry.amountVnd),
+        }),
+      )
+    : [];
+  // Every voucher the buyer holds must be a row, and the rows must add up to what the order's lines say the vouchers took.
+  const voucherConsistent = voucherSaving === voucherRows.reduce((sum, row) => sum + row.amountVnd, 0) && voucherSaving === (render.voucher?.merchandiseDiscountVnd ?? 0);
   const shippingVoucher = render.voucher && render.voucher.shippingWaivedVnd > 0 && render.voucher.shippingCampaignId !== null
     ? { label: render.voucher.names.get(render.voucher.shippingCampaignId) ?? "Voucher vận chuyển", waivedVnd: render.voucher.shippingWaivedVnd }
     : undefined;
@@ -480,7 +483,7 @@ export function buildBenefitCheckoutViewModel(
     ? null
     : buildOrderSummary({
         goodsAfterDiscountsVnd: facts.paidSubtotalVnd,
-        discounts: [...(promotions?.savings ?? []), ...(voucherRow ? [voucherRow] : [])],
+        discounts: [...(promotions?.savings ?? []), ...voucherRows],
         shippingFeeVnd: facts.shippingFeeVnd,
         giftQuantity,
         expectedTotalVnd: facts.totalVnd,
@@ -541,7 +544,7 @@ export function buildCheckoutVoucherView(input: Readonly<{
   if (render.kind === "BENEFIT" && render.voucher) {
     const v = render.voucher;
     const lines: CheckoutVoucherLine[] = [];
-    if (v.merchandiseCampaignId !== null) lines.push({ id: v.merchandiseCampaignId, title: v.names.get(v.merchandiseCampaignId) ?? "Voucher giảm giá", amountText: `−${currency.format(v.merchandiseDiscountVnd)}` });
+    for (const entry of v.merchandise) lines.push({ id: entry.campaignId, title: v.names.get(entry.campaignId) ?? "Voucher giảm giá", amountText: `−${currency.format(entry.amountVnd)}` });
     if (v.shippingCampaignId !== null) lines.push({ id: v.shippingCampaignId, title: v.names.get(v.shippingCampaignId) ?? "Voucher vận chuyển", amountText: `−${currency.format(v.shippingWaivedVnd)}` });
     return Object.freeze({ state: "HELD", lines: Object.freeze(lines), heldUntilMs: input.heldUntilMs });
   }

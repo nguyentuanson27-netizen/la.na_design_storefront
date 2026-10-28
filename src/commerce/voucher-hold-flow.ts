@@ -10,7 +10,7 @@ import { buildVoucherQuoteFacts, GIFT_SLOTS_VARIATION } from "./voucher-quote-fa
 import { issueVoucherQuoteProof, voucherProofFactsFromQuote } from "./voucher-quote-proof.ts";
 
 /**
- * Voucher v1 (V12): the one intentional POST that turns a voucher PREVIEW into a held, submit-capable quote.
+ * Voucher v1 (V12, several merchandise vouchers per ADR 0020): the one intentional POST that turns a voucher PREVIEW into a held, submit-capable quote.
  *
  * Order, every step fail-closed (ADR 0019 D-1, D-4, D-6, spec §4.1, TG-02, TG-12):
  *
@@ -47,7 +47,7 @@ export type VoucherHoldFlowFailure =
   | VoucherHoldFailureReason;
 
 export type VoucherHoldFlowResult =
-  | Readonly<{ ok: true; state: "NONE"; totalPayableVnd: number; released: readonly VoucherGroup[] }>
+  | Readonly<{ ok: true; state: "NONE"; totalPayableVnd: number; released: readonly string[] }>
   | Readonly<{
       ok: true;
       state: "HELD";
@@ -55,7 +55,7 @@ export type VoucherHoldFlowResult =
       /** The EARLIEST hold expiry: the quote is submit-capable strictly before this instant, never extended. */
       expiresAtMs: number;
       totalPayableVnd: number;
-      holds: readonly Readonly<{ kind: VoucherGroup; holdId: string; campaignId: string; amountVnd: number; expiresAtMs: number; reused: boolean }>[];
+      holds: readonly Readonly<{ kind: VoucherGroup; slot: string; holdId: string; campaignId: string; amountVnd: number; expiresAtMs: number; reused: boolean }>[];
     }>
   | Readonly<{
       ok: false;
@@ -123,7 +123,7 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
 
     // Nothing chosen: release whatever this attempt still holds and say so.
     if (quote.voucherCount === 0) {
-      const released = await holds.hold({ shopId: options.shopId, cartId, paidRevision: Number(paidRevision), quoteDigest: facts.digest, grants: [], releaseKinds: ["MERCHANDISE", "SHIPPING_FREE"] }, { verifyUnderCartLock });
+      const released = await holds.hold({ shopId: options.shopId, cartId, paidRevision: Number(paidRevision), quoteDigest: facts.digest, grants: [], releaseUnlisted: true }, { verifyUnderCartLock });
       if (!released.ok) return { ok: false, reason: released.reason };
       return { ok: true, state: "NONE", totalPayableVnd: quote.totalPayableVnd, released: released.released };
     }
@@ -151,28 +151,22 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
     //    transaction, the HELD proof over the holds that now exist.
     const revisionOf = new Map(campaigns.map((campaign) => [campaign.id, campaign.revision]));
     const grants: VoucherHoldGrant[] = [];
-    const releaseKinds: VoucherGroup[] = [];
-    const chosen: Array<[VoucherGroup, string | null, number]> = [
-      ["MERCHANDISE", quote.selection.merchandiseId, quote.merchandiseDiscountVnd],
-      ["SHIPPING_FREE", quote.selection.shippingId, quote.shippingDiscountVnd],
+    const chosen: Array<[VoucherGroup, string, string, number]> = [
+      ...quote.merchandise.map((line): [VoucherGroup, string, string, number] => ["MERCHANDISE", line.slot, line.campaignId, line.discountVnd]),
+      ...(quote.selection.shippingId === null ? [] : ([["SHIPPING_FREE", "SHIPPING_FREE", quote.selection.shippingId, quote.shippingDiscountVnd]] as Array<[VoucherGroup, string, string, number]>)),
     ];
-    for (const [kind, campaignId, discountVnd] of chosen) {
-      if (campaignId === null) {
-        releaseKinds.push(kind);
-        continue;
-      }
+    for (const [kind, slot, campaignId, discountVnd] of chosen) {
       const campaignRevision = revisionOf.get(campaignId);
       if (campaignRevision === undefined) return { ok: false, reason: "QUOTE_UNAVAILABLE" };
-      grants.push({ kind, campaignId, campaignRevision, discountVnd });
+      grants.push({ kind, slot, campaignId, campaignRevision, discountVnd });
     }
     let proof: string | null = null;
     const finalize = (granted: readonly HeldVoucher[]): VoucherHoldFailureReason | null => {
-      const byKind = new Map(granted.map((held) => [held.kind, { holdId: held.holdId, expiresAtMs: held.expiresAt.getTime() }]));
-      const merchandise = byKind.get("MERCHANDISE");
-      const shipping = byKind.get("SHIPPING_FREE");
+      const merchandise = Object.fromEntries(granted.filter((held) => held.kind === "MERCHANDISE").map((held) => [held.campaignId, { holdId: held.holdId, expiresAtMs: held.expiresAt.getTime() }]));
+      const shippingHold = granted.find((held) => held.kind === "SHIPPING_FREE");
       try {
         proof = issueProof({
-          facts: voucherProofFactsFromQuote({ quote, campaigns, paidRevision, lines: facts.proofLines, holds: { ...(merchandise ? { merchandise } : {}), ...(shipping ? { shipping } : {}) } }),
+          facts: voucherProofFactsFromQuote({ quote, campaigns, paidRevision, lines: facts.proofLines, holds: { merchandise, ...(shippingHold ? { shipping: { holdId: shippingHold.holdId, expiresAtMs: shippingHold.expiresAt.getTime() } } : {}) } }),
           cartId,
           secret: options.proofSecret,
         });
@@ -190,7 +184,7 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
           return repaired.ok ? null : repaired.reason;
         }
       : undefined;
-    const granted = await holds.hold({ shopId: options.shopId, cartId, paidRevision: Number(paidRevision), quoteDigest: facts.digest, grants, releaseKinds }, { verifyUnderCartLock, finalize, ...(afterGrant ? { afterGrant } : {}) });
+    const granted = await holds.hold({ shopId: options.shopId, cartId, paidRevision: Number(paidRevision), quoteDigest: facts.digest, grants, releaseUnlisted: true }, { verifyUnderCartLock, finalize, ...(afterGrant ? { afterGrant } : {}) });
     if (!granted.ok) return { ok: false, reason: granted.reason };
     if (proof === null) return { ok: false, reason: "PROOF_UNAVAILABLE" };
     return {
@@ -199,7 +193,7 @@ export function createVoucherHoldFlow(client: PrismaClient, options: Readonly<{
       proof,
       expiresAtMs: Math.min(...granted.holds.map((held) => held.expiresAt.getTime())),
       totalPayableVnd: quote.totalPayableVnd,
-      holds: granted.holds.map((held) => ({ kind: held.kind, holdId: held.holdId, campaignId: held.campaignId, amountVnd: held.heldDiscountVnd, expiresAtMs: held.expiresAt.getTime(), reused: held.reused })),
+      holds: granted.holds.map((held) => ({ kind: held.kind, slot: held.slot, holdId: held.holdId, campaignId: held.campaignId, amountVnd: held.heldDiscountVnd, expiresAtMs: held.expiresAt.getTime(), reused: held.reused })),
     };
   }
 

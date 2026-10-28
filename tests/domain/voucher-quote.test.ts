@@ -66,7 +66,7 @@ test("EX-01: P=620K; 40K voucher drops freeship (610K) but 20K + freeship pays 6
     lines: [line("a", 1, 620_000)],
     campaigns: [fixed("m40", 40_000, 100_000), fixed("m20", 20_000, 100_000), freeship("s600", 600_000)],
   });
-  assert.deepEqual(result.selection, { merchandiseId: "m20", shippingId: "s600" });
+  assert.deepEqual(result.selection, { merchandiseIds: ["m20"], shippingId: "s600" });
   assert.equal(result.totalPayableVnd, 600_000);
   assert.equal(result.baselineTotalVnd, 650_000);
   assert.equal(result.paidBeforeVnd, 620_000);
@@ -81,15 +81,15 @@ test("EX-01: P=620K; 40K voucher drops freeship (610K) but 20K + freeship pays 6
 
 test("AC-11 / spec 7.3: a card under its minimum is disabled with the exact shortfall from the in-scope subtotal", () => {
   const result = quote({ lines: [line("a", 1, 440_000)], campaigns: [fixed("m50", 50_000, 600_000)] });
-  assert.deepEqual(card(result, "m50"), { campaignId: "m50", kind: "MERCHANDISE", state: "UNAVAILABLE", reason: "BELOW_MINIMUM", shortfallVnd: 160_000, savingVnd: null });
-  assert.deepEqual(result.selection, { merchandiseId: null, shippingId: null });
+  assert.deepEqual(card(result, "m50"), { campaignId: "m50", kind: "MERCHANDISE", slot: "MERCHANDISE", state: "UNAVAILABLE", reason: "BELOW_MINIMUM", shortfallVnd: 160_000, savingVnd: null });
+  assert.deepEqual(result.selection, { merchandiseIds: [], shippingId: null });
 });
 
 test("EX-03 / AC-06: a Dress-only voucher counts only Dress toward its threshold and discounts only Dress", () => {
   const lines = [line("dress", 1, 550_000, "dress", ["vayDam"]), line("bag", 1, 300_000, "bag", ["phuKien"])];
   const dressOnly = campaign({ id: "dress50", discount: { type: "FIXED_AMOUNT_VND", amountVnd: 50_000 }, minEligibleSubtotalVnd: 500_000, scope: { mode: "TARGETED", categoryKeys: ["vayDam"] } });
   const eligible = quote({ lines, campaigns: [dressOnly] });
-  assert.deepEqual(eligible.allocation!.lines.map((entry) => [entry.lineId, entry.deductionVnd]), [["dress", 50_000]]);
+  assert.deepEqual(eligible.merchandise[0]!.allocation.lines.map((entry) => [entry.lineId, entry.deductionVnd]), [["dress", 50_000]]);
   assert.equal(eligible.paidAfterVnd, 800_000);
   const short = quote({ lines: [line("dress", 1, 400_000, "dress", ["vayDam"]), line("bag", 1, 300_000, "bag", ["phuKien"])], campaigns: [dressOnly] });
   assert.equal(card(short, "dress50").reason, "BELOW_MINIMUM");
@@ -100,16 +100,16 @@ test("AC-09: after the merchandise voucher the freeship threshold is missed, and
   const result = quote({
     lines: [line("a", 1, 620_000)],
     campaigns: [fixed("m50", 50_000, 100_000), freeship("s600", 600_000)],
-    selection: { merchandise: { mode: "MANUAL", voucherId: "m50" }, shipping: { mode: "AUTO" } },
+    selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: "m50" } }, shipping: { mode: "AUTO" } },
   });
-  assert.deepEqual(result.selection, { merchandiseId: "m50", shippingId: null });
+  assert.deepEqual(result.selection, { merchandiseIds: ["m50"], shippingId: null });
   assert.equal(card(result, "s600").reason, "BELOW_MINIMUM");
   assert.equal(card(result, "s600").shortfallVnd, 30_000);
 });
 
 test("AC-10 / EX-04: shipping already free means the freeship card is unavailable and never selected", () => {
   const result = quote({ lines: [line("a", 1, 700_000)], campaigns: [freeship("s", null)], campaignShippingFeeVnd: () => 0 });
-  assert.deepEqual(result.selection, { merchandiseId: null, shippingId: null });
+  assert.deepEqual(result.selection, { merchandiseIds: [], shippingId: null });
   assert.equal(card(result, "s").reason, "FEE_ALREADY_ZERO");
 });
 
@@ -120,9 +120,9 @@ test("EX-06 / AC-29: a non-stacking free-ship campaign falls under a merchandise
     campaignShippingFeeVnd: (hasOtherPromotions: boolean) => (hasOtherPromotions ? 30_000 : 0),
   };
   const auto = quote(input);
-  assert.deepEqual(auto.selection, { merchandiseId: null, shippingId: null });
+  assert.deepEqual(auto.selection, { merchandiseIds: [], shippingId: null });
   assert.equal(auto.totalPayableVnd, 100_000);
-  const manual = quote({ ...input, selection: { merchandise: { mode: "MANUAL", voucherId: "m10" }, shipping: { mode: "AUTO" } } });
+  const manual = quote({ ...input, selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: "m10" } }, shipping: { mode: "AUTO" } } });
   assert.equal(manual.totalPayableVnd, 120_000);
   assert.deepEqual(manual.confirmation, { totalIncreaseVnd: 20_000, shippingFeeIncreaseVnd: 30_000 });
   assert.equal(manual.shippingFeeBeforeVoucherVnd, 30_000);
@@ -132,9 +132,9 @@ test("EX-10 / AC-46: the voucher works on the post-tier lines it is given, 620K 
   const result = quote({ lines: [line("a", 1, 620_000)], campaigns: [fixed("m80", 80_000, 600_000)] });
   assert.equal(result.paidBeforeVnd, 620_000);
   assert.equal(result.paidAfterVnd, 540_000);
-  assert.equal(result.allocation!.discountVnd, 80_000);
+  assert.equal(result.merchandise[0]!.allocation.discountVnd, 80_000);
   // The lines the gift/POS side sees are the voucher-adjusted ones, summing to the same 540K.
-  const after = applyAllocationToLines([line("a", 1, 620_000)], result.allocation);
+  const after = result.linesAfter;
   assert.equal(after.reduce((sum, l) => sum + l.quantity * l.unitPriceVnd, 0), 540_000);
 });
 
@@ -145,9 +145,9 @@ test("EX-02 / AC-08: a gift that needs 600K is lost under a 50K voucher; the quo
   };
   const campaigns = [fixed("m50", 50_000, 100_000), fixed("m10", 10_000, 100_000)];
   const money = quote({ lines: [line("a", 1, 620_000)], campaigns, giftOutcome: giftAt(600_000) });
-  assert.equal(money.selection.merchandiseId, "m50");
+  assert.equal(money.selection.merchandiseIds[0] ?? null, "m50");
   assert.deepEqual(money.giftLoss, { entitledSlotsLost: 1, selectedSlotsLost: 1 });
-  const keep = quote({ lines: [line("a", 1, 620_000)], campaigns, giftOutcome: giftAt(600_000), selection: { merchandise: { mode: "MANUAL", voucherId: "m10" }, shipping: { mode: "AUTO" } } });
+  const keep = quote({ lines: [line("a", 1, 620_000)], campaigns, giftOutcome: giftAt(600_000), selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: "m10" } }, shipping: { mode: "AUTO" } } });
   assert.equal(keep.giftLoss, null);
   assert.equal(keep.gifts.entitledSlots, 1);
 });
@@ -183,8 +183,8 @@ test("quota: an exhausted voucher is shown as EXHAUSTED and never selected; a bu
       fixed("ok", 10_000, 100_000),
     ],
   });
-  assert.equal(result.selection.merchandiseId, "full");
-  assert.equal(exhausted.selection.merchandiseId, "ok");
+  assert.equal(result.selection.merchandiseIds[0] ?? null, "full");
+  assert.equal(exhausted.selection.merchandiseIds[0] ?? null, "ok");
   assert.equal(card(exhausted, "full").reason, "EXHAUSTED");
   assert.equal(card(exhausted, "poor").reason, "EXHAUSTED");
 });
@@ -192,29 +192,29 @@ test("quota: an exhausted voucher is shown as EXHAUSTED and never selected; a bu
 test("AC-31: the attempt's own held voucher is not counted against its own quota", () => {
   const onlySlotTaken = campaign({ id: "mine", discount: { type: "FIXED_AMOUNT_VND", amountVnd: 50_000 }, minEligibleSubtotalVnd: 100_000, maxUses: 1 }, { reservedUses: 1, reservedVnd: 50_000 });
   const without = quote({ lines: [line("a", 1, 620_000)], campaigns: [onlySlotTaken] });
-  assert.equal(without.selection.merchandiseId, null);
+  assert.equal(without.selection.merchandiseIds[0] ?? null, null);
   const withHold = quote({ lines: [line("a", 1, 620_000)], campaigns: [onlySlotTaken], heldCampaignIds: new Set(["mine"]) });
-  assert.equal(withHold.selection.merchandiseId, "mine");
+  assert.equal(withHold.selection.merchandiseIds[0] ?? null, "mine");
 });
 
 test("AC-01 / AC-04: manual locks are kept while valid; a stale one is replaced with a notice", () => {
   const campaigns = [fixed("m20", 20_000, 100_000), fixed("m40", 40_000, 100_000)];
-  const locked = quote({ lines: [line("a", 1, 300_000)], campaigns, selection: { merchandise: { mode: "MANUAL", voucherId: "m20" }, shipping: { mode: "AUTO" } } });
-  assert.equal(locked.selection.merchandiseId, "m20");
-  const stale = quote({ lines: [line("a", 1, 300_000)], campaigns, selection: { merchandise: { mode: "MANUAL", voucherId: "gone" }, shipping: { mode: "AUTO" } } });
-  assert.equal(stale.selection.merchandiseId, "m40");
+  const locked = quote({ lines: [line("a", 1, 300_000)], campaigns, selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: "m20" } }, shipping: { mode: "AUTO" } } });
+  assert.equal(locked.selection.merchandiseIds[0] ?? null, "m20");
+  const stale = quote({ lines: [line("a", 1, 300_000)], campaigns, selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: "gone" } }, shipping: { mode: "AUTO" } } });
+  assert.equal(stale.selection.merchandiseIds[0] ?? null, "m40");
   assert.deepEqual(stale.notices.map((n) => [n.group, n.voucherId, n.reason]), [["MERCHANDISE", "gone", "NOT_ELIGIBLE"]]);
-  const none = quote({ lines: [line("a", 1, 300_000)], campaigns, selection: { merchandise: { mode: "MANUAL", voucherId: null }, shipping: { mode: "AUTO" } } });
-  assert.equal(none.selection.merchandiseId, null);
+  const none = quote({ lines: [line("a", 1, 300_000)], campaigns, selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: null } }, shipping: { mode: "AUTO" } } });
+  assert.equal(none.selection.merchandiseIds[0] ?? null, null);
 });
 
 test("AC-20 seam: a combination the POS cannot project is not recommended and its card says so", () => {
   const result = quote({
     lines: [line("a", 1, 620_000)],
     campaigns: [fixed("bad", 50_000, 100_000), fixed("good", 10_000, 100_000)],
-    isFeasible: (e) => e.merchandiseId !== "bad",
+    isFeasible: (e) => !e.merchandiseIds.includes("bad"),
   });
-  assert.equal(result.selection.merchandiseId, "good");
+  assert.equal(result.selection.merchandiseIds[0] ?? null, "good");
   assert.equal(card(result, "bad").reason, "POS_INFEASIBLE");
   assert.equal(card(result, "bad").state, "UNAVAILABLE");
 });
@@ -224,14 +224,14 @@ test("AC-28: the totals reconcile to the VND (paid after + fee = total, discount
   assert.equal(result.paidBeforeVnd - result.merchandiseDiscountVnd, result.paidAfterVnd);
   assert.equal(result.paidAfterVnd + result.shippingFeeVnd, result.totalPayableVnd);
   assert.equal(result.shippingFeeBeforeVoucherVnd - result.shippingDiscountVnd, result.shippingFeeVnd);
-  assert.equal(result.allocation!.lines.reduce((sum, l) => sum + l.deductionVnd, 0), result.merchandiseDiscountVnd);
+  assert.equal(result.merchandise[0]!.allocation.lines.reduce((sum, l) => sum + l.deductionVnd, 0), result.merchandiseDiscountVnd);
 });
 
 test("no campaigns is the plain cart: baseline total, no cards, no allocation", () => {
   const result = quote({ lines: [line("a", 1, 200_000)], campaigns: [] });
   assert.equal(result.totalPayableVnd, 230_000);
   assert.deepEqual(result.cards, []);
-  assert.equal(result.allocation, null);
+  assert.deepEqual(result.merchandise, []);
   assert.equal(result.voucherCount, 0);
 });
 

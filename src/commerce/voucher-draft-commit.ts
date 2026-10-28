@@ -36,14 +36,22 @@ import {
 
 const intentOf = (draft: VoucherGroupDraft) => (draft.mode === "AUTO" ? ({ mode: "AUTO" } as const) : ({ mode: "MANUAL", voucherId: draft.voucherId } as const));
 
+/** The optimizer's intent for a set of slot drafts: an AUTO slot is simply absent. */
+const merchandiseIntentOf = (drafts: Readonly<Record<string, VoucherGroupDraft>>): VoucherSelectionIntent["merchandise"] =>
+  Object.fromEntries(Object.entries(drafts).filter(([, draft]) => draft.mode === "MANUAL").map(([slot, draft]) => [slot, intentOf(draft)]));
+
 type Refusal = Readonly<{ reason: "CONFIRMATION_REQUIRED" | "QUOTE_CHANGED" | "QUOTE_UNAVAILABLE" }>;
 type GiftRepair = Readonly<{ entitlements: readonly { campaignId: string; entitled: number }[]; counting: ReadonlySet<string> }>;
 
 const isNone = (group: GroupSelection) => group.mode === "MANUAL" && group.voucherId === null;
 const isAsSaved = (group: GroupSelection, saved: GroupSelection) => group.mode === saved.mode && (group.mode === "AUTO" || (saved.mode === "MANUAL" && group.voucherId === saved.voucherId));
+const AUTO_GROUP: GroupSelection = { mode: "AUTO" };
 /** True when the choice can only remove a voucher or leave it as it is: it cannot cost a gift or raise a total by being saved. */
 const cannotCostAnything = (next: VoucherSelectionIntent, saved: VoucherSelectionIntent) =>
-  (isNone(next.merchandise) || isAsSaved(next.merchandise, saved.merchandise)) && (isNone(next.shipping) || isAsSaved(next.shipping, saved.shipping));
+  [...new Set([...Object.keys(next.merchandise), ...Object.keys(saved.merchandise)])].every((slot) => {
+    const group = next.merchandise[slot] ?? AUTO_GROUP;
+    return isNone(group) || isAsSaved(group, saved.merchandise[slot] ?? AUTO_GROUP);
+  }) && (isNone(next.shipping) || isAsSaved(next.shipping, saved.shipping));
 
 /** The gate, run in `tx` with the cart row already locked. `repair` is what to apply after the choice is saved. */
 async function consentGate(tx: Prisma.TransactionClient, input: Readonly<{
@@ -58,10 +66,12 @@ async function consentGate(tx: Prisma.TransactionClient, input: Readonly<{
   consentDigest: string | null;
   /** The one PRIVATE campaign a code just verified, so it can be previewed before it is saved. */
   verifiedPrivateIds?: readonly string[];
+  /** The one type a code just unlocked, so its tiers can be previewed before the unlock is saved. */
+  verifiedTypeIds?: readonly string[];
 }>): Promise<Readonly<{ refusal: Refusal | null; repair: GiftRepair | null }>> {
   const { cartId, shopId, env, now, consentDigest } = input;
   const ownHolds = await createVoucherHoldService(tx as never, { attemptSecret: input.attemptSecret, env }).readOwnLiveHoldsIn(tx as never, cartId);
-  const preview = await readVoucherPreviewWithin(tx, { cartId, shopId, now, env, ownHolds, selectionOverride: input.override, verifiedPrivateIds: input.verifiedPrivateIds })
+  const preview = await readVoucherPreviewWithin(tx, { cartId, shopId, now, env, ownHolds, selectionOverride: input.override, verifiedPrivateIds: input.verifiedPrivateIds, verifiedTypeIds: input.verifiedTypeIds })
     // A read that throws (an unreadable shipping policy, say) is "no quote", never "no cost".
     .catch(() => ({ enabled: true, ok: false }) as const);
   // No quote, no commit: the later hold/checkout layers are a second line, not a reason to save a choice whose price is unknown.
@@ -91,8 +101,11 @@ export async function commitVoucherDraft(input: Readonly<{
    * (`null` groups below) and so has no stale half to write.
    */
   expectedSelectionVersion: string | null;
-  /** A group passed as `null` is kept as saved, read under the cart lock (never from a snapshot taken before it). */
-  draft: Readonly<{ merchandise: VoucherGroupDraft | null; shipping: VoucherGroupDraft | null }>;
+  /**
+   * One draft per merchandise slot to change; a slot that is absent, and a shipping passed as `null`, are kept as saved, read under
+   * the cart lock (never from a snapshot taken before it).
+   */
+  draft: Readonly<{ merchandise: Readonly<Record<string, VoucherGroupDraft>>; shipping: VoucherGroupDraft | null }>;
   /** The digest of the quote the shopper explicitly confirmed, or null when they confirmed nothing. */
   consentDigest: string | null;
   attemptSecret: string;
@@ -102,7 +115,7 @@ export async function commitVoucherDraft(input: Readonly<{
   const now = input.now ?? new Date();
   let repair: GiftRepair | null = null;
 
-  return createVoucherSelectionService(client, { shopId, env }).applyBoth({
+  return createVoucherSelectionService(client, { shopId, env }).applyAll({
     cartId,
     ...draft,
     now,
@@ -111,7 +124,7 @@ export async function commitVoucherDraft(input: Readonly<{
       if (expectedSelectionVersion !== null && selectionVersionOf(resolved.saved) !== expectedSelectionVersion) return { ok: false, reason: "SELECTION_CHANGED" } as const;
       const gate = await consentGate(tx, {
         cartId, shopId, env, now, attemptSecret, consentDigest, saved: resolved.saved,
-        override: { merchandise: intentOf(resolved.merchandise), shipping: intentOf(resolved.shipping) },
+        override: { merchandise: merchandiseIntentOf(resolved.merchandise), shipping: intentOf(resolved.shipping) },
       });
       if (gate.refusal !== null) return { ok: false, reason: gate.refusal.reason } as const;
       repair = gate.repair;
@@ -149,9 +162,18 @@ export async function applyVoucherCode(input: Readonly<{
     now,
     async beforeSave(tx, verified) {
       const saved = selectionIntentFromRow(await tx.cartVoucherSelection.findUnique({ where: { cartId } }), now);
-      const chosen = { mode: "MANUAL", voucherId: verified.campaignId } as const;
-      const override: VoucherSelectionIntent = verified.group === "MERCHANDISE" ? { merchandise: chosen, shipping: saved.shipping } : { merchandise: saved.merchandise, shipping: chosen };
-      const gate = await consentGate(tx, { cartId, shopId, env, now, attemptSecret, consentDigest, override, saved, verifiedPrivateIds: [verified.campaignId] });
+      // A voucher code locks that voucher in its slot; a type code leaves its slot to the ladder (AUTO) once the type is unlocked.
+      const chosen = verified.campaignId === null ? null : ({ mode: "MANUAL", voucherId: verified.campaignId } as const);
+      const slots = Object.fromEntries(Object.entries(saved.merchandise).filter(([slot]) => chosen !== null || slot !== verified.slot));
+      const override: VoucherSelectionIntent =
+        verified.group === "SHIPPING_FREE"
+          ? { merchandise: saved.merchandise, shipping: chosen! }
+          : { merchandise: chosen === null ? slots : { ...slots, [verified.slot]: chosen }, shipping: saved.shipping };
+      const gate = await consentGate(tx, {
+        cartId, shopId, env, now, attemptSecret, consentDigest, override, saved,
+        ...(verified.campaignId === null ? {} : { verifiedPrivateIds: [verified.campaignId] }),
+        ...(verified.typeId === null ? {} : { verifiedTypeIds: [verified.typeId] }),
+      });
       if (gate.refusal !== null) return gate.refusal;
       repair = gate.repair;
       return null;

@@ -45,7 +45,7 @@ function render(overrides: Partial<Extract<BenefitCheckoutRender, { kind: "BENEF
     needsAcknowledgement: false,
     giftLabels: new Map(),
     tierDropped: false,
-    voucher: { shippingWaivedVnd: 30_000, names: new Map([[MERCH, "Giảm 50.000đ"], [SHIP, "Miễn phí vận chuyển"]]), merchandiseCampaignId: MERCH, shippingCampaignId: SHIP, merchandiseDiscountVnd: 50_000 },
+    voucher: { shippingWaivedVnd: 30_000, names: new Map([[MERCH, "Giảm 50.000đ"], [SHIP, "Miễn phí vận chuyển"]]), merchandise: [{ campaignId: MERCH, amountVnd: 50_000 }], shippingCampaignId: SHIP, merchandiseDiscountVnd: 50_000 },
     ...overrides,
   };
 }
@@ -92,10 +92,10 @@ test("order summary: a waiver needs a positive amount and never changes the valu
 const picker = (overrides: Partial<VoucherPickerModel> = {}): VoucherPickerModel => ({
   previewNotHeld: true,
   groups: [
-    { kind: "MERCHANDISE", heading: "", hint: "", noneLabel: "", noneSelected: false, mode: "AUTO", items: [{ id: MERCH, title: "Giảm 50.000đ", condition: "", selected: true, selectable: true, disabledReason: null, shortfallVnd: null, savingText: "Dự kiến giảm 50.000đ", publicCode: null, endsAtIso: null }] },
-    { kind: "SHIPPING_FREE", heading: "", hint: "", noneLabel: "", noneSelected: true, mode: "AUTO", items: [] },
+    { slot: "MERCHANDISE", kind: "MERCHANDISE", heading: "", hint: "", noneLabel: "", noneSelected: false, mode: "AUTO", items: [{ id: MERCH, title: "Giảm 50.000đ", condition: "", selected: true, selectable: true, disabledReason: null, shortfallVnd: null, savingText: "Dự kiến giảm 50.000đ", publicCode: null, endsAtIso: null }] },
+    { slot: "SHIPPING_FREE", kind: "SHIPPING_FREE", heading: "", hint: "", noneLabel: "", noneSelected: true, mode: "AUTO", items: [] },
   ],
-  summary: { paidBeforeText: "900.000đ", merchandiseDiscountText: "-50.000đ", shippingFeeText: "30.000đ", shippingDiscountText: null, totalText: "880.000đ", totalVnd: 880_000 },
+  summary: { paidBeforeText: "900.000đ", merchandiseDiscountText: "-50.000đ", merchandiseLines: [], shippingFeeText: "30.000đ", shippingDiscountText: null, totalText: "880.000đ", totalVnd: 880_000 },
   footer: { label: "Áp dụng • 1 ưu đãi", count: 1 },
   quoteDigest: "a".repeat(64),
   selectionVersion: "b".repeat(64),

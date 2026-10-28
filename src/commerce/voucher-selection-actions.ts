@@ -29,8 +29,8 @@ import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
  * (`voucherPickerKey`), which would remount it and close the dialog the shopper is looking at. The picker already
  * holds the model the server just answered with, so nothing is lost by not refreshing behind it.
  */
-async function respond(selected: { ok: boolean }, cartId: string, selectionOverride?: VoucherSelectionIntent, refreshPage = true, verifiedPrivateIds?: readonly string[]) {
-  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now: new Date(), ownHolds: await readCartOwnVoucherHolds(prisma, cartId), ...(selectionOverride ? { selectionOverride } : {}), ...(verifiedPrivateIds ? { verifiedPrivateIds } : {}) });
+async function respond(selected: { ok: boolean }, cartId: string, selectionOverride?: VoucherSelectionIntent, refreshPage = true, verified?: Readonly<{ privateIds?: readonly string[]; typeIds?: readonly string[] }>) {
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: readPancakeShopId(), now: new Date(), ownHolds: await readCartOwnVoucherHolds(prisma, cartId), ...(selectionOverride ? { selectionOverride } : {}), ...(verified?.privateIds ? { verifiedPrivateIds: verified.privateIds } : {}), ...(verified?.typeIds ? { verifiedTypeIds: verified.typeIds } : {}) });
   // No refresh when there is no model to hand back: the page behind would drop the picker and the dialog (and the message the
   // shopper needs) with it. The dialog refreshes the page itself when it is closed.
   if (!preview.enabled || !preview.ok) return { picker: null } as const;
@@ -46,16 +46,13 @@ export async function setStorefrontVoucherSelection(input: unknown) {
   if (parsed === null) return { ok: false, reason: "INVALID_INPUT" } as const;
   if (cartId === null) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
   const shopId = readPancakeShopId();
-  // One group at a time is the picker's two-group commit with the other group KEPT as saved (`null`), resolved under the cart lock
-  // so another tab's change to it cannot be overwritten; it meets the same rule: a choice that costs a chosen gift or raises the
-  // total needs the explicit consent only the picker's commit carries.
+  // One slot at a time is the picker's commit with every other slot KEPT as saved, resolved under the cart lock so another
+  // tab's change to it cannot be overwritten; it meets the same rule: a choice that costs a chosen gift or raises the total
+  // needs the explicit consent only the picker's commit carries.
   const next = { mode: parsed.mode, voucherId: parsed.voucherId };
   const result = await commitVoucherDraft({
     client: prisma, cartId, shopId, consentDigest: null, attemptSecret: readAuthServerConfig().secret, expectedSelectionVersion: null,
-    draft: {
-      merchandise: parsed.group === "MERCHANDISE" ? next : null,
-      shipping: parsed.group === "SHIPPING_FREE" ? next : null,
-    },
+    draft: parsed.slot === "SHIPPING_FREE" ? { merchandise: {}, shipping: next } : { merchandise: { [parsed.slot]: next }, shipping: null },
   });
   if (!result.ok) return { ok: false, reason: result.reason } as const;
   return { ok: true, ...(await respond(result, cartId)) } as const;
@@ -72,9 +69,17 @@ async function applyCodeFor(cartId: string, rawCode: string, consentDigest: stri
     // derives for it (the one verified campaign is previewable for this request only) so they can decide, and ask again.
     const { pending } = result;
     const saved = await createVoucherSelectionService(prisma, { shopId }).read(cartId);
-    const chosen = { mode: "MANUAL", voucherId: pending.campaignId } as const;
-    const override: VoucherSelectionIntent = pending.group === "MERCHANDISE" ? { merchandise: chosen, shipping: saved.shipping } : { merchandise: saved.merchandise, shipping: chosen };
-    const { picker } = await respond({ ok: false }, cartId, override, false, [pending.campaignId]);
+    const chosen = pending.campaignId === null ? null : ({ mode: "MANUAL", voucherId: pending.campaignId } as const);
+    // A voucher code is previewed as that voucher locked in its slot; a type code as its slot left to the ladder.
+    const slots = Object.fromEntries(Object.entries(saved.merchandise).filter(([slot]) => slot !== pending.slot));
+    const override: VoucherSelectionIntent =
+      pending.group === "SHIPPING_FREE"
+        ? { merchandise: saved.merchandise, shipping: chosen! }
+        : { merchandise: chosen === null ? slots : { ...slots, [pending.slot]: chosen }, shipping: saved.shipping };
+    const { picker } = await respond({ ok: false }, cartId, override, false, {
+      ...(pending.campaignId === null ? {} : { privateIds: [pending.campaignId] }),
+      ...(pending.typeId === null ? {} : { typeIds: [pending.typeId] }),
+    });
     return { ok: false, reason: result.reason, picker } as const;
   }
   if (!result.ok) return { ok: false, reason: result.reason } as const;
@@ -139,6 +144,10 @@ export async function readStorefrontVoucherPicker() {
 const intentOf = (draft: { mode: "AUTO" | "MANUAL"; voucherId: string | null }) =>
   draft.mode === "AUTO" ? ({ mode: "AUTO" } as const) : ({ mode: "MANUAL", voucherId: draft.voucherId } as const);
 
+/** An AUTO slot is simply absent from the optimizer's intent. */
+const merchandiseIntentOf = (drafts: Readonly<Record<string, { mode: "AUTO" | "MANUAL"; voucherId: string | null }>>): VoucherSelectionIntent["merchandise"] =>
+  Object.fromEntries(Object.entries(drafts).filter(([, draft]) => draft.mode === "MANUAL").map(([slot, draft]) => [slot, intentOf(draft)]));
+
 /**
  * Previews the picker's draft as if it were chosen, WITHOUT saving it (spec §7.3: closing or going back keeps the
  * old selection). Nothing is written; the server derives the numbers, the browser only names the intent.
@@ -148,12 +157,12 @@ export async function previewStorefrontVoucherDraft(input: unknown) {
   const cartId = readAnonymousCartCookie(await cookies());
   if (draft === null) return { ok: false, reason: "INVALID_INPUT" } as const;
   if (cartId === null) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
-  const { picker } = await respond({ ok: false }, cartId, { merchandise: intentOf(draft.merchandise), shipping: intentOf(draft.shipping) });
+  const { picker } = await respond({ ok: false }, cartId, { merchandise: merchandiseIntentOf(draft.merchandise), shipping: intentOf(draft.shipping) });
   return picker === null ? ({ ok: false, reason: "QUOTE_UNAVAILABLE" } as const) : ({ ok: true, picker } as const);
 }
 
 /**
- * "Áp dụng": commit both groups of the draft in one transaction, then answer with what the server now computes.
+ * "Áp dụng": commit every slot of the draft in one transaction, then answer with what the server now computes.
  *
  * When the draft costs the shopper gifts they had chosen, the server refuses without their explicit consent
  * (`CONFIRMATION_REQUIRED`, nothing written). With it, and only if the quote they confirmed is still the quote the server
