@@ -80,6 +80,8 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
       observer.disconnect();
       previewVisible.current = false;
       releaseVideo(element);
+      // A replacement preview has not painted a frame, even if this instance had been playing.
+      setPreviewPlaying(false);
     };
   }, [showPreview]);
 

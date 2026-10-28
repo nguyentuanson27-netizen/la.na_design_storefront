@@ -2313,6 +2313,8 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     background: transparent;
     color: var(--ink);
     border-color: var(--ink);
+    /* Inverting both colours through intermediate shades makes the live label unreadable. */
+    transition: none;
   }
 
   .btn--outline:hover:not(:disabled) {

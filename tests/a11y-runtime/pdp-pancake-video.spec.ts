@@ -278,6 +278,52 @@ test("turning on reduced motion while the page is open stops and removes the pre
   await expect(tile.locator("video")).toHaveAttribute("data-playing", "true");
 });
 
+test("a remounted preview keeps its poster until the new player actually plays", async ({ page }) => {
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  const preview = page.locator(".pdp-video-tile video");
+  await expect(preview).toHaveAttribute("data-playing", "true");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(preview).toHaveCount(0);
+  // The new player cannot start yet, even if the previous instance had already played.
+  await page.evaluate(() => {
+    const original = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function play() {
+      return this.controls ? original.call(this) : new Promise<void>(() => undefined);
+    };
+  });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(preview).toHaveCount(1);
+  await expect(preview).toHaveAttribute("data-playing", "false");
+  expect(await preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+});
+
+test("the first dialog frame resumes a later preview position and close hands its position back", async ({ page }) => {
+  await page.addInitScript(() => {
+    const firstFrames: number[] = [];
+    (window as unknown as { __dialogFirstFrames: number[] }).__dialogFirstFrames = firstFrames;
+    document.addEventListener("playing", (event) => {
+      const target = event.target;
+      if (target instanceof HTMLVideoElement && target.controls) firstFrames.push(target.currentTime);
+    }, true);
+  });
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  const preview = page.locator(".pdp-video-tile video");
+  await expect(preview).toHaveAttribute("data-playing", "true");
+  await preview.evaluate((element: HTMLVideoElement) => { element.pause(); element.currentTime = 2.5; });
+  await page.getByRole("button", { name: "Xem video", exact: true }).click();
+  const frames = () => page.evaluate(() => (window as unknown as { __dialogFirstFrames: number[] }).__dialogFirstFrames);
+  await expect.poll(async () => (await frames()).length).toBeGreaterThan(0);
+  expect((await frames())[0]).toBeGreaterThanOrEqual(2.4);
+  await page.locator("dialog video").evaluate((element: HTMLVideoElement) => { element.pause(); element.currentTime = 1.5; });
+  await page.keyboard.press("Escape");
+  await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
+  const handedBack = await preview.evaluate((element: HTMLVideoElement) => element.currentTime);
+  expect(handedBack).toBeGreaterThanOrEqual(1.4);
+  expect(handedBack, "close must hand back the dialog position, not the old 2.5s preview position").toBeLessThan(2.4);
+});
+
 for (const [width, height] of [[1280, 520], [1440, 560]] as const) {
   test(`at ${width}x${height} the floating mini-player and its stop button are fully inside the window and clickable`, async ({ page }) => {
     await page.setViewportSize({ width, height });
