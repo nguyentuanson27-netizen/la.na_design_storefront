@@ -195,7 +195,7 @@ test("in-stock products always precede out-of-stock products, even if out-of-sto
   const ordered = orderByFeaturedSlugs(
     [outOfStockUnpinned, inStockUnpinned, outOfStockPinned, inStockPinned],
     ["out-of-stock-pinned", "in-stock-pinned"],
-    { inStockFirst: true },
+    { isInStock: (p) => p.slug.startsWith("in-stock") },
   );
 
   assert.deepEqual(
@@ -204,15 +204,30 @@ test("in-stock products always precede out-of-stock products, even if out-of-sto
   );
 });
 
-test("without inStockFirst a sold-out product keeps its place, so a shopper's sort is not regrouped", () => {
+test("the caller's stock classification wins over the variants the product carries", () => {
+  // A pinned product with stock only in a size the shopper filtered out: the query ranked it
+  // out-of-stock, so it must not be pinned above a product that matches the filter.
+  const pinnedOtherSize = {
+    ...product("pinned-other-size"),
+    variants: [{ ...variant(1), sellableStock: 0 }, { ...variant(2), sellableStock: 5 }],
+  };
+  const matchesFilter = { ...product("matches-filter"), variants: [{ ...variant(3), sellableStock: 3 }] };
+  const noVariants = { ...product("no-variants"), variants: [] };
+
+  const ordered = orderByFeaturedSlugs(
+    [matchesFilter, noVariants, pinnedOtherSize],
+    ["no-variants", "pinned-other-size"],
+    { isInStock: (p) => p.slug === "matches-filter" },
+  );
+
+  assert.deepEqual(ordered.map((p) => p.slug), ["matches-filter", "no-variants", "pinned-other-size"]);
+});
+
+test("without isInStock the order is untouched, so a shopper's sort is not regrouped", () => {
   const soldOut = { ...product("sold-out"), variants: [{ ...variant(1), sellableStock: 0 }] };
   const onSale = { ...product("on-sale"), variants: [{ ...variant(2), sellableStock: 4 }] };
 
   assert.deepEqual(orderByFeaturedSlugs([soldOut, onSale], []).map((p) => p.slug), ["sold-out", "on-sale"]);
-  assert.deepEqual(
-    orderByFeaturedSlugs([soldOut, onSale], [], { inStockFirst: true }).map((p) => p.slug),
-    ["on-sale", "sold-out"],
-  );
 });
 
 test("the grid renders exactly the order it was handed, without reordering again", () => {

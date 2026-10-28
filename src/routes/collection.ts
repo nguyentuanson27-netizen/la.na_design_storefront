@@ -73,7 +73,8 @@ export async function loadCollectionRoute({
     throw error;
   }
 
-  const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
+  const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs, inStockProductIds } =
+    catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
 
   // Ordered once, here, before tracking is built. The impression and select indices must describe
@@ -81,10 +82,13 @@ export async function loadCollectionRoute({
   // only in the merchandiser's own order: under a sort the shopper picked they would sit above a
   // list that claims to be ordered by price or name.
   const isDefaultSort = isCollectionDefaultSort(collection.slug, discovery.sort);
+  const inStockSet = new Set(inStockProductIds ?? []);
   const ordered = orderByFeaturedSlugs(
     products,
     isDefaultSort ? collection.featuredProductSlugs : [],
-    { inStockFirst: isDefaultSort },
+    inStockProductIds && isDefaultSort
+      ? { isInStock: (product) => inStockSet.has(product.id) }
+      : {},
   );
   const listTracking = buildProductListTracking({
     products: ordered,

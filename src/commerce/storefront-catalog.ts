@@ -141,7 +141,7 @@ export type StorefrontProductCollection = {
 };
 
 type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSelection }>;
-type DiscoveryIdRow = { id: string; sortPrice: number | null };
+type DiscoveryIdRow = { id: string; sortPrice: number | null; stockRank?: number | null };
 type DiscoveryCountRow = { count: bigint };
 type DiscoveryTransitionRow = { nextTransitionAt: Date | null };
 type FacetRow = { value: string };
@@ -647,7 +647,12 @@ function buildSortPrice(variantFilters: readonly Prisma.Sql[]) {
   `;
 }
 
-function buildInStockOrder(variantFilters: readonly Prisma.Sql[]) {
+/**
+ * 0 when a variant that matches the active filters is sellable, else 1. The same expression orders
+ * the page and is returned with it, so a later regrouping (pins) uses this classification rather
+ * than re-deriving one from every variant of the hydrated product.
+ */
+function buildInStockRank(variantFilters: readonly Prisma.Sql[]) {
   const extraFilters =
     variantFilters.length > 0
       ? Prisma.sql`AND ${Prisma.join([...variantFilters], " AND ")}`
@@ -662,7 +667,7 @@ function buildInStockOrder(variantFilters: readonly Prisma.Sql[]) {
           ${extraFilters}
       ) THEN 0
       ELSE 1
-    END ASC,
+    END
   `;
 }
 
@@ -960,7 +965,9 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     const shouldSortInStockFirst =
       inStockFirst ??
       Boolean(discovery.collection && isCollectionDefaultSort(discovery.collection, discovery.sort));
-    const inStockOrder = shouldSortInStockFirst ? buildInStockOrder(variantFilters) : Prisma.sql``;
+    const inStockRank = shouldSortInStockFirst ? buildInStockRank(variantFilters) : null;
+    const inStockSelect = inStockRank ? Prisma.sql`, ${inStockRank} AS "stockRank"` : Prisma.sql``;
+    const inStockOrder = inStockRank ? Prisma.sql`${inStockRank} ASC,` : Prisma.sql``;
     const orderBy = buildDiscoveryOrder(discovery.sort, discovery.categoryKey);
     const variantStockCte = buildVariantStockCte(now);
 
@@ -974,7 +981,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
       `),
       client.$queryRaw<DiscoveryIdRow[]>(Prisma.sql`
         ${variantStockCte}
-        SELECT p."id", ${sortPrice} AS "sortPrice"
+        SELECT p."id", ${sortPrice} AS "sortPrice"${inStockSelect}
         FROM "ProductMirror" p
         LEFT JOIN "ProductContent" pc ON pc."productId" = p."id"
         WHERE ${productPredicate}
@@ -1013,6 +1020,10 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
 
     const totalCount = countRows[0] ? bigintToSafeNumber(countRows[0].count) : 0;
     const ids = idRows.map(({ id }) => id);
+    // Null when the page was not ranked by stock; otherwise the ids the query itself placed first.
+    const inStockProductIds = inStockRank
+      ? idRows.filter(({ stockRank }) => Number(stockRank) === 0).map(({ id }) => id)
+      : null;
     const products =
       ids.length === 0
         ? []
@@ -1057,6 +1068,8 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
       totalPages: Math.ceil(totalCount / safePageSize),
       hasPrevious: discovery.page > 1,
       hasNext: offset + orderedProducts.length < totalCount,
+      /** Products the stock ranking put first (matching variant in stock); null when not ranked. */
+      inStockProductIds,
       /** Server-relative freshness only; the browser never receives a promotion deadline. */
       refreshAfterMs,
       /** Apply to a card's variants so its displayed price matches the projection that ranked it. */

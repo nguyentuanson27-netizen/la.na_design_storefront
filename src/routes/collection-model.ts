@@ -153,17 +153,6 @@ function sameSize(a: string | null, b: string | null): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-type StockedProduct = Readonly<{
-  variants?: readonly Readonly<{ sellableStock?: number }>[];
-}>;
-
-/** A product with no variant facts is not known to be sold out, so it keeps its place. */
-function hasSellableStock(product: StockedProduct): boolean {
-  const variants = product.variants;
-  if (variants === undefined || variants.length === 0) return true;
-  return variants.some(({ sellableStock }) => typeof sellableStock === "number" && sellableStock > 0);
-}
-
 /**
  * The grid, with the merchandiser's pinned slugs first.
  *
@@ -176,14 +165,16 @@ function hasSellableStock(product: StockedProduct): boolean {
  * the repository order and then reordering the cards would report a pinned product at the index it
  * would have had, not the position it is shown in.
  *
- * With `inStockFirst`, in-stock products always precede out-of-stock ones, so a pinned sold-out
- * product never leapfrogs a product that is on sale. Only the collection's default sort sets it:
+ * With `isInStock`, in-stock products always precede out-of-stock ones, so a pinned sold-out
+ * product never leapfrogs a product that is on sale. The caller supplies the classification the
+ * repository's own query used (it judges only variants matching the active filters), rather than
+ * this function re-deriving one from every variant. Only the collection's default sort passes it:
  * under a sort the shopper picked, partitioning by stock would break the order the list claims.
  */
 export function orderByFeaturedSlugs<T extends Readonly<{ slug: string }>>(
   products: readonly T[],
   featuredSlugs: readonly string[],
-  { inStockFirst = false }: Readonly<{ inStockFirst?: boolean }> = {},
+  { isInStock }: Readonly<{ isInStock?: (product: T) => boolean }> = {},
 ): readonly T[] {
   const rank = new Map<string, number>();
   featuredSlugs.forEach((slug, index) => {
@@ -201,12 +192,12 @@ export function orderByFeaturedSlugs<T extends Readonly<{ slug: string }>>(
     return [...pinned, ...rest];
   };
 
-  if (!inStockFirst) return pinFirst(products);
+  if (!isInStock) return pinFirst(products);
 
   const inStock: T[] = [];
   const outOfStock: T[] = [];
   for (const product of products) {
-    (hasSellableStock(product as StockedProduct) ? inStock : outOfStock).push(product);
+    (isInStock(product) ? inStock : outOfStock).push(product);
   }
   if (outOfStock.length === 0) return pinFirst(products);
   return [...pinFirst(inStock), ...pinFirst(outOfStock)];

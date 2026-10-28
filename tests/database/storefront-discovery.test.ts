@@ -568,6 +568,48 @@ test("collection default sort orders in-stock products first before out-of-stock
     "Olive Shirt",
     "A Out Of Stock",
   ]);
+  const outId = page.products.find(({ name }) => name === "A Out Of Stock")!.id;
+  assert.ok(page.inStockProductIds && !page.inStockProductIds.includes(outId));
+  assert.equal(page.inStockProductIds.length, 2);
+
+  const firstOnly = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 1,
+    discovery: parseStorefrontDiscoverySearchParams({ collection: "city-uniform" }),
+  });
+  assert.equal(firstOnly.products.length, 1);
+  assert.notEqual(firstOnly.products[0]!.name, "A Out Of Stock");
+});
+
+test("collection default sort judges stock on the variants that match the filter", async () => {
+  const mixed = await seedProduct({
+    id: "a-mixed-sizes",
+    name: "A Mixed Sizes",
+    collectionSlugs: ["city-uniform"],
+    color: "Black",
+    size: "M",
+    price: 500_000,
+    stock: 0,
+  });
+  await seedVariant({
+    productId: mixed.id,
+    id: "a-mixed-sizes-l",
+    color: "Black",
+    size: "L",
+    price: 500_000,
+    stock: 5,
+  });
+
+  const page = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ collection: "city-uniform", size: "M" }),
+  });
+
+  const mixedId = page.products.find(({ name }) => name === "A Mixed Sizes")?.id;
+  assert.ok(mixedId, "the product still lists under the size filter");
+  assert.ok(page.inStockProductIds && !page.inStockProductIds.includes(mixedId));
+  assert.equal(page.products.at(-1)?.name, "A Mixed Sizes");
 });
 
 test("scoped facets offer only sizes the grid could still list, and keep the one picked", async () => {
