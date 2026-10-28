@@ -85,7 +85,7 @@ test("AC-02 / EX-01 on a real cart: 2 x 450.000 with a 50K voucher and a 600K fr
   const m = await fixed(50_000, 600_000);
   const s = await freeship(600_000);
   const result = await ok(c.id);
-  assert.deepEqual(result.quote.selection, { merchandiseId: m.id, shippingId: s.id });
+  assert.deepEqual(result.quote.selection, { merchandiseIds: [m.id], shippingId: s.id });
   assert.equal(result.quote.paidBeforeVnd, 900_000);
   assert.equal(result.quote.paidAfterVnd, 850_000);
   assert.equal(result.quote.shippingFeeVnd, 0);
@@ -103,7 +103,7 @@ test("AC-11: a card under its minimum shows the exact shortfall; AC-06: only in-
   const entry = result.entries.find((e) => e.card.id === dressOnly.id)!;
   assert.equal(entry.state.reason, "BELOW_MINIMUM");
   assert.equal(entry.state.shortfallVnd, 100_000);
-  assert.deepEqual(result.quote.selection.merchandiseId, null);
+  assert.deepEqual(result.quote.selection.merchandiseIds, []);
 });
 
 test("AC-26 / AC-04: the saved selection is what the preview honours; manual NONE stays NONE", async () => {
@@ -113,9 +113,9 @@ test("AC-26 / AC-04: the saved selection is what the preview honours; manual NON
   await fixed(80_000, 100_000, { name: "big" });
   const selection = createVoucherSelectionService(prisma, { shopId: SHOP, env: ON });
   assert.equal((await ok(c.id)).quote.merchandiseDiscountVnd, 80_000);
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: small.id });
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: small.id });
   assert.equal((await ok(c.id)).quote.merchandiseDiscountVnd, 10_000);
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: null });
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: null });
   const none = await ok(c.id);
   assert.equal(none.quote.merchandiseDiscountVnd, 0);
   assert.equal(none.quote.voucherCount, 0);
@@ -129,7 +129,7 @@ test("a private code the shopper entered is considered; without it the same vouc
   const applied = await createVoucherSelectionService(prisma, { shopId: SHOP, env: ON }).applyCode({ cartId: c.id, rawCode: "kol70" });
   assert.equal(applied.ok, true);
   const after = await ok(c.id);
-  assert.equal(after.quote.selection.merchandiseId, priv.id);
+  assert.deepEqual(after.quote.selection.merchandiseIds, [priv.id]);
   assert.equal(after.entries.find((e) => e.card.id === priv.id)!.card.publicCode, null);
 });
 
@@ -141,10 +141,10 @@ test("EX-06 / AC-29 on the real shipping engine: a non-stacking free-ship campai
   } });
   const m = await fixed(10_000, 50_000);
   const auto = await ok(c.id);
-  assert.deepEqual(auto.quote.selection, { merchandiseId: null, shippingId: null });
+  assert.deepEqual(auto.quote.selection, { merchandiseIds: [], shippingId: null });
   assert.equal(auto.quote.totalPayableVnd, 100_000);
   assert.equal(auto.quote.shippingFeeVnd, 0, "the campaign still ships it free");
-  await createVoucherSelectionService(prisma, { shopId: SHOP, env: ON }).setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: m.id });
+  await createVoucherSelectionService(prisma, { shopId: SHOP, env: ON }).setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: m.id });
   const manual = await ok(c.id);
   assert.equal(manual.quote.shippingFeeVnd, 30_000);
   assert.equal(manual.quote.totalPayableVnd, 120_000);
@@ -184,7 +184,7 @@ test("AC-28: the totals reconcile to the VND on a mixed cart with both vouchers"
   assert.equal(quote.paidBeforeVnd, 2 * 333_333 + 3 * 12_345);
   assert.equal(quote.paidBeforeVnd - quote.merchandiseDiscountVnd, quote.paidAfterVnd);
   assert.equal(quote.paidAfterVnd + quote.shippingFeeVnd, quote.totalPayableVnd);
-  assert.equal(quote.allocation!.lines.reduce((sum, l) => sum + l.deductionVnd, 0), quote.merchandiseDiscountVnd);
+  assert.equal(quote.merchandise[0]!.allocation.lines.reduce((sum, l) => sum + l.deductionVnd, 0), quote.merchandiseDiscountVnd);
 });
 
 test("AC-42: the preview is read-only: counters, holds, selection and the cart are unchanged, however often it runs", async () => {

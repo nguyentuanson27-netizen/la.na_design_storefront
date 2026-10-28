@@ -6,6 +6,8 @@
 **Baseline kỹ thuật:** main@575ebca631b41e26b3385644fcee2ed37a1091b4.
 **Phạm vi PR:** Chỉ thêm tài liệu này; **không** sửa runtime, DB, migration, test, CI, flags hoặc kích hoạt voucher.
 
+> **Bổ sung 28/10/2026 — loại và mốc ([ADR 0020](../decisions/0020-voucher-types-and-tiers.md)).** Nhóm MERCHANDISE có thể gồm nhiều **loại** do Admin tạo; mỗi loại là một bậc thang các voucher theo **mốc**. Khách dùng đồng thời nhiều voucher **khác loại** (và SHIPPING_FREE), nhưng trong **một loại chỉ một mốc**. Mọi chỗ trong spec này viết "một nhóm / mỗi nhóm / cùng kind" đọc là **một slot**: `SHIPPING_FREE`, `MERCHANDISE` (voucher không thuộc loại nào, như v1) hoặc `MERCHANDISE:<typeId>`. Quy tắc tiền: §4.3 bổ sung bên dưới. Không có loại nào được tạo thì hành vi đúng như v1.
+
 ## 0. Outcome, quyền quyết định và giả định
 
 **Mục tiêu:** Khách không cần săn mã vẫn thấy ưu đãi; mở một picker như Grab để xem voucher đủ điều kiện/chưa đạt mốc, biết thiếu bao nhiêu tiền, chọn tối đa một voucher **mỗi nhóm**, dùng đồng thời hai nhóm, và có tổng thanh toán thấp nhất theo mặc định. Admin tự quản lý chiến dịch và ngân sách; checkout COD guest tiếp tục gọn, không bắt đăng nhập/OTP.
@@ -101,6 +103,14 @@ Cho product P đang thuộc đúng shop của campaign, dùng **cùng cấp Prod
 - Tất cả input do Admin ghi phải được normalize/validate bounded theo shop, distinct product IDs, danh mục hợp lệ và loại trừ thắng trong cả hai mode. **Không dùng trực tiếp GLOBAL_ALL_PAID_LINES của gift-quantity-scope.ts cho ALL_SHOP+exclude:** helper đó cố ý từ chối mọi target. Dùng resolver voucher riêng, hoặc mở rộng bằng contract tách biệt không làm thay đổi ngữ nghĩa Gift & Quantity.
 - Ví dụ TARGETED: chọn danh mục Đầm + include Túi B + exclude Đầm A ⇒ Đầm khác và Túi B đủ điều kiện, Đầm A bị loại. ALL_SHOP + exclude Túi B ⇒ mọi paid product trừ Túi B; quà không tham gia.
 
+### 3.4. Loại (VoucherType) và mốc (ADR 0020)
+
+- **VoucherType:** name, `priority` (thứ tự áp dụng, nhỏ trước), issuance AUTO | CODE, visibility PUBLIC | PRIVATE, `code` (một mã cho cả loại, unique theo shop). Mốc là `VoucherCampaign` có `typeId`; issuance/visibility của mốc lấy từ loại, `code` của mốc để trống.
+- **Trong một loại:** tự động chọn **mốc cao nhất khách đạt** (ngưỡng tính trên subtotal trong scope **trước mọi voucher**); khách có thể khoá mốc thấp hơn hoặc NONE. Mốc hết quota/budget bị bỏ qua, hệ thống rơi xuống mốc thấp hơn còn quota. Quota/budget **riêng từng mốc**.
+- **Giữa các loại:** áp **tuần tự theo priority**; giảm của loại sau tính trên số tiền còn lại sau loại trước (FIXED không đổi, % tính trên phần còn lại, cap giữ nguyên). Ngưỡng của mọi mốc đều xét trên subtotal **trước voucher**. Điều kiện `0 < D < E` và đơn giá ≥ 1đ kiểm tra trên phần còn lại; tổ hợp vi phạm không được chọn.
+- **Mã:** loại CODE có một mã mở khoá cả bậc thang; nhập mã khác của cùng loại thì thay mã trước. Mã sai/hết hạn/hết lượt trả cùng `INVALID_CODE` như v1.
+- **Hold/redemption:** một hold sống và một redemption cho mỗi slot; hold của nhiều slot cấp trong một transaction (ADR 0020 D-5).
+
 ## 4. Pricing contract chính tắc
 
 ### 4.1. Thứ tự tính và phạm vi
@@ -148,6 +158,10 @@ Cho product P đang thuộc đúng shop của campaign, dùng **cùng cấp Prod
 **EX-09 — Mốc tier vs gift (TG-11 A ĐÃ CHỐT):** bậc `ORDER_SUBTOTAL` đạt trên giá hàng **trước voucher** và đã giảm qua tier; nếu voucher làm P_after xuống dưới mốc thì bậc tier **không** tính lại. Quà có điều kiện ORDER_SUBTOTAL được tính lại trên P_after; cảnh báo/cho xác nhận khi mất quà.
 
 **EX-10 — TG-11 A chốt ranh giới ADR D-12:** paid goods sau legacy/quantity nhưng trước `ORDER_SUBTOTAL` ladder và voucher = **650.000đ**; ladder min **600.000đ** giảm **30.000đ**; voucher MERCHANDISE giảm **80.000đ** và hợp lệ. **Kết quả 650.000 − 30.000 − 80.000 = 540.000đ**; ngưỡng voucher xét trên **620.000đ** (sau tier), chưa ship. **Không được dùng phương án B 570.000đ** (voucher trước khiến ladder rớt mốc). **Không dùng voucher** phải giữ giá nền **620.000đ trước shipping**. Test quote/proof/snapshot/POS phải khớp từng đồng, không chạy lại tier hoặc double-count.
+
+### 4.4. Ví dụ nhiều loại (ADR 0020 D-3)
+
+P = 1.000.000, loại A (ưu tiên 1): ≥500K giảm 30K, ≥1M giảm 80K; loại B (ưu tiên 2): ≥500K giảm 5% (trần 50K), ≥1M giảm 10% (trần 100K). Cả hai đạt mốc 1M → A giảm 80.000 (còn 920.000), B giảm 10% × 920.000 = 92.000. Tổng giảm 172.000, khách trả 828.000 (chưa gồm ship). Với P = 520.000: A mốc 500K giảm 30.000 (còn 490.000); B mốc 500K vẫn đạt vì ngưỡng xét trên 520.000, giảm 5% × 490.000 = 24.500.
 
 ## 5. Hold 10 phút, dùng lượt tại website, refund
 

@@ -32,8 +32,8 @@ async function cart(paidRevision = 0) {
   return id;
 }
 const key = (cartId: string) => voucherAttemptKey(cartId, SECRET);
-const merch = (c: { id: string; revision: number }, discountVnd = 30_000): VoucherHoldGrant => ({ kind: "MERCHANDISE", campaignId: c.id, campaignRevision: c.revision, discountVnd });
-const ship = (c: { id: string; revision: number }, discountVnd = 30_000): VoucherHoldGrant => ({ kind: "SHIPPING_FREE", campaignId: c.id, campaignRevision: c.revision, discountVnd });
+const merch = (c: { id: string; revision: number }, discountVnd = 30_000): VoucherHoldGrant => ({ kind: "MERCHANDISE", slot: "MERCHANDISE", campaignId: c.id, campaignRevision: c.revision, discountVnd });
+const ship = (c: { id: string; revision: number }, discountVnd = 30_000): VoucherHoldGrant => ({ kind: "SHIPPING_FREE", slot: "SHIPPING_FREE", campaignId: c.id, campaignRevision: c.revision, discountVnd });
 const request = (cartId: string, grants: VoucherHoldGrant[], extra: Record<string, unknown> = {}) => ({ shopId: SHOP, cartId, paidRevision: 0, quoteDigest: DIGEST_A, grants, ...extra });
 const ledger = (id: string) => prisma.voucherCampaign.findUniqueOrThrow({ where: { id } });
 
@@ -191,7 +191,7 @@ test("T+5: a 5-minute-old hold still counts and is not extended; T+10: it is gon
   const cartTwo = await cart();
   const n = await f.campaign({ maxUses: 1, reservedUses: 1, reservedVnd: BigInt(30_000) });
   await f.hold(n.id, { attemptKey: key(cartTwo), createdAt: tenMinutes, expiresAt: new Date(tenMinutes.getTime() + 10 * MIN) });
-  const facts = { cartId: cartTwo, kind: "MERCHANDISE" as const, campaignId: n.id, campaignRevision: 1, discountVnd: 30_000, quoteDigest: f.hex("q"), paidRevision: 1 };
+  const facts = { cartId: cartTwo, slot: "MERCHANDISE", campaignId: n.id, campaignRevision: 1, discountVnd: 30_000, quoteDigest: f.hex("q"), paidRevision: 1 };
   assert.equal(await holds.findHonourableHold(facts), null, "T+10: expired by the database clock");
 });
 
@@ -200,7 +200,7 @@ test("D-3 self-held precedence: a campaign that ended at T+3 still honours the h
   const m = await f.campaign({ endsAt: new Date(Date.now() - 2 * MIN), startsAt: new Date(Date.now() - 60 * MIN), maxUses: 1, reservedUses: 1, reservedVnd: BigInt(30_000) });
   const createdAt = new Date(Date.now() - 5 * MIN);
   await f.hold(m.id, { attemptKey: key(cartId), createdAt, expiresAt: new Date(createdAt.getTime() + 10 * MIN) });
-  const facts = { cartId, kind: "MERCHANDISE" as const, campaignId: m.id, campaignRevision: 1, discountVnd: 30_000, quoteDigest: f.hex("q"), paidRevision: 1 };
+  const facts = { cartId, slot: "MERCHANDISE", campaignId: m.id, campaignRevision: 1, discountVnd: 30_000, quoteDigest: f.hex("q"), paidRevision: 1 };
   assert.ok(await holds.findHonourableHold(facts), "ended campaign, live hold: honoured");
   assert.equal(await holds.findHonourableHold({ ...facts, discountVnd: 29_999 }), null, "any changed fact is a re-quote");
   assert.equal(await holds.findHonourableHold({ ...facts, campaignRevision: 2 }), null);
@@ -243,11 +243,11 @@ test("releasing a group returns its use and VND; releasing something not held is
   const s = await f.shippingCampaign({ maxUses: 5 });
   const cartId = await cart();
   assert.ok((await holds.hold(request(cartId, [merch(m), ship(s)]))).ok);
-  const released = await holds.hold({ shopId: SHOP, cartId, paidRevision: 0, quoteDigest: DIGEST_A, grants: [], releaseKinds: ["SHIPPING_FREE"] });
+  const released = await holds.hold({ shopId: SHOP, cartId, paidRevision: 0, quoteDigest: DIGEST_A, grants: [], releaseSlots: ["SHIPPING_FREE"] });
   assert.deepEqual(released.ok && released.released, ["SHIPPING_FREE"]);
   assert.equal((await ledger(s.id)).reservedUses, 0);
   assert.equal((await ledger(m.id)).reservedUses, 1);
-  const again = await holds.hold({ shopId: SHOP, cartId, paidRevision: 0, quoteDigest: DIGEST_A, grants: [], releaseKinds: ["SHIPPING_FREE"] });
+  const again = await holds.hold({ shopId: SHOP, cartId, paidRevision: 0, quoteDigest: DIGEST_A, grants: [], releaseSlots: ["SHIPPING_FREE"] });
   assert.deepEqual(again.ok && again.released, []);
   await assertLedgerConsistent(m.id);
   await assertLedgerConsistent(s.id);
@@ -261,7 +261,8 @@ test("refusals: changed cart revision, unknown/foreign/wrong-kind campaign, edit
   assert.deepEqual(await holds.hold(ok({ cartId: "no-such-cart" })), { ok: false, reason: "CART_NOT_FOUND", kind: null, campaignId: null });
   assert.equal((await holds.hold(ok({ grants: [{ ...merch(m), campaignId: "nope" }] }))).ok, false);
   assert.deepEqual(await holds.hold(ok({ grants: [{ ...merch(m), campaignRevision: 9 }] })), { ok: false, reason: "CAMPAIGN_CHANGED", kind: "MERCHANDISE", campaignId: m.id });
-  assert.deepEqual(await holds.hold(ok({ grants: [{ ...merch(m), kind: "SHIPPING_FREE" }] })), { ok: false, reason: "CAMPAIGN_NOT_FOUND", kind: "SHIPPING_FREE", campaignId: m.id });
+  assert.deepEqual(await holds.hold(ok({ grants: [{ ...merch(m), kind: "SHIPPING_FREE", slot: "SHIPPING_FREE" }] })), { ok: false, reason: "CAMPAIGN_NOT_FOUND", kind: "SHIPPING_FREE", campaignId: m.id });
+  assert.deepEqual(await holds.hold(ok({ grants: [{ ...merch(m), kind: "SHIPPING_FREE" }] })), { ok: false, reason: "INVALID_REQUEST", kind: null, campaignId: null }, "a kind and a slot of different groups never go together");
   await prisma.voucherCampaign.update({ where: { id: m.id }, data: { isEnabled: false, disabledAt: new Date() } });
   assert.deepEqual(await holds.hold(ok()), { ok: false, reason: "CAMPAIGN_NOT_ACTIVE", kind: "MERCHANDISE", campaignId: m.id });
   for (const bad of [{ quoteDigest: "short" }, { grants: [merch(m), merch(m)] }, { grants: [{ ...merch(m), discountVnd: 0 }] }, { grants: [{ ...merch(m), discountVnd: 1.5 }] }, { grants: [] }, { shopId: 0 }]) {
@@ -283,7 +284,7 @@ test("D-6 gate: feature off or shop not verified grants nothing; release and the
   assert.equal(await prisma.voucherHold.count({ where: { campaign: { pancakeShopId: SHOP } } }), 0);
 
   assert.ok((await holds.hold(request(cartId, [merch(m)]))).ok);
-  const released = await off.hold({ shopId: SHOP, cartId, paidRevision: 0, quoteDigest: DIGEST_A, grants: [], releaseKinds: ["MERCHANDISE"] });
+  const released = await off.hold({ shopId: SHOP, cartId, paidRevision: 0, quoteDigest: DIGEST_A, grants: [], releaseSlots: ["MERCHANDISE"] });
   assert.deepEqual(released.ok && released.released, ["MERCHANDISE"], "settling is not gated");
 });
 
@@ -333,7 +334,7 @@ test("readOwnLiveHolds returns only this attempt's HELD, unexpired holds, by the
   await f.hold(m.id, { attemptKey: key(ownCart) });
   assert.deepEqual(await holds.readOwnLiveHolds(expiredCart), [], "expired by the clock, still HELD in the table");
   assert.deepEqual(await holds.readOwnLiveHolds(await cart()), [], "a cart with no hold");
-  assert.deepEqual(await holds.readOwnLiveHolds(ownCart), [{ kind: "MERCHANDISE", campaignId: m.id, campaignRevision: 1, heldDiscountVnd: 30_000 }]);
+  assert.deepEqual(await holds.readOwnLiveHolds(ownCart), [{ kind: "MERCHANDISE", slot: "MERCHANDISE", campaignId: m.id, campaignRevision: 1, heldDiscountVnd: 30_000 }]);
 });
 
 test("verifyUnderCartLock runs with the cart row locked, before anything changes, and a refusal rolls the call back (grant, reuse and release alike)", async () => {
@@ -358,7 +359,7 @@ test("verifyUnderCartLock runs with the cart row locked, before anything changes
   const expected = { ok: false, reason: "QUOTE_CHANGED", kind: null, campaignId: null };
   assert.deepEqual(await holds.hold(request(cartId, [merch(m, 25_000)], { quoteDigest: DIGEST_B }), { verifyUnderCartLock: refuse }), expected, "swap");
   assert.deepEqual(await holds.hold(request(cartId, [merch(m)]), { verifyUnderCartLock: refuse }), expected, "reuse");
-  assert.deepEqual(await holds.hold({ shopId: SHOP, cartId, paidRevision: 0, quoteDigest: DIGEST_A, grants: [], releaseKinds: ["MERCHANDISE"] }, { verifyUnderCartLock: refuse }), expected, "release");
+  assert.deepEqual(await holds.hold({ shopId: SHOP, cartId, paidRevision: 0, quoteDigest: DIGEST_A, grants: [], releaseSlots: ["MERCHANDISE"] }, { verifyUnderCartLock: refuse }), expected, "release");
   const rows = await prisma.voucherHold.findMany({ where: { campaignId: m.id } });
   assert.deepEqual(rows.map((h) => [h.state, Number(h.heldDiscountVnd)]), [["HELD", 30_000]]);
   await assertLedgerConsistent(m.id);

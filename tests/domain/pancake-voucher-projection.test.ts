@@ -112,10 +112,10 @@ test("AC-20: AUTO leaves out a voucher that would make the gift unrepresentable;
   assert.equal(auto.ok, true, JSON.stringify(auto));
   // With a gift unit (1.000đ) to absorb, the tight voucher leaves only 4đ of paid money: not representable.
   const ok = auto as Extract<typeof auto, { ok: true }>;
-  assert.notEqual(ok.selection.merchandiseId, "tight");
+  assert.equal(ok.selection.merchandiseIds.includes("tight"), false);
   assert.equal(ok.cards.find((c) => c.campaignId === "tight")?.reason, "POS_INFEASIBLE");
-  const manual = buildVoucherQuote({ ...base, selection: { merchandise: { mode: "MANUAL", voucherId: "tight" }, shipping: { mode: "AUTO" } } }) as Extract<ReturnType<typeof buildVoucherQuote>, { ok: true }>;
-  assert.notEqual(manual.selection.merchandiseId, "tight");
+  const manual = buildVoucherQuote({ ...base, selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: "tight" } }, shipping: { mode: "AUTO" } } }) as Extract<ReturnType<typeof buildVoucherQuote>, { ok: true }>;
+  assert.equal(manual.selection.merchandiseIds.includes("tight"), false);
   assert.deepEqual(manual.notices.map((n) => [n.voucherId, n.reason]), [["tight", "POS_INFEASIBLE"]]);
   assert.equal(manual.held, false);
 });

@@ -11,9 +11,10 @@ import {
   type VoucherCampaignRow,
 } from "./voucher-campaign.ts";
 import { validateVoucherCampaign, type VoucherCampaignValues, type VoucherRuleIssue } from "./voucher-rule-validation.ts";
+import { findLadderConflict, validateVoucherType, type LadderTier } from "./voucher-type-rules.ts";
 
 /**
- * Voucher v1 (V06): Admin writes, lifecycle and the committed-floor cap rule (spec §3.1, TG-05 A).
+ * Voucher v1 (V06; types and tiers per ADR 0020): Admin writes, lifecycle and the committed-floor cap rule (spec §3.1, TG-05 A).
  *
  * Every entry re-authorizes (ADMIN role) and is scoped to one shop in every query. A campaign is created as an
  * inactive draft and never activates itself. Edits and enable/disable are optimistic on `revision` and run
@@ -24,6 +25,8 @@ import { validateVoucherCampaign, type VoucherCampaignValues, type VoucherRuleIs
  */
 
 export const MAX_ENABLED_VOUCHERS_PER_SHOP = 50;
+/** Kept under the optimizer's slot bound (8) so the untyped group and every type can always be in play together. */
+export const MAX_VOUCHER_TYPES_PER_SHOP = 6;
 /** Separate from catalog-sync (1277934572), product-slug (1277934573) and shipping campaigns (1277934574). */
 export const VOUCHER_ADMIN_LOCK_NAMESPACE = 1_277_934_575;
 
@@ -37,6 +40,10 @@ export type VoucherAdminReason =
   | "LIMIT_REACHED"
   | "WINDOW_ENDED"
   | "CODE_TAKEN"
+  | "TYPE_NOT_FOUND"
+  | "TYPE_LIMIT_REACHED"
+  /** A type's stacking order cannot change while a shopper still holds one of its vouchers. */
+  | "HOLDS_LIVE"
   | "IDENTITY_LOCKED"
   | "NOT_EDITABLE"
   | "NOT_RE_ENABLEABLE"
@@ -85,7 +92,8 @@ export function voucherColumns(value: VoucherCampaignValues) {
 
 function isUniqueViolation(error: unknown): boolean {
   const text = `${error instanceof Error ? error.message : ""} ${(error as { code?: string })?.code ?? ""} ${(error as { cause?: { message?: string } })?.cause?.message ?? ""}`;
-  return /P2002|unique constraint|duplicate key/i.test(text);
+  // The code namespace trigger (a code is a campaign's or a type's, never both) answers like a unique key.
+  return /P2002|unique constraint|duplicate key|already used by a (campaign|type)/i.test(text);
 }
 
 function isCheckViolation(error: unknown): boolean {
@@ -112,6 +120,41 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
     return tx.voucherCampaign.findFirst({ where: { id, pancakeShopId: shopId }, select: voucherCampaignSelection });
   }
 
+  /** The type a typed tier belongs to, in this shop. */
+  async function readType(tx: Pick<Prisma.TransactionClient, "voucherType">, typeId: string) {
+    return tx.voucherType.findFirst({ where: { id: typeId, pancakeShopId: shopId }, select: { id: true, name: true, priority: true, issuance: true, visibility: true, code: true, revision: true } });
+  }
+
+  /** A tier owns neither its distribution nor its code: it takes both from its type, whatever the form sent. */
+  function withTypeDistribution(input: unknown, type: { issuance: string; visibility: string; code: string | null }, typeId: string): Record<string, unknown> {
+    return { ...(input as Record<string, unknown>), typeId, issuance: type.issuance, visibility: type.visibility, code: type.code };
+  }
+
+  const ladderTierOf = (id: string, value: VoucherCampaignValues): LadderTier => ({
+    id,
+    minEligibleSubtotalVnd: value.minEligibleSubtotalVnd,
+    discount: value.discount,
+    scopeKey: JSON.stringify([value.scope.mode, ...(value.scope.mode === "TARGETED" ? [[...value.scope.categoryKeys].sort(), [...value.scope.includeProductIds].sort()] : []), [...value.scope.excludeProductIds].sort()]),
+  });
+
+  /**
+   * ADR 0020 D-7: among the ENABLED, not-yet-ended tiers of one type, a higher threshold gives a strictly higher discount. Draft tiers
+   * are free (a Copy of a rung starts with the same threshold); the rule bites when a tier would be live next to another.
+   */
+  async function ladderIssue(tx: Prisma.TransactionClient, typeId: string, candidate: LadderTier, now: Date): Promise<VoucherRuleIssue | null> {
+    const siblings = await tx.voucherCampaign.findMany({ where: { pancakeShopId: shopId, typeId, isEnabled: true, id: { not: candidate.id } }, select: voucherCampaignSelection });
+    const live: LadderTier[] = [];
+    for (const row of siblings) {
+      if (deriveCampaignLifecycle({ ...row, now }).status === "ENDED") continue;
+      try {
+        live.push(ladderTierOf(row.id, toVoucherCampaign(row)));
+      } catch {
+        // A sibling that no longer validates is not part of any quote either.
+      }
+    }
+    return findLadderConflict(candidate, live) === null ? null : { code: "ladder-conflict", field: "minEligibleSubtotalVnd" };
+  }
+
   async function validTargets(tx: Prisma.TransactionClient, value: VoucherCampaignValues) {
     const ids = [...new Set([...(value.scope.mode === "TARGETED" ? value.scope.includeProductIds : []), ...value.scope.excludeProductIds])];
     if (ids.length === 0) return true;
@@ -121,14 +164,23 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
 
   async function create(session: Session, input: unknown, now = new Date()): Promise<VoucherAdminResult> {
     authorize(session, now);
-    const parsed = validateVoucherCampaign(input);
+    const typeId = typeof (input as { typeId?: unknown } | null)?.typeId === "string" ? ((input as { typeId: string }).typeId) : null;
+    let prepared: unknown = input;
+    if (typeId !== null) {
+      if (!ID_PATTERN.test(typeId)) return { ok: false, reason: "TYPE_NOT_FOUND" };
+      const type = await readType(client, typeId);
+      if (type === null) return { ok: false, reason: "TYPE_NOT_FOUND" };
+      prepared = withTypeDistribution(input, type, typeId);
+    }
+    const parsed = validateVoucherCampaign(prepared);
     if (!parsed.ok) return { ok: false, reason: "VALIDATION", issues: parsed.issues };
     try {
       return await client.$transaction(async (tx) => {
         await lockShop(tx);
         if (!(await validTargets(tx, parsed.value))) return { ok: false, reason: "TARGET_INVALID" } as const;
+        // A new campaign is a disabled draft, so the ladder rule is checked when it is enabled.
         const row = await tx.voucherCampaign.create({
-          data: { ...voucherColumns(parsed.value), pancakeShopId: shopId, isEnabled: false },
+          data: { ...voucherColumns(parsed.value), code: parsed.value.typeId === null ? parsed.value.code : null, typeId: parsed.value.typeId, pancakeShopId: shopId, isEnabled: false },
           select: { id: true, revision: true },
         });
         return { ok: true, id: row.id, revision: row.revision } as const;
@@ -143,7 +195,11 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
     authorize(session, now);
     if (!ID_PATTERN.test(id)) return { ok: false, reason: "NOT_FOUND" };
     if (!validRevision(revision)) return { ok: false, reason: "STALE_REVISION" };
-    const parsed = validateVoucherCampaign(input);
+    // A tier never changes type, so its type is known before the lock; the form's own issuance/visibility/code are ignored for it.
+    const existing = await client.voucherCampaign.findFirst({ where: { id, pancakeShopId: shopId }, select: voucherCampaignSelection });
+    if (existing === null) return { ok: false, reason: "NOT_FOUND" };
+    const prepared = existing.type ? withTypeDistribution(input, existing.type, existing.type.id) : { ...(input as Record<string, unknown>), typeId: null };
+    const parsed = validateVoucherCampaign(prepared);
     if (!parsed.ok) return { ok: false, reason: "VALIDATION", issues: parsed.issues };
     try {
       return await client.$transaction(async (tx) => {
@@ -155,7 +211,8 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
         // Ended or disabled-after-running campaigns are history: Copy is the only way forward.
         if (lifecycle.isTerminal || lifecycle.status === "ENDED") return { ok: false, reason: "NOT_EDITABLE" } as const;
         // Once a campaign has ever been enabled its identity is fixed, so a code printed on a flyer keeps meaning one thing.
-        if (old.enabledAt !== null && (old.kind !== parsed.value.kind || old.issuance !== parsed.value.issuance || old.visibility !== parsed.value.visibility || old.code !== parsed.value.code)) {
+        const storedCode = old.type ? old.type.code : old.code;
+        if (old.enabledAt !== null && (old.kind !== parsed.value.kind || old.issuance !== parsed.value.issuance || old.visibility !== parsed.value.visibility || storedCode !== parsed.value.code)) {
           return { ok: false, reason: "IDENTITY_LOCKED" } as const;
         }
         const value: VoucherCampaignValues = {
@@ -171,9 +228,13 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
           return { ok: false, reason: "CAP_BELOW_COMMITTED", floor } as const;
         }
         if (!(await validTargets(tx, rechecked.value))) return { ok: false, reason: "TARGET_INVALID" } as const;
+        if (old.type && old.isEnabled) {
+          const conflict = await ladderIssue(tx, old.type.id, ladderTierOf(id, rechecked.value), now);
+          if (conflict !== null) return { ok: false, reason: "VALIDATION", issues: [conflict] } as const;
+        }
         const updated = await tx.voucherCampaign.updateMany({
           where: { id, pancakeShopId: shopId, revision },
-          data: { ...voucherColumns(rechecked.value), revision: { increment: 1 } },
+          data: { ...voucherColumns(rechecked.value), code: old.type ? null : rechecked.value.code, revision: { increment: 1 } },
         });
         return updated.count === 1 ? ({ ok: true, id, revision: revision + 1 } as const) : ({ ok: false, reason: "STALE_REVISION" } as const);
       });
@@ -204,6 +265,10 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
         if (!(await validTargets(tx, campaign))) return { ok: false, reason: "TARGET_INVALID" } as const;
         const count = await tx.voucherCampaign.count({ where: { pancakeShopId: shopId, isEnabled: true, id: { not: id } } });
         if (count >= MAX_ENABLED_VOUCHERS_PER_SHOP) return { ok: false, reason: "LIMIT_REACHED" } as const;
+        if (row.type) {
+          const conflict = await ladderIssue(tx, row.type.id, ladderTierOf(id, campaign), now);
+          if (conflict !== null) return { ok: false, reason: "VALIDATION", issues: [conflict] } as const;
+        }
       }
       const updated = await tx.voucherCampaign.updateMany({
         where: { id, pancakeShopId: shopId, revision },
@@ -220,7 +285,8 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
     const source = await client.voucherCampaign.findFirst({ where: { id, pancakeShopId: shopId }, select: voucherCampaignSelection });
     if (source === null) return { ok: false, reason: "NOT_FOUND" };
     const input = voucherRowToInput(source);
-    return create(session, { ...input, name: buildCopyCampaignName(source.name), code: source.issuance === "CODE" ? (overrides.code ?? null) : null, startsAt: null, endsAt: null }, now);
+    // A tier is copied into the same type (it takes the type's code); anything else needs its own new code if it is a CODE voucher.
+    return create(session, { ...input, name: buildCopyCampaignName(source.name), code: source.type ? source.type.code : source.issuance === "CODE" ? (overrides.code ?? null) : null, startsAt: null, endsAt: null }, now);
   }
 
   async function list(session: Session, beforeId?: string) {
@@ -240,5 +306,85 @@ export function createVoucherAdminService(client: PrismaClient, shopId: number) 
     return client.voucherCampaign.findFirst({ where: { id, pancakeShopId: shopId }, select: voucherCampaignSelection });
   }
 
-  return { create, edit, setEnabled, copy, list, get };
+  // --- types (ADR 0020) -----------------------------------------------------------------------------------------------------
+
+  async function createType(session: Session, input: unknown, now = new Date()): Promise<VoucherAdminResult> {
+    authorize(session, now);
+    const parsed = validateVoucherType(input);
+    if (!parsed.ok) return { ok: false, reason: "VALIDATION", issues: parsed.issues };
+    try {
+      return await client.$transaction(async (tx) => {
+        await lockShop(tx);
+        if ((await tx.voucherType.count({ where: { pancakeShopId: shopId } })) >= MAX_VOUCHER_TYPES_PER_SHOP) return { ok: false, reason: "TYPE_LIMIT_REACHED" } as const;
+        const row = await tx.voucherType.create({ data: { pancakeShopId: shopId, ...parsed.value }, select: { id: true } });
+        return { ok: true, id: row.id, revision: 1 } as const;
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) return { ok: false, reason: "CODE_TAKEN" };
+      throw error;
+    }
+  }
+
+  /**
+   * Renames a type or moves it in the stack. Its distribution (AUTO/CODE, visibility) is fixed once it has tiers, because they carry
+   * copies of it, and its code is fixed once any tier has been enabled (a code printed on a flyer keeps meaning one thing).
+   */
+  async function editType(session: Session, id: string, revision: number, input: unknown, now = new Date()): Promise<VoucherAdminResult> {
+    authorize(session, now);
+    if (!ID_PATTERN.test(id)) return { ok: false, reason: "TYPE_NOT_FOUND" };
+    if (!validRevision(revision)) return { ok: false, reason: "STALE_REVISION" };
+    const parsed = validateVoucherType(input);
+    if (!parsed.ok) return { ok: false, reason: "VALIDATION", issues: parsed.issues };
+    try {
+      return await client.$transaction(async (tx) => {
+        await lockShop(tx);
+        const old = await readType(tx, id);
+        if (old === null) return { ok: false, reason: "TYPE_NOT_FOUND" } as const;
+        // Optimistic: a form opened before another Admin saved is refused, never allowed to write its old values back.
+        if (old.revision !== revision) return { ok: false, reason: "STALE_REVISION" } as const;
+        if (old.priority !== parsed.value.priority) {
+          // The order is part of every quote and of the digest a hold stores: moving a type while a shopper holds one of its
+          // vouchers would turn that hold stale in checkout although nothing the shopper saw has changed. The tier rows are locked
+          // first (a hold grant takes the same row lock), so no hold can be granted between this check and the commit.
+          const tierIds = (await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "VoucherCampaign" WHERE "typeId" = ${id} AND "pancakeShopId" = ${shopId} ORDER BY "id" FOR UPDATE`).map((row) => row.id);
+          if (tierIds.length > 0) {
+            const live = await tx.$queryRaw<Array<{ count: number }>>`SELECT count(*)::int AS "count" FROM "VoucherHold" WHERE "campaignId" = ANY(${tierIds}) AND "state" = 'HELD' AND "expiresAt" > clock_timestamp()`;
+            if ((live[0]?.count ?? 0) > 0) return { ok: false, reason: "HOLDS_LIVE" } as const;
+          }
+        }
+        const distributionChanged = old.issuance !== parsed.value.issuance || old.visibility !== parsed.value.visibility || old.code !== parsed.value.code;
+        if (distributionChanged) {
+          const tiers = await tx.voucherCampaign.count({ where: { typeId: id, pancakeShopId: shopId } });
+          if (tiers > 0) {
+            const everEnabled = await tx.voucherCampaign.count({ where: { typeId: id, pancakeShopId: shopId, enabledAt: { not: null } } });
+            const onlyCodeChanged = old.issuance === parsed.value.issuance && old.visibility === parsed.value.visibility;
+            if (!onlyCodeChanged || everEnabled > 0) return { ok: false, reason: "IDENTITY_LOCKED" } as const;
+          }
+        }
+        const updated = await tx.voucherType.updateMany({ where: { id, pancakeShopId: shopId, revision }, data: { ...parsed.value, revision: { increment: 1 } } });
+        return updated.count === 1 ? ({ ok: true, id, revision: revision + 1 } as const) : ({ ok: false, reason: "STALE_REVISION" } as const);
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) return { ok: false, reason: "CODE_TAKEN" };
+      throw error;
+    }
+  }
+
+  async function listTypes(session: Session) {
+    authorize(session, new Date());
+    return client.voucherType.findMany({
+      where: { pancakeShopId: shopId },
+      select: { id: true, name: true, priority: true, issuance: true, visibility: true, code: true, revision: true, _count: { select: { tiers: true } } },
+      orderBy: [{ priority: "asc" }, { id: "asc" }],
+      take: MAX_VOUCHER_TYPES_PER_SHOP,
+    });
+  }
+
+  async function getType(session: Session, id: string) {
+    authorize(session, new Date());
+    if (!ID_PATTERN.test(id)) return null;
+    return readType(client, id);
+  }
+
+  return { create, edit, setEnabled, copy, list, get, createType, editType, listTypes, getType };
 }

@@ -6,7 +6,7 @@ import { GIFT_SLOTS_VARIATION } from "./voucher-quote-facts.ts";
 import { voucherQuoteDigest, type VoucherProofBinding, type VoucherProofFacts, type VoucherProofLine } from "./voucher-quote-proof.ts";
 
 /**
- * Voucher v1 (V13, ADR 0018 D-3 step 3): the order is accepted and its vouchers are consumed in ONE transaction.
+ * Voucher v1 (V13, ADR 0018 D-3 step 3; several merchandise vouchers per ADR 0020): the order is accepted and its vouchers are consumed in ONE transaction.
  *
  * What an order carries is declared, not guessed. The checkout snapshot (V18) records the V10 voucher snapshot on
  * the DRAFT order (`recordVoucherOrderSnapshot`, insert-only, DRAFT-only, by trigger). An order without that row is
@@ -17,7 +17,7 @@ import { voucherQuoteDigest, type VoucherProofBinding, type VoucherProofFacts, t
  * moved to `POS_SUBMITTING`, and runs `acceptWithin(tx, ...)` as the last statement before committing. Inside it:
  *
  *   lock the order; lock the cart; lock the declared campaigns ascending by id; lock the attempt's HELD holds;
- *   check each declared voucher has a hold that is still HELD, unexpired by the DATABASE clock, on the cart's
+ *   check each declared voucher has a hold, in its own slot, that is still HELD, unexpired by the DATABASE clock, on the cart's
  *   current `paidRevision`, for the declared campaign revision and amount; check the digest the holds promised
  *   equals the digest recomputed from the order's FROZEN quote rows and that the declared money is the quote's;
  *   then insert the `OrderAcceptance` marker, move each hold to CONSUMED, insert its `VoucherRedemption` and move
@@ -43,7 +43,7 @@ export type VoucherAcceptanceFailureReason =
   /** The order's frozen quote is not the one the holds promised, or the declaration is not the quote's money. */
   | "QUOTE_MISMATCH";
 
-export type AcceptedVoucher = Readonly<{ kind: "MERCHANDISE" | "SHIPPING_FREE"; campaignId: string; campaignRevision: number; holdId: string; amountVnd: number }>;
+export type AcceptedVoucher = Readonly<{ kind: "MERCHANDISE" | "SHIPPING_FREE"; slot: string; campaignId: string; campaignRevision: number; holdId: string; amountVnd: number }>;
 
 export type VoucherAcceptanceResult =
   | Readonly<{ ok: true; applied: false }>
@@ -56,6 +56,7 @@ type HoldRow = {
   campaignRevision: number;
   pancakeShopId: number;
   kind: "MERCHANDISE" | "SHIPPING_FREE";
+  slot: string;
   quoteDigest: string;
   paidRevision: bigint;
   heldDiscountVnd: bigint;
@@ -70,12 +71,12 @@ export async function recordVoucherOrderSnapshot(
   input: Readonly<{ orderId: string; snapshot: VoucherOrderSnapshot }>,
 ): Promise<void> {
   const parsed = parseVoucherOrderSnapshot(input.snapshot);
-  if (parsed === null || (parsed.merchandise === null && parsed.shipping === null)) throw new TypeError("A voucher order snapshot must declare at least one voucher");
+  if (parsed === null || (parsed.merchandise.length === 0 && parsed.shipping === null)) throw new TypeError("A voucher order snapshot must declare at least one voucher");
   await tx.orderVoucherSnapshot.create({ data: { orderId: input.orderId, snapshot: parsed as unknown as Prisma.InputJsonValue } });
 }
 
 const toAccepted = (hold: HoldRow): AcceptedVoucher =>
-  Object.freeze({ kind: hold.kind, campaignId: hold.campaignId, campaignRevision: hold.campaignRevision, holdId: hold.id, amountVnd: Number(hold.heldDiscountVnd) });
+  Object.freeze({ kind: hold.kind, slot: hold.slot, campaignId: hold.campaignId, campaignRevision: hold.campaignRevision, holdId: hold.id, amountVnd: Number(hold.heldDiscountVnd) });
 
 /** `readAttemptSecret` is called only for an order that declares vouchers, so plain orders never need it. */
 export function createVoucherOrderAcceptance(options: Readonly<{ readAttemptSecret: () => string }>) {
@@ -90,12 +91,12 @@ export function createVoucherOrderAcceptance(options: Readonly<{ readAttemptSecr
     const declared = await tx.orderVoucherSnapshot.findUnique({ where: { orderId: input.orderId }, select: { snapshot: true } });
     if (!declared) return Object.freeze({ ok: true as const, applied: false as const });
     const snapshot = parseVoucherOrderSnapshot(declared.snapshot);
-    if (snapshot === null || (snapshot.merchandise === null && snapshot.shipping === null)) return fail("QUOTE_MISMATCH");
+    if (snapshot === null || (snapshot.merchandise.length === 0 && snapshot.shipping === null)) return fail("QUOTE_MISMATCH");
     if (order.sourceCartId === null) return fail("CART_UNAVAILABLE");
 
     const intended = [
-      ...(snapshot.merchandise ? [{ kind: "MERCHANDISE" as const, campaignId: snapshot.merchandise.campaignId, campaignRevision: snapshot.merchandise.campaignRevision, amountVnd: snapshot.merchandise.amountVnd }] : []),
-      ...(snapshot.shipping ? [{ kind: "SHIPPING_FREE" as const, campaignId: snapshot.shipping.campaignId, campaignRevision: snapshot.shipping.campaignRevision, amountVnd: snapshot.shipping.waivedFeeVnd }] : []),
+      ...snapshot.merchandise.map((entry) => ({ kind: "MERCHANDISE" as const, slot: entry.slot, campaignId: entry.campaignId, campaignRevision: entry.campaignRevision, amountVnd: entry.amountVnd })),
+      ...(snapshot.shipping ? [{ kind: "SHIPPING_FREE" as const, slot: "SHIPPING_FREE", campaignId: snapshot.shipping.campaignId, campaignRevision: snapshot.shipping.campaignRevision, amountVnd: snapshot.shipping.waivedFeeVnd }] : []),
     ];
 
     const carts = await tx.$queryRaw<Array<{ paidRevision: bigint }>>`
@@ -106,10 +107,10 @@ export function createVoucherOrderAcceptance(options: Readonly<{ readAttemptSecr
     if (accepted[0]) {
       // Replay (retry, double click, second tab): the winner's work stands; report it, write nothing.
       const consumed = await tx.$queryRaw<Array<HoldRow>>`
-        SELECT h."id", h."campaignId", h."campaignRevision", h."pancakeShopId", h."kind"::text AS "kind", h."quoteDigest", h."paidRevision", h."heldDiscountVnd", h."expiresAt"
+        SELECT h."id", h."campaignId", h."campaignRevision", h."pancakeShopId", h."kind"::text AS "kind", h."slot", h."quoteDigest", h."paidRevision", h."heldDiscountVnd", h."expiresAt"
         FROM "VoucherHold" h JOIN "VoucherRedemption" r ON r."holdId" = h."id"
-        WHERE r."orderId" = ${input.orderId} AND h."state" = 'CONSUMED' ORDER BY h."kind"::text`;
-      const same = consumed.length === intended.length && intended.every((want) => consumed.some((got) => got.kind === want.kind && got.campaignId === want.campaignId && Number(got.heldDiscountVnd) === want.amountVnd));
+        WHERE r."orderId" = ${input.orderId} AND h."state" = 'CONSUMED' ORDER BY h."slot"`;
+      const same = consumed.length === intended.length && intended.every((want) => consumed.some((got) => got.slot === want.slot && got.campaignId === want.campaignId && Number(got.heldDiscountVnd) === want.amountVnd));
       return same ? Object.freeze({ ok: true as const, applied: true as const, replayed: true, acceptedAt: accepted[0].acceptedAt, vouchers: consumed.map(toAccepted) }) : fail("HOLD_UNAVAILABLE");
     }
 
@@ -122,15 +123,15 @@ export function createVoucherOrderAcceptance(options: Readonly<{ readAttemptSecr
       if (rows[0]) campaigns.add(id);
     }
     const live = await tx.$queryRaw<HoldRow[]>`
-      SELECT "id", "campaignId", "campaignRevision", "pancakeShopId", "kind"::text AS "kind", "quoteDigest", "paidRevision", "heldDiscountVnd", "expiresAt"
-      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "state" = 'HELD' ORDER BY "kind"::text FOR UPDATE`;
+      SELECT "id", "campaignId", "campaignRevision", "pancakeShopId", "kind"::text AS "kind", "slot", "quoteDigest", "paidRevision", "heldDiscountVnd", "expiresAt"
+      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "state" = 'HELD' ORDER BY "slot" FOR UPDATE`;
     const clock = await tx.$queryRaw<Array<{ now: Date }>>`SELECT date_trunc('milliseconds', clock_timestamp()) AS "now"`;
     const now = clock[0]!.now;
 
-    // Each declared voucher must be exactly the live hold of its group: same campaign, same revision, same amount.
+    // Each declared voucher must be exactly the live hold of its slot: same campaign, same revision, same amount.
     const consume: HoldRow[] = [];
     for (const want of intended) {
-      const hold = live.find((candidate) => candidate.kind === want.kind);
+      const hold = live.find((candidate) => candidate.slot === want.slot);
       if (
         !hold || !campaigns.has(want.campaignId) || hold.campaignId !== want.campaignId || hold.campaignRevision !== want.campaignRevision ||
         Number(hold.heldDiscountVnd) !== want.amountVnd || hold.expiresAt.getTime() <= now.getTime() ||
@@ -161,10 +162,10 @@ export function createVoucherOrderAcceptance(options: Readonly<{ readAttemptSecr
       .map((line) => ({ pancakeVariationId: line.pancakeVariationId, quantity: line.quantity, unitPriceVnd: Number(line.unitPriceVnd), role: "PAID" as const }));
     const giftSlots = quote.lines.filter((line) => line.role === "GIFT").reduce((sum, line) => sum + line.quantity, 0);
     if (giftSlots > 0) proofLines.push({ pancakeVariationId: GIFT_SLOTS_VARIATION, quantity: giftSlots, unitPriceVnd: 0, role: "GIFT" });
-    const binding = (kind: HoldRow["kind"]): VoucherProofBinding | null => {
-      const hold = consume.find((candidate) => candidate.kind === kind);
-      return hold ? { campaignId: hold.campaignId, campaignRevision: hold.campaignRevision, amountVnd: Number(hold.heldDiscountVnd), hold: null } : null;
-    };
+    const bindingOf = (hold: HoldRow): VoucherProofBinding => ({ campaignId: hold.campaignId, campaignRevision: hold.campaignRevision, amountVnd: Number(hold.heldDiscountVnd), hold: null });
+    const shippingHold = consume.find((candidate) => candidate.kind === "SHIPPING_FREE");
+    // In the declared (application) order: the same vouchers in another order are another quote.
+    const merchandiseBindings = snapshot.merchandise.map((entry) => bindingOf(consume.find((candidate) => candidate.slot === entry.slot)!));
     let digest: string;
     try {
       const facts: VoucherProofFacts = {
@@ -174,8 +175,8 @@ export function createVoucherOrderAcceptance(options: Readonly<{ readAttemptSecr
         paidSubtotalVnd: Number(quote.paidSubtotalVnd),
         shippingFeeVnd: Number(quote.shippingFeeVnd),
         totalVnd: Number(quote.totalVnd),
-        merchandise: binding("MERCHANDISE"),
-        shipping: binding("SHIPPING_FREE"),
+        merchandise: merchandiseBindings,
+        shipping: shippingHold ? bindingOf(shippingHold) : null,
       };
       digest = voucherQuoteDigest(facts);
     } catch {
@@ -193,8 +194,8 @@ export function createVoucherOrderAcceptance(options: Readonly<{ readAttemptSecr
         WHERE "id" = ${hold.id} AND "state" = 'HELD'`;
       if (consumed !== 1) throw new Error("A voucher hold changed state while it was locked");
       await tx.$executeRaw`
-        INSERT INTO "VoucherRedemption" ("id", "campaignId", "campaignRevision", "kind", "orderId", "holdId", "amountVnd", "websiteAcceptedAt")
-        VALUES (${`vr_${crypto.randomUUID()}`}, ${hold.campaignId}, ${hold.campaignRevision}, ${hold.kind}::"VoucherKind", ${input.orderId}, ${hold.id}, ${hold.heldDiscountVnd}, ${now})`;
+        INSERT INTO "VoucherRedemption" ("id", "campaignId", "campaignRevision", "kind", "slot", "orderId", "holdId", "amountVnd", "websiteAcceptedAt")
+        VALUES (${`vr_${crypto.randomUUID()}`}, ${hold.campaignId}, ${hold.campaignRevision}, ${hold.kind}::"VoucherKind", ${hold.slot}, ${input.orderId}, ${hold.id}, ${hold.heldDiscountVnd}, ${now})`;
       await tx.$executeRaw`
         UPDATE "VoucherCampaign" SET "reservedUses" = "reservedUses" - 1, "reservedVnd" = "reservedVnd" - ${hold.heldDiscountVnd},
           "redeemedUses" = "redeemedUses" + 1, "redeemedVnd" = "redeemedVnd" + ${hold.heldDiscountVnd}

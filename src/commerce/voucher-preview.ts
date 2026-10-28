@@ -10,9 +10,9 @@ import { lockShippingCampaignRead } from "./shipping-campaign-lock.ts";
 import { evaluateShippingCampaigns, MAX_SHIPPING_QUOTE_LINES } from "./shipping-campaign.ts";
 import { readActiveShippingCampaigns } from "./shipping-campaign-repository.ts";
 import { createStorefrontCartRepository, type StorefrontCartReadClient } from "./storefront-cart-repository.ts";
-import type { VoucherPaidLine } from "./voucher-allocation.ts";
+import { stripVoucherSegments, type VoucherPaidLine } from "./voucher-allocation.ts";
 import { toVoucherCampaign, voucherCampaignSelection, type VoucherCampaign } from "./voucher-campaign.ts";
-import { readPublicVoucherCandidates, readSelectedVouchers, toVoucherCard, type VoucherCard } from "./voucher-candidate-repository.ts";
+import { readPublicVoucherCandidates, readSelectedVouchers, readTypeTiers, toVoucherCard, type VoucherCard } from "./voucher-candidate-repository.ts";
 import { canIssueNewVouchers } from "./voucher-gate.ts";
 import type { GiftOutcome, VoucherSelectionIntent } from "./voucher-optimizer.ts";
 import { buildVoucherQuote, type VoucherCardState, type VoucherQuote } from "./voucher-quote.ts";
@@ -66,9 +66,7 @@ export type OwnVoucherHold = Readonly<{ campaignId: string; campaignRevision: nu
 
 const UNSET_LIMIT = 200;
 
-function stripVoucherSuffix(lineId: string): string {
-  return lineId.replace(/\|v\d+$/, "");
-}
+const stripVoucherSuffix = stripVoucherSegments;
 
 export async function readVoucherPreview(input: Readonly<{
   client: PrismaClient;
@@ -82,12 +80,14 @@ export async function readVoucherPreview(input: Readonly<{
   ownHolds?: readonly OwnVoucherHold[];
   /** See `readVoucherPreviewWithin`: PRIVATE ids the server verified in this request. */
   verifiedPrivateIds?: readonly string[];
+  /** See `readVoucherPreviewWithin`: type ids whose code the server verified in this request. */
+  verifiedTypeIds?: readonly string[];
 }>): Promise<VoucherPreview> {
   const { client, cartId, shopId, now } = input;
   const env = input.env ?? process.env;
   if (!canIssueNewVouchers(env)) return { enabled: false };
   try {
-    return await client.$transaction((tx) => readVoucherPreviewWithin(tx, { cartId, shopId, now, env, selectionOverride: input.selectionOverride, ownHolds: input.ownHolds ?? [], verifiedPrivateIds: input.verifiedPrivateIds }), { isolationLevel: "RepeatableRead" });
+    return await client.$transaction((tx) => readVoucherPreviewWithin(tx, { cartId, shopId, now, env, selectionOverride: input.selectionOverride, ownHolds: input.ownHolds ?? [], verifiedPrivateIds: input.verifiedPrivateIds, verifiedTypeIds: input.verifiedTypeIds }), { isolationLevel: "RepeatableRead" });
   } catch {
     // A read that cannot complete is "unavailable", never "no voucher": the caller keeps the plain cart and says so.
     return { enabled: true, ok: false, reason: "QUOTE_UNAVAILABLE" };
@@ -100,7 +100,7 @@ export async function readVoucherPreview(input: Readonly<{
  */
 export async function readVoucherPreviewWithin(
   tx: Prisma.TransactionClient,
-  { cartId, shopId, now, env, selectionOverride, ownHolds, giftState: providedGiftState, verifiedPrivateIds = [] }: Readonly<{
+  { cartId, shopId, now, env, selectionOverride, ownHolds, giftState: providedGiftState, verifiedPrivateIds = [], verifiedTypeIds = [] }: Readonly<{
     cartId: string; shopId: number; now: Date; env: Readonly<Record<string, string | undefined>>; selectionOverride: VoucherSelectionIntent | undefined; ownHolds: readonly OwnVoucherHold[];
     /** Checkout already read the gift authority in this transaction; reusing it keeps both on one snapshot. */
     giftState?: Awaited<ReturnType<typeof readCartGiftState>>;
@@ -110,6 +110,8 @@ export async function readVoucherPreviewWithin(
      * before the shopper has agreed to save it.
      */
     verifiedPrivateIds?: readonly string[];
+    /** Types whose code the SERVER has just verified for this cart in this very request: their tiers are loaded although the cart has not saved the unlock yet. */
+    verifiedTypeIds?: readonly string[];
   }>,
 ): Promise<VoucherPreview> {
   const cart = await tx.cart.findFirst({
@@ -197,28 +199,34 @@ export async function readVoucherPreviewWithin(
   const savedIntent = selectionIntentFromRow(saved, now);
   const selectionIntent = selectionOverride ?? savedIntent;
   // A draft is unsaved, unverified input: it may name a PRIVATE campaign only if this cart's own saved selection
-  // already does (that is how `applyCode` unlocked it). Any other PRIVATE id is simply not found, exactly like an
-  // id that does not exist, so no card, price or condition of it can reach the response.
-  const unlockedPrivate = new Set([...[savedIntent.merchandise, savedIntent.shipping].flatMap((group) => (group.mode === "MANUAL" && group.voucherId !== null ? [group.voucherId] : [])), ...verifiedPrivateIds]);
-  const wantedIds = [selectionIntent.merchandise, selectionIntent.shipping].flatMap((group) => (group.mode === "MANUAL" && group.voucherId !== null ? [group.voucherId] : []));
-  const [publicCampaigns, savedCampaigns] = await Promise.all([
+  // already does (that is how `applyCode` unlocked it) or its type is unlocked. Any other PRIVATE id is simply not found,
+  // exactly like an id that does not exist, so no card, price or condition of it can reach the response.
+  const manualIdsOf = (intent: VoucherSelectionIntent) => [...Object.values(intent.merchandise), intent.shipping].flatMap((group) => (group.mode === "MANUAL" && group.voucherId !== null ? [group.voucherId] : []));
+  const unlockedTypes = new Set([...(savedIntent.unlockedTypeIds ?? []), ...verifiedTypeIds]);
+  const unlockedPrivate = new Set([...manualIdsOf(savedIntent), ...verifiedPrivateIds]);
+  const wantedIds = manualIdsOf(selectionIntent);
+  const [publicCampaigns, savedCampaigns, unlockedTierCampaigns] = await Promise.all([
     readPublicVoucherCandidates({ client: tx, shopId, now, env }),
     readSelectedVouchers({ client: tx, shopId, ids: wantedIds, now, env }),
+    readTypeTiers({ client: tx, shopId, typeIds: [...unlockedTypes], now, env }),
   ]);
-  const unlockedCampaigns = savedCampaigns.filter((campaign) => campaign.visibility === "PUBLIC" || unlockedPrivate.has(campaign.id));
-  const byId = new Map([...publicCampaigns, ...unlockedCampaigns].map((campaign) => [campaign.id, campaign]));
+  const isUnlocked = (campaign: VoucherCampaign) => campaign.visibility === "PUBLIC" || (campaign.type ? unlockedTypes.has(campaign.type.id) : unlockedPrivate.has(campaign.id));
+  const unlockedCampaigns = savedCampaigns.filter(isUnlocked);
+  const byId = new Map([...publicCampaigns, ...unlockedTierCampaigns, ...unlockedCampaigns].map((campaign) => [campaign.id, campaign]));
   if (ownHolds.length > 0) {
     // An entitlement this attempt already holds stays in play although the campaign has since ended, been
     // switched off or filled up (TG-05 A): load it whatever its lifecycle, and credit back the use and VND the
     // hold itself reserves so it is not counted against its own holder. A PRIVATE one is kept only while the
-    // shopper's own manual choice still names it; an edited campaign (new revision) is not the held entitlement.
+    // shopper's own choice still opens it (a manual choice of it, or its unlocked type); an edited campaign (new
+    // revision) is not the held entitlement.
     const rows = await tx.voucherCampaign.findMany({ where: { id: { in: ownHolds.map((hold) => hold.campaignId) }, pancakeShopId: shopId }, select: voucherCampaignSelection });
     for (const row of rows) {
       const hold = ownHolds.find((candidate) => candidate.campaignId === row.id)!;
       let campaign = byId.get(row.id);
       if (campaign === undefined) {
-        const chosen = [selectionIntent.merchandise, selectionIntent.shipping].some((group) => group.mode === "MANUAL" && group.voucherId === row.id);
-        if (row.revision !== hold.campaignRevision || (row.visibility === "PRIVATE" && !(chosen && unlockedPrivate.has(row.id)))) continue;
+        const chosen = manualIdsOf(selectionIntent).includes(row.id);
+        const opened = row.type ? unlockedTypes.has(row.type.id) : chosen && unlockedPrivate.has(row.id);
+        if (row.revision !== hold.campaignRevision || (row.visibility === "PRIVATE" && !opened)) continue;
         try { campaign = toVoucherCampaign(row); } catch { continue; }
       }
       byId.set(row.id, { ...campaign, reservedUses: Math.max(0, campaign.reservedUses - 1), reservedVnd: Math.max(0, campaign.reservedVnd - hold.heldDiscountVnd) });
@@ -247,7 +255,7 @@ export async function readVoucherPreviewWithin(
   const entries = quote.cards.map((state) => ({ card: cardById.get(state.campaignId)!, state }));
   return {
     enabled: true, ok: true, quote, entries, selectionIntent, savedSelectionVersion: selectionVersionOf(savedIntent), campaigns, lines, paidRevision: cart.paidRevision, variationOfLine,
-    quoteDigest: buildVoucherQuoteFacts({ quote, campaigns, lines, variationOfLine, paidRevision: cart.paidRevision })?.digest ?? null,
+    quoteDigest: buildVoucherQuoteFacts({ quote, campaigns, variationOfLine, paidRevision: cart.paidRevision })?.digest ?? null,
     giftState,
     stackedGroups,
   };

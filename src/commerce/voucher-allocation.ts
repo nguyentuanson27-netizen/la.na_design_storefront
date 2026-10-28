@@ -162,3 +162,26 @@ export function allocateMerchandiseDiscount(input: Readonly<{
   if (total !== discountVnd) return { ok: false, reason: "INVALID_INPUT" };
   return { ok: true, allocation: Object.freeze({ discountVnd, lines: Object.freeze(allocated) }) };
 }
+
+/** The lines as the POS will see them: a line the voucher touched becomes at most two price segments (`id|v0`, `id|v1`). */
+export function applyAllocationToLines(lines: readonly VoucherPaidLine[], allocation: VoucherAllocation | null): readonly VoucherPaidLine[] {
+  if (allocation === null) return lines;
+  const byLine = new Map(allocation.lines.map((entry) => [entry.lineId, entry]));
+  const out: VoucherPaidLine[] = [];
+  for (const line of lines) {
+    const entry = byLine.get(line.lineId);
+    if (entry === undefined || entry.deductionVnd === 0) {
+      out.push(line);
+      continue;
+    }
+    entry.segments.forEach((segment, index) =>
+      out.push({ lineId: `${line.lineId}|v${index}`, product: line.product, quantity: segment.quantity, unitPriceVnd: segment.unitPriceVnd }),
+    );
+  }
+  return out;
+}
+
+/** Strips every voucher segment suffix (one per stacked voucher): `A|v0|v1` -> `A`. */
+export function stripVoucherSegments(lineId: string): string {
+  return lineId.replace(/(\|v\d+)+$/, "");
+}

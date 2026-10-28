@@ -4,9 +4,13 @@
  * eligibility -- the server derives all of that, and rejects any extra key rather than ignoring it.
  */
 
-export type VoucherSelectionInput = Readonly<{ group: "MERCHANDISE" | "SHIPPING_FREE"; mode: "AUTO" | "MANUAL"; voucherId: string | null }>;
+export type VoucherSelectionInput = Readonly<{ slot: string; mode: "AUTO" | "MANUAL"; voucherId: string | null }>;
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
+/** A merchandise slot: the untyped v1 group or one type (ADR 0020 D-1). The server cross-checks it against the voucher. */
+const MERCHANDISE_SLOT = /^MERCHANDISE(:[A-Za-z0-9_-]{1,64})?$/;
+const SLOT = /^(SHIPPING_FREE|MERCHANDISE(:[A-Za-z0-9_-]{1,64})?)$/;
+export const MAX_DRAFT_MERCHANDISE_SLOTS = 8;
 
 function exact(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
@@ -14,14 +18,14 @@ function exact(value: unknown, keys: readonly string[]): value is Record<string,
 }
 
 export function parseVoucherSelectionInput(input: unknown): VoucherSelectionInput | null {
-  if (!exact(input, ["group", "mode", "voucherId"])) return null;
-  const { group, mode } = input;
-  if (group !== "MERCHANDISE" && group !== "SHIPPING_FREE") return null;
+  if (!exact(input, ["slot", "mode", "voucherId"])) return null;
+  const { slot, mode } = input;
+  if (typeof slot !== "string" || !SLOT.test(slot)) return null;
   if (mode !== "AUTO" && mode !== "MANUAL") return null;
   const voucherId = input.voucherId === undefined ? null : input.voucherId;
   if (voucherId !== null && (typeof voucherId !== "string" || !ID.test(voucherId))) return null;
   if (mode === "AUTO" && voucherId !== null) return null;
-  return { group, mode, voucherId };
+  return { slot, mode, voucherId };
 }
 
 export function parseVoucherCodeInput(input: unknown): string | null {
@@ -30,12 +34,15 @@ export function parseVoucherCodeInput(input: unknown): string | null {
   return typeof code === "string" && code.trim().length > 0 && code.length <= 64 ? code : null;
 }
 
+export type VoucherGroupIntent = Readonly<{ mode: "AUTO" | "MANUAL"; voucherId: string | null }>;
+
 export type VoucherDraftInput = Readonly<{
-  merchandise: Readonly<{ mode: "AUTO" | "MANUAL"; voucherId: string | null }>;
-  shipping: Readonly<{ mode: "AUTO" | "MANUAL"; voucherId: string | null }>;
+  /** One intent per merchandise slot the picker shows; a slot that is absent is kept as saved. */
+  merchandise: Readonly<Record<string, VoucherGroupIntent>>;
+  shipping: VoucherGroupIntent;
 }>;
 
-function group(value: unknown): VoucherDraftInput["merchandise"] | null {
+function group(value: unknown): VoucherGroupIntent | null {
   if (!exact(value, ["mode", "voucherId"])) return null;
   const { mode } = value;
   if (mode !== "AUTO" && mode !== "MANUAL") return null;
@@ -45,12 +52,22 @@ function group(value: unknown): VoucherDraftInput["merchandise"] | null {
   return { mode, voucherId };
 }
 
-/** The picker's whole draft: one intent per group, nothing else. */
+/** The picker's whole draft: one intent per merchandise slot and one for shipping, nothing else. */
 export function parseVoucherDraftInput(input: unknown): VoucherDraftInput | null {
   if (!exact(input, ["merchandise", "shipping"])) return null;
-  const merchandise = group(input.merchandise);
+  const raw = input.merchandise;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const keys = Object.keys(raw);
+  if (keys.length > MAX_DRAFT_MERCHANDISE_SLOTS) return null;
+  const merchandise: Record<string, VoucherGroupIntent> = {};
+  for (const key of keys) {
+    if (!MERCHANDISE_SLOT.test(key)) return null;
+    const parsed = group((raw as Record<string, unknown>)[key]);
+    if (parsed === null) return null;
+    merchandise[key] = parsed;
+  }
   const shipping = group(input.shipping);
-  return merchandise === null || shipping === null ? null : { merchandise, shipping };
+  return shipping === null ? null : { merchandise, shipping };
 }
 
 const DIGEST = /^[0-9a-f]{64}$/;
