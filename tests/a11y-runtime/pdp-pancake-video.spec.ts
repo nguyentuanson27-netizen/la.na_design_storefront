@@ -278,6 +278,74 @@ test("turning on reduced motion while the page is open stops and removes the pre
   await expect(tile.locator("video")).toHaveAttribute("data-playing", "true");
 });
 
+for (const [width, height] of [[1280, 520], [1440, 560]] as const) {
+  test(`at ${width}x${height} the floating mini-player and its stop button are fully inside the window and clickable`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await serveVideo(page);
+    await page.goto(`${BASE}/shop/${slug}`);
+    const tile = page.getByRole("button", { name: "Xem video", exact: true });
+    await expect(tile.locator("video")).toHaveAttribute("data-playing", "true");
+    const stop = page.getByRole("button", { name: "Đóng video nhỏ", exact: true });
+    await expect(stop).toBeVisible();
+    for (const target of [tile, stop]) {
+      const box = (await target.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+    }
+    // The stop button is the element a tap at its centre reaches, not something laid over it (the
+    // sticky header is the one thing that could be: it is taller than the 17px a short window leaves).
+    const centre = (await stop.boundingBox())!;
+    expect(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest("button")?.getAttribute("aria-label"), [centre.x + centre.width / 2, centre.y + centre.height / 2])).toBe("Đóng video nhỏ");
+    await stop.click();
+    await expect(stop).toHaveCount(0);
+  });
+}
+
+test("in a window too short for the mini-player it stays a small poster tile on the photograph", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 500 });
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  const tile = page.getByRole("button", { name: "Xem video", exact: true });
+  await expect(tile).toBeVisible();
+  await page.waitForLoadState("load");
+  await page.waitForTimeout(400);
+  await expect(page.locator(".pdp-video-slot")).toHaveAttribute("data-float", "false");
+  await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toHaveCount(0);
+  const box = (await tile.boundingBox())!;
+  expect([box.width, box.height]).toEqual([96, 76]);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(500);
+  // No preview at all: nothing is requested or plays out of sight.
+  await expect(page.locator("video")).toHaveCount(0);
+  await tile.click();
+  await expect(page.getByRole("dialog", { name: `Video ${productName}` })).toBeVisible();
+});
+
+test("a browser that refuses sound without its own gesture leaves the player on its controls with a hint", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.addInitScript(() => {
+    const original = HTMLMediaElement.prototype.play;
+    (window as unknown as { __blockPlay: boolean }).__blockPlay = true;
+    HTMLMediaElement.prototype.play = function play() {
+      if (this.controls && (window as unknown as { __blockPlay: boolean }).__blockPlay) return Promise.reject(new DOMException("blocked", "NotAllowedError"));
+      return original.call(this);
+    };
+  });
+  await serveVideo(page);
+  await page.goto(`${BASE}/shop/${slug}`);
+  await page.getByRole("button", { name: "Xem video", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
+  await expect(dialog.getByRole("status")).toHaveText("Bấm nút Play để xem video.");
+  await expect(dialog.locator("video")).toHaveAttribute("controls", "");
+  expect(collectedPlayback().failures).toBe(0);
+  await page.evaluate(() => { (window as unknown as { __blockPlay: boolean }).__blockPlay = false; });
+  await dialog.locator("video").evaluate((element: HTMLVideoElement) => element.play());
+  await expect(dialog.getByRole("status")).toHaveCount(0);
+  await expect.poll(() => dialog.locator("video").evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
+});
+
 test("explicit play fetches/decodes fixture MP4, seeks, closes and reopens accessibly", async ({ page }) => {
   let mediaRequests = 0;
   await serveVideo(page, () => { mediaRequests++; });

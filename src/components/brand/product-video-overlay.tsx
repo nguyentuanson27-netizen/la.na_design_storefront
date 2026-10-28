@@ -1,13 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { preconnect } from "react-dom";
+import { flushSync, preconnect } from "react-dom";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPdpVideoPlaybackReporter } from "@/components/headless/pdp-video-playback";
 import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
 import { pdpProductImageLoader } from "@/components/headless/pdp-image-loader";
 import { useDocumentLoaded } from "@/components/headless/use-document-loaded";
-import { useDesktopVideoLayout, useInlineVideoAllowed } from "@/components/headless/use-inline-video-allowed";
+import { useInlineVideoAllowed, useVideoLayout } from "@/components/headless/use-inline-video-allowed";
 
 /** A preview that is less than this much on screen stands still. */
 const PREVIEW_MIN_VISIBLE_RATIO = 0.25;
@@ -51,12 +51,13 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const documentLoaded = useDocumentLoaded();
   const inlineAllowed = useInlineVideoAllowed();
-  const desktop = useDesktopVideoLayout();
+  const layout = useVideoLayout();
+  const floatingLayout = layout === "float";
   const [stopped, setStopped] = useState(false);
   const resumeAt = useRef(0);
   const [galleryInView, setGalleryInView] = useState(true);
-  const floating = desktop && documentLoaded && inlineAllowed && !previewFailed && !stopped && galleryInView;
-  const showPreview = documentLoaded && inlineAllowed && !previewFailed && !stopped;
+  const floating = floatingLayout && documentLoaded && inlineAllowed && !previewFailed && !stopped && galleryInView;
+  const showPreview = documentLoaded && inlineAllowed && !previewFailed && !stopped && layout !== "dock";
 
   // The connection (DNS, TLS) is warm by the time the preview asks for its first bytes.
   preconnect(new URL(video.src).origin);
@@ -86,7 +87,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
   // the shopper scrolls on towards the purchase panel, which is where it would otherwise sit over the
   // price and the buy buttons.
   useEffect(() => {
-    if (!desktop) return;
+    if (!floatingLayout) return;
     const gallery = opener.current?.closest(".pdp-stage");
     if (!gallery) return;
     let frame = 0;
@@ -103,7 +104,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
     };
-  }, [desktop]);
+  }, [floatingLayout]);
 
   function failPreview() {
     releaseVideo(preview.current);
@@ -120,16 +121,20 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
     };
   }, [requested, video.src, reporting]);
 
+  const [blocked, setBlocked] = useState(false);
+
   // The shopper's tap is the request to play, so it plays at once, from where the preview was. An
   // explicit `play()` rather than the `autoplay` attribute: it raises `play` immediately, which
   // starts the startup deadline even when the first byte never arrives.
-  useEffect(() => {
-    const element = player.current;
-    if (!requested || !element) return;
+  function startDialogPlayback(element: HTMLVideoElement) {
     // Set before any data: the browser applies it as the start position once the metadata is in.
     if (resumeAt.current > 0) element.currentTime = resumeAt.current;
-    void element.play().catch(() => undefined);
-  }, [requested]);
+    void Promise.resolve(element.play()).catch((error: unknown) => {
+      // A browser that refuses sound without a gesture of its own (Safari/iOS) leaves the player
+      // paused on its controls: say so rather than showing a player that looks stuck.
+      if (error instanceof DOMException && error.name === "NotAllowedError") setBlocked(true);
+    });
+  }
 
   function close() {
     const watched = player.current;
@@ -157,12 +162,18 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
             setFailed(true);
             releaseVideo(player.current);
           }));
-          setFailed(false);
           resumeAt.current = preview.current?.currentTime ?? 0;
-          setRequested(true);
           previewHeld.current = true;
           preview.current?.pause();
+          // Mount the player synchronously so `play()` below still runs inside this tap: browsers
+          // that gate sound on a user gesture do not count a call made from a later effect.
+          flushSync(() => {
+            setFailed(false);
+            setBlocked(false);
+            setRequested(true);
+          });
           dialog.current?.showModal();
+          if (player.current) startDialogPlayback(player.current);
         }}
       >
         <Image loader={pdpProductImageLoader} src={video.poster} alt="" fill sizes="120px" className="object-cover" />
@@ -195,7 +206,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
           Xem video
         </span>
       </button>
-      {showPreview && (!desktop || floating) ? (
+      {showPreview && (layout === "phone" || floating) ? (
         <button
           type="button"
           className="pdp-video-slot__close"
@@ -225,7 +236,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
             // Some browsers accept an HEVC container's AAC track but silently discard the video.
             // A running audio clock is not evidence that the shopper can see a product video.
             if (element.videoWidth === 0 || element.videoHeight === 0) reporting.error(4);
-          }} onPlay={() => reporting.play()}
+          }} onPlay={() => { setBlocked(false); reporting.play(); }}
             onPlaying={() => reporting.playing()}
             onWaiting={(event) => { if (!event.currentTarget.paused && !event.currentTarget.ended && event.currentTarget.readyState < 3) reporting.waiting(); }}
             onStalled={(event) => { if (!event.currentTarget.paused && !event.currentTarget.ended && event.currentTarget.readyState < 3) reporting.waiting(); }}
@@ -235,6 +246,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
             <source src={video.src} type="video/mp4" onError={() => { reporting.error(player.current?.error?.code); }} />
           </video>
         ) : null}
+        {blocked && !failed ? <p role="status" className="mt-3 text-sm">Bấm nút Play để xem video.</p> : null}
         {failed ? <p role="alert" className="mt-3 text-sm">Chưa phát được video. Nàng có thể đóng để xem ảnh và tiếp tục mua hàng.</p> : null}
       </dialog>
     </div>

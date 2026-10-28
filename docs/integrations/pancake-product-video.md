@@ -59,7 +59,9 @@ The video is one 9:16 frame at every width; where it sits depends on the layout.
 it is a frame on the photograph's right edge, about a quarter of the photo's height above its bottom,
 outside the swipe track. From `lg` up it is a floating mini-player (168 px wide, pinned 1.5 rem from
 the viewport's right and 6.5 rem from its bottom, in the column above the chat button, z-index 44,
-under the header and dialogs) with a close button (`Đóng video nhỏ`).
+under the header and dialogs) with a close button (`Đóng video nhỏ`). It needs a window at least 520px
+tall (299px player + 104px offset + the ~88px sticky header); a shorter desktop window (`dock`) gets
+only the small poster tile on the photograph, with no preview.
 
 The frame is a muted, looping, `playsInline` preview that starts by itself (supersedes v0.3's "no
 page-load autoplay"; the owner asked for it). It is built to cost the photographs nothing:
@@ -88,8 +90,11 @@ Dismissal is not remembered across pages.
 
 Tapping the frame opens a native modal dialog with a 9:16 player (`max-w-md`, the same on every width).
 Only that tap mounts `<video controls playsInline preload="none">` with an MP4 source and calls
-`play()` explicitly (not the `autoplay` attribute, so `play` fires at once and the 15 s startup
-deadline runs even if no byte arrives). It carries on from the second the preview had reached (the
+`play()` explicitly, synchronously inside the tap (the player is mounted with `flushSync` so a browser
+that gates sound on a user gesture still sees the gesture; not the `autoplay` attribute, so `play`
+fires at once and the 15 s startup deadline runs even if no byte arrives). If the browser refuses with
+`NotAllowedError` the player stays on its controls with a short "press Play" hint and no failure is
+counted. This path is untested on real Safari/iOS (Chromium-only suite): a real-device gate. It carries on from the second the preview had reached (the
 default playback start position is set before any data) rather than from 0, and closing hands the
 second it left off at back to the preview. Closing or pressing Escape pauses the player, removes its
 source, unloads it and restores focus. Unmounting also releases playback. Media errors show a short

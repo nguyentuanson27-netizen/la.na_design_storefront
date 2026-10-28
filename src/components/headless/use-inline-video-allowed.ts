@@ -8,13 +8,22 @@ const REDUCED_MOTION_MEDIA = "(prefers-reduced-motion: reduce)";
 
 const SLOW_CONNECTIONS = new Set(["slow-2g", "2g"]);
 
-/** The `lg` seam: below it the preview is a frame on the photograph, from it a floating mini-player. */
-export const DESKTOP_VIDEO_MEDIA = "(min-width: 1024px)";
+/**
+ * Where the video sits. Below `lg` (`phone`) it is a frame on the photograph. From `lg` up, in a window
+ * tall enough, it is a floating mini-player (`float`): 299px tall, 104px off the bottom edge and
+ * under the sticky header (about 88px), so a window shorter than 520px would push it, and the stop
+ * button on its corner, up under the header or past the top of the screen. There (`dock`) it stays a
+ * small poster tile on the photograph, with no preview.
+ */
+export type VideoLayout = "phone" | "float" | "dock";
+
+const WIDE_MEDIA = "(min-width: 1024px)";
+export const FLOATING_VIDEO_MEDIA = "(min-width: 1024px) and (min-height: 520px)";
 
 function subscribeToLayout(onStoreChange: () => void) {
-  const query = window.matchMedia(DESKTOP_VIDEO_MEDIA);
-  query.addEventListener("change", onStoreChange);
-  return () => query.removeEventListener("change", onStoreChange);
+  const queries = [window.matchMedia(WIDE_MEDIA), window.matchMedia(FLOATING_VIDEO_MEDIA)];
+  for (const query of queries) query.addEventListener("change", onStoreChange);
+  return () => { for (const query of queries) query.removeEventListener("change", onStoreChange); };
 }
 
 function networkConnection(): ConnectionHints | undefined {
@@ -51,11 +60,12 @@ export function useInlineVideoAllowed(): boolean {
   return useSyncExternalStore(subscribeToAllowance, inlineVideoAllowed, () => false);
 }
 
-function desktopLayout(): boolean {
-  return window.matchMedia(DESKTOP_VIDEO_MEDIA).matches;
+function videoLayout(): VideoLayout {
+  if (!window.matchMedia(WIDE_MEDIA).matches) return "phone";
+  return window.matchMedia(FLOATING_VIDEO_MEDIA).matches ? "float" : "dock";
 }
 
-/** Whether the desktop layout is showing. False on the server and during hydration. */
-export function useDesktopVideoLayout(): boolean {
-  return useSyncExternalStore(subscribeToLayout, desktopLayout, () => false);
+/** Which of the three layouts the window is in. `phone` on the server and during hydration. */
+export function useVideoLayout(): VideoLayout {
+  return useSyncExternalStore(subscribeToLayout, videoLayout, () => "phone");
 }
