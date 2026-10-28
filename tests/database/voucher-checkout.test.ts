@@ -78,6 +78,7 @@ async function cleanup() {
     }
     await tx.$executeRaw`DELETE FROM "VoucherHold" WHERE "campaignId" IN (SELECT "id" FROM "VoucherCampaign" WHERE "pancakeShopId" = ${SHOP})`;
     await tx.$executeRaw`DELETE FROM "VoucherCampaign" WHERE "pancakeShopId" = ${SHOP}`;
+    await tx.$executeRaw`DELETE FROM "VoucherType" WHERE "pancakeShopId" = ${SHOP}`;
   });
   await prisma.cart.deleteMany({ where: { items: { some: { variant: { product: { pancakeShopId: SHOP } } } } } });
   await prisma.cartGiftSelection.deleteMany({ where: { campaignId: { startsWith: `${P}-` } } });
@@ -198,7 +199,7 @@ function checkoutService(pancake: ReturnType<typeof fakePancake>, proof: unknown
 }
 const submit = (service: ReturnType<typeof checkoutService>) => service.submit({ cartId, shopId: SHOP, checkoutInput, now: new Date() });
 const lastOrder = () => prisma.orderMirror.findFirstOrThrow({ where: { sourceCartId: cartId }, orderBy: { createdAt: "desc" } });
-const holdsNow = () => prisma.voucherHold.findMany({ where: { campaign: { pancakeShopId: SHOP } }, orderBy: { kind: "asc" } });
+const holdsNow = () => prisma.voucherHold.findMany({ where: { campaign: { pancakeShopId: SHOP } }, orderBy: [{ kind: "asc" }, { slot: "asc" }] });
 const items = (request: PancakeCreateOrderRequest) => request.items.map((item) => [item.variation_id, item.quantity, item.variation_info.retail_price]);
 
 test("EX-01: held merchandise + free-shipping vouchers reach the quote, the proof, the DRAFT, the acceptance and the POS lines to the VND", async () => {
@@ -241,6 +242,102 @@ test("EX-01: held merchandise + free-shipping vouchers reach the quote, the proo
   assert.deepEqual(stored.lines[0]!.discountSteps.map((step) => [step.source, step.campaignId, step.inputPriceVnd, step.outputPriceVnd]), [["VOUCHER", m.id, 450_000, 425_000]]);
   const declared = await prisma.orderVoucherSnapshot.findUniqueOrThrow({ where: { orderId: order.id } });
   assert.equal((declared.snapshot as { totalVnd: number }).totalVnd, 850_000);
+});
+
+// --- ADR 0020: several merchandise vouchers of different types -------------------------------------------------------------
+
+/** Type A "by order" (priority 1) and type B "percent" (priority 2), each a two-rung ladder, as in the ADR's example. */
+async function typedLadders() {
+  const a = await f.type({ name: "Theo đơn hàng", priority: 1 });
+  const b = await f.type({ name: "Phần trăm", priority: 2 });
+  const fixedTier = (typeId: string, amountVnd: number, min: number) => f.tier(typeId, { fixedAmountVnd: BigInt(amountVnd), minEligibleSubtotalVnd: BigInt(min), maxUses: 5, maxBudgetVnd: BigInt(5_000_000) });
+  const percentTier = (typeId: string, percent: number, cap: number | null, min: number) =>
+    f.tier(typeId, { discountType: "PERCENTAGE", fixedAmountVnd: null, percent, maxDiscountVnd: cap === null ? null : BigInt(cap), minEligibleSubtotalVnd: BigInt(min), maxUses: 5, maxBudgetVnd: BigInt(5_000_000) });
+  return {
+    a, b,
+    a500: await fixedTier(a.id, 30_000, 500_000), a1m: await fixedTier(a.id, 80_000, 1_000_000),
+    b500: await percentTier(b.id, 5, 50_000, 500_000), b1m: await percentTier(b.id, 10, 100_000, 1_000_000),
+  };
+}
+
+test("ADR 0020 / EX-01: two typed vouchers + free shipping reach the quote, the proof, the DRAFT, the acceptance and the POS lines to the VND", async () => {
+  await seed({ quantity: 2, unitPrice: 500_000 });
+  const t = await typedLadders();
+  const s = await freeShipVoucher(600_000);
+  const held = await hold();
+  assert.equal(held.ok && held.state === "HELD", true);
+  assert.deepEqual((held.ok && held.state === "HELD" ? held.holds : []).map((h) => [h.kind, h.slot]).sort(), [["MERCHANDISE", `MERCHANDISE:${t.a.id}`], ["MERCHANDISE", `MERCHANDISE:${t.b.id}`], ["SHIPPING_FREE", "SHIPPING_FREE"]].sort());
+
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT", JSON.stringify(rendered, (_k, v) => (typeof v === "bigint" ? String(v) : v instanceof Map ? [...v] : v)).slice(0, 300));
+  if (rendered.kind !== "BENEFIT") return;
+  // 1.000.000 - 80.000 (A) - 10% x 920.000 = 92.000 (B) = 828.000; the 30.000đ fee is waived.
+  assert.equal(rendered.facts.paidSubtotalVnd, 828_000);
+  assert.equal(rendered.facts.shippingFeeVnd, 0);
+  assert.deepEqual(rendered.facts.lines.map((line) => [line.quantity, line.unitPriceVnd, line.discountSteps.map((step) => [step.source, step.inputPriceVnd, step.outputPriceVnd])]), [[2, 414_000, [["VOUCHER", 500_000, 460_000], ["VOUCHER", 460_000, 414_000]]]]);
+
+  const pancake = fakePancake();
+  const result = await submit(checkoutService(pancake, issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })));
+  const order = await lastOrder();
+  assert.deepEqual(result, { ok: true, status: "CONFIRMED", orderCode: order.publicCode });
+  assert.deepEqual([order.merchandiseSubtotalVnd, order.shippingFeeVnd, order.totalVnd], [BigInt(828_000), BigInt(0), BigInt(828_000)]);
+  assert.deepEqual(items(pancake.calls.create[0]!), [[paid.variationId, 2, 414_000]]);
+  assert.equal(pancake.calls.create[0]!.shipping_fee, 0);
+
+  // One redemption per slot, each with its own amount; every hold consumed; each campaign's own ledger moved.
+  const redemptions = await prisma.voucherRedemption.findMany({ where: { orderId: order.id }, orderBy: { slot: "asc" } });
+  assert.deepEqual(redemptions.map((r) => [r.slot, r.campaignId, r.amountVnd]).sort(), [
+    [`MERCHANDISE:${t.a.id}`, t.a1m.id, BigInt(80_000)], [`MERCHANDISE:${t.b.id}`, t.b1m.id, BigInt(92_000)], ["SHIPPING_FREE", s.id, BigInt(30_000)],
+  ].sort());
+  assert.deepEqual((await holdsNow()).map((h) => h.state), ["CONSUMED", "CONSUMED", "CONSUMED"]);
+  for (const [id, vnd] of [[t.a1m.id, 80_000], [t.b1m.id, 92_000], [s.id, 30_000]] as const) {
+    const row = await prisma.voucherCampaign.findUniqueOrThrow({ where: { id } });
+    assert.deepEqual([row.reservedUses, row.redeemedUses, row.redeemedVnd], [0, 1, BigInt(vnd)], id);
+  }
+  for (const id of [t.a500.id, t.b500.id]) assert.deepEqual((await prisma.voucherCampaign.findUniqueOrThrow({ where: { id } })).redeemedUses, 0, "the lower rungs were never touched");
+
+  // The stored quote walks base -> A -> B, and the declaration lists both in application order.
+  const stored = (await readOrderQuoteSnapshot(prisma, order.id))!;
+  assert.deepEqual(stored.lines[0]!.discountSteps.map((step) => [step.source, step.campaignId, step.inputPriceVnd, step.outputPriceVnd]), [["VOUCHER", t.a1m.id, 500_000, 460_000], ["VOUCHER", t.b1m.id, 460_000, 414_000]]);
+  const declared = (await prisma.orderVoucherSnapshot.findUniqueOrThrow({ where: { orderId: order.id } })).snapshot as { v: number; merchandise: Array<{ campaignId: string; slot: string; amountVnd: number }>; totalVnd: number };
+  assert.deepEqual([declared.v, declared.totalVnd], [2, 828_000]);
+  assert.deepEqual(declared.merchandise.map((entry) => [entry.campaignId, entry.slot, entry.amountVnd]), [[t.a1m.id, `MERCHANDISE:${t.a.id}`, 80_000], [t.b1m.id, `MERCHANDISE:${t.b.id}`, 92_000]]);
+});
+
+test("ADR 0020: a discount that splits a line twice (two vouchers, uneven) still reaches the POS to the VND, with both steps in order", async () => {
+  await seed({ quantity: 3, unitPrice: 450_000 });
+  const a = await f.type({ priority: 1 });
+  const b = await f.type({ priority: 2 });
+  await f.tier(a.id, { fixedAmountVnd: BigInt(50_000), minEligibleSubtotalVnd: BigInt(600_000), maxUses: 5, maxBudgetVnd: BigInt(5_000_000) });
+  await f.tier(b.id, { discountType: "PERCENTAGE", fixedAmountVnd: null, percent: 10, maxDiscountVnd: null, minEligibleSubtotalVnd: BigInt(600_000), maxUses: 5, maxBudgetVnd: BigInt(5_000_000) });
+  await hold();
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") return;
+  // 1.350.000 - 50.000 = 1.300.000; 10% = 130.000.
+  assert.equal(rendered.facts.paidSubtotalVnd, 1_350_000 - 50_000 - 130_000);
+  assert.ok(rendered.facts.lines.length >= 2, "the uneven fixed amount already split the line");
+  assert.ok(rendered.facts.lines.every((line) => line.unitPriceVnd >= 1 && line.discountSteps.every((step) => step.source === "VOUCHER") && line.discountSteps.length >= 1 && line.discountSteps.length <= 2));
+  assert.ok(rendered.facts.lines.some((line) => line.discountSteps.length === 2), "a line touched by both vouchers carries both, A then B");
+
+  const pancake = fakePancake();
+  const result = await submit(checkoutService(pancake, issueBenefitQuoteProof({ quote: rendered.facts, cartId, secret: SECRET })));
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(pancake.calls.create[0]!.items.reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0), 1_170_000);
+  assert.equal(await prisma.voucherRedemption.count({ where: { campaign: { pancakeShopId: SHOP } } }), 2);
+});
+
+test("ADR 0020: a manual lock on a lower rung is what is held and what is charged; the other type stays on its best rung", async () => {
+  await seed({ quantity: 2, unitPrice: 500_000 });
+  const t = await typedLadders();
+  await createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV }).setSlot({ cartId, slot: `MERCHANDISE:${t.a.id}`, mode: "MANUAL", voucherId: t.a500.id });
+  await hold();
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") return;
+  // 1.000.000 - 30.000 (A, locked at the lower rung) - 10% x 970.000 = 97.000 (B) = 873.000 (+ the plain 30.000 fee).
+  assert.equal(rendered.facts.paidSubtotalVnd, 873_000);
+  assert.deepEqual((await holdsNow()).map((h) => h.campaignId).sort(), [t.a500.id, t.b1m.id].sort());
 });
 
 test("a discount that does not divide evenly becomes two price segments, each with the voucher step, and the POS lines still sum exactly", async () => {
@@ -375,7 +472,7 @@ test("holds released between the DRAFT and the POS write: the order is closed fo
 
   // Another tab clears the voucher (hold RELEASED) before the POS submission re-derives the quote.
   const revision = Number((await prisma.cart.findUniqueOrThrow({ where: { id: cartId } })).paidRevision);
-  assert.equal((await holdService.hold({ shopId: SHOP, cartId, paidRevision: revision, quoteDigest: f.hex("none"), grants: [], releaseKinds: ["MERCHANDISE", "SHIPPING_FREE"] })).ok, true);
+  assert.equal((await holdService.hold({ shopId: SHOP, cartId, paidRevision: revision, quoteDigest: f.hex("none"), grants: [], releaseUnlisted: true })).ok, true);
 
   const pos = createPancakeOrderSubmissionService(prisma, pancake.gateway, {
     lineLevelPricingVerifiedShopIds: [SHOP], env: ENV, voucher: { attemptSecret: SECRET }, onConfirmed: async () => undefined,
@@ -419,12 +516,12 @@ test("AC-08 / AC-35: a voucher that takes the cart below a gift threshold never 
 
 /** The picker's "Áp dụng" for the draft "this voucher, shipping AUTO", with the digest of the quote the picker showed. */
 async function pickerCommit(voucherId: string, consent: "none" | "current" | "stale") {
-  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { mode: "MANUAL", voucherId }, shipping: { mode: "AUTO" } } });
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId } }, shipping: { mode: "AUTO" } } });
   assert.ok(preview.enabled && preview.ok);
   const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
   return commitVoucherDraft({
     client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, expectedSelectionVersion: null,
-    draft: { merchandise: { mode: "MANUAL", voucherId }, shipping: { mode: "AUTO", voucherId: null } },
+    draft: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId } }, shipping: { mode: "AUTO", voucherId: null } },
     consentDigest: consent === "none" ? null : consent === "current" ? digest : "0".repeat(64),
   });
 }
@@ -462,7 +559,7 @@ test("EX-06 / AC-29 at the picker: a voucher that makes the total RISE (it costs
   await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: SHOP, name: "Freeship vay", isEnabled: true, enabledAt: PAST, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] } });
   const m = await fixedVoucher(10_000, 600_000);
   // The cart ships free by the campaign; the 10.000đ voucher would bring the 30.000đ fee back: the total rises by 20.000đ.
-  const risen = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "AUTO" } } });
+  const risen = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: m.id } }, shipping: { mode: "AUTO" } } });
   assert.ok(risen.enabled && risen.ok);
   assert.deepEqual(risen.enabled && risen.ok ? risen.quote.confirmation : null, { totalIncreaseVnd: 20_000, shippingFeeIncreaseVnd: 30_000 });
 
@@ -487,7 +584,7 @@ async function codeCommit(campaignId: string, consent: "none" | "current" | "sta
   await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "voucher-code-" } } });
   const preview = await readVoucherPreview({
     client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], verifiedPrivateIds: [campaignId],
-    selectionOverride: { merchandise: { mode: "MANUAL", voucherId: campaignId }, shipping: { mode: "AUTO" } },
+    selectionOverride: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: campaignId } }, shipping: { mode: "AUTO" } },
   });
   assert.ok(preview.enabled && preview.ok);
   const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
@@ -503,7 +600,7 @@ test("review 5a62d20 / AC-35: a typed CODE that costs a chosen gift is verified 
   const priv = await fixedVoucher(50_000, 600_000, { issuance: "CODE", visibility: "PRIVATE", code: "KOL50" });
 
   const refused = await codeCommit(priv.id, "none");
-  assert.deepEqual(refused.ok === false && [refused.reason, "pending" in refused ? refused.pending : null], ["CONFIRMATION_REQUIRED", { campaignId: priv.id, group: "MERCHANDISE" }]);
+  assert.deepEqual(refused.ok === false && [refused.reason, "pending" in refused ? refused.pending : null], ["CONFIRMATION_REQUIRED", { campaignId: priv.id, typeId: null, group: "MERCHANDISE", slot: "MERCHANDISE" }]);
   assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0, "a valid code is not saved before the consent");
   assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "and the gift choice is untouched");
   const stale = await codeCommit(priv.id, "stale");
@@ -539,12 +636,12 @@ test("review 8bdb2f0 / P1: when the server cannot derive a quote nothing that co
   await prisma.cartGiftSelection.create({ data: { cartId, campaignId: `${P}-gift`, variantId: giftItem.variantId, quantity: 1, campaignRevision: 1 } });
   const m = await fixedVoucher(50_000, 600_000);
   const priv = await fixedVoucher(50_000, 600_000, { issuance: "CODE", visibility: "PRIVATE", code: "KOL50" });
-  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "AUTO" } } });
+  const preview = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: [], selectionOverride: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: m.id } }, shipping: { mode: "AUTO" } } });
   assert.ok(preview.enabled && preview.ok);
   const digest = preview.enabled && preview.ok ? preview.quoteDigest! : "";
   const draftWith = (consentDigest: string | null, env: Readonly<Record<string, string | undefined>>) => commitVoucherDraft({
     expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env, attemptSecret: SECRET, consentDigest,
-    draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: { mode: "AUTO", voucherId: null } },
+    draft: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: m.id } }, shipping: { mode: "AUTO", voucherId: null } },
   });
 
   // The picker's draft, with and without the digest the picker showed: neither is saved while no quote can be derived.
@@ -555,7 +652,7 @@ test("review 8bdb2f0 / P1: when the server cannot derive a quote nothing that co
   const typed = await applyVoucherCode({ client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, rawCode: "kol50", consentDigest: digest });
   assert.deepEqual(typed, { ok: false, reason: "QUOTE_UNAVAILABLE" });
   // The one-group action keeps the other group as saved and meets the same rule.
-  const oneGroup = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: null } });
+  const oneGroup = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: m.id } }, shipping: null } });
   assert.deepEqual(oneGroup, { ok: false, reason: "QUOTE_UNAVAILABLE" });
   assert.equal(await prisma.cartVoucherSelection.count({ where: { cartId } }), 0, "no write at all");
   assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1, "the gift choice is untouched");
@@ -567,12 +664,12 @@ test("review 8bdb2f0 / P1: when the server cannot derive a quote nothing that co
   assert.equal((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId, m.id);
 
   // While no quote can be derived the shopper can still drop the voucher (a choice that only removes cannot cost a gift) ...
-  const dropped = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: null }, shipping: { mode: "AUTO", voucherId: null } } });
+  const dropped = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: null } }, shipping: { mode: "AUTO", voucherId: null } } });
   assert.equal(dropped.ok, true, JSON.stringify(dropped));
   const row = await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } });
   assert.deepEqual([row.merchandiseMode, row.merchandiseVoucherId], ["MANUAL", null]);
   // ... but not swap it for another one.
-  const swapped = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: priv.id }, shipping: { mode: "AUTO", voucherId: null } } });
+  const swapped = await commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: NO_QUOTE_ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: priv.id } }, shipping: { mode: "AUTO", voucherId: null } } });
   assert.equal(swapped.ok, false);
 });
 
@@ -596,7 +693,7 @@ test("review 8bdb2f0 / P2: the one-group action keeps the other group as saved U
   });
   await hasLock;
   // Tab A changes MERCHANDISE only; it must wait for the lock, then read SHIPPING as tab B left it.
-  const tabA = commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { mode: "MANUAL", voucherId: m.id }, shipping: null } });
+  const tabA = commitVoucherDraft({ expectedSelectionVersion: null, client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, draft: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: m.id } }, shipping: null } });
   const early = await Promise.race([tabA.then(() => "finished"), new Promise((resolve) => setTimeout(() => resolve("waiting"), 400))]);
   assert.equal(early, "waiting", "tab A is blocked on the cart lock, so its read of the other group cannot precede tab B's write");
   release();
@@ -615,10 +712,10 @@ test("review beca608: a picker built on a choice another tab has changed since i
   const ship = await freeShipVoucher(600_000);
   const read = () => createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV }).read(cartId);
   const versionOpened = selectionVersionOf(await read()); // both tabs open the picker here: nothing saved, both groups AUTO
-  assert.notEqual(selectionVersionOf({ merchandise: { mode: "MANUAL", voucherId: a.id }, shipping: { mode: "AUTO" } }), selectionVersionOf({ merchandise: { mode: "MANUAL", voucherId: b.id }, shipping: { mode: "AUTO" } }));
+  assert.notEqual(selectionVersionOf({ merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: a.id } }, shipping: { mode: "AUTO" } }), selectionVersionOf({ merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: b.id } }, shipping: { mode: "AUTO" } }));
 
   const draft = (merchandiseId: string | null, shippingMode: "AUTO" | "MANUAL", shippingId: string | null) => ({
-    merchandise: { mode: "MANUAL" as const, voucherId: merchandiseId }, shipping: { mode: shippingMode, voucherId: shippingId },
+    merchandise: { MERCHANDISE: { mode: "MANUAL" as const, voucherId: merchandiseId } }, shipping: { mode: shippingMode, voucherId: shippingId },
   });
   const commit = (d: ReturnType<typeof draft>, expectedSelectionVersion: string | null) =>
     commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, expectedSelectionVersion, draft: d });
@@ -646,7 +743,7 @@ test("review 26f6d3a: the version a picker carries belongs to the SAME snapshot 
   const read = () => createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV }).read(cartId);
   const opened = await read(); // S0: both groups AUTO
   const draft = (merchandiseId: string | null, shippingMode: "AUTO" | "MANUAL", shippingId: string | null) => ({
-    merchandise: { mode: "MANUAL" as const, voucherId: merchandiseId }, shipping: { mode: shippingMode, voucherId: shippingId },
+    merchandise: { MERCHANDISE: { mode: "MANUAL" as const, voucherId: merchandiseId } }, shipping: { mode: shippingMode, voucherId: shippingId },
   });
   const commit = (d: ReturnType<typeof draft>, expectedSelectionVersion: string | null) =>
     commitVoucherDraft({ client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, consentDigest: null, expectedSelectionVersion, draft: d });

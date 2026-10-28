@@ -41,6 +41,8 @@ export type VoucherHoldRequest = Readonly<{
   paidRevision: number;
   quoteDigest: string;
   grants: readonly VoucherHoldGrant[];
+  /** Release the live hold of each of these slots (no grant may name the same slot). */
+  releaseSlots?: readonly string[];
   /**
    * Release every other live hold of this attempt: the slots the quote no longer includes (an explicit NONE, or a combination
    * without that slot). With no grants this releases them all.
@@ -168,7 +170,9 @@ function validRequest(request: VoucherHoldRequest): boolean {
   if (typeof request.quoteDigest !== "string" || !HEX64.test(request.quoteDigest)) return false;
   if (!Array.isArray(request.grants) || request.grants.length > MAX_GRANTS) return false;
   if (request.releaseUnlisted !== undefined && typeof request.releaseUnlisted !== "boolean") return false;
-  if (request.grants.length + (request.releaseUnlisted === true ? 1 : 0) === 0) return false;
+  const releaseSlots = request.releaseSlots ?? [];
+  if (!Array.isArray(releaseSlots) || releaseSlots.length > MAX_GRANTS || releaseSlots.some((slot) => typeof slot !== "string" || !SLOT_PATTERN.test(slot))) return false;
+  if (request.grants.length + releaseSlots.length + (request.releaseUnlisted === true ? 1 : 0) === 0) return false;
   const slots = new Set<string>();
   for (const grant of request.grants) {
     if (grant === null || typeof grant !== "object" || !KINDS.includes(grant.kind) || typeof grant.slot !== "string" || !SLOT_PATTERN.test(grant.slot) || slots.has(grant.slot)) return false;
@@ -179,6 +183,7 @@ function validRequest(request: VoucherHoldRequest): boolean {
     if (!Number.isSafeInteger(grant.campaignRevision) || grant.campaignRevision <= 0) return false;
     if (!Number.isSafeInteger(grant.discountVnd) || grant.discountVnd < 1 || grant.discountVnd > MAX_DISCOUNT_VND) return false;
   }
+  if (releaseSlots.some((slot) => slots.has(slot)) || new Set(releaseSlots).size !== releaseSlots.length) return false;
   return new Set(request.grants.map((g) => g.campaignId)).size === request.grants.length;
 }
 
@@ -290,7 +295,9 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
         //    peeked at here (a hold's campaign never changes, and only this cart's lock creates one); they are locked after
         //    the campaigns so no path takes hold-then-campaign.
         const grantSlots = new Set(request.grants.map((grant) => grant.slot));
-        const peeked = (await liveHolds(tx, attemptKey)).filter((row) => request.releaseUnlisted === true || grantSlots.has(row.slot));
+        const releaseSlots = new Set(request.releaseSlots ?? []);
+        const inPlay = (slot: string) => request.releaseUnlisted === true || grantSlots.has(slot) || releaseSlots.has(slot);
+        const peeked = (await liveHolds(tx, attemptKey)).filter((row) => inPlay(row.slot));
         const ids = [...new Set([...request.grants.map((g) => g.campaignId), ...peeked.map((h) => h.campaignId)])].sort();
         const locks = new Map<string, CampaignLock>();
         for (const id of ids) {
@@ -303,16 +310,16 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
         for (const lock of locks.values()) await expireDue(tx, lock, now);
         // Under the campaign locks, what is still HELD is final for this request.
         const existing = new Map<string, HoldRow>();
-        for (const row of await liveHoldsLocked(tx, attemptKey)) if (request.releaseUnlisted === true || grantSlots.has(row.slot)) existing.set(row.slot, row);
+        for (const row of await liveHoldsLocked(tx, attemptKey)) if (inPlay(row.slot)) existing.set(row.slot, row);
 
         const held: HeldVoucher[] = [];
         const released: string[] = [];
         const pendingReleases: Array<{ hold: HoldRow; campaign: CampaignLock }> = [];
         const plan: Array<{ grant: VoucherHoldGrant; campaign: CampaignLock; old: HoldRow | null }> = [];
 
-        if (request.releaseUnlisted === true) {
+        if (request.releaseUnlisted === true || releaseSlots.size > 0) {
           for (const [slot, old] of existing) {
-            if (grantSlots.has(slot)) continue;
+            if (grantSlots.has(slot) || (request.releaseUnlisted !== true && !releaseSlots.has(slot))) continue;
             const campaign = locks.get(old.campaignId);
             if (campaign) pendingReleases.push({ hold: old, campaign });
           }

@@ -13,6 +13,8 @@
 --   DROP INDEX "VoucherRedemption_orderId_slot_key"; CREATE UNIQUE INDEX "VoucherRedemption_orderId_kind_key" ON "VoucherRedemption"("orderId", "kind");
 --   ALTER TABLE "VoucherHold" DROP COLUMN "slot"; ALTER TABLE "VoucherRedemption" DROP COLUMN "slot";
 --   ALTER TABLE "CartVoucherSelection" DROP COLUMN "typeSelections";
+--   ALTER TABLE "OrderVoucherSnapshot" DROP CONSTRAINT "OrderVoucherSnapshot_shape_check",
+--     ADD CONSTRAINT "OrderVoucherSnapshot_shape_check" CHECK (jsonb_typeof("snapshot") = 'object' AND ("snapshot"->>'v')::INT = 1);  -- only while no v2 snapshot exists
 --   ALTER TABLE "VoucherCampaign" DROP CONSTRAINT "VoucherCampaign_issuance_check", DROP COLUMN "typeId";
 --   -- then re-add the v1 "VoucherCampaign_issuance_check" and the v1 guard bodies from migration 20261025100000, and
 --   DROP TABLE "VoucherType"; DROP FUNCTION "voucher_campaign_type_guard"(), "voucher_type_guard"(), "voucher_code_namespace_guard"(),
@@ -265,3 +267,9 @@ ALTER TABLE "CartVoucherSelection" ADD COLUMN "typeSelections" JSONB NOT NULL DE
 ALTER TABLE "CartVoucherSelection" ADD CONSTRAINT "CartVoucherSelection_typeSelections_check" CHECK (
   jsonb_typeof("typeSelections") = 'object' AND pg_column_size("typeSelections") <= 8192
 );
+
+-- The order's voucher declaration carries every merchandise voucher (snapshot version 2). A version 1 row (at most one
+-- merchandise voucher) stays valid and readable.
+ALTER TABLE "OrderVoucherSnapshot"
+  DROP CONSTRAINT "OrderVoucherSnapshot_shape_check",
+  ADD CONSTRAINT "OrderVoucherSnapshot_shape_check" CHECK (jsonb_typeof("snapshot") = 'object' AND ("snapshot"->>'v')::INT IN (1, 2));

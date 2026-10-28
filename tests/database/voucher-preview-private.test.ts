@@ -4,6 +4,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import type { VoucherSelectionIntent } from "../../src/commerce/voucher-optimizer.ts";
 import { readVoucherPreview } from "../../src/commerce/voucher-preview.ts";
 import { createVoucherSelectionService } from "../../src/commerce/voucher-selection-service.ts";
 import { createVoucherFixtures } from "../support/voucher-fixtures.ts";
@@ -51,9 +52,9 @@ async function cartOf(price: number, quantity: number) {
   return prisma.cart.create({ data: { expiresAt: new Date(Date.now() + 86_400_000), items: { create: { variantId: created.variants[0]!.id, quantity } } } });
 }
 const json = (value: unknown) => JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? String(v) : v));
-const draft = (merchandiseId: string | null, shippingId: string | null) => ({
-  merchandise: merchandiseId === null ? ({ mode: "AUTO" } as const) : ({ mode: "MANUAL", voucherId: merchandiseId } as const),
-  shipping: shippingId === null ? ({ mode: "AUTO" } as const) : ({ mode: "MANUAL", voucherId: shippingId } as const),
+const draft = (merchandiseId: string | null, shippingId: string | null): VoucherSelectionIntent => ({
+  merchandise: merchandiseId === null ? {} : { MERCHANDISE: { mode: "MANUAL", voucherId: merchandiseId } },
+  shipping: shippingId === null ? { mode: "AUTO" } : { mode: "MANUAL", voucherId: shippingId },
 });
 const preview = (cartId: string, selectionOverride?: ReturnType<typeof draft>) =>
   readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ...(selectionOverride ? { selectionOverride } : {}) });
