@@ -158,32 +158,49 @@ function sameSize(a: string | null, b: string | null): boolean {
  *
  * Pinning reorders what this page already returned; it never reaches for a product the query did not
  * match, because that would put an item in front of someone who filtered it out. A pinned slug that
- * is absent from the page is simply not on it.
+ * is not on the page is ignored, and a slug pinned twice keeps its first position. Without pins the
+ * order is untouched.
  *
- * Applied once, by the loader, before the grid's tracking is built. Both the rendered cards and the
  * `view_item_list`/`select_item` indices come from this one ordered array: building tracking from
  * the repository order and then reordering the cards would report a pinned product at the index it
  * would have had, not the position it is shown in.
+ *
+ * With `isInStock`, in-stock products always precede out-of-stock ones, so a pinned sold-out
+ * product never leapfrogs a product that is on sale. The caller supplies the classification the
+ * repository's own query used (it judges only variants matching the active filters), rather than
+ * this function re-deriving one from every variant. Only the collection's default sort passes it:
+ * under a sort the shopper picked, partitioning by stock would break the order the list claims.
  */
 export function orderByFeaturedSlugs<T extends Readonly<{ slug: string }>>(
   products: readonly T[],
   featuredSlugs: readonly string[],
+  { isInStock }: Readonly<{ isInStock?: (product: T) => boolean }> = {},
 ): readonly T[] {
-  if (featuredSlugs.length === 0) return products;
-
   const rank = new Map<string, number>();
   featuredSlugs.forEach((slug, index) => {
     if (!rank.has(slug)) rank.set(slug, index);
   });
 
-  const pinned: T[] = [];
-  const rest: T[] = [];
-  for (const product of products) {
-    (rank.has(product.slug) ? pinned : rest).push(product);
-  }
-  pinned.sort((a, b) => rank.get(a.slug)! - rank.get(b.slug)!);
+  const pinFirst = (items: readonly T[]): readonly T[] => {
+    if (rank.size === 0) return items;
+    const pinned: T[] = [];
+    const rest: T[] = [];
+    for (const item of items) {
+      (rank.has(item.slug) ? pinned : rest).push(item);
+    }
+    pinned.sort((a, b) => rank.get(a.slug)! - rank.get(b.slug)!);
+    return [...pinned, ...rest];
+  };
 
-  return [...pinned, ...rest];
+  if (!isInStock) return pinFirst(products);
+
+  const inStock: T[] = [];
+  const outOfStock: T[] = [];
+  for (const product of products) {
+    (isInStock(product) ? inStock : outOfStock).push(product);
+  }
+  if (outOfStock.length === 0) return pinFirst(products);
+  return [...pinFirst(inStock), ...pinFirst(outOfStock)];
 }
 
 /** Editorial media, with anything that fails the trusted-URL contract dropped. */

@@ -174,6 +174,62 @@ test("a slug pinned twice keeps its first position rather than being ranked twic
   assert.deepEqual(ordered.map((p) => p.slug), ["b", "a"]);
 });
 
+test("in-stock products always precede out-of-stock products, even if out-of-stock products are pinned", () => {
+  const inStockUnpinned = {
+    ...product("in-stock-unpinned"),
+    variants: [{ ...variant(1), sellableStock: 5 }],
+  };
+  const inStockPinned = {
+    ...product("in-stock-pinned"),
+    variants: [{ ...variant(2), sellableStock: 3 }],
+  };
+  const outOfStockPinned = {
+    ...product("out-of-stock-pinned"),
+    variants: [{ ...variant(3), sellableStock: 0 }],
+  };
+  const outOfStockUnpinned = {
+    ...product("out-of-stock-unpinned"),
+    variants: [{ ...variant(4), sellableStock: 0 }],
+  };
+
+  const ordered = orderByFeaturedSlugs(
+    [outOfStockUnpinned, inStockUnpinned, outOfStockPinned, inStockPinned],
+    ["out-of-stock-pinned", "in-stock-pinned"],
+    { isInStock: (p) => p.slug.startsWith("in-stock") },
+  );
+
+  assert.deepEqual(
+    ordered.map((p) => p.slug),
+    ["in-stock-pinned", "in-stock-unpinned", "out-of-stock-pinned", "out-of-stock-unpinned"],
+  );
+});
+
+test("the caller's stock classification wins over the variants the product carries", () => {
+  // A pinned product with stock only in a size the shopper filtered out: the query ranked it
+  // out-of-stock, so it must not be pinned above a product that matches the filter.
+  const pinnedOtherSize = {
+    ...product("pinned-other-size"),
+    variants: [{ ...variant(1), sellableStock: 0 }, { ...variant(2), sellableStock: 5 }],
+  };
+  const matchesFilter = { ...product("matches-filter"), variants: [{ ...variant(3), sellableStock: 3 }] };
+  const noVariants = { ...product("no-variants"), variants: [] };
+
+  const ordered = orderByFeaturedSlugs(
+    [matchesFilter, noVariants, pinnedOtherSize],
+    ["no-variants", "pinned-other-size"],
+    { isInStock: (p) => p.slug === "matches-filter" },
+  );
+
+  assert.deepEqual(ordered.map((p) => p.slug), ["matches-filter", "no-variants", "pinned-other-size"]);
+});
+
+test("without isInStock the order is untouched, so a shopper's sort is not regrouped", () => {
+  const soldOut = { ...product("sold-out"), variants: [{ ...variant(1), sellableStock: 0 }] };
+  const onSale = { ...product("on-sale"), variants: [{ ...variant(2), sellableStock: 4 }] };
+
+  assert.deepEqual(orderByFeaturedSlugs([soldOut, onSale], []).map((p) => p.slug), ["sold-out", "on-sale"]);
+});
+
 test("the grid renders exactly the order it was handed, without reordering again", () => {
   // The loader applies `orderByFeaturedSlugs` once, before building the grid's tracking. Reordering
   // a second time here is what would put the cards and the analytics indices out of step.

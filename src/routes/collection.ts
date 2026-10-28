@@ -57,11 +57,13 @@ export async function loadCollectionRoute({
     const query = await searchParams;
     discovery = parseCollectionDiscoverySearchParams(collection.slug, query);
     const requestNow = new Date();
+    const inStockFirst = isCollectionDefaultSort(collection.slug, discovery.sort);
     [catalogPage, facets] = await Promise.all([
       listConfiguredStorefrontDiscoveryPage({
         discovery,
         pageSize: COLLECTION_PAGE_SIZE,
         allowCuratedComponents: true,
+        inStockFirst,
         now: requestNow,
       }),
       listConfiguredCollectionDiscoveryFacets({ discovery, now: requestNow }),
@@ -71,16 +73,22 @@ export async function loadCollectionRoute({
     throw error;
   }
 
-  const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
+  const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs, inStockProductIds } =
+    catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
 
   // Ordered once, here, before tracking is built. The impression and select indices must describe
   // the order the shopper sees, so the same array feeds the tracking and the view model. Pins lead
   // only in the merchandiser's own order: under a sort the shopper picked they would sit above a
   // list that claims to be ordered by price or name.
+  const isDefaultSort = isCollectionDefaultSort(collection.slug, discovery.sort);
+  const inStockSet = new Set(inStockProductIds ?? []);
   const ordered = orderByFeaturedSlugs(
     products,
-    isCollectionDefaultSort(collection.slug, discovery.sort) ? collection.featuredProductSlugs : [],
+    isDefaultSort ? collection.featuredProductSlugs : [],
+    inStockProductIds && isDefaultSort
+      ? { isInStock: (product) => inStockSet.has(product.id) }
+      : {},
   );
   const listTracking = buildProductListTracking({
     products: ordered,
