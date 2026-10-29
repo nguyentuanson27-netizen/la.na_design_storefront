@@ -535,6 +535,19 @@ test("basis snapshots every PAID segment including undiscounted rows, gifts stay
     assert.equal(gifts.find(row=>row.role==="GIFT")?.listUnitPriceVnd,null);
     assert.equal(gifts.find(row=>row.role==="PAID")?.listUnitPriceVnd,BigInt(149000));
     assert.equal(gifts.find(row=>row.role==="GIFT")?.productName,"Frozen Name");
+    const { readHistoricalOrderPricing } = await import("../../src/commerce/historical-list-price.ts");
+    assert.equal(await readHistoricalOrderPricing(prisma,current.id),null);
+    await prisma.orderLineSnapshot.create({data:{orderId:current.id,variantId:"gq15-list-variant",pancakeVariationId:"gq15-list-external",productName:"Legacy duplicate",size:"M",quantity:3,unitPriceVnd:BigInt(100001),lineTotalVnd:BigInt(300003),listUnitPriceVnd:BigInt(149000)}});
+    await prisma.orderMirror.update({where:{id:current.id},data:{state:"CONFIRMED"}});
+    await prisma.orderMirror.update({where:{id:giftOrder.id},data:{state:"CONFIRMED"}});
+    await prisma.variantMirror.update({where:{id:"gq15-list-variant"},data:{pancakeRetailPrice:10000}});
+    const history=await readHistoricalOrderPricing(prisma,current.id);
+    assert.equal(history?.lines.length,2); // quote segments, never quote + legacy duplicates
+    assert.equal(history?.savingVnd,"156997");
+    assert.deepEqual(history?.lines.map(line=>line.productName),["Frozen Name","Frozen Name"]);
+    const withGift=await readHistoricalOrderPricing(prisma,giftOrder.id);
+    assert.equal(withGift?.lines.length,2);assert.equal(withGift?.savingVnd,"50000");
+    assert.equal(withGift?.lines.find(line=>line.role==="GIFT")?.listUnitPriceVnd,null);
 
   } finally {delete process.env.LIST_PRICE_DISPLAY;delete process.env.LIST_PRICE_CAMPAIGN_BASIS;await prisma.productMirror.delete({where:{id:product.id}});}
 });

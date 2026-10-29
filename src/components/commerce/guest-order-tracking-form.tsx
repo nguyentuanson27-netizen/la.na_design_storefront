@@ -114,6 +114,25 @@ export function GuestOrderTrackingForm({
               <dd className="mt-1 font-semibold">{formatVnd(state.order.totalVnd)}</dd>
             </div>
           </dl>
+          {state.order.pricingHistory ? (
+            <div className="mt-6 space-y-4">
+              <h3 className="font-semibold">Chi tiết sản phẩm</h3>
+              <ul className="space-y-3">
+                {state.order.pricingHistory.lines.map((line, index) => (
+                  <li key={index} className="border-t border-black/15 pt-3">
+                    <p>{line.productName}{line.role === "GIFT" ? " — Quà tặng" : ""}</p>
+                    <p className="text-sm">{[line.color, line.size].filter(Boolean).join(" / ")} · Số lượng: {line.quantity}</p>
+                    <p className="flex flex-wrap items-baseline gap-2">
+                      {line.listUnitPriceVnd ? <s><span className="sr-only">Giá niêm yết </span>{formatVnd(line.listUnitPriceVnd)}</s> : null}
+                      <span><span className="sr-only">Giá bán </span>{formatVnd(line.unitPriceVnd)}</span>
+                      <span>· Thành tiền: {formatVnd(line.lineTotalVnd)}</span>
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              {state.order.pricingHistory.savingVnd ? <p className="font-semibold">Bạn đã tiết kiệm: {formatVnd(state.order.pricingHistory.savingVnd)}</p> : null}
+            </div>
+          ) : null}
           {state.order.preorderHistory ? (
             <BrandHistoricalPreorderNotice history={state.order.preorderHistory} />
           ) : null}

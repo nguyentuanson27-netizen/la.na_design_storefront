@@ -1,3 +1,5 @@
+import { readHistoricalOrderPricing, type HistoricalOrderPricing } from "./historical-list-price.ts";
+import { readListPriceConfig } from "./list-price-config.ts";
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import {
   buildHistoricalPreorderPresentation,
@@ -37,6 +39,7 @@ export type GuestOrderTrackingResult =
         totalVnd: string;
         /** Present only when a confirmed I7 snapshot contains preorder history. */
         preorderHistory?: HistoricalPreorderPresentation;
+        pricingHistory?: HistoricalOrderPricing;
       };
     }
   | { ok: false; reason: "NOT_FOUND" };
@@ -94,6 +97,7 @@ export function createGuestOrderTrackingService(client: PrismaClient) {
     const order = await client.orderMirror.findUnique({
       where: { publicCode: parsed.value.orderCode },
       select: {
+        id: true,
         publicCode: true,
         userId: true,
         guestPhone: true,
@@ -141,6 +145,7 @@ export function createGuestOrderTrackingService(client: PrismaClient) {
         ? buildHistoricalPreorderPresentation(order.preorderSnapshot)
         : null;
 
+    const pricingHistory = order.state === "CONFIRMED" && readListPriceConfig().orderHistory ? await readHistoricalOrderPricing(client, order.id) : null;
     return {
       ok: true,
       order: {
@@ -149,6 +154,7 @@ export function createGuestOrderTrackingService(client: PrismaClient) {
         createdAt: order.createdAt.toISOString(),
         totalVnd: order.totalVnd.toString(),
         ...(preorderHistory ? { preorderHistory } : {}),
+        ...(pricingHistory ? { pricingHistory } : {}),
       },
     };
   }
