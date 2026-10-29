@@ -107,3 +107,74 @@ export function CheckoutUpsell({ model, locked = false }: Readonly<{ model: Chec
     </section>
   );
 }
+
+
+type LoadedUpsell = Readonly<{
+  quoteProof: string;
+  quoteRenderId?: string;
+  model: CheckoutUpsellBanner | null;
+}>;
+
+function parseUpsellBanner(value: unknown): CheckoutUpsellBanner | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).sort().join(",") !== "offerName,paidCartKey") return null;
+  if (typeof record.paidCartKey !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(record.paidCartKey)) return null;
+  if (record.offerName !== null && (typeof record.offerName !== "string" || record.offerName.length > 256)) return null;
+  return { paidCartKey: record.paidCartKey, offerName: record.offerName as string | null };
+}
+
+/**
+ * Load only after checkout's shipping-address options are available. Failed / stale optional
+ * recommendations never block the quote, form or submission. A render id forces a fresh read even
+ * for A -> B -> A cart changes whose signed quote bytes happen to match.
+ */
+export function CheckoutUpsellLoader({ quoteProof, quoteRenderId, locked, ready }: Readonly<{
+  quoteProof: string | null;
+  quoteRenderId?: string;
+  locked: boolean;
+  ready: boolean;
+}>) {
+  const [loaded, setLoaded] = useState<LoadedUpsell | null>(null);
+
+  useEffect(() => {
+    // Geo readiness controls network work only; the mounted banner keeps D-06 dismissal state.
+    if (!quoteProof || !ready || locked) return;
+    const controller = new AbortController();
+    let active = true;
+    void (async () => {
+      let model: CheckoutUpsellBanner | null = null;
+      try {
+        const response = await fetch("/api/checkout/upsell", {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ quoteProof }),
+          signal: controller.signal,
+        });
+        if (response.ok) model = parseUpsellBanner(await response.json());
+      } catch {
+        // An optional banner does not interrupt address entry or order submission.
+      }
+      if (active && !controller.signal.aborted) {
+        setLoaded((previous) => ({
+          quoteProof, quoteRenderId,
+          // A temporarily missing offer must not erase an earlier dismissal within this checkout.
+          model: model ?? (previous?.model ? { ...previous.model, offerName: null } : null),
+        }));
+      }
+    })();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [quoteProof, quoteRenderId, locked, ready]);
+
+  // Hide the old offer immediately when the proof/render changes, but keep the paid-cart key
+  // mounted so D-06 dismiss state is preserved across a quote-only refresh.
+  const current = ready && quoteProof && loaded?.quoteProof === quoteProof && loaded.quoteRenderId === quoteRenderId
+    ? loaded.model
+    : loaded?.model ? { ...loaded.model, offerName: null } : null;
+  return current ? <CheckoutUpsell model={current} locked={locked} /> : null;
+}

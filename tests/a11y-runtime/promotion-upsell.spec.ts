@@ -52,6 +52,57 @@ test.afterAll(async () => {
 // AM-01 (OD-01 = A): checkout shows the proven opportunity and the way to /sale; it never adds a
 // paid unit itself. The +1 action, its proof and its races stay covered by
 // tests/database/promotion-upsell.test.ts, which this browser suite no longer duplicates.
+test("slow optional upsell cannot hold checkout HTML, shipping fields or the submit button", async ({ page }) => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let intercepted = 0;
+  await page.route("**/api/checkout/upsell", async (route) => {
+    intercepted++;
+    await held;
+    await route.continue();
+  });
+  try {
+    await page.goto(`${BASE}/checkout`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "Thông tin nhận hàng" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeEnabled();
+    await expect.poll(() => intercepted).toBe(1);
+    await expect(page.getByRole("region", { name: "Gợi ý mua thêm" })).toHaveCount(0);
+    release();
+    await expect(page.getByRole("region", { name: "Gợi ý mua thêm" })).toBeVisible();
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
+test("province fetch failure does not start optional upsell", async ({ page }) => {
+  let started = 0;
+  await page.route("**/api/checkout/upsell", async (route) => { started++; await route.continue(); });
+  await page.route(BASE + "/checkout", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await route.abort();
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto(BASE + "/checkout", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
+  await expect(page.locator("#checkout-province")).toBeDisabled();
+  await page.waitForTimeout(150);
+  expect(started).toBe(0);
+});
+
+test("upsell POST rejects requests from a foreign origin without exposing data", async ({ page }) => {
+  await page.goto(`${BASE}/checkout`, { waitUntil: "domcontentloaded" });
+  const response = await page.request.post(`${BASE}/api/checkout/upsell`, {
+    data: { quoteProof: "invalid.proof" },
+    headers: { origin: "https://foreign.example" },
+  });
+  expect(response.status()).toBe(403);
+  expect(await response.json()).toBeNull();
+  expect(response.headers()["cache-control"]).toContain("no-store");
+});
+
 test("AM-01/A: the compact banner names the proven offer, links to /sale and offers no inline add", async ({ page }) => {
   await page.goto(`${BASE}/checkout`);
   const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
@@ -140,6 +191,87 @@ test("TG-11: skip survives reload, paid A→B→A resets it, new checkout attemp
   await context.addCookies([{ name: "la_cart", value: newCart.id, url: BASE, httpOnly: true, sameSite: "Lax" }]);
   await page.reload(); await expect(offer).toBeVisible();
 });
+test("D-06/FR-10: commune lookup failure and retry preserve a dismissed upsell", async ({ page }) => {
+  await page.goto(`${BASE}/checkout`);
+  const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
+  await expect(offer).toBeVisible();
+  await expect(page.getByLabel("Tỉnh / Thành phố", { exact: false })).toBeEnabled();
+
+  await offer.getByRole("button", { name: "Đóng gợi ý ưu đãi" }).click();
+  await expect(offer).toHaveCount(0);
+  const savedDismiss = await page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"));
+  expect(savedDismiss).toBeTruthy();
+  expect(JSON.parse(savedDismiss!).dismissed).toBe(true);
+
+  // Provinces already loaded. Fail just the first commune Server Action request.
+  let failNextCommuneRead = true;
+  await page.route(`${BASE}/checkout`, async (route) => {
+    if (failNextCommuneRead && route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      failNextCommuneRead = false;
+      await route.abort("failed");
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.getByLabel("Tỉnh / Thành phố", { exact: false }).selectOption({ label: "Tỉnh Current" });
+  await expect.poll(() => failNextCommuneRead).toBe(false);
+  await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
+  await expect(offer).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"))).toBe(savedDismiss);
+
+  await page.getByRole("button", { name: "Thử lại" }).click();
+  await expect(page.getByLabel("Phường / Xã", { exact: false })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Thử lại" })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"))).toBe(savedDismiss);
+  await expect(offer).toHaveCount(0);
+});
+
+test("D-06/FR-10: a temporarily unquotable cart preserves the dismissed offer", async ({ page }) => {
+  await page.goto(`${BASE}/checkout`);
+  const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
+  const proof = page.locator('input[name="quoteProof"]');
+  await expect(offer).toBeVisible();
+  const originalProof = await proof.inputValue();
+  expect(originalProof).not.toBe("");
+  await offer.getByRole("button", { name: "Đóng gợi ý ưu đãi" }).click();
+  await expect(offer).toHaveCount(0);
+  const dismissed = await page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"));
+  expect(JSON.parse(dismissed ?? "null")).toEqual(expect.objectContaining({ dismissed: true }));
+
+  // The checkout page's visibilitychange refresh uses client RSC navigation (not a document reload),
+  // which is the path that previously unmounted the banner and erased its session storage.
+  async function refreshRender() {
+    const before = await page.locator("form").getAttribute("data-checkout-render");
+    const rsc = page.waitForResponse((response) =>
+      response.url().includes("/checkout?") && response.request().headers()["rsc"] === "1");
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await rsc;
+    await expect.poll(() => page.locator("form").getAttribute("data-checkout-render")).not.toBe(before);
+  }
+
+  // Stock is external quote input; changing/restoring it must not bump the paid-cart revision.
+  await prisma.warehouseStock.updateMany({ where: { variantId: paidId }, data: { quantity: 0 } });
+  try {
+    await refreshRender();
+    await expect(proof).toHaveValue("");
+    await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeDisabled();
+    await expect(offer).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"))).toBe(dismissed);
+  } finally {
+    await prisma.warehouseStock.updateMany({ where: { variantId: paidId }, data: { quantity: 20 } });
+  }
+
+  const recommender = page.waitForResponse((response) =>
+    response.url().endsWith("/api/checkout/upsell") && response.request().method() === "POST");
+  await refreshRender();
+  await expect(proof).not.toHaveValue("");
+  await recommender;
+  await expect(offer).toHaveCount(0);
+  expect(await page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"))).toBe(dismissed);
+  expect(await prisma.cartItem.count({ where: { cartId } })).toBe(1);
+});
+
 test("D-06: a withdrawn offer shows no invitation and leaves checkout usable", async ({ page }) => {
   await page.goto(`${BASE}/checkout`);
   const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });

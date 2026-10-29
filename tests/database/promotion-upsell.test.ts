@@ -6,7 +6,7 @@ import { readCartGiftState } from "../../src/commerce/cart-gift-selection.ts";
 import { resolveBenefitCheckoutQuote } from "../../src/commerce/benefit-checkout-quote.ts";
 import { buildRenderedCheckoutQuoteFacts } from "../../src/commerce/checkout-quote.ts";
 import { issueUpsellQuoteProof, type UpsellIntent } from "../../src/commerce/promotion-upsell-proof.ts";
-import { createPromotionUpsellService } from "../../src/commerce/promotion-upsell.ts";
+import { createPromotionUpsellService, UPSELL_BANNER_MAX_QUOTES } from "../../src/commerce/promotion-upsell.ts";
 import { acquireCatalogSyncLock } from "../../src/commerce/catalog-sync-lock.ts";
 import { lockRevision } from "../../src/commerce/promotion-activation-service.ts";
 
@@ -112,9 +112,11 @@ test("TG-09: corrupted, cross-cart, expired and changed-variant proofs never wri
 test("TG-06: exclusion wins before the bounded pool, sold-out and already-paid products are never offered", async () => {
   await prisma.giftQuantityTarget.update({ where: { campaignId_productId: { campaignId, productId: candidateProductId } }, data: { role: "EXCLUDE" } });
   assert.equal((await service().get(await proof()))?.offer ?? null, null);
+  assert.equal((await service().getBanner(await proof()))?.offerName, null, "excluded products cannot be offered by the lighter banner path");
   await prisma.giftQuantityTarget.update({ where: { campaignId_productId: { campaignId, productId: candidateProductId } }, data: { role: "INCLUDE" } });
   await prisma.warehouseStock.updateMany({ where: { variant: { productId: candidateProductId } }, data: { quantity: 0 } });
   assert.equal((await service().get(await proof()))?.offer ?? null, null);
+  assert.equal((await service().getBanner(await proof()))?.offerName, null, "sold-out products cannot be offered by the lighter banner path");
 });
 test("TG-09: catalog stock synchronization serialized before add rejects a stale READY offer", async () => {
   const i = await intent(); let release!: () => void; let ready!: () => void;
@@ -211,6 +213,13 @@ test("UP-00/TG-06: representative 30-product, 3-size catalog; bounded output/quo
     assert.equal(model.offer.products.length, 5);
     assert.ok(model.offer.products.every((p) => p.variants.length <= 3));
   }
+  const banner = await service().getBanner(rendered);
+  assert.equal(banner?.offerName, "Mua 3 tặng khăn");
+  assert.match(banner?.paidCartKey ?? "", /^[A-Za-z0-9_-]{43}$/);
+  assert.deepEqual(Object.keys(banner ?? {}).sort(), ["offerName", "paidCartKey"], "banner mode must not build or serialize add intents");
+  const metric = metrics.at(-1) as { event: string; quoteAttempts?: number };
+  assert.equal(metric.event, "recommendation");
+  assert.equal(metric.quoteAttempts, UPSELL_BANNER_MAX_QUOTES, "the compact banner does not run the full 20 hypothetical quotes");
   console.info("UP-00 fixture benchmark", { products: 33, maxDiscovered: 10, maxQuotes: 20, durationMs: times });
 });
 

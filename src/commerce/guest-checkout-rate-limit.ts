@@ -6,6 +6,8 @@ const DEFAULT_MAX_CLIENT_ATTEMPTS = 20;
 const DEFAULT_CLIENT_WINDOW_MS = 60_000;
 const DEFAULT_MAX_GEO_CLIENT_ATTEMPTS = 60;
 const DEFAULT_GEO_CLIENT_WINDOW_MS = 60_000;
+const DEFAULT_MAX_UPSELL_CLIENT_ATTEMPTS = 20;
+const DEFAULT_UPSELL_CLIENT_WINDOW_MS = 60_000;
 const MAX_CART_ID_LENGTH = 128;
 const PSEUDONYMOUS_CLIENT_KEY = /^v1:[0-9a-f]{64}$/;
 
@@ -16,6 +18,8 @@ type GuestCheckoutRateLimiterOptions = Readonly<{
   clientWindowMs?: number;
   maxGeoClientAttempts?: number;
   geoClientWindowMs?: number;
+  maxUpsellClientAttempts?: number;
+  upsellClientWindowMs?: number;
 }>;
 
 function requirePositiveSafeInteger(value: number, label: string): number {
@@ -87,6 +91,15 @@ export function createGuestCheckoutRateLimiter(
     options.geoClientWindowMs ?? DEFAULT_GEO_CLIENT_WINDOW_MS,
     "Checkout geo client rate-limit window",
   );
+  const maxUpsellClientAttempts = requirePositiveSafeInteger(
+    options.maxUpsellClientAttempts ?? DEFAULT_MAX_UPSELL_CLIENT_ATTEMPTS,
+    "Checkout upsell client max attempts",
+  );
+  const upsellClientWindowMs = requirePositiveSafeInteger(
+    options.upsellClientWindowMs ?? DEFAULT_UPSELL_CLIENT_WINDOW_MS,
+    "Checkout upsell client window",
+  );
+  const upsellClientCappedCount = cappedCount(maxUpsellClientAttempts, "Checkout upsell client max attempts");
   const cartCappedCount = cappedCount(maxAttempts, "Checkout max attempts");
   const clientCappedCount = cappedCount(maxClientAttempts, "Checkout client max attempts");
   const geoClientCappedCount = cappedCount(
@@ -185,5 +198,16 @@ export function createGuestCheckoutRateLimiter(
     });
   }
 
-  return { consume, consumeClient, consumeGeoClient };
+  // Upsell is optional and potentially expensive: it must never exhaust geo or submit buckets.
+  async function consumeUpsellClient({ clientKey, now = new Date() }: { clientKey: string; now?: Date }): Promise<boolean> {
+    return consumeBucket({
+      bucketKey: `checkout-upsell-client:${requireClientKey(clientKey)}`,
+      now,
+      windowMs: upsellClientWindowMs,
+      maxAttempts: maxUpsellClientAttempts,
+      cap: upsellClientCappedCount,
+    });
+  }
+
+  return { consume, consumeClient, consumeGeoClient, consumeUpsellClient };
 }
