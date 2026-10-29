@@ -130,7 +130,7 @@ function parseUpsellBanner(value: unknown): CheckoutUpsellBanner | null {
  * for A -> B -> A cart changes whose signed quote bytes happen to match.
  */
 export function CheckoutUpsellLoader({ quoteProof, quoteRenderId, locked, ready }: Readonly<{
-  quoteProof: string;
+  quoteProof: string | null;
   quoteRenderId?: string;
   locked: boolean;
   ready: boolean;
@@ -139,7 +139,7 @@ export function CheckoutUpsellLoader({ quoteProof, quoteRenderId, locked, ready 
 
   useEffect(() => {
     // Geo readiness controls network work only; the mounted banner keeps D-06 dismissal state.
-    if (!ready || locked) return;
+    if (!quoteProof || !ready || locked) return;
     const controller = new AbortController();
     let active = true;
     void (async () => {
@@ -173,7 +173,7 @@ export function CheckoutUpsellLoader({ quoteProof, quoteRenderId, locked, ready 
 
   // Hide the old offer immediately when the proof/render changes, but keep the paid-cart key
   // mounted so D-06 dismiss state is preserved across a quote-only refresh.
-  const current = loaded?.quoteProof === quoteProof && loaded.quoteRenderId === quoteRenderId
+  const current = ready && quoteProof && loaded?.quoteProof === quoteProof && loaded.quoteRenderId === quoteRenderId
     ? loaded.model
     : loaded?.model ? { ...loaded.model, offerName: null } : null;
   return current ? <CheckoutUpsell model={current} locked={locked} /> : null;
