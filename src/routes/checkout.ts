@@ -32,13 +32,17 @@ import { sealRoute, type RouteHandle, type RoutePixelEvent } from "./core.tsx";
 export type CheckoutRouteProps = Readonly<Record<string, never>>;
 
 function withCheckoutExtras(base: CheckoutViewModel): CheckoutViewModel {
-  return {
-    ...base,
-    bankTransferEnabled: readBankTransferConfig() !== null,
-    // Only a cheap feature gate runs in SSR. Optional candidate quotes move to a separate
-    // post-hydration read; no recommendation timeout may hold up checkout HTML or quote proof.
-    upsellEnabled: base.state === "ready" && Boolean(base.quoteProof) && isPromotionUpsellEnabled(readPancakeShopId()),
-  };
+  // The optional feature gate is not permission to fail checkout if promotional configuration
+  // is missing or malformed. The order's canonical quote and proof stay independent.
+  let upsellEnabled = false;
+  if (base.state === "ready" && base.quoteProof) {
+    try {
+      upsellEnabled = isPromotionUpsellEnabled(readPancakeShopId());
+    } catch {
+      upsellEnabled = false;
+    }
+  }
+  return { ...base, bankTransferEnabled: readBankTransferConfig() !== null, upsellEnabled };
 }
 
 export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel>> {
