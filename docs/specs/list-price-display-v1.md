@@ -177,7 +177,7 @@ Ví dụ làm tròn: `749.000 × 75% = 561.750 → 562.000đ`; `549.000 × 75% =
 
 - **Chính sách giá** (`/policies#chinh-sach-gia`): thêm đoạn định nghĩa "Giá niêm yết" và "Giá bán", viết theo sự thật về cách giá niêm yết được xác định. Nội dung do chủ shop duyệt.
 - **Admin:** trang sản phẩm hiển thị giá niêm yết tính ra (chỉ đọc) cạnh giá POS, kèm cảnh báo khi guard trả `null`. Không có ghi đè theo từng sản phẩm (Q5, đã bỏ): mọi sản phẩm theo công thức, bật/tắt chỉ bằng cờ toàn cục.
-- **Admin chiến dịch (Q7):** một phần biến thể không có tác dụng ⇒ cảnh báo và vẫn publish; toàn bộ không có tác dụng ⇒ chặn `NO_EFFECTIVE_DISCOUNT`; dữ liệu POS không dùng được ⇒ chặn `UNUSABLE_BASE_PRICE` (§4).
+- **Admin chiến dịch (Q7):** chỉ một phần biến thể `THRESHOLD_NOT_MET` ⇒ warning và publish nếu còn biến thể giảm thật; toàn bộ chỉ dưới ngưỡng ⇒ chặn `NO_EFFECTIVE_DISCOUNT`; POS không hợp lệ ⇒ `UNUSABLE_BASE_PRICE`; list price guard `null`, tiền 0 hoặc lỗi số học ⇒ chặn bằng lỗi giá campaign không an toàn (§4).
 - **Cache:** feed Merchant dùng cache khóa cố định kèm `promotion pricing revision`. Bật/tắt cờ hoặc đổi công thức phải làm mất hiệu lực cache này, nếu không feed và PDP có thể lệch nhau (đúng loại sai lệch mà test `merchant-feed-pdp-price-parity` đang chặn).
 - **Merchant pha 4 có quyết định GO/NO-GO riêng:** chủ shop/người vận hành phê duyệt việc bật `LIST_PRICE_MERCHANT` sau khi kiểm tra bằng chứng **giá gốc đã từng áp dụng**, tính phù hợp với [chính sách `sale_price` của Google](https://support.google.com/merchants/answer/6324471?hl=vi) và [Google Search Central](https://developers.google.com/search/docs/appearance/structured-data/merchant-listing), đồng nhất landing/checkout/feed/JSON-LD, diagnostics và rollback. **Không đáp ứng/không có bằng chứng ⇒ NO-GO:** giữ feed/JSON-LD hiện tại (`g:price` = giá thực trả, không thêm `g:sale_price` hoặc `StrikethroughPrice`). Đây là kiểm soát độc lập cho tích hợp tùy chọn, không tạo cổng pháp lý riêng cho storefront.
 
@@ -273,5 +273,5 @@ Trình duyệt (`tests/a11y-runtime`): card, PDP, giỏ trên mobile; nhãn a11y
 | Q4 | Giá niêm yết đã từng bán thật ở kênh nào? | **Chưa từng.** Rủi ro về thông tin giá và quảng cáo được ghi nhận tại §9. |
 | Q5 | Ghi đè theo từng sản phẩm? | **Đã chốt:** không làm. Mọi sản phẩm theo công thức |
 | Q6 | Bậc số lượng / giá trị đơn và ngưỡng quà tính trên giá nào? | **Đã chốt:** giá bán hiện tại (sau giảm giá), đúng như hệ thống đang làm; không đổi, không dùng giá niêm yết (§4) |
-| Q7 | Chiến dịch % nhỏ hơn ngưỡng (kết quả ≥ giá POS) xử lý thế nào? | **Diễn giải v1 để triển khai:** một phần variant không giảm ⇒ cảnh báo và không chặn publish nếu vẫn có ít nhất một variant giảm thật; toàn bộ không giảm ⇒ chặn `NO_EFFECTIVE_DISCOUNT`; dữ liệu POS lỗi ⇒ chặn `UNUSABLE_BASE_PRICE` (§4) |
+| Q7 | Chiến dịch % nhỏ hơn ngưỡng (kết quả ≥ giá POS) xử lý thế nào? | **Diễn giải v1 để triển khai:** chỉ `THRESHOLD_NOT_MET` được cảnh báo khi còn biến thể giảm thật; nếu tất cả chỉ dưới ngưỡng ⇒ chặn `NO_EFFECTIVE_DISCOUNT`; POS lỗi ⇒ `UNUSABLE_BASE_PRICE`; list `null`/kết quả 0/lỗi toán ⇒ chặn, không chỉ cảnh báo (§4) |
 
