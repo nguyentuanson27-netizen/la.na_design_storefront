@@ -1,3 +1,4 @@
+import { auditListPrices } from "./list-price-audit.ts";
 import { prisma } from "../db/prisma.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig } from "../integrations/pancake/config.ts";
@@ -21,12 +22,18 @@ export async function syncConfiguredPancakeCatalog({
   const client = new PancakeClient({ apiKey: config.apiKey });
   const repository = createCatalogMirrorRepository(prisma);
 
-  return syncPancakeCatalog({
+  const result = await syncPancakeCatalog({
     client,
     repository,
     shopId: config.shopId,
     ...(clock ? { clock } : {}),
   });
+  try {
+    await auditListPrices({ client: prisma, shopId: config.shopId, now: new Date() });
+  } catch {
+    // Durable retry; the completed catalog transaction stays successful.
+  }
+  return result;
 }
 
 /** One 30-second targeted inventory batch against the configured Pancake shop. */
@@ -34,6 +41,12 @@ export async function processConfiguredInventorySignals() {
   const config = readPancakeConfig();
   const client = new PancakeClient({ apiKey: config.apiKey });
   const repository = createCatalogMirrorRepository(prisma);
+
+  try {
+    await auditListPrices({ client: prisma, shopId: config.shopId, now: new Date() });
+  } catch {
+    // Retry in the next batch; audit never blocks inventory.
+  }
 
   return processInventorySignals({
     shopId: config.shopId,

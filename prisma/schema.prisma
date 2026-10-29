@@ -712,6 +712,11 @@ model WarehouseStock {
 }
 
 model CatalogSyncState {
+  listPriceAuditAt DateTime?
+  listPriceAuditedSyncAt DateTime?
+  listPriceAuditRetryAt DateTime?
+  listPriceAuditError Boolean @default(false)
+  listPriceAuditSummary Json?
   pancakeShopId Int      @id
   syncedAt      DateTime
   updatedAt     DateTime @updatedAt
