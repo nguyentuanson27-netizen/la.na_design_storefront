@@ -3,12 +3,12 @@ import { MAX_BENEFIT_QUOTE_PROOF_BYTES } from "./checkout-quote-proof.ts";
 
 export const MAX_UPSELL_REQUEST_BYTES = 64 * 1024;
 
-export function isSameOriginUpsellRequest(request: Request): boolean {
+export function isSameOriginUpsellRequest(request: Request, trustedOrigin: string): boolean {
   const origin = request.headers.get("origin");
   const fetchSite = request.headers.get("sec-fetch-site");
   if (!origin || (fetchSite !== null && fetchSite !== "same-origin")) return false;
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    return new URL(origin).origin === new URL(trustedOrigin).origin;
   } catch {
     return false;
   }
