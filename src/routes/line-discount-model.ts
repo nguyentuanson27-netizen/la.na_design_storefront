@@ -1,3 +1,5 @@
+import { computeListPriceVnd, resolveListPricePresentation } from "../commerce/list-price.ts";
+import { readListPriceConfig } from "../commerce/list-price-config.ts";
 /**
  * How a per-product promotion (Flash Sale, clearance...) reads on the line it applies to.
  *
@@ -12,13 +14,18 @@ const currency = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "
 export type LineDiscountView = Readonly<{
   /** The catalog price, to be struck through. */
   originalPriceText: string;
+  isListReference?: boolean;
   /** Whole percent off, or `null` when it rounds to under 1% (the strike-through alone is honest then). */
   percent: number | null;
 }>;
 
-export function describeLineDiscount(basePriceVnd: number | null | undefined, priceVnd: number | null | undefined): LineDiscountView | null {
+export function describeLineDiscount(basePriceVnd: number | null | undefined, priceVnd: number | null | undefined, listPriceEnabled = readListPriceConfig().display, variantId = "paid-line"): LineDiscountView | null {
+  if (listPriceEnabled && basePriceVnd == null) basePriceVnd = priceVnd;
   if (basePriceVnd === null || basePriceVnd === undefined || priceVnd === null || priceVnd === undefined) return null;
-  if (!Number.isFinite(basePriceVnd) || !Number.isFinite(priceVnd) || priceVnd < 0 || basePriceVnd <= priceVnd) return null;
+  if (!Number.isFinite(basePriceVnd) || !Number.isFinite(priceVnd) || priceVnd < 0) return null;
+  const list = resolveListPricePresentation({ variantId, basePriceVnd, effectivePriceVnd: priceVnd, listPriceVnd: computeListPriceVnd(basePriceVnd), isDiscounted: basePriceVnd > priceVnd, enabled: listPriceEnabled });
+  if (list) return Object.freeze({ isListReference: true, originalPriceText: currency.format(list.referencePriceVnd), percent: list.badgePercent });
+  if (basePriceVnd <= priceVnd) return null;
   const percent = Math.round((1 - priceVnd / basePriceVnd) * 100);
   return Object.freeze({ originalPriceText: currency.format(basePriceVnd), percent: percent >= 1 ? percent : null });
 }

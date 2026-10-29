@@ -135,7 +135,7 @@ export function ProductCard({
             <p className="product-price font-display flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1 text-[15px] md:text-base">
               <span className="sr-only">Giá gốc</span>
               <del className="font-normal text-[#70584B] line-through">{price.compareAtText}</del>
-              <span className="sr-only">Giá khuyến mãi</span>
+              <span className="sr-only">{price.isListReference ? "Giá giảm" : "Giá khuyến mãi"}</span>
               <strong className="font-semibold text-[#9A3324]">{price.displayText}</strong>
             </p>
           ) : (

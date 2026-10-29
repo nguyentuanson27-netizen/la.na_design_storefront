@@ -192,6 +192,7 @@ export const POLICY_CONTENT = {
       {
         heading: "Chính sách giá",
         paragraphs: [
+          "Khi được hiển thị, giá niêm yết trên website là giá tham chiếu được tính từ giá POS: chọn mốc kết thúc 49.000đ hoặc 99.000đ nhỏ nhất không thấp hơn 1,2 lần giá POS. Đây không phải thông tin về mức giá đã từng bán trước đây. Giá bán là số tiền sản phẩm khách thực trả, được hiển thị và xác nhận khi đặt hàng.",
           "Giá bán có thể thay đổi tùy từng thời điểm, chương trình khuyến mại hoặc chính sách bán hàng của La.na Design. Mức giá áp dụng cho đơn hàng là mức giá được xác nhận tại thời điểm khách hàng hoàn tất đặt hàng và được La.na Design xác nhận.",
           "Giá sản phẩm chưa bao gồm phí vận chuyển, trừ khi website hoặc chương trình khuyến mại có thông báo khác.",
           "La.na Design có quyền điều chỉnh giá bán, chương trình ưu đãi hoặc chính sách khuyến mại mà không cần thông báo trước, nhưng không làm ảnh hưởng đến các đơn hàng đã được xác nhận trước đó, trừ trường hợp có lỗi hiển thị giá bất thường hoặc sai sót kỹ thuật rõ ràng.",

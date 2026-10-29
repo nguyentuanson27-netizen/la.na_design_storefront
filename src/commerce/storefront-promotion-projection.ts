@@ -1,3 +1,5 @@
+import { computeListPriceVnd } from "./list-price.ts";
+import { readListPriceConfig } from "./list-price-config.ts";
 /**
  * The shared promotional pricing rule.
  *
@@ -108,6 +110,7 @@ export function buildPromotionalStorefrontPricing({
       && (pricing.promotion === null || !kinds.includes(pricing.promotion.kind))
     ) {
       return Object.freeze({
+        ...(readListPriceConfig().display ? { listPriceVnd: computeListPriceVnd(pricing.basePriceVnd) } : {}),
         price: pricing.basePriceVnd,
         basePriceVnd: pricing.basePriceVnd,
         isDiscounted: false,
@@ -117,6 +120,7 @@ export function buildPromotionalStorefrontPricing({
     return Object.freeze({
       // `effectivePriceVnd` is base when nothing applies and stays null when the base itself is
       // unusable, so this one field covers promoted, unpromoted and unpriceable alike.
+      ...(readListPriceConfig().display ? { listPriceVnd: computeListPriceVnd(pricing.basePriceVnd) } : {}),
       price: pricing.effectivePriceVnd,
       basePriceVnd: pricing.basePriceVnd,
       isDiscounted: pricing.isDiscounted,

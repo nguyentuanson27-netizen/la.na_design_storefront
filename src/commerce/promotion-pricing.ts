@@ -1,3 +1,4 @@
+import { classifyListPriceCampaign } from "./list-price.ts";
 /**
  * The central effective-price authority.
  *
@@ -81,6 +82,7 @@ export type PromotionPricingReason =
   | "PROMOTION_CONFLICT";
 
 export type PromotionPricingInput = Readonly<{
+  campaignBasis?: boolean;
   basePriceVnd: number | null;
   campaigns: readonly ApplicablePromotionCampaign[];
   now: Date;
@@ -183,6 +185,7 @@ export function resolvePromotionPricing({
   basePriceVnd,
   campaigns,
   now,
+  campaignBasis = false,
 }: PromotionPricingInput): PromotionPricingResult {
   if (!isUsableBasePriceVnd(basePriceVnd)) {
     return Object.freeze({
@@ -214,7 +217,7 @@ export function resolvePromotionPricing({
 
   const campaign = active[0]!;
   const effectivePriceVnd = campaign.discountType === "PERCENTAGE"
-    ? applyPercentage(basePriceVnd, campaign.percentageValue ?? Number.NaN)
+    ? (campaignBasis ? classifyListPriceCampaign(basePriceVnd, campaign.percentageValue).price : applyPercentage(basePriceVnd, campaign.percentageValue ?? Number.NaN))
     : applyFixedPrice(campaign.fixedPriceVnd);
 
   // `0 < effective < base` is the definition of a discount here. Low-price rounding that lands back

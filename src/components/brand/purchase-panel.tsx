@@ -777,7 +777,7 @@ export function PurchasePanelView({
     // beside the Flash price and the percentage stays in the panel, where it is said once.
     return (
       <span className="flex min-w-0 items-baseline gap-x-2 whitespace-nowrap">
-        <span className="sr-only">{priceDisplay.compareAtText ? "Giá khuyến mãi " : ""}</span>
+        <span className="sr-only">{priceDisplay.compareAtText ? (priceDisplay.isListReference ? "Giá giảm " : "Giá khuyến mãi ") : ""}</span>
         <span
           className={`font-display text-base font-semibold tabular-nums ${clock ? "text-[#9A3324]" : ""}`}
         >
@@ -874,7 +874,7 @@ export function PurchasePanelView({
                 <span className="align-baseline text-lg text-[#3B2219]/70 line-through decoration-[#3B2219]/40">
                   {priceDisplay.compareAtText}
                 </span>
-                <span className="sr-only">{flashClock === null ? "Giá khuyến mãi " : "Giá Flash Sale "}</span>
+                <span className="sr-only">{flashClock === null ? (priceDisplay.isListReference ? "Giá giảm " : "Giá khuyến mãi ") : "Giá Flash Sale "}</span>
                 {/* Red only for a Flash price, the one sale the page shouts about. */}
                 <span className={flashClock === null ? undefined : "text-[#9A3324]"}>{priceDisplay.displayText}</span>
                 <span className="inline-flex items-center self-center border border-[#3B2219]/30 px-2 py-0.5 text-xs font-medium tracking-[0.08em] text-[#3B2219]">

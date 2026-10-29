@@ -1,3 +1,4 @@
+import { computeListPriceVnd } from "../../commerce/list-price.ts";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -166,7 +167,8 @@ export function ProductPancakeSource({
                       <th scope="col" className="px-3 py-2.5">SKU</th>
                       <th scope="col" className="px-3 py-2.5">Màu sắc</th>
                       <th scope="col" className="px-3 py-2.5">Kích cỡ</th>
-                      <th scope="col" className="px-3 py-2.5">Giá niêm yết</th>
+                      <th scope="col" className="px-3 py-2.5">Giá POS</th>
+                      <th scope="col" className="px-3 py-2.5">Niêm yết website (suy ra)</th>
                       <th scope="col" className="px-3 py-2.5">Giá sau giảm</th>
                       <th scope="col" className="px-3 py-2.5">Tồn kho</th>
                       <th scope="col" className="px-3 py-2.5">Trạng thái</th>
@@ -179,6 +181,7 @@ export function ProductPancakeSource({
                         <td className="px-3 py-2.5 font-medium">{variant.color || "—"}</td>
                         <td className="px-3 py-2.5 font-medium">{variant.size || "—"}</td>
                         <td className="px-3 py-2.5">{formatVnd(variant.pancakeRetailPrice)}</td>
+                        <td className="px-3 py-2.5">{computeListPriceVnd(variant.pancakeRetailPrice) === null ? "Chưa tính được giá niêm yết" : formatVnd(computeListPriceVnd(variant.pancakeRetailPrice))}</td>
                         <td className="px-3 py-2.5 font-medium text-black">
                           {variant.pancakeRetailPriceAfterDiscount
                             ? formatVnd(variant.pancakeRetailPriceAfterDiscount)

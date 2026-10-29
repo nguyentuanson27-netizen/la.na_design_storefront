@@ -8,7 +8,7 @@ import { CartLineJumpLink } from "@/components/brand/cart-line-jump-link";
 import { CartLineUrgency } from "@/components/brand/cart-line-urgency";
 import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
-import { LinePrice } from "@/components/brand/line-price";
+import { LinePrice, LinePriceSegments } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { OrderTrustLine } from "@/components/brand/order-trust-line";
 import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
@@ -158,14 +158,15 @@ function render(data: CartRouteViewModel) {
                   )}
                   {/* The per-product sale stays on the line whatever else applies; a quantity or order-value
                       price is the breakdown below it, never a replacement for it. */}
-                  <p className="mt-1 text-sm text-black/65">
+                  {line.paidSegmentPrices ? <LinePriceSegments segments={line.paidSegmentPrices} /> : <p className="mt-1 text-sm text-black/65">
                     <LinePrice
                       discountPercent={line.discountPercent}
+                      isListReference={line.isListReference}
                       originalPriceText={line.originalPriceText}
                       priceText={line.priceText}
                     />
-                  </p>
-                  {line.paidSegments ? <p className="mt-1 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
+                  </p>}
+                  {line.paidSegments && !line.paidSegmentPrices ? <p className="mt-1 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
                   <CartLineUrgency className="mt-1.5" flashRemainingMs={line.flashRemainingMs} lowStockText={line.lowStockText} />
                   {line.available ? null : (
                     <p className="mt-1.5 text-xs font-semibold uppercase tracking-[0.12em]" data-line-problem="">

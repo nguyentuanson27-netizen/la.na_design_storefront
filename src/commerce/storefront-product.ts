@@ -58,6 +58,7 @@ export type StorefrontVariantOption = StorefrontVariantFacts & {
    * The undiscounted base price behind `price`, when a promotion-aware pricing rule supplied one.
    * `null` under the default rule, which has no notion of a promotion.
    */
+  listPriceVnd?: number | null;
   basePriceVnd: number | null;
   isDiscounted: boolean;
   purchasable: boolean;
@@ -86,6 +87,7 @@ export type StorefrontVariantOption = StorefrontVariantFacts & {
  */
 export type StorefrontResolvedPrice = Readonly<{
   price: number | null;
+  listPriceVnd?: number | null;
   basePriceVnd: number | null;
   isDiscounted: boolean;
 }>;
@@ -107,6 +109,7 @@ export type StorefrontSelectableOption = Pick<
   | "size"
   | "price"
   | "basePriceVnd"
+  | "listPriceVnd"
   | "isDiscounted"
   | "purchasable"
   | "isPreorderSale"
@@ -216,7 +219,7 @@ export function toStorefrontSelectableOptions(
 ): StorefrontSelectableOption[] {
   return options.map((
     {
-      id, pancakeVariationId, color, size, price, basePriceVnd, isDiscounted,
+      id, pancakeVariationId, color, size, price, basePriceVnd, listPriceVnd, isDiscounted,
       purchasable, isPreorderSale, unavailableReason, availability,
     },
   ) => ({
@@ -225,6 +228,7 @@ export function toStorefrontSelectableOptions(
     color,
     size,
     price,
+    ...(listPriceVnd !== undefined ? { listPriceVnd } : {}),
     basePriceVnd,
     isDiscounted,
     purchasable,
@@ -329,7 +333,8 @@ export function buildStorefrontVariantOptions(
 
   return normalized.map((variant) => {
     const variantCapacity = capacityByVariantId?.get(variant.id) ?? productCapacity;
-    const { price, basePriceVnd, isDiscounted } = pricingRule(variant);
+    const resolvedPrice = pricingRule(variant);
+    const { price, basePriceVnd, isDiscounted } = resolvedPrice;
     // Advisory: ADR 0014 §2 keeps the authoritative check at the commit boundary. Surfaces that show
     // buyers capacity pass `sellableStock` from the capacity read model (`capacity-advisory.ts`),
     // which has already subtracted active holds, so none is subtracted again here. A page cannot
@@ -380,6 +385,7 @@ export function buildStorefrontVariantOptions(
 
     return {
       ...variant,
+      ...(resolvedPrice.listPriceVnd !== undefined ? { listPriceVnd: resolvedPrice.listPriceVnd } : {}),
       price,
       basePriceVnd,
       // A variant the shopper cannot buy is not on sale, whatever the campaign says. Keeping the

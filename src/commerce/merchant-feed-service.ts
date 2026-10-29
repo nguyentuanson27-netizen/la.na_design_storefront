@@ -1,3 +1,4 @@
+import { readListPriceConfig } from "./list-price-config.ts";
 import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
 
@@ -86,7 +87,8 @@ export async function getMerchantFeed(): Promise<MerchantFeedCoordinatorResult> 
     });
   }
 
-  const key = `merchant-feed:${MERCHANT_FEED_SCHEMA_VERSION}:shop:${shopId}`;
+  const flags = readListPriceConfig();
+  const key = `merchant-feed:${MERCHANT_FEED_SCHEMA_VERSION}:shop:${shopId}:list-v1:${Number(flags.display)}:${Number(flags.campaignBasis)}`;
   let coordinator: ReturnType<typeof createMerchantFeedCoordinator>;
   try {
     coordinator = coordinatorFor(key);
