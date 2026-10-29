@@ -511,10 +511,9 @@ test("F3: an unavailable size is not offered, another size is, and chip-only nev
   const receive = picker.getByRole("button", { name: "Nhận quà này", exact: true });
   await expect(picker.getByRole("button", { name: "Khăn quà — Trắng / S", exact: true })).toHaveCount(0, { message: "the sold-out size is hidden" });
   await expect(picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true })).toHaveCount(1);
-  await expect(receive).toBeDisabled();
-  await expect(receive).toHaveAccessibleDescription("Chọn phiên bản trước khi nhận quà.");
-  await picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true }).focus();
-  await page.keyboard.press("Enter");
+  // With the sold-out size gone the product has a single version, so opening its card selects it (as for any
+  // one-version gift): receiving is possible straight away, but nothing is saved until the buyer asks.
+  await expect(picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(receive).toBeEnabled();
   await expect(receive).not.toHaveAttribute("aria-describedby");
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
