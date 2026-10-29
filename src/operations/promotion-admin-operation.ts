@@ -36,6 +36,7 @@
  * have.
  */
 
+import { summarizeThresholdWarnings } from "../commerce/list-price.ts";
 import { AuthorizationError } from "../auth/authorization.ts";
 import { isPromotionActivationEnabled } from "../commerce/promotion-activation.ts";
 import {
@@ -54,7 +55,7 @@ import {
 
 /** What the P4 service hands back to an action. */
 export type PromotionOperationResult =
-  | Readonly<{ ok: true }>
+  | Readonly<{ ok: true; warnings?: readonly Readonly<{ variantId: string; minimumPercent: number | null }>[]; warningSummary?: Readonly<{ count: number; minimumPercent: number | null }> }>
   | Readonly<{ ok: false; failure: PromotionAdminFailure }>;
 
 /**
@@ -62,7 +63,7 @@ export type PromotionOperationResult =
  * sentence is looked up on the server when the page re-renders.
  */
 export type PromotionActionOutcome =
-  | Readonly<{ ok: true }>
+  | Readonly<{ ok: true; warningCount?: number; minimumPercent?: number | null }>
   | Readonly<{ ok: false; failure: PromotionFailureDescription }>;
 
 export type PromotionOperationContext = Readonly<{
@@ -138,7 +139,9 @@ export async function runPromotionAdminOperation<Session>({
     const outcome = await run(session, context);
     if (outcome.ok) {
       onCommitted();
-      return { ok: true };
+      const warnings = outcome.warnings ?? [];
+      const summary = outcome.warningSummary ?? summarizeThresholdWarnings(warnings);
+      return { ok: true, ...(warnings.length ? { warningCount: summary.count, minimumPercent: summary.minimumPercent } : {}) };
     }
     emit(describeActivationRejection({ operation, campaignId, failure: outcome.failure }));
     return { ok: false, failure: describePromotionFailure(outcome.failure) };

@@ -59,7 +59,7 @@ export type StackInputLine = Readonly<{
    * price it produced. Null when no legacy campaign discounts this variant (including a legacy
    * conflict, which legacy resolves to "no promotion").
    */
-  legacy: Readonly<{ campaign: StackLegacyCampaign; effectivePriceVnd: number }> | null;
+  legacy: Readonly<{ campaign: StackLegacyCampaign; effectivePriceVnd: number; priceIsCeiling?: boolean }> | null;
 }>;
 
 export type StackTierParticipant = Readonly<{
@@ -415,7 +415,8 @@ function solveStack(input: StackInput): StackResult {
         const touched = legacyLines.get(step.id)!;
         for (const group of working) {
           if (!touched.has(group.lineKey)) continue;
-          const next = applyLegacyStackStep(campaign, group.unitPriceVnd);
+          const ownLegacy = lines.find((line) => line.lineKey === group.lineKey)?.legacy;
+          const next = ownLegacy?.priceIsCeiling ? Math.min(group.unitPriceVnd, ownLegacy.effectivePriceVnd) : applyLegacyStackStep(campaign, group.unitPriceVnd);
           if (next === null || next === group.unitPriceVnd) continue;
           group.steps.push({
             campaignId: campaign.id, source: "LEGACY", kind: campaign.kind, priority: step.priority,

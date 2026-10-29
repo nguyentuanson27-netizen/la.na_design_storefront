@@ -243,3 +243,34 @@ test("cart, drawer and checkout show list reference/savings while charging uncha
     /159.000/,
   );
 });
+test("basis ON shows the rounded campaign amount, while JSON-LD still publishes only actual payable price", async ({
+  page,
+}) => {
+  await prisma.promotionCampaign.create({
+    data: {
+      name: key,
+      kind: "PROMOTION",
+      discountType: "PERCENTAGE",
+      percentageValue: 25,
+      isEnabled: true,
+      enabledAt: new Date(),
+      targets: { create: { productId } },
+    },
+  });
+  await start(true);
+  await page.goto(`${BASE}/shop/${key}`);
+  const panel = page.getByRole("region", { name: "Mua sản phẩm" });
+  await panel
+    .getByRole("group", { name: "Kích cỡ" })
+    .getByText("M", { exact: true })
+    .click();
+  await expect(panel).toContainText(/562.000/);
+  await expect(panel).toContainText(/749.000/);
+  await expect(panel).toContainText("-25%");
+  const documents = await page
+    .locator('script[type="application/ld+json"]')
+    .allTextContents();
+  expect(documents.join("\n")).not.toContain("StrikethroughPrice");
+  expect(documents.join("\n")).not.toContain('"price":749000');
+  expect(documents.join("\n")).toContain('"price":412000');
+});

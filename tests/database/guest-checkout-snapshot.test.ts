@@ -381,3 +381,26 @@ test("checkout snapshot fails closed for unavailable lines, wrong-shop catalog d
     { ok: false, reason: "INVALID_INPUT" },
   );
 });
+
+for (const basis of [false, true]) test(`list snapshot and verified history with basis ${basis ? "ON" : "OFF"} preserve actual money`, async () => {
+  const key = `list-price-${basis}`;
+  process.env.LIST_PRICE_DISPLAY = "true";
+  process.env.LIST_PRICE_ORDER_HISTORY = "true";
+  process.env.LIST_PRICE_CAMPAIGN_BASIS = String(basis);
+  try {
+    await cleanup(key);
+    const { variant, cart } = await createCartProduct({ key, unitPriceVnd: 590000, quantity: 1, stock: 2 });
+    const publicCode = `checkout-${key}-001`;
+    const service = createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true, verifyRenderedQuote: acceptAnyRenderedQuote });
+    const result = await service.create({ cartId: cart.id, shopId, publicCode, checkoutInput, now });
+    assert.ok(result.ok);
+    const order = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode }, include: { lines: true } });
+    assert.equal(order.lines[0]!.unitPriceVnd, BigInt(590000));
+    assert.equal(order.lines[0]!.baseUnitPriceVnd, BigInt(590000));
+    assert.equal(order.lines[0]!.listUnitPriceVnd, basis ? BigInt(749000) : null);
+
+  } finally {
+    delete process.env.LIST_PRICE_DISPLAY; delete process.env.LIST_PRICE_CAMPAIGN_BASIS; delete process.env.LIST_PRICE_ORDER_HISTORY;
+    await cleanup(key);
+  }
+});

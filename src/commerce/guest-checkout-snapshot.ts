@@ -1,3 +1,5 @@
+import { computeListPriceVnd } from "./list-price.ts";
+import { readListPriceConfig } from "./list-price-config.ts";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { resolveSellingPolicy, type ReservationState } from "./capacity-policy.ts";
@@ -699,6 +701,7 @@ export function createGuestCheckoutSnapshotService(
           unitPriceVnd: bigint;
           lineTotalVnd: bigint;
           baseUnitPriceVnd: bigint;
+          listUnitPriceVnd: bigint | null;
           promotionCampaignId: string | null;
           promotionName: string | null;
           promotionKind: PromotionCampaignKind | null;
@@ -806,6 +809,7 @@ export function createGuestCheckoutSnapshotService(
               color: line.color,
               size: line.size,
               quantity: row.quantity,
+              listUnitPriceVnd: snapshotListPrice(row.baseUnitPriceVnd),
               baseUnitPriceVnd: BigInt(row.baseUnitPriceVnd),
               unitPriceVnd: BigInt(row.unitPriceVnd),
               lineTotalVnd: BigInt(row.lineTotalVnd),
@@ -875,6 +879,7 @@ export function createGuestCheckoutSnapshotService(
                 color: line.color,
                 size: line.size,
                 quantity: line.quantity,
+                listUnitPriceVnd: snapshotListPrice(pricing.basePriceVnd),
                 baseUnitPriceVnd: BigInt(pricing.basePriceVnd),
                 unitPriceVnd: BigInt(line.price),
                 lineTotalVnd: BigInt(lineTotalVnd),
@@ -1034,4 +1039,9 @@ export function createGuestCheckoutSnapshotService(
   }
 
   return { create };
+}
+
+function snapshotListPrice(pos: number | null): bigint | null {
+  const list = readListPriceConfig().campaignBasis ? computeListPriceVnd(pos) : null;
+  return list === null ? null : BigInt(list);
 }

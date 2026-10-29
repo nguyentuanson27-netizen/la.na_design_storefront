@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { requireCurrentAdminPage } from "@/auth/current-admin";
+import { readListPriceConfig } from "@/commerce/list-price-config";
 import { isPromotionActivationEnabled } from "@/commerce/promotion-activation";
 import { createPromotionAdminRepository } from "@/commerce/promotion-admin-repository";
 import {
@@ -52,7 +53,7 @@ const dateTime = new Intl.DateTimeFormat("vi-VN", {
 const FAILURE_REASONS = new Set<string>([
   "ACTIVATION_DISABLED", "CAMPAIGN_NOT_FOUND", "ILLEGAL_TRANSITION", "INVALID_CAMPAIGN",
   "INVALID_DRAFT_INPUT", "TARGET_EXPANSION_LIMIT_EXCEEDED", "NO_EFFECTIVE_DISCOUNT",
-  "UNUSABLE_BASE_PRICE", "OVERLAPPING_CAMPAIGN", "DUPLICATE_TARGET",
+  "PROMOTION_PRICE_UNSAFE", "UNUSABLE_BASE_PRICE", "OVERLAPPING_CAMPAIGN", "DUPLICATE_TARGET",
   "MALFORMED_FIXED_PRICE", "INVALID_PERCENTAGE",
   "INVALID_CAMPAIGN_KIND", "INVALID_DISCOUNT_TYPE", "INVALID_DATE_TIME",
   "FORBIDDEN",
@@ -63,6 +64,8 @@ const buttonClassName =
 
 type PromotionsPageProps = {
   searchParams: Promise<{
+    thresholdCount?: string;
+    minimumPercent?: string;
     q?: string | string[];
     status?: string | string[];
     reason?: string | string[];
@@ -174,7 +177,11 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
         kind={statusKind === "ok" ? "success" : statusKind === "error" ? "error" : null}
         message={
           statusKind === "ok"
-            ? "Đã lưu thay đổi."
+            ? (Number.isInteger(Number(query.thresholdCount)) && Number(query.thresholdCount) >= 1 && Number(query.thresholdCount) <= 2000
+              ? `Đã lưu thay đổi. ${Number(query.thresholdCount)} biến thể không giảm vì giá chiến dịch ≥ giá POS. ${Number.isInteger(Number(query.minimumPercent)) && Number(query.minimumPercent) >= 1 && Number(query.minimumPercent) <= 99
+                ? `Mức giảm tối thiểu để toàn bộ biến thể này có tác dụng: ${Number(query.minimumPercent)}%.`
+                : "Có biến thể không có mức % nào trong 1–99 tạo được giá dương thấp hơn POS."}`
+              : "Đã lưu thay đổi.")
             : statusKind === "error"
               ? failureMessage
                 ?? "Không thực hiện được thao tác. Hãy tải lại trang và thử lại."
@@ -191,7 +198,7 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
             Chiến dịch tạo mới sẽ ở trạng thái Nháp (Draft) và không tự kích hoạt trừ khi được Bật.
           </p>
           <div className="mt-6 border-t border-black/10 pt-6">
-            <PromotionCampaignForm action={createPromotionAction} mode="create" />
+            <PromotionCampaignForm campaignListBasis={readListPriceConfig().campaignBasis} action={createPromotionAction} mode="create" />
           </div>
         </section>
       ) : null}
@@ -220,6 +227,7 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
               {campaignToEdit.status === "DRAFT" || campaignToEdit.status === "SCHEDULED" ? (
                 <div className="mt-6 border-t border-black/10 pt-6">
                   <PromotionCampaignForm
+                    campaignListBasis={readListPriceConfig().campaignBasis}
                     action={editPromotionAction}
                     initialData={campaignToEdit}
                     mode="edit"

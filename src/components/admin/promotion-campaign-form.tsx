@@ -15,6 +15,7 @@ export type FormTargetItem = Readonly<{
 }>;
 
 export type PromotionCampaignFormProps = Readonly<{
+  campaignListBasis?: boolean;
   mode: "create" | "edit";
   initialData?: {
     id: string;
@@ -57,6 +58,7 @@ function formatVietnamDateTimeLocal(date: Date | null | undefined): string {
 }
 
 export function PromotionCampaignForm({
+  campaignListBasis = false,
   mode,
   initialData,
   action,
@@ -211,7 +213,7 @@ export function PromotionCampaignForm({
                 step={1}
                 type="number"
               />
-              <p className="mt-1 text-xs text-neutral-700">Số nguyên từ 1% đến 99%.</p>
+              <p className="mt-1 text-xs text-neutral-700">Số nguyên từ 1% đến 99%. {campaignListBasis ? "Tính trên giá niêm yết, làm tròn 1.000đ. Chỉ áp dụng nếu giá sau giảm thấp hơn giá POS. Mức giảm thật so với giá POS thấp hơn phần trăm này; hệ thống kiểm tra và báo biến thể dưới ngưỡng khi lưu hoặc bật." : ""}</p>
             </div>
           ) : (
             <div>

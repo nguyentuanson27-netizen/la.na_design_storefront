@@ -170,6 +170,7 @@ describe("U43 / G3: Promotion Final Integrated Definition of Done", () => {
     const variants = [{ id: "var-int-1", productId: "prod-int-1", pancakeRetailPrice: 200_000 }];
 
     const mockTx = {
+      promotionPricingRevision: { findUniqueOrThrow: async () => ({ campaignMutationFrozen: false }) },
       $queryRaw: async () => [{ revision: BigInt(10) }],
       $queryRawUnsafe: async () => [],
       $executeRaw: async () => 1,

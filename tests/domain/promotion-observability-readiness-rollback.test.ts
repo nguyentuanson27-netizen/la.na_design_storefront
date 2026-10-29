@@ -331,6 +331,7 @@ describe("U40 / G2: Observability, Readiness & Rollback Invariants", () => {
       ];
 
       const mockTx = {
+        promotionPricingRevision: { findUniqueOrThrow: async () => ({ campaignMutationFrozen: false }) },
         $queryRaw: async () => [{ revision: BigInt(1) }],
         $queryRawUnsafe: async () => [],
         $executeRaw: async () => 1,
@@ -400,6 +401,7 @@ describe("U40 / G2: Observability, Readiness & Rollback Invariants", () => {
       };
 
       const mockTx = {
+        promotionPricingRevision: { findUniqueOrThrow: async () => ({ campaignMutationFrozen: false }) },
         $queryRaw: async () => [{ revision: BigInt(5) }],
         $queryRawUnsafe: async () => [],
         $executeRaw: async () => 1,

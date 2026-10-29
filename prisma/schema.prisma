@@ -459,6 +459,12 @@ model PromotionTarget {
 /// transaction that commits the mutation. Nothing request-controlled reaches it, and it never grows
 /// per campaign or per request.
 model PromotionPricingRevision {
+  campaignMutationFrozen Boolean @default(false)
+  campaignPreflightRevision BigInt?
+  campaignPreflightAt DateTime?
+  campaignFreezeActor String?
+  campaignFreezeAt DateTime?
+  campaignRollbackId String?
   id        String   @id @default("current")
   revision  BigInt   @default(0)
   updatedAt DateTime @updatedAt
@@ -843,6 +849,7 @@ model OrderLineSnapshot {
   quantity                 Int
   unitPriceVnd             BigInt
   lineTotalVnd             BigInt
+  listUnitPriceVnd         BigInt?
   baseUnitPriceVnd         BigInt?
   promotionCampaignId      String?
   promotionName            String?
@@ -940,6 +947,10 @@ model OrderQuoteSnapshot {
 model OrderQuoteLine {
   id                 String                   @id @default(cuid())
   snapshotId         String
+  listUnitPriceVnd   BigInt?
+  productName        String?
+  color              String?
+  size               String?
   /// Opaque, server-built, stable for equal facts; never a cart id or PII, never chosen by a browser.
   lineId             String
   role               OrderQuoteLineRole

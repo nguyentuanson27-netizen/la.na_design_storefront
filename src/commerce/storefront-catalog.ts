@@ -1,3 +1,4 @@
+import { readListPriceConfig } from "./list-price-config.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import { resolveStorefrontPromotionRefresh } from "./storefront-promotion-freshness.ts";
@@ -405,6 +406,13 @@ const CAPACITY_SELLABLE_CTES = Prisma.sql`
  * aggregation all decide window membership against one instant.
  */
 export function buildVariantStockCte(now: Date) {
+  const basis = readListPriceConfig().campaignBasis;
+  // The single sanctioned SQL mirror; numeric arithmetic is parity-tested against list-price.ts.
+  const list = Prisma.sql`(CEIL((CEIL(vc."basePrice" * 12 / 10) + 1000) / 50000) * 50000 - 1000)`;
+  const percentagePrice = basis
+    ? Prisma.sql`(FLOOR((${list} * (100 - vc."percentageValue") + 50000) / 100000) * 1000)`
+    : Prisma.sql`FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100)`;
+  const usableBasis = basis ? Prisma.sql`${list} <= 9007199254740991` : Prisma.sql`TRUE`;
   return Prisma.sql`
   WITH ${CAPACITY_SELLABLE_CTES},
   "variant_base" AS (
@@ -484,9 +492,10 @@ export function buildVariantStockCte(now: Date) {
         WHEN vc."candidateCount" <> 1 THEN vc."basePrice"
         WHEN vc."discountType" = 'PERCENTAGE'
           AND vc."percentageValue" BETWEEN 1 AND 99
-          AND FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100) > 0
-          AND FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100) < vc."basePrice"
-        THEN FLOOR((vc."basePrice" * (100 - vc."percentageValue") + 50) / 100)
+          AND ${usableBasis}
+          AND ${percentagePrice} > 0
+          AND ${percentagePrice} < vc."basePrice"
+        THEN ${percentagePrice}
         WHEN vc."discountType" = 'FIXED_PRICE'
           AND vc."fixedPriceVnd" IS NOT NULL
           AND vc."fixedPriceVnd"::numeric > 0

@@ -1,3 +1,5 @@
+import { computeListPriceVnd } from "./list-price.ts";
+import { readListPriceConfig } from "./list-price-config.ts";
 /**
  * The order's benefit-aware quote, stored by `lineId` (GQ15).
  *
@@ -199,6 +201,9 @@ export async function replaceOrderQuoteSnapshot(
 
   await clearOrderQuoteSnapshot(tx, orderId);
 
+  const referenceVariants = readListPriceConfig().campaignBasis
+    ? new Map((await tx.variantMirror.findMany({ where: { id: { in: [...new Set(input.lines.map((line) => line.variantId))] } }, select: { id: true, pancakeRetailPrice: true, color: true, size: true, product: { select: { name: true } } } })).map((variant) => [variant.id, variant]))
+    : null;
   const { totals } = verdict;
   await tx.orderQuoteSnapshot.create({
     data: {
@@ -218,6 +223,9 @@ export async function replaceOrderQuoteSnapshot(
       vendorProjection: input.vendorProjection === undefined ? undefined : input.vendorProjection.lines.map((line) => ({ ...line })),
       lines: {
         create: input.lines.map((line) => ({
+          productName: referenceVariants?.get(line.variantId)?.product.name ?? null,
+          color: referenceVariants?.get(line.variantId)?.color ?? null,
+          size: referenceVariants?.get(line.variantId)?.size ?? null,
           lineId: line.lineId,
           role: line.role,
           variantId: line.variantId,
@@ -225,6 +233,7 @@ export async function replaceOrderQuoteSnapshot(
           quantity: line.quantity,
           unitPriceVnd: BigInt(line.unitPriceVnd),
           lineTotalVnd: BigInt(line.lineTotalVnd),
+          listUnitPriceVnd: line.role === "PAID" && readListPriceConfig().campaignBasis ? toListSnapshot(referenceVariants?.get(line.variantId)?.pancakeRetailPrice ?? null) : null,
           baseUnitPriceVnd: line.baseUnitPriceVnd === null ? null : BigInt(line.baseUnitPriceVnd),
           fulfillmentState: line.fulfillmentState,
           campaignId: line.campaign?.id ?? null,
@@ -338,4 +347,9 @@ export async function readOrderQuoteSnapshot(client: ReadClient, orderId: string
       shortForStock: entry.shortForStock,
     })),
   };
+}
+
+function toListSnapshot(pos: number | null): bigint | null {
+  const value = computeListPriceVnd(pos);
+  return value === null ? null : BigInt(value);
 }

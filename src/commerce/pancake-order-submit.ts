@@ -1,3 +1,4 @@
+import { readListPriceConfig } from "./list-price-config.ts";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../integrations/pancake/catalog-contract.ts";
 import {
@@ -1648,6 +1649,7 @@ export function createPancakeOrderSubmissionService(
         return reject("PRICE_UNAVAILABLE");
       }
       const freshPricing = resolvePromotionPricing({
+      campaignBasis: readListPriceConfig().campaignBasis,
         basePriceVnd: live.retailPrice,
         campaigns: campaignsByVariantId.get(line.variantId) ?? [],
         now,

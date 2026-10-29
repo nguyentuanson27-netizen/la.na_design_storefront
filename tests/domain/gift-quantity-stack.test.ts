@@ -461,3 +461,13 @@ test("F02: only a campaign outranked by one still running counts as replaced; a 
   assert.deepEqual(replaced([g("lower", 2), g("high-a", 3, true, [giftPeer("high-b")]), g("high-b", 4, true, [giftPeer("high-a")])]),
     [["lower", ["high-a", "high-b"]]]);
 });
+
+test("list-basis legacy uses its resolved price ceiling, while quantity percentages still chain on current money",()=>{
+ const campaign=flash({percentageValue:25});
+ const own={...line("list",1,590000),legacy:{campaign,effectivePriceVnd:562000,priceIsCeiling:true}};
+ const ladder=tier("quantity",pctTier(10),{priority:2,stackingEnabled:true,peers:peers(["FLASH_SALE",campaign.id])});
+ const first=ok(priceStack({lines:[own],tiers:[ladder],legacyConsents:consents({[campaign.id]:1})}));
+ assert.equal(first.groups[0]?.unitPriceVnd,505800);
+ const tierFirst=ok(priceStack({lines:[own],tiers:[{...ladder,priority:1}],legacyConsents:consents({[campaign.id]:2})}));
+ assert.equal(tierFirst.groups[0]?.unitPriceVnd,531000);
+});

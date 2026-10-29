@@ -53,6 +53,7 @@ export type PromotionFailureDescription = Readonly<{
 }>;
 
 const MESSAGES: Record<PromotionAdminFailure["reason"], string> = {
+  PROMOTION_PRICE_UNSAFE: "Giá niêm yết hoặc giá chiến dịch không an toàn. Hãy kiểm tra các biến thể trước khi kích hoạt.",
   ACTIVATION_DISABLED:
     "Chức năng kích hoạt khuyến mãi đang tắt trên máy chủ. Không có thay đổi nào được lưu.",
   CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch. Có thể chiến dịch đã bị thay đổi ở nơi khác.",
