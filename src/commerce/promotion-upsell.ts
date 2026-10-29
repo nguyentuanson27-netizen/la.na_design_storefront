@@ -27,6 +27,7 @@ type Env = Readonly<Record<string, string | undefined>>;
 class UpsellQuoteUnavailable extends Error {}
 type Snapshot = { state: CartGiftState; quote: UpsellQuote; totalVnd: number };
 export type UpsellVariantView = Readonly<{ variantId: string; label: string; priceVnd: number; deltaVnd: number; intent: UpsellIntent }>;
+export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string | null }>;
 export type CheckoutUpsellModel = Readonly<{
   paidCartKey: string;
   // UI-only recovery marker for one committed CartItem insert; never authorizes a mutation.
@@ -124,68 +125,94 @@ async function verifyCandidate(tx: Prisma.TransactionClient, before: Snapshot, o
 
 export function createPromotionUpsellService(client: PrismaClient, store: { get(name: string): { value: string } | undefined }, { shopId, secret, env = process.env, metric = recordUpsellMetric }: { shopId: number; secret: string; env?: Env; metric?: (metric: Metric) => void }) {
   const report = (value: Metric) => { try { metric(value); } catch { /* observability cannot block checkout */ } };
-  async function recommend(checkoutProof: string, now: Date, maxQuotes: number): Promise<CheckoutUpsellModel | null> {
+  function recommend(checkoutProof: string, now: Date, maxQuotes: number, mode: "full"): Promise<CheckoutUpsellModel | null>;
+  function recommend(checkoutProof: string, now: Date, maxQuotes: number, mode: "banner"): Promise<CheckoutUpsellBanner | null>;
+  async function recommend(
+    checkoutProof: string, now: Date, maxQuotes: number, mode: "full" | "banner",
+  ): Promise<CheckoutUpsellModel | CheckoutUpsellBanner | null> {
     if (!isPromotionUpsellEnabled(shopId, env)) return null;
     const cartId = readAnonymousCartCookie(store);
     if (!cartId) return null;
     const started = Date.now();
     let quoteAttempts = 0;
     try {
-      const model = await client.$transaction(async (tx): Promise<CheckoutUpsellModel | null> => {
+      const model = await client.$transaction(async (tx): Promise<CheckoutUpsellModel | CheckoutUpsellBanner | null> => {
         await tx.$executeRaw`SET LOCAL statement_timeout = '1800ms'`;
         const cart = await tx.cart.findFirst({ where: { id: cartId, userId: null, expiresAt: { gt: now } }, select: { paidRevision: true } });
         if (!cart) return null;
         const before = await snapshot(tx, cartId, shopId, now, env);
         if (!verifiesUpsellQuote(before.quote, checkoutProof, cartId, secret)) return null;
         const opportunities = findUpsellOpportunities(before.state);
-        const model: CheckoutUpsellModel = { paidCartKey: upsellPaidCartKey(cartId, cart.paidRevision, secret), nextPaidCartKey: upsellPaidCartKey(cartId, cart.paidRevision + BigInt(1), secret), giftPicker: buildCartGiftPickerModel(before.state), offer: null };
-        if (!opportunities.length) return model;
+        const paidCartKey = upsellPaidCartKey(cartId, cart.paidRevision, secret);
+        const fullModel = (offer: CheckoutUpsellModel["offer"]): CheckoutUpsellModel => ({
+          paidCartKey,
+          nextPaidCartKey: upsellPaidCartKey(cartId, cart.paidRevision + BigInt(1), secret),
+          giftPicker: buildCartGiftPickerModel(before.state),
+          offer,
+        });
+        const banner = (offerName: string | null): CheckoutUpsellBanner => ({ paidCartKey, offerName });
+        if (!opportunities.length) return mode === "banner" ? banner(null) : fullModel(null);
+
         const products = await discover(tx, before.state, opportunities, shopId);
-        const verified: { campaignId: string; productId: string; variantId: string; deltaVnd: number; view: UpsellVariantView }[] = [];
-        // Round-robin variants by product: one product with many sizes cannot consume the whole quote budget.
+        const verified: {
+          campaignId: string; productId: string; variantId: string; deltaVnd: number;
+          view?: UpsellVariantView;
+        }[] = [];
+        // Distribute the bounded quote budget across products before trying another size.
         for (let option = 0; option < UPSELL_MAX_VARIANTS_PER_PRODUCT; option++) for (const p of products) {
           const v = p.variants[option];
           if (!v || quoteAttempts >= maxQuotes) continue;
           if (Date.now() - started >= UPSELL_READ_TIMEOUT_MS) throw new Error("Recommendation deadline");
           quoteAttempts++;
-          // One hypothetical quote covers every near campaign. No campaign × variant quote explosion.
+          // Both modes run the canonical quote and READY/benefit checks.
           const result = await verifyCandidate(tx, before, undefined, v.id, cartId, shopId, now, env);
           if (!result) continue;
           const { after, priceVnd, deltaVnd } = result;
           for (const opportunity of opportunities) {
             if (!unlocksUpsellOpportunity(before.state, after.state, opportunity)) continue;
+            const choice = { campaignId: opportunity.campaignId, productId: p.id, variantId: v.id, deltaVnd };
+            if (mode === "banner") {
+              // A link to /sale cannot replay an add; do not sign/store unused variant intents.
+              verified.push(choice);
+              continue;
+            }
             const intent = { campaignId: opportunity.campaignId, variantId: v.id, issuedAt: now.getTime() };
             const proof = issueUpsellQuoteProof(before.quote, upsellProofContext(cartId, cart.paidRevision, opportunity.revision, intent, after.quote), secret);
             if (!proof) continue;
-            verified.push({ campaignId: opportunity.campaignId, productId: p.id, variantId: v.id, deltaVnd,
+            verified.push({ ...choice,
               view: { variantId: v.id, label: upsellVariantLabel(v), priceVnd, deltaVnd, intent: { ...intent, proof } } });
           }
         }
         verified.sort(compareUpsellCandidates);
         const winner = verified[0];
-        if (!winner) return model;
+        if (!winner) return mode === "banner" ? banner(null) : fullModel(null);
+        const name = before.state.campaignEntries.find((e) => e.campaign.id === winner.campaignId)!.campaign.name;
+        if (mode === "banner") return banner(name);
+
         const productIds = [...new Set(verified.filter((v) => v.campaignId === winner.campaignId).map((v) => v.productId))].slice(0, 5);
-        return { ...model, offer: { campaignId: winner.campaignId, name: before.state.campaignEntries.find((e) => e.campaign.id === winner.campaignId)!.campaign.name,
+        return fullModel({ campaignId: winner.campaignId, name,
           products: productIds.map((productId) => {
             const p = products.find((p) => p.id === productId)!;
-            return { productId, name: p.name, imageUrl: parseTrustedProductImageUrl(p.primaryImageUrl), variants: verified.filter((v) => v.campaignId === winner.campaignId && v.productId === productId).map((v) => v.view) };
-          }) } };
+            return { productId, name: p.name, imageUrl: parseTrustedProductImageUrl(p.primaryImageUrl),
+              variants: verified.filter((v) => v.campaignId === winner.campaignId && v.productId === productId).map((v) => v.view!) };
+          }) });
       }, { isolationLevel: "RepeatableRead", maxWait: 200, timeout: UPSELL_READ_TIMEOUT_MS });
-      report({ event: "recommendation", outcome: model?.offer ? "offered" : "empty", durationMs: Date.now() - started, quoteAttempts });
+      report({ event: "recommendation", outcome: (model && ("offerName" in model ? model.offerName !== null : model.offer !== null)) ? "offered" : "empty",
+        durationMs: Date.now() - started, quoteAttempts });
       return model;
     } catch {
-      report({ event: "recommendation", outcome: Date.now() - started >= 1800 ? "timed_out" : "failed", durationMs: Date.now() - started, quoteAttempts });
+      report({ event: "recommendation", outcome: Date.now() - started >= 1800 ? "timed_out" : "failed",
+        durationMs: Date.now() - started, quoteAttempts });
       return null;
     }
   }
 
   async function get(checkoutProof: string, now = new Date()) {
-    return recommend(checkoutProof, now, UPSELL_MAX_QUOTES);
+    return recommend(checkoutProof, now, UPSELL_MAX_QUOTES, "full");
   }
 
   async function getBanner(checkoutProof: string, now = new Date()) {
-    const model = await recommend(checkoutProof, now, UPSELL_BANNER_MAX_QUOTES);
-    return model ? { paidCartKey: model.paidCartKey, offerName: model.offer?.name ?? null } : null;
+    return recommend(checkoutProof, now, UPSELL_BANNER_MAX_QUOTES, "banner");
   }
 
   async function requote(input: unknown, now = new Date()) {
