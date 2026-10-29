@@ -53,6 +53,10 @@ export type BenefitGiftRow = Readonly<{
   pancakeVariationId: string;
   campaignId: string;
   quantity: number;
+  /** Description from the gift options resolved with this quote; not part of the money proof. */
+  productName: string | null;
+  color: string | null;
+  size: string | null;
 }>;
 
 /** V18: the vouchers a BENEFIT quote carries (held, verified against the holds' promise, and expressed in the quote's own lines). */
@@ -264,6 +268,7 @@ async function resolveOnce({
   const externalIdOf = new Map(giftVariants.map((variant) => [variant.id, variant.pancakeVariationId]));
   const preorderVariations = new Set(paidGroups.filter((group) => group.fulfillmentState === "PREORDER").map((group) => group.pancakeVariationId));
   const gifts: BenefitGiftRow[] = [];
+  const labelOf = new Map(state.labels.map((label) => [label.variantId, label]));
   for (const selection of effective.selections) {
     const pancakeVariationId = externalIdOf.get(selection.variantId);
     if (pancakeVariationId === undefined) return { kind: "GIFT_SELECTION_INVALID" };
@@ -271,7 +276,10 @@ async function resolveOnce({
     // bought on a waiting (PREORDER) basis the order has one readiness basis for it (§30), which would
     // make the gift wait too; that is refused rather than quietly promised.
     if (preorderVariations.has(pancakeVariationId)) return { kind: "GIFT_SELECTION_INVALID" };
-    gifts.push({ variantId: selection.variantId, pancakeVariationId, campaignId: selection.campaignId, quantity: selection.quantity });
+    const label = labelOf.get(selection.variantId);
+    gifts.push({ variantId: selection.variantId, pancakeVariationId, campaignId: selection.campaignId, quantity: selection.quantity,
+      productName: label?.productName ?? null, color: label?.color ?? null, size: label?.size ?? null,
+    });
   }
 
   const quoteGifts: BenefitQuoteGift[] = effective.selections.map((selection) => ({
@@ -307,7 +315,6 @@ async function resolveOnce({
       droppedAll.push({ campaignId: entry.campaignId, reason: entry.reason as DroppedBenefitInput["reason"], otherCampaignId: entry.otherCampaignId ?? null });
     }
   }
-  const labelOf = new Map(state.labels.map((label) => [label.variantId, label]));
   const giftLabels = new Map<string, string>();
   const giftImages = new Map<string, string | null>();
   for (const gift of gifts) {

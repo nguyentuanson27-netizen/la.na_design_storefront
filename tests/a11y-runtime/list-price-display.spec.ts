@@ -28,7 +28,7 @@ async function stop() {
   if (server.exitCode === null) server.kill("SIGKILL");
   server = undefined;
 }
-async function start(basis: boolean) {
+async function start(basis: boolean, display = true) {
   await stop();
   output = "";
   server = spawn(
@@ -49,7 +49,7 @@ async function start(basis: boolean) {
         PANCAKE_SHOP_ID: String(SHOP),
         APP_DOMAIN: "127.0.0.1:3475",
         BETTER_AUTH_URL: BASE,
-        LIST_PRICE_DISPLAY: "true",
+        LIST_PRICE_DISPLAY: String(display),
         LIST_PRICE_CAMPAIGN_BASIS: String(basis),
         LA_GIFT_QUANTITY_ENABLED: "false",
         LA_VOUCHER_ENABLED: "false",
@@ -232,6 +232,9 @@ test("cart, drawer and checkout show list reference/savings while charging uncha
     /590.000/,
   );
   await expect(page.locator("[data-cart-savings]")).toContainText(/159.000/);
+  await expect(page.locator("[data-cart-savings] dt")).toHaveText([
+    "Tổng theo giá niêm yết", "Tiết kiệm so với giá niêm yết",
+  ]);
   await page.goto(`${BASE}/checkout`);
   await expect(page.locator("[data-line-discount]").first()).toContainText(
     /749.000/,
@@ -242,6 +245,38 @@ test("cart, drawer and checkout show list reference/savings while charging uncha
   await expect(page.locator("[data-list-price-savings]").first()).toContainText(
     /159.000/,
   );
+});
+
+test("cart savings labels switch ON/OFF while payable campaign money stays unchanged on mobile", async ({ page }) => {
+  await prisma.promotionCampaign.create({ data: {
+    name: key, kind: "PROMOTION", discountType: "PERCENTAGE", percentageValue: 10,
+    isEnabled: true, enabledAt: new Date(), targets: { create: { productId } },
+  } });
+  try {
+    for (const display of [false, true]) {
+      await start(false, display);
+      await page.setViewportSize({ width: 390, height: 844 });
+      // A fresh cart for each flag prevents quantity from accumulating across additions.
+      await page.context().clearCookies();
+      await page.goto(`${BASE}/shop/${key}`);
+      const panel = page.getByRole("region", { name: "Mua sản phẩm" });
+      await panel.getByRole("group", { name: "Kích cỡ" }).getByText("M", { exact: true }).click();
+      await panel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true }).click();
+      await expect(panel.getByRole("status")).toContainText("Đã thêm");
+      await page.goto(`${BASE}/cart`);
+      const savings = page.locator("[data-cart-savings]");
+      await expect(savings.locator("dt")).toHaveText(display
+        ? ["Tổng theo giá niêm yết", "Tiết kiệm so với giá niêm yết"]
+        : ["Tổng", "Tiết kiệm"]);
+      await expect(savings.locator("dd").first()).toContainText(display ? /749.000/ : /590.000/);
+      await expect(savings.locator("dd").last()).toContainText(display ? /218.000/ : /59.000/);
+      await expect(page.locator("[data-line-discount]").first()).toContainText(/531.000/);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+  } finally {
+    await prisma.promotionCampaign.deleteMany({ where: { name: key } });
+    await start(false);
+  }
 });
 test("basis ON shows the rounded campaign amount, while JSON-LD still publishes only actual payable price", async ({
   page,

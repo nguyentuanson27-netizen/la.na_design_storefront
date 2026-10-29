@@ -11,6 +11,7 @@ import { buildCartViewModel } from "../../src/routes/cart-model.ts";
 import type { BenefitQuoteSummary } from "../../src/commerce/benefit-quote-summary.ts";
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
 import {
+  BENEFIT_PROOF_FORMAT,
   issueBenefitQuoteProof,
   benefitQuoteDigest,
   issueNonclaimAcknowledgement,
@@ -159,9 +160,9 @@ async function renderedFacts(at: Date = NOW): Promise<BenefitQuoteProofFacts> {
   return resolution.facts;
 }
 
-function snapshotService(options: Readonly<{ proof?: unknown; acknowledgement?: unknown; env?: Record<string, string | undefined>; at?: Date; withBenefits?: boolean; onBenefitQuote?: (summary: BenefitQuoteSummary) => void }> = {}) {
+function snapshotService(options: Readonly<{ client?: PrismaClient; proof?: unknown; acknowledgement?: unknown; env?: Record<string, string | undefined>; at?: Date; withBenefits?: boolean; onBenefitQuote?: (summary: BenefitQuoteSummary) => void }> = {}) {
   const { proof, acknowledgement, env = ON, at = NOW, withBenefits = true, onBenefitQuote } = options;
-  return createGuestCheckoutSnapshotService(prisma, {
+  return createGuestCheckoutSnapshotService(options.client ?? prisma, {
     checkoutInputValidated: true,
     env,
     // The legacy verifier must never be consulted for a benefit cart; accepting here would hide a mix-up.
@@ -189,6 +190,59 @@ test.after(async () => {
 });
 
 // -- GQ17: the DRAFT ----------------------------------------------------------------------------------
+
+test("quote descriptions and POS reference stay frozen with checkout when catalog changes before quote persistence", async () => {
+  await seed({ tier: false, quantity: 1 });
+  await chooseGift(1);
+  const facts = await renderedFacts();
+  const proof = issueBenefitQuoteProof({ quote: facts, cartId, secret })!;
+  let catalogChanged = false;
+  const changingCatalog = prisma.$extends({ query: { orderMirror: {
+    async create({ args, query }) {
+      // The legacy rows have been written from checkout's original read. Commit a catalog
+      // sync on another connection before the quote writer's later READ COMMITTED SELECT.
+      const order = await query(args);
+      await prisma.$transaction([
+        prisma.productMirror.updateMany({ where: { id: { in: [paid.productId, giftItem.productId] } }, data: { name: "Catalog changed" } }),
+        prisma.variantMirror.updateMany({ where: { id: { in: [paid.variantId, giftItem.variantId] } }, data: { color: "Red", size: "L", pancakeRetailPrice: 10000 } }),
+      ]);
+      catalogChanged = true;
+      return order;
+    },
+  } } }) as unknown as PrismaClient;
+  const previousDisplay = process.env.LIST_PRICE_DISPLAY;
+  const previousBasis = process.env.LIST_PRICE_CAMPAIGN_BASIS;
+  process.env.LIST_PRICE_DISPLAY = "true";
+  process.env.LIST_PRICE_CAMPAIGN_BASIS = "true";
+  try {
+    const result = await create(snapshotService({ proof, client: changingCatalog }));
+    assert.ok(result.ok);
+    assert.equal(catalogChanged, true);
+    const catalog = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paid.variantId }, include: { product: true } });
+    assert.deepEqual([catalog.product.name, catalog.color, catalog.size], ["Catalog changed", "Red", "L"]);
+    const legacy = await prisma.orderLineSnapshot.findFirstOrThrow({ where: { orderId: result.order.id } });
+    const snapshot = await prisma.orderQuoteSnapshot.findUniqueOrThrow({ where: { orderId: result.order.id }, include: { lines: true } });
+    const paidLine = snapshot.lines.find(line => line.role === "PAID")!;
+    const giftLine = snapshot.lines.find(line => line.role === "GIFT")!;
+    const description = (line: { productName: string | null; color: string | null; size: string | null }) => [line.productName, line.color, line.size];
+    assert.deepEqual(description(legacy), ["GQ17 paid", "Black", "M"]);
+    assert.deepEqual(description(paidLine), description(legacy));
+    assert.deepEqual(description(giftLine), ["GQ17 giftitem", "Black", "M"]);
+    assert.equal(paidLine.listUnitPriceVnd, legacy.listUnitPriceVnd);
+    assert.equal(paidLine.listUnitPriceVnd, BigInt(149000));
+    assert.equal(paidLine.unitPriceVnd, BigInt(100001));
+    assert.equal(giftLine.listUnitPriceVnd, null);
+    assert.equal(giftLine.unitPriceVnd, BigInt(0));
+    assert.equal(snapshot.quoteDigest, benefitQuoteDigest(facts));
+    assert.equal(snapshot.quoteFormat, BENEFIT_PROOF_FORMAT);
+    assert.equal(snapshot.totalVnd, BigInt(facts.totalVnd));
+  } finally {
+    if (previousDisplay === undefined) delete process.env.LIST_PRICE_DISPLAY;
+    else process.env.LIST_PRICE_DISPLAY = previousDisplay;
+    if (previousBasis === undefined) delete process.env.LIST_PRICE_CAMPAIGN_BASIS;
+    else process.env.LIST_PRICE_CAMPAIGN_BASIS = previousBasis;
+  }
+});
 
 test("EX-17: a proven tier cart becomes a DRAFT with both paid segments of one variation, stored by lineId", async () => {
   await seed({ gift: false });

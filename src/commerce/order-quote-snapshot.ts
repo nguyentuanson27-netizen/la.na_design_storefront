@@ -181,6 +181,14 @@ export type OrderQuoteSnapshotWriteResult =
   | Readonly<{ ok: true }>
   | Readonly<{ ok: false; reason: "SNAPSHOT_INVALID"; issue: OrderQuoteSnapshotIssue }>;
 
+/** Server facts read together when checkout priced/described this variant; never browser input. */
+export type OrderQuoteVariantReference = Readonly<{
+  basePriceVnd: number | null;
+  productName: string | null;
+  color: string | null;
+  size: string | null;
+}>;
+
 /**
  * Replaces the order's quote with `input`, inside the caller's transaction.
  *
@@ -194,7 +202,7 @@ export async function replaceOrderQuoteSnapshot(
   tx: Prisma.TransactionClient,
   orderId: string,
   input: OrderQuoteSnapshotInput,
-  authoritativeBasePrices?: ReadonlyMap<string, number>,
+  authoritativeVariants?: ReadonlyMap<string, OrderQuoteVariantReference>,
 ): Promise<OrderQuoteSnapshotWriteResult> {
   if (!isQuoteText(orderId, 200)) return { ok: false, reason: "SNAPSHOT_INVALID", issue: "LINES_OUT_OF_BOUNDS" };
   const verdict = validateOrderQuoteSnapshot(input);
@@ -203,7 +211,9 @@ export async function replaceOrderQuoteSnapshot(
   await clearOrderQuoteSnapshot(tx, orderId);
 
   const referenceVariants = readListPriceConfig().campaignBasis
-    ? new Map((await tx.variantMirror.findMany({ where: { id: { in: [...new Set(input.lines.map((line) => line.variantId))] } }, select: { id: true, pancakeRetailPrice: true, color: true, size: true, product: { select: { name: true } } } })).map((variant) => [variant.id, variant]))
+    ? authoritativeVariants ?? new Map((await tx.variantMirror.findMany({ where: { id: { in: [...new Set(input.lines.map((line) => line.variantId))] } }, select: { id: true, pancakeRetailPrice: true, color: true, size: true, product: { select: { name: true } } } })).map((variant) => [variant.id, {
+        basePriceVnd: variant.pancakeRetailPrice, productName: variant.product.name, color: variant.color, size: variant.size,
+      }]))
     : null;
   const { totals } = verdict;
   await tx.orderQuoteSnapshot.create({
@@ -224,7 +234,7 @@ export async function replaceOrderQuoteSnapshot(
       vendorProjection: input.vendorProjection === undefined ? undefined : input.vendorProjection.lines.map((line) => ({ ...line })),
       lines: {
         create: input.lines.map((line) => ({
-          productName: referenceVariants?.get(line.variantId)?.product.name ?? null,
+          productName: referenceVariants?.get(line.variantId)?.productName ?? null,
           color: referenceVariants?.get(line.variantId)?.color ?? null,
           size: referenceVariants?.get(line.variantId)?.size ?? null,
           lineId: line.lineId,
@@ -234,12 +244,10 @@ export async function replaceOrderQuoteSnapshot(
           quantity: line.quantity,
           unitPriceVnd: BigInt(line.unitPriceVnd),
           lineTotalVnd: BigInt(line.lineTotalVnd),
-          // Reuse the exact POS facts that priced this checkout. At READ COMMITTED a later
-          // catalog query in the same transaction may already observe a different POS price.
+          // Price and description come from the same frozen server read. READ COMMITTED
+          // permits catalog changes before this write; never fill gaps from a later read.
           listUnitPriceVnd: line.role === "PAID" && readListPriceConfig().campaignBasis
-            ? toListSnapshot(authoritativeBasePrices
-                ? authoritativeBasePrices.get(line.variantId) ?? null
-                : referenceVariants?.get(line.variantId)?.pancakeRetailPrice ?? null)
+            ? toListSnapshot(referenceVariants?.get(line.variantId)?.basePriceVnd ?? null)
             : null,
           baseUnitPriceVnd: line.baseUnitPriceVnd === null ? null : BigInt(line.baseUnitPriceVnd),
           fulfillmentState: line.fulfillmentState,
