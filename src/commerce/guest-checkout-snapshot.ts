@@ -985,7 +985,8 @@ export function createGuestCheckoutSnapshotService(
         // written again only when THIS quote carries held vouchers (the trigger allows both while the order is a DRAFT).
         if (mutableDraft) await tx.orderVoucherSnapshot.deleteMany({ where: { orderId: order.id } });
         if (benefitQuoteWrite !== null) {
-          const written = await replaceOrderQuoteSnapshot(tx, order.id, benefitQuoteWrite);
+          const referencePrices = new Map(snapshots.map((line) => [line.variantId, Number(line.baseUnitPriceVnd)]));
+          const written = await replaceOrderQuoteSnapshot(tx, order.id, benefitQuoteWrite, referencePrices);
           // Validated above, so a refusal here is a defect; throwing rolls the whole attempt back
           // rather than leaving an order whose quote rows are missing.
           if (!written.ok) throw new Error(`Benefit quote snapshot refused: ${written.issue}`);

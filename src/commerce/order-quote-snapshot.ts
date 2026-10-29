@@ -194,6 +194,7 @@ export async function replaceOrderQuoteSnapshot(
   tx: Prisma.TransactionClient,
   orderId: string,
   input: OrderQuoteSnapshotInput,
+  authoritativeBasePrices?: ReadonlyMap<string, number>,
 ): Promise<OrderQuoteSnapshotWriteResult> {
   if (!isQuoteText(orderId, 200)) return { ok: false, reason: "SNAPSHOT_INVALID", issue: "LINES_OUT_OF_BOUNDS" };
   const verdict = validateOrderQuoteSnapshot(input);
@@ -233,7 +234,13 @@ export async function replaceOrderQuoteSnapshot(
           quantity: line.quantity,
           unitPriceVnd: BigInt(line.unitPriceVnd),
           lineTotalVnd: BigInt(line.lineTotalVnd),
-          listUnitPriceVnd: line.role === "PAID" && readListPriceConfig().campaignBasis ? toListSnapshot(referenceVariants?.get(line.variantId)?.pancakeRetailPrice ?? null) : null,
+          // Reuse the exact POS facts that priced this checkout. At READ COMMITTED a later
+          // catalog query in the same transaction may already observe a different POS price.
+          listUnitPriceVnd: line.role === "PAID" && readListPriceConfig().campaignBasis
+            ? toListSnapshot(authoritativeBasePrices
+                ? authoritativeBasePrices.get(line.variantId) ?? null
+                : referenceVariants?.get(line.variantId)?.pancakeRetailPrice ?? null)
+            : null,
           baseUnitPriceVnd: line.baseUnitPriceVnd === null ? null : BigInt(line.baseUnitPriceVnd),
           fulfillmentState: line.fulfillmentState,
           campaignId: line.campaign?.id ?? null,
