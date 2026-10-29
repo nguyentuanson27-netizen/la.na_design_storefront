@@ -7,6 +7,7 @@ import { prisma } from "../db/prisma.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig } from "../integrations/pancake/config.ts";
 import { deriveGuestCheckoutClientKey } from "./guest-checkout-client-identity.ts";
+import { createCheckoutGeoCache } from "./checkout-geo-cache.ts";
 import { createGuestCheckoutRateLimiter } from "./guest-checkout-rate-limit.ts";
 import {
   createCheckoutGeoPublicActions,
@@ -33,10 +34,17 @@ async function allowGeoRead(): Promise<boolean> {
   return geoRateLimiter.consumeGeoClient({ clientKey });
 }
 
-const publicActions = createCheckoutGeoPublicActions({
-  allowRead: allowGeoRead,
+// Cache only the public picker reads. allowGeoRead is still called on every action, including hits.
+// The authoritative submit path continues to validate geo directly against Pancake.
+const geoCache = createCheckoutGeoCache({
   loadProvinces: () => loadCheckoutProvinces(createServerClient()),
   loadCommunes: (provinceId) => loadCheckoutCommunes(createServerClient(), provinceId),
+});
+
+const publicActions = createCheckoutGeoPublicActions({
+  allowRead: allowGeoRead,
+  loadProvinces: geoCache.provinces,
+  loadCommunes: geoCache.communes,
 });
 
 export async function loadCheckoutProvincesAction(): Promise<
