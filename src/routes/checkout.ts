@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readBankTransferConfig } from "@/commerce/bank-transfer";
 import { checkoutAttemptKey } from "@/commerce/checkout-attempt-key";
-import { cookies } from "next/headers";
-import { createPromotionUpsellService } from "@/commerce/promotion-upsell";
+import { isPromotionUpsellEnabled } from "@/commerce/promotion-upsell-policy";
 import { connection } from "next/server";
 
 import { readAuthServerConfig } from "@/auth/config";
@@ -32,13 +31,14 @@ import { sealRoute, type RouteHandle, type RoutePixelEvent } from "./core.tsx";
 
 export type CheckoutRouteProps = Readonly<Record<string, never>>;
 
-async function withCheckoutExtras(base: CheckoutViewModel): Promise<CheckoutViewModel> {
-  const data = { ...base, bankTransferEnabled: readBankTransferConfig() !== null };
-  if (data.state !== "ready" || !data.quoteProof) return data;
-  const upsell = await createPromotionUpsellService(prisma, await cookies(), { shopId: readPancakeShopId(), secret: readAuthServerConfig().secret }).get(data.quoteProof);
-  // Only what the banner shows crosses to the browser (AM-01): no variants, intents or proofs. A null
-  // offer still mounts the banner (rendering nothing) so a D-06 skip survives an offer that blinks out.
-  return upsell ? { ...data, upsell: { paidCartKey: upsell.paidCartKey, offerName: upsell.offer?.name ?? null } } : data;
+function withCheckoutExtras(base: CheckoutViewModel): CheckoutViewModel {
+  return {
+    ...base,
+    bankTransferEnabled: readBankTransferConfig() !== null,
+    // Only a cheap feature gate runs in SSR. Optional candidate quotes move to a separate
+    // post-hydration read; no recommendation timeout may hold up checkout HTML or quote proof.
+    upsellEnabled: base.state === "ready" && Boolean(base.quoteProof) && isPromotionUpsellEnabled(readPancakeShopId()),
+  };
 }
 
 export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel>> {
@@ -84,7 +84,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
     // reported from the order, money paid only -- GQ22.)
     const benefitPixel = benefitRender.kind === "BENEFIT" ? benefitCheckoutPixelParameters(data, lines) : null;
     return sealRoute({
-      data: { ...await withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined, ...(voucherView ? { vouchers: voucherView } : {}) },
+      data: { ...withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined, ...(voucherView ? { vouchers: voucherView } : {}) },
       refreshAfterMs: 60_000,
       trackingEvent: null,
       structuredData: [],
@@ -135,7 +135,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
       : [];
 
   return sealRoute({
-    data: { ...await withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined, ...(voucherView ? { vouchers: voucherView } : {}) },
+    data: { ...withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined, ...(voucherView ? { vouchers: voucherView } : {}) },
     // Checkout prices are re-resolved on every request, so nothing here is promotion-cached; the
     // shared default cadence is what the shell mounts.
     refreshAfterMs: 60_000,
