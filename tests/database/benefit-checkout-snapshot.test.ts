@@ -22,6 +22,7 @@ import {
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
 import { createGuestCheckoutSubmitService } from "../../src/commerce/guest-checkout-submit.ts";
 import { readOrderQuoteSnapshot } from "../../src/commerce/order-quote-snapshot.ts";
+import { readHistoricalOrderPricing } from "../../src/commerce/historical-list-price.ts";
 import { createPancakeOrderSubmissionService, type PancakeOrderSubmissionEvent } from "../../src/commerce/pancake-order-submit.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
@@ -239,6 +240,18 @@ test(`quote descriptions and POS reference stay frozen when catalog changes (bas
     assert.equal(snapshot.quoteDigest, benefitQuoteDigest(facts));
     assert.equal(snapshot.quoteFormat, BENEFIT_PROOF_FORMAT);
     assert.equal(snapshot.totalVnd, BigInt(facts.totalVnd));
+    // History must retain the separately selected gift's real option even after a basis rollback.
+    await prisma.orderMirror.update({ where: { id: result.order.id }, data: { state: "CONFIRMED" } });
+    const history = await readHistoricalOrderPricing(prisma, result.order.id);
+    assert.ok(history);
+    assert.equal(history.lines.length, 2);
+    assert.deepEqual(description(history.lines.find(line => line.role === "PAID")!), ["GQ17 paid", "Black", "M"]);
+    assert.deepEqual(history.lines.find(line => line.role === "GIFT"), {
+      role: "GIFT", productName: "GQ17 giftitem", color: "Black", size: "M", quantity: 1,
+      unitPriceVnd: "0", lineTotalVnd: "0", listUnitPriceVnd: null,
+    });
+    assert.equal(history.lines.find(line => line.role === "PAID")!.listUnitPriceVnd, campaignBasis ? "149000" : null);
+    assert.equal(history.savingVnd, campaignBasis ? "48999" : null);
   } finally {
     if (previousDisplay === undefined) delete process.env.LIST_PRICE_DISPLAY;
     else process.env.LIST_PRICE_DISPLAY = previousDisplay;

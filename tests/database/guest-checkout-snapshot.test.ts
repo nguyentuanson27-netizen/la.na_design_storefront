@@ -398,7 +398,21 @@ for (const basis of [false, true]) test(`list snapshot and verified history with
     assert.equal(order.lines[0]!.unitPriceVnd, BigInt(590000));
     assert.equal(order.lines[0]!.baseUnitPriceVnd, BigInt(590000));
     assert.equal(order.lines[0]!.listUnitPriceVnd, basis ? BigInt(749000) : null);
-
+    await prisma.orderMirror.update({ where: { id: order.id }, data: { state: "CONFIRMED" } });
+    await prisma.variantMirror.update({ where: { id: variant.id }, data: { pancakeRetailPrice: 10000 } });
+    const { createGuestOrderTrackingService } = await import("../../src/commerce/guest-order-tracking.ts");
+    const lookup = createGuestOrderTrackingService(prisma).lookup;
+    assert.deepEqual(await lookup({orderCode:publicCode,phone:"0900000000"}),{ok:false,reason:"NOT_FOUND"});
+    assert.deepEqual(await lookup({orderCode:"wrong-order",phone:"0901234567"}),{ok:false,reason:"NOT_FOUND"});
+    const tracked = await lookup({orderCode:publicCode,phone:"0901234567"});
+    assert.ok(tracked.ok);
+    assert.equal(tracked.order.pricingHistory?.lines[0]?.unitPriceVnd,"590000");
+    assert.equal(tracked.order.pricingHistory?.lines[0]?.listUnitPriceVnd,basis?"749000":null);
+    assert.equal(tracked.order.pricingHistory?.savingVnd,basis?"159000":null);
+    assert.equal(JSON.stringify(tracked).includes("0901234567"),false);
+    delete process.env.LIST_PRICE_ORDER_HISTORY;
+    const hidden=await lookup({orderCode:publicCode,phone:"0901234567"});
+    assert.ok(hidden.ok); assert.equal(hidden.order.pricingHistory,undefined);
   } finally {
     delete process.env.LIST_PRICE_DISPLAY; delete process.env.LIST_PRICE_CAMPAIGN_BASIS; delete process.env.LIST_PRICE_ORDER_HISTORY;
     await cleanup(key);
