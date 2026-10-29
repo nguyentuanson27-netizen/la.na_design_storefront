@@ -112,8 +112,8 @@ export function createCheckoutGeoCache({
   return Object.freeze({
     provinces: () => provincesCache.read("84:new-provinces", loadProvinces),
     communes: (provinceId: unknown) => {
-      // Do not put malformed browser input into a shared cache key or call a loader on its behalf.
-      // The existing gateway validates these IDs and reports a safe GEO_UNAVAILABLE response.
+      // Do not cache malformed browser input. The existing gateway rejects it before any
+      // Pancake request, and the public action maps that rejection to GEO_UNAVAILABLE.
       if (typeof provinceId !== "string" || provinceId.length === 0 ||
         provinceId.length > 64 || provinceId.trim() !== provinceId) {
         return loadCommunes(provinceId);
