@@ -75,6 +75,23 @@ test("slow optional upsell cannot hold checkout HTML, shipping fields or the sub
   }
 });
 
+test("province fetch failure does not start optional upsell", async ({ page }) => {
+  let started = 0;
+  await page.route("**/api/checkout/upsell", async (route) => { started++; await route.continue(); });
+  await page.route(BASE + "/checkout", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await route.abort();
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto(BASE + "/checkout", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
+  await expect(page.locator("#checkout-province")).toBeDisabled();
+  await page.waitForTimeout(150);
+  expect(started).toBe(0);
+});
+
 test("upsell POST rejects requests from a foreign origin without exposing data", async ({ page }) => {
   await page.goto(`${BASE}/checkout`, { waitUntil: "domcontentloaded" });
   const response = await page.request.post(`${BASE}/api/checkout/upsell`, {
