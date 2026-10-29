@@ -191,6 +191,42 @@ test("TG-11: skip survives reload, paid A→B→A resets it, new checkout attemp
   await context.addCookies([{ name: "la_cart", value: newCart.id, url: BASE, httpOnly: true, sameSite: "Lax" }]);
   await page.reload(); await expect(offer).toBeVisible();
 });
+test("D-06/FR-10: commune lookup failure and retry preserve a dismissed upsell", async ({ page }) => {
+  await page.goto(`${BASE}/checkout`);
+  const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
+  await expect(offer).toBeVisible();
+  await expect(page.getByLabel("Tỉnh / Thành phố", { exact: false })).toBeEnabled();
+
+  await offer.getByRole("button", { name: "Đóng gợi ý ưu đãi" }).click();
+  await expect(offer).toHaveCount(0);
+  const savedDismiss = await page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"));
+  expect(savedDismiss).toBeTruthy();
+  expect(JSON.parse(savedDismiss!).dismissed).toBe(true);
+
+  // Provinces already loaded. Fail just the first commune Server Action request.
+  let failNextCommuneRead = true;
+  await page.route(`${BASE}/checkout`, async (route) => {
+    if (failNextCommuneRead && route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      failNextCommuneRead = false;
+      await route.abort("failed");
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.getByLabel("Tỉnh / Thành phố", { exact: false }).selectOption({ label: "Tỉnh Current" });
+  await expect.poll(() => failNextCommuneRead).toBe(false);
+  await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
+  await expect(offer).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"))).toBe(savedDismiss);
+
+  await page.getByRole("button", { name: "Thử lại" }).click();
+  await expect(page.getByLabel("Phường / Xã", { exact: false })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Thử lại" })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"))).toBe(savedDismiss);
+  await expect(offer).toHaveCount(0);
+});
+
 test("D-06: a withdrawn offer shows no invitation and leaves checkout usable", async ({ page }) => {
   await page.goto(`${BASE}/checkout`);
   const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
