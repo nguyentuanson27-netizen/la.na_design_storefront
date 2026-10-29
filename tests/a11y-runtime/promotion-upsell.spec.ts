@@ -52,6 +52,40 @@ test.afterAll(async () => {
 // AM-01 (OD-01 = A): checkout shows the proven opportunity and the way to /sale; it never adds a
 // paid unit itself. The +1 action, its proof and its races stay covered by
 // tests/database/promotion-upsell.test.ts, which this browser suite no longer duplicates.
+test("slow optional upsell cannot hold checkout HTML, shipping fields or the submit button", async ({ page }) => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let intercepted = 0;
+  await page.route("**/api/checkout/upsell", async (route) => {
+    intercepted++;
+    await held;
+    await route.continue();
+  });
+  try {
+    await page.goto(`${BASE}/checkout`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "Thông tin nhận hàng" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeEnabled();
+    await expect.poll(() => intercepted).toBe(1);
+    await expect(page.getByRole("region", { name: "Gợi ý mua thêm" })).toHaveCount(0);
+    release();
+    await expect(page.getByRole("region", { name: "Gợi ý mua thêm" })).toBeVisible();
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
+test("upsell POST rejects requests from a foreign origin without exposing data", async ({ page }) => {
+  await page.goto(`${BASE}/checkout`, { waitUntil: "domcontentloaded" });
+  const response = await page.request.post(`${BASE}/api/checkout/upsell`, {
+    data: { quoteProof: "invalid.proof" },
+    headers: { origin: "https://foreign.example" },
+  });
+  expect(response.status()).toBe(403);
+  expect(await response.json()).toBeNull();
+  expect(response.headers()["cache-control"]).toContain("no-store");
+});
+
 test("AM-01/A: the compact banner names the proven offer, links to /sale and offers no inline add", async ({ page }) => {
   await page.goto(`${BASE}/checkout`);
   const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
