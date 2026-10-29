@@ -1,6 +1,6 @@
 # Spec — Giá niêm yết hiển thị (List Price Display) v1
 
-Status: **DRAFT v2 — chờ chủ shop xác nhận Q6, Q7 ở §12 và cổng pháp lý G0 trước khi code.**
+Status: **DRAFT v3 — các câu hỏi sản phẩm đã chốt; còn cổng pháp lý G0 trước khi bật production.**
 
 Nguồn yêu cầu: chủ shop, phiên làm việc 2026-10-24 → 2026-10-29. Spec này tổng hợp yêu cầu, quyết định đã chốt, hợp đồng kỹ thuật, rủi ro và kế hoạch triển khai. Chưa có dòng code nào được sửa.
 
@@ -80,9 +80,13 @@ giá khách trả = campaignPrice nếu có tác dụng, ngược lại giá POS
 | Có chiến dịch có tác dụng | giá niêm yết (giá POS không hiện) | giá chiến dịch | `-Y%` so với giá niêm yết |
 | Không có giá niêm yết (guard `null`) | như hiện nay | như hiện nay | như hiện nay |
 
-**Bậc số lượng / giá trị đơn (Q6, xem §12):** mặc định cùng quy tắc: bước giảm theo % đầu tiên khởi đầu từ giá niêm yết; kết quả phải thấp hơn giá POS của dòng, nếu không bước bị bỏ qua; các bước sau chain như hiện nay và không bao giờ làm tăng giá. Ngưỡng đủ điều kiện (ví dụ "đơn từ X đồng") giữ tính theo tổng giá POS để người đủ điều kiện hôm nay vẫn đủ điều kiện ngày mai. Phần này đụng `gift-quantity-stack.ts`, `gift-quantity-tier.ts`, `benefit-checkout-quote.ts` và các invariant của ADR 0016, cần đọc kỹ và ghi ADR trước khi code.
+**Bậc số lượng / giá trị đơn và ngưỡng quà (Q6, đã chốt): không đổi.** Các cơ chế này đã tính trên giá bán hiện tại, tức giá khách thực trả sau mọi giảm giá khác (ADR 0016; ví dụ EX-10: giỏ 1,2tr trước giảm, 960k sau giảm thì không đủ ngưỡng quà 1tr). Giá niêm yết không bao giờ là đầu vào của ngưỡng hay của bậc thang:
 
-**Chiến dịch đang tồn tại:** chủ shop xác nhận không có chiến dịch % nào đang chạy. Vẫn phải có bước kiểm tra trước khi bật cờ pha 2: liệt kê chiến dịch Active/Scheduled kiểu `PERCENTAGE` và bậc theo % (kể cả trong tương lai); nếu có thì xử lý trước, vì giá của chúng sẽ đổi (cao lên hoặc mất tác dụng).
+- Ngưỡng "đơn từ X đồng" (quà `ORDER_SUBTOTAL`, bậc giá trị đơn) tính trên giá khách trả: giá POS khi không có chiến dịch, giá chiến dịch khi có.
+- Bậc số lượng và bậc giá trị đơn theo % chain trên giá bán hiện tại của dòng như hiện nay, không bắt đầu từ giá niêm yết.
+- Chỉ **chiến dịch theo sản phẩm** (`PROMOTION`, `FLASH_SALE`, `CLEARANCE`) dùng giá niêm yết làm cơ sở % (quy tắc ở trên). Kết quả của chúng luôn < giá POS nên bất biến đầu vào của bộ máy bậc thang (`legacy.effectivePriceVnd ≤ basePriceVnd`) vẫn đúng và `gift-quantity-*` không phải sửa.
+
+**Chiến dịch đang tồn tại:** chủ shop xác nhận không có chiến dịch % nào đang chạy. Vẫn phải có bước kiểm tra trước khi bật cờ pha 2: liệt kê chiến dịch Active/Scheduled kiểu `PERCENTAGE` theo sản phẩm (kể cả trong tương lai); nếu có thì xử lý trước, vì giá của chúng sẽ đổi (cao lên hoặc mất tác dụng).
 
 ## 5. Phạm vi hiển thị (chủ shop chọn "tất cả")
 
@@ -101,7 +105,7 @@ giá khách trả = campaignPrice nếu có tác dụng, ngược lại giá POS
 ## 6. Dữ liệu
 
 - **Giá niêm yết không lưu ở bảng catalog.** Nó tính lại từ `pancakeRetailPrice` mỗi lần hiển thị (hàm thuần, rẻ).
-- **Snapshot đơn (bắt buộc từ pha 2):** thêm cột nullable `listUnitPriceVnd BigInt?` vào `OrderLineSnapshot` (và dòng quote/snapshot bậc thang nếu chúng lưu giá cơ sở: `OrderQuoteLine`, ledger `inputPriceVnd`, xác nhận khi cài đặt). Ghi giá niêm yết đã dùng làm cơ sở tính của dòng đó. Không có nó thì đơn đã giảm theo % không thể tái hiện được số tiền.
+- **Snapshot đơn (bắt buộc từ pha 2):** thêm cột nullable `listUnitPriceVnd BigInt?` vào `OrderLineSnapshot` (và dòng quote nếu nó lưu giá cơ sở của chiến dịch theo sản phẩm; xác nhận khi cài đặt). Ghi giá niêm yết đã dùng làm cơ sở tính của dòng đó. Không có nó thì đơn đã giảm theo % không thể tái hiện được số tiền.
 - `baseUnitPriceVnd` giữ nghĩa "giá thường (giá POS)"; `unitPriceVnd` vẫn là giá khách trả; `lineTotalVnd` không đổi.
 - Migration chỉ thêm cột nullable, không backfill; đơn cũ có `null` và không hiển thị "tiết kiệm".
 - Lý do lưu: công thức hoặc cờ có thể đổi sau này; trang đơn đã thanh toán không được tự đổi số.
@@ -110,7 +114,7 @@ giá khách trả = campaignPrice nếu có tác dụng, ngược lại giá POS
 
 - **Chính sách giá** (`/policies#chinh-sach-gia`): thêm đoạn định nghĩa "Giá niêm yết" và "Giá bán", viết theo sự thật về cách giá niêm yết được xác định (xem G0). Nội dung do chủ shop duyệt.
 - **Admin:** trang sản phẩm hiển thị giá niêm yết tính ra (chỉ đọc) cạnh giá POS, kèm cảnh báo khi guard trả `null`. Không có ghi đè theo từng sản phẩm (Q5, đã bỏ): mọi sản phẩm theo công thức, bật/tắt chỉ bằng cờ toàn cục.
-- **Admin chiến dịch:** cảnh báo biến thể không có tác dụng và % tối thiểu (§4).
+- **Admin chiến dịch (Q7, đã chốt):** chiến dịch không có tác dụng với một biến thể thì chỉ **cảnh báo** (số biến thể bị ảnh hưởng và % tối thiểu cần có), không chặn kích hoạt (§4).
 - **Cache:** feed Merchant dùng cache khóa cố định kèm `promotion pricing revision`. Bật/tắt cờ hoặc đổi công thức phải làm mất hiệu lực cache này, nếu không feed và PDP có thể lệch nhau (đúng loại sai lệch mà test `merchant-feed-pdp-price-parity` đang chặn).
 
 ## 8. Cờ và pha triển khai
@@ -118,7 +122,7 @@ giá khách trả = campaignPrice nếu có tác dụng, ngược lại giá POS
 | Cờ (env) | Pha | Phạm vi | Đổi tiền? | Mặc định |
 |---|---|---|---|---|
 | `LIST_PRICE_DISPLAY` | 1 | card, PDP, giỏ, checkout, badge; không đổi chiến dịch | Không | tắt |
-| `LIST_PRICE_CAMPAIGN_BASIS` | 2 | chiến dịch % và bậc thang tính trên giá niêm yết; ghi `listUnitPriceVnd`; cảnh báo admin | **Có** | tắt, chỉ bật khi `LIST_PRICE_DISPLAY` đã bật |
+| `LIST_PRICE_CAMPAIGN_BASIS` | 2 | chiến dịch % theo sản phẩm tính trên giá niêm yết; ghi `listUnitPriceVnd`; cảnh báo admin | **Có** | tắt, chỉ bật khi `LIST_PRICE_DISPLAY` đã bật |
 | `LIST_PRICE_ORDER_HISTORY` | 3 | trang đơn/tra cứu/email hiện giá niêm yết và tiết kiệm | Không | tắt |
 | `LIST_PRICE_MERCHANT` | 4 | `g:price`/`g:sale_price`, JSON-LD `ListPrice` | Không | tắt |
 
@@ -133,7 +137,7 @@ Mỗi pha bật độc lập, tắt cờ là rollback. Pha 2 phải bật trư�
 | **Meta/Google Ads:** giá hiển thị trên trang đích phải khớp quảng cáo; giảm giá giả có thể vi phạm chính sách quảng cáo. | Trung bình–cao | Tracking vẫn dùng giá khách trả; kiểm tra lại creative có nêu "giảm X%". |
 | **Badge phóng đại mức giảm thật:** chiến dịch 25% hiện -25% nhưng khách chỉ rẻ hơn giá thường ~4% (§4). | **Cao** | Cổng G0; admin hiển thị "giảm thật so với giá thường" khi tạo chiến dịch; không dùng con số % của badge trong quảng cáo ngoài website. |
 | Chiến dịch % không có tác dụng vì nhỏ hơn ngưỡng (10% không làm giá giảm). | Trung bình | Cảnh báo ở admin trước khi kích hoạt; hiển thị % tối thiểu. |
-| Đổi cơ sở tính chiến dịch là thay đổi đường tiền: sai ở đây đổi giá khách trả. | **Cao** | Cờ riêng, test bất biến `giá trả ≤ giá POS`, snapshot `listUnitPriceVnd`, kiểm tra chiến dịch tồn tại trước khi bật, ADR cho bậc thang. |
+| Đổi cơ sở tính chiến dịch là thay đổi đường tiền: sai ở đây đổi giá khách trả. | **Cao** | Cờ riêng, test bất biến `giá trả ≤ giá POS`, snapshot `listUnitPriceVnd`, kiểm tra chiến dịch tồn tại trước khi bật, ADR ghi quy tắc cơ sở chiến dịch. |
 | Hiệu ứng lệch badge giữa các sản phẩm (17–33%) và hiệu ứng "luôn sale" làm các đợt sale thật kém nổi bật. | Trung bình | Theo dõi conversion trước/sau. |
 | Hồi quy tiền tệ do đụng nhiều bề mặt giá. | Trung bình | Test khóa các bất biến ở §10. |
 | Lệch feed ↔ PDP ↔ JSON-LD. | Trung bình | Một hàm tính duy nhất; mở rộng test parity; vô hiệu cache khi đổi cờ. |
@@ -147,7 +151,7 @@ Domain (`tests/domain`):
 - Property test: với dải giá POS ngẫu nhiên, số 49/99 trả về là nhỏ nhất thỏa điều kiện.
 - **Pha 1 (bất biến tiền):** khi bật/tắt `LIST_PRICE_DISPLAY`, `effectivePriceVnd`, `unitPriceVnd`, `baseUnitPriceVnd`, tổng giỏ, `retail_price` gửi Pancake, giá tracking, snapshot đơn giống hệt nhau; `isDiscounted` không đổi; `/sale/*` chỉ liệt kê sản phẩm có chiến dịch.
 - **Pha 2 (resolver):** `PERCENTAGE` tính trên giá niêm yết (làm tròn half-up); kết quả ≥ giá POS ⇒ `PROMOTION_INVALID`, giá trả = giá POS; `FIXED_PRICE` không đổi; ranh giới đúng bằng giá POS; `PROMOTION_CONFLICT` vẫn về giá thường; `giá trả ≤ giá POS` là property test trên dải giá/percent ngẫu nhiên.
-- Bậc số lượng/giá trị đơn: ngưỡng đủ điều kiện không đổi, bước % đầu bắt đầu từ giá niêm yết, bước không có tác dụng bị bỏ qua, chain không làm tăng giá; quà tặng 0đ không đổi.
+- Bậc số lượng/giá trị đơn và ngưỡng quà: hồi quy toàn bộ test `gift-quantity-*` giữ nguyên; thêm case ngưỡng tính trên giá chiến dịch (sau giảm) chứ không phải giá niêm yết; quà tặng 0đ không đổi.
 - Snapshot: `listUnitPriceVnd` được ghi khi cơ sở niêm yết được dùng và tái hiện đúng `unitPriceVnd`; đơn cũ `null`.
 - Parity: `g:price`/`g:sale_price`, JSON-LD và PDP khớp nhau cho cùng biến thể, có và không có chiến dịch.
 - Tiết kiệm trong giỏ: dòng quà tặng, bậc số lượng, nhiều dòng trộn.
@@ -158,16 +162,16 @@ Trình duyệt (`tests/a11y-runtime`): card, PDP, giỏ trên mobile; nhãn a11y
 ## 11. Kế hoạch thực hiện
 
 0. Đọc hướng dẫn Next.js trong `node_modules/next/dist/docs/` theo `AGENTS.md` trước khi viết code.
-1. **Chốt:** chủ shop trả lời Q6, Q7 và qua cổng G0; viết ADR `docs/decisions/0018` (giá niêm yết làm cơ sở chiến dịch, bậc thang) và cập nhật `docs/decisions/README.md`.
-2. **Kiểm tra trước khi bật:** script audit catalog (giá POS nhỏ nhất, phân bố `list / pos`) và liệt kê chiến dịch %/bậc thang đang Active hoặc Scheduled.
+1. **Chốt:** qua cổng G0; viết ADR `docs/decisions/0018` (giá niêm yết làm cơ sở chiến dịch theo sản phẩm) và cập nhật `docs/decisions/README.md`.
+2. **Kiểm tra trước khi bật:** script audit catalog (giá POS nhỏ nhất, phân bố `list / pos`) và liệt kê chiến dịch % theo sản phẩm đang Active hoặc Scheduled.
 3. **Pha 1, hiển thị (không đổi tiền):** `computeListPriceVnd` + test; thêm `listPriceVnd` vào kết quả rule giá (`storefront-promotion-projection.ts`, `storefront-product.ts`); model và component card/PDP/giỏ, badge, nhãn a11y; trang chính sách giá.
-4. **Pha 2, cơ sở chiến dịch (đổi tiền):** sửa `resolvePromotionPricing` (§4), bậc thang, migration `listUnitPriceVnd`, ghi snapshot, cảnh báo admin chiến dịch. Có thể làm cùng đợt với pha 1 nhưng cờ riêng.
+4. **Pha 2, cơ sở chiến dịch (đổi tiền):** sửa `resolvePromotionPricing` (§4), migration `listUnitPriceVnd`, ghi snapshot, cảnh báo admin chiến dịch; bậc thang giữ nguyên. Có thể làm cùng đợt với pha 1 nhưng cờ riêng.
 5. **Pha 3:** trang đơn/tra cứu/email.
 6. **Pha 4 (tùy chọn, bật cuối):** Merchant `sale_price`, JSON-LD `ListPrice`, vô hiệu cache, mở rộng parity test.
 7. **Rollout:** staging → mobile → bật dần pha 1 → theo dõi conversion, trả hàng, khiếu nại, Merchant diagnostics → các pha sau.
 8. **Rollback:** tắt cờ tương ứng; cột `listUnitPriceVnd` để nguyên (additive).
 
-Ước lượng: pha 1 khoảng 10–15 file code + test; pha 2 khoảng 10–15 file (resolver, bậc thang, snapshot, admin, test) và là phần rủi ro nhất; pha 3 vài file; pha 4 3–4 file.
+Ước lượng: pha 1 khoảng 10–15 file code + test; pha 2 khoảng 6–10 file (resolver, snapshot, admin chiến dịch, test) và là phần rủi ro nhất; pha 3 vài file; pha 4 3–4 file.
 
 ## 12. Quyết định
 
@@ -178,7 +182,7 @@ Trình duyệt (`tests/a11y-runtime`): card, PDP, giỏ trên mobile; nhãn a11y
 | Q3 | Trần nâng giá (giá thấp)? | **Đã chốt:** bỏ trần; thay bằng kiểm tra catalog trước khi bật (§3) |
 | Q4 | Giá niêm yết đã từng bán thật ở kênh nào? | **Chưa từng.** Trường hợp rủi ro cao nhất: xem G0 và §9 |
 | Q5 | Ghi đè theo từng sản phẩm? | **Đã chốt:** không làm. Mọi sản phẩm theo công thức |
-| Q6 | Bậc số lượng / giá trị đơn cũng tính trên giá niêm yết? | **Cần xác nhận.** Mặc định: có, bước % đầu bắt đầu từ giá niêm yết; ngưỡng đủ điều kiện giữ tính theo giá POS (§4) |
-| Q7 | Chiến dịch % nhỏ hơn ngưỡng (kết quả ≥ giá POS) xử lý thế nào? | **Cần xác nhận.** Mặc định: không có tác dụng, khách trả giá POS, admin cảnh báo. Lựa chọn khác (cho phép giá cao hơn giá POS) làm tăng giá bán nên không khuyến nghị |
+| Q6 | Bậc số lượng / giá trị đơn và ngưỡng quà tính trên giá nào? | **Đã chốt:** giá bán hiện tại (sau giảm giá), đúng như hệ thống đang làm; không đổi, không dùng giá niêm yết (§4) |
+| Q7 | Chiến dịch % nhỏ hơn ngưỡng (kết quả ≥ giá POS) xử lý thế nào? | **Đã chốt:** không có tác dụng, khách trả giá POS, admin **cảnh báo** (không chặn) |
 
 **G0 — cổng trước khi bật production:** chủ shop xác nhận cách mô tả giá niêm yết trong chính sách giá và đã tham khảo luật sư/tư vấn pháp lý về việc dùng giá tham chiếu cao hơn giá bán thực tế, đặc biệt khi chiến dịch hiển thị mức giảm tính trên giá đó (pha 2) và cho pha 4 (Merchant).
