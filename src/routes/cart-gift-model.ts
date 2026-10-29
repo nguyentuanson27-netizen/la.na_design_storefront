@@ -7,7 +7,7 @@ export type CartGiftPickerModel = Readonly<{
   campaigns: readonly Readonly<{
     campaignId: string; revision: number; earned: number; entitled: number; selected: number;
     unclaimed: number; selectable: number | null; contendedSlots: number; unavailableSlots: number; shortageText: string | null; shortfallText: string | null; allowDuplicateGifts: boolean;
-    products: readonly Readonly<{ productId: string; name: string; imageUrl: string | null; options: readonly Readonly<{ variantId: string; label: string; stock: number }>[] }>[];
+    products: readonly Readonly<{ productId: string; name: string; imageUrl: string | null; options: readonly Readonly<{ variantId: string; label: string; stock: number; color: string | null; size: string | null }>[] }>[];
   }>[];
   selections: readonly Readonly<{ campaignId: string; variantId: string; campaignRevision: number; quantity: number; label: string; imageUrl?: string | null; problems?: readonly string[] }>[];
   /** Choices kept at a lower milestone the cart has moved past. Not in the order; taking a new gift replaces them. */
@@ -96,8 +96,10 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
       const selected = state.selections.filter((row) => row.campaignId === entry.campaignId).reduce((sum, row) => sum + row.quantity, 0);
       const campaign = state.campaigns.find((c) => c.id === entry.campaignId)!;
       const summary = state.validation.ok ? state.validation.summaries.find((row) => row.campaignId === entry.campaignId) : undefined;
-      const products = new Map<string, { productId: string; name: string; imageUrl: string | null; options: { variantId: string; label: string; stock: number }[] }>();
+      const products = new Map<string, { productId: string; name: string; imageUrl: string | null; options: { variantId: string; label: string; stock: number; color: string | null; size: string | null }[] }>();
       for (const option of campaign.options) {
+        // Show only gifts that can actually be awarded now; stale selections remain in the repair list.
+        if (option.readyAvailable <= 0) continue;
         const label = labelByVariant.get(option.variantId);
         if (!label) continue;
         const candidateImage = parseTrustedProductImageUrl(label.imageUrl);
@@ -105,7 +107,7 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
         if (!product.imageUrl && candidateImage) {
           product.imageUrl = candidateImage;
         }
-        product.options.push({ variantId: option.variantId, label: label.optionLabel || "Phiên bản tiêu chuẩn", stock: option.readyAvailable });
+        product.options.push({ variantId: option.variantId, label: label.optionLabel || "Phiên bản tiêu chuẩn", stock: option.readyAvailable, color: label.color ?? null, size: label.size ?? null });
         products.set(option.productId, product);
       }
       const shortfall = entry.shortfallToNext;
