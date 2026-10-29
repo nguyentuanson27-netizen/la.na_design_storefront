@@ -25,3 +25,5 @@
 | [0020](./0020-voucher-types-and-tiers.md) | **Proposed** (owner product rules decided 2026-10-28; migration approval pending) | Voucher types and tiers: several MERCHANDISE vouchers of different types stack in sequence by type priority, one tier per type, slot-keyed holds and redemptions |
 
 ADR files are retained as historical records when superseded or amended. The newest accepted ADR governs where decisions overlap, including repository workflow policy documented by ADR 0005, Merchant domain authority documented by ADR 0010, Merchant apparel-fact policy documented by ADR 0007, and Merchant manufacturer-MPN source/ownership semantics documented by ADR 0008.
+
+- [0021 — Derived list prices and campaign basis](0021-list-price-display-and-campaign-basis.md)

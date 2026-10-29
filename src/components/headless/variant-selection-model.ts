@@ -1,3 +1,4 @@
+import { resolveListPricePresentation } from "../../commerce/list-price.ts";
 import { formatVietnamCalendarDate } from "../../commerce/availability-cycle.ts";
 import { PREORDER_LABEL } from "../../commerce/preorder-fulfillment-presentation.ts";
 import { resolveStorefrontDiscountPresentation } from "../../commerce/storefront-discount-presentation.ts";
@@ -227,7 +228,16 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
    * here means a redrawn panel renders one thing instead of rediscovering which branch applies --
    * which is where a brand would get the struck-through amount wrong.
    */
-  const priceDisplay =
+  const priceOption = selection.selectedVariantId !== null
+    ? input.options.find((option) => option.id === selection.selectedVariantId)
+    : selectRepresentativeOffers(unselectedPriceOptions).representative;
+  const listPresentation = priceOption ? resolveListPricePresentation({ variantId: priceOption.id, basePriceVnd: priceOption.basePriceVnd, effectivePriceVnd: priceOption.price, listPriceVnd: priceOption.listPriceVnd ?? null, isDiscounted: priceOption.isDiscounted, enabled: priceOption.listPriceVnd !== undefined }) : null;
+  const priceDisplay = listPresentation ? {
+    isListReference: true,
+    displayText: currency.format(listPresentation.displayPriceVnd),
+    compareAtText: currency.format(listPresentation.referencePriceVnd),
+    discountPercent: listPresentation.badgePercent,
+  } :
     showsDiscount && selection.selectedBasePriceVnd !== null && selection.selectedPrice !== null
       ? {
           displayText: priceLabel,

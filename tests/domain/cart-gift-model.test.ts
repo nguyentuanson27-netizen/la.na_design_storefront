@@ -329,3 +329,18 @@ test("a gift kept at a replaced lower milestone is listed apart and is not repor
   const conflict = buildCartGiftPickerModel({ ...fixture, giftSuperseded: [] } as unknown as CartGiftState);
   assert.equal(conflict.stackConflict, true, "a drop with no running winner is still a conflict the buyer is told about");
 });
+
+test("list display prices each paid segment against one variant reference and excludes gift value",()=>{
+ process.env.LIST_PRICE_DISPLAY="true";
+ try {
+  const s=state();
+  const model=buildCartViewModel({lines:[line],commerceTrackingEnabled:false,giftState:s});
+  const prices=model.lines[0]!.paidSegmentPrices;
+  assert.deepEqual(prices?.map(price=>[price.quantity,price.priceText,price.originalPriceText,price.discountPercent]),[
+   [1,"90.001\u00a0₫","149.000\u00a0₫",40],
+   [2,"100.001\u00a0₫","149.000\u00a0₫",33],
+  ]);
+  assert.match(model.listPriceSavingsText!,/156.997/);
+  assert.equal(model.subtotalText,"290.003\u00a0₫");
+ }finally{delete process.env.LIST_PRICE_DISPLAY;}
+});

@@ -67,7 +67,8 @@ function render(data: CheckoutViewModel) {
               <p className="mt-1 text-xs leading-5 text-black/75">
                 <LinePrice
                   discountPercent={line.discountPercent}
-                  originalPriceText={line.originalPriceText}
+                  isListReference={line.isListReference}
+                      originalPriceText={line.originalPriceText}
                   priceText={line.promotionPriceText ?? line.unitPriceText ?? ""}
                 />
                 {line.promotionPriceText && line.unitPriceText ? (
@@ -141,7 +142,10 @@ function render(data: CheckoutViewModel) {
 
   // The bill in reading order: value, each discount, shipping, total.
   const totalsBlock = (
-    data.summary ? <OrderSummary summary={data.summary} /> : fallbackTotals
+    <>
+      {data.summary ? <OrderSummary summary={data.summary} /> : fallbackTotals}
+      {data.listPriceSavingsText ? <p className="mt-3 font-semibold" data-list-price-savings>Tiết kiệm so với giá niêm yết: {data.listPriceSavingsText}</p> : null}
+    </>
   );
 
   const summaryContent = (

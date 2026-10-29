@@ -5,10 +5,11 @@
  */
 export function LinePrice({
   priceText,
+  isListReference,
   originalPriceText,
   discountPercent,
   className = "",
-}: Readonly<{ priceText: string; originalPriceText?: string; discountPercent?: number; className?: string }>) {
+}: Readonly<{ priceText: string; isListReference?: boolean; originalPriceText?: string; discountPercent?: number; className?: string }>) {
   if (!originalPriceText) return <span className={className}>{priceText}</span>;
   return (
     <span className={`inline-flex flex-wrap items-baseline gap-x-1.5 ${className}`} data-line-discount>
@@ -17,7 +18,7 @@ export function LinePrice({
         {originalPriceText}
       </s>
       <span>
-        <span className="sr-only">Giá khuyến mãi </span>
+        <span className="sr-only">{isListReference ? "Giá giảm " : "Giá khuyến mãi "}</span>
         {priceText}
       </span>
       {discountPercent ? (
@@ -27,5 +28,23 @@ export function LinePrice({
         </span>
       ) : null}
     </span>
+  );
+}
+
+export function LinePriceSegments({ segments }: Readonly<{
+  segments: readonly Readonly<{
+    quantity: number;
+    priceText: string;
+    originalPriceText?: string;
+    discountPercent?: number;
+    isListReference?: boolean;
+  }>[];
+}>) {
+  return (
+    <div className="mt-1 space-y-1 text-sm" data-list-price-segments>
+      {segments.map((segment, index) => (
+        <p key={index}>{segment.quantity} × <LinePrice {...segment} /></p>
+      ))}
+    </div>
   );
 }

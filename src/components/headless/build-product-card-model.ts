@@ -1,3 +1,5 @@
+import { resolveListPricePresentation } from "../../commerce/list-price.ts";
+import { selectRepresentativeOffers } from "../../commerce/representative-offers.ts";
 import {
   OUT_OF_STOCK_LABEL,
   PREORDER_LABEL,
@@ -64,6 +66,7 @@ export type ProductCardModel = Readonly<{
   price: Readonly<{
     /** Formatted VND, ready to render. */
     displayText: string;
+    isListReference?: boolean;
     /** The struck-through amount, or `null` when nothing is struck through. */
     compareAtText: string | null;
     isRange: boolean;
@@ -317,11 +320,21 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
     flashSale && flashSale.basePriceVnd > flashSale.effectivePriceVnd
       ? Math.round((1 - flashSale.effectivePriceVnd / flashSale.basePriceVnd) * 100)
       : 0;
-  const discountPercent = flashSale ? flashSaleDiscountPercent : promotionSale?.discountPercent ?? 0;
+  const representative = flashSale
+    ? capacityOptions.find((option) => option.id === flashSale.representativeVariantId) ?? null
+    : selectRepresentativeOffers(capacityOptions).representative;
+  const listPresentation = representative ? resolveListPricePresentation({ variantId: representative.id, basePriceVnd: representative.basePriceVnd, effectivePriceVnd: flashSale?.effectivePriceVnd ?? representative.price, listPriceVnd: representative.listPriceVnd ?? null, isDiscounted: representative.isDiscounted, enabled: representative.listPriceVnd !== undefined }) : null;
+  const discountPercent = listPresentation?.badgePercent ?? (flashSale ? flashSaleDiscountPercent : promotionSale?.discountPercent ?? 0);
 
   const priceRange = options ? getStorefrontResolvedPriceRange(options) : null;
 
-  const price = flashSale
+  const price = listPresentation ? {
+    isListReference: true,
+    displayText: currency.format(listPresentation.displayPriceVnd),
+    compareAtText: currency.format(listPresentation.referencePriceVnd),
+    isRange: false,
+    discountPercent: listPresentation.badgePercent,
+  } : flashSale
     ? {
         displayText: describePromotionalPrice(flashSale),
         compareAtText: currency.format(flashSale.basePriceVnd),
@@ -373,6 +386,7 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
     // "Còn x" states the same thing more precisely, so a card that shows it drops this tag.
     lastSizesLeft:
       lowStockLabel === null
+      && (flashSale !== undefined || promotionSale !== null)
       && input.isClearance === true
       && discountPercent > 0
       && provesLastSizesLeft(capacityOptions),

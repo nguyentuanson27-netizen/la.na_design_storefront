@@ -7,7 +7,7 @@ import Link from "next/link";
 
 import { BRAND } from "@/brand";
 import { CartLineUrgency } from "@/components/brand/cart-line-urgency";
-import { LinePrice } from "@/components/brand/line-price";
+import { LinePrice, LinePriceSegments } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { OrderTrustLine } from "@/components/brand/order-trust-line";
 import {
@@ -291,14 +291,15 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                               </span>
                             )}
                             <p className="mt-0.5 text-xs text-[#70584B]">{line.optionLabel}</p>
-                            <p className="mt-1 font-sans text-xs font-semibold text-[#2A1810]">
+                            {line.paidSegmentPrices ? <LinePriceSegments segments={line.paidSegmentPrices} /> : <p className="mt-1 font-sans text-xs font-semibold text-[#2A1810]">
                               <LinePrice
                                 discountPercent={line.discountPercent}
+                                isListReference={line.isListReference}
                                 originalPriceText={line.originalPriceText}
                                 priceText={line.priceText}
                               />
-                            </p>
-                            {line.paidSegments ? (
+                            </p>}
+                            {line.paidSegments && !line.paidSegmentPrices ? (
                               <p className="mt-0.5 text-[0.7rem] text-[#70584B]" data-line-segments>
                                 Giá sau ưu đãi: {line.paidSegments.join(" + ")}
                               </p>
@@ -377,6 +378,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                   <PromotionProgressLine item={footerProgress} lineRef={observeNudge} />
                 </div>
               ) : null}
+              {cart.listPriceSavingsText ? <p className="text-sm font-semibold" data-list-price-savings>Tiết kiệm so với giá niêm yết: {cart.listPriceSavingsText}</p> : null}
               {cart.summary ? (
                 <OrderSummary summary={cart.summary} variant="compact" />
               ) : (

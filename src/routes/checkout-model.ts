@@ -1,3 +1,5 @@
+import { describeListPriceSavings } from "./list-price-savings.ts";
+import { readListPriceConfig } from "../commerce/list-price-config.ts";
 import type { CartGiftPickerModel } from "./cart-gift-model.ts";
 import type { BenefitCheckoutRender } from "../commerce/benefit-checkout-render.ts";
 import type { RenderedCheckoutQuoteFacts } from "../commerce/checkout-quote.ts";
@@ -52,6 +54,7 @@ export type CheckoutLineView = Readonly<{
   unitPriceText: string | null;
   /** A per-product promotion on this line: the catalog price to strike through. Absent when there is none. */
   originalPriceText?: string;
+  isListReference?: boolean;
   /** Whole percent off for that promotion; absent when there is none or it rounds under 1%. */
   discountPercent?: number;
   /**
@@ -151,6 +154,7 @@ export type CheckoutVoucherView = Readonly<
 
 export type CheckoutViewModel = Readonly<{
   state: CheckoutState;
+  listPriceSavingsText?: string;
   /** V18: absent unless the voucher feature has something to say about this cart. */
   vouchers?: CheckoutVoucherView;
   giftPicker?: CartGiftPickerModel;
@@ -218,15 +222,15 @@ export function benefitCheckoutPixelParameters(
   });
 }
 
-function checkoutDiscountEntry(discount: ReturnType<typeof describeLineDiscount>): { originalPriceText?: string; discountPercent?: number } {
+function checkoutDiscountEntry(discount: ReturnType<typeof describeLineDiscount>): { originalPriceText?: string; isListReference?: boolean; discountPercent?: number } {
   if (!discount) return {};
-  return { originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
+  return { ...(discount.isListReference ? { isListReference: true } : {}), originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
 }
 
 /** The per-product (legacy) step on a quote line: catalog price in, price after the promotion out. */
 function legacyStepDiscount(steps: readonly Readonly<{ source: string; inputPriceVnd: number; outputPriceVnd: number }>[]) {
   const step = steps.find((candidate) => candidate.source === "LEGACY");
-  return step ? describeLineDiscount(step.inputPriceVnd, step.outputPriceVnd) : null;
+  return step ? describeLineDiscount(step.inputPriceVnd, step.outputPriceVnd, false) : null;
 }
 
 /**
@@ -238,8 +242,15 @@ function legacyStepDiscount(steps: readonly Readonly<{ source: string; inputPric
  */
 function paidLineDiscount(
   cartLine: StorefrontCartLine | undefined,
-  fact: Readonly<{ unitPriceVnd: number; discountSteps: readonly Readonly<{ source: string; inputPriceVnd: number; outputPriceVnd: number }>[] }>,
-): { originalPriceText?: string; discountPercent?: number; promotionPriceText?: string } {
+  fact: Pick<QuoteLine, "unitPriceVnd" | "discountSteps">,
+): { originalPriceText?: string; isListReference?: boolean; discountPercent?: number; promotionPriceText?: string } {
+  if (readListPriceConfig().display && cartLine?.price != null) {
+    const discount = describeLineDiscount(cartLine.basePrice ?? cartLine.price, fact.unitPriceVnd, true, cartLine.variantId);
+    if (discount?.isListReference) return checkoutDiscountEntry(discount);
+  }
+  // The legacy campaign presentation excludes vouchers from its separate promotion label.
+  // A valid list reference instead uses the final unit price displayed on this same line.
+  fact = stripVoucherStep(fact);
   const tierApplied = fact.discountSteps.some((step) => step.source === "QUANTITY_TIER");
   // Without the cart line's own catalog price the quote's legacy step is the only evidence, and it is a
   // sound one only when no tier ran before it (a tier's output is then not the catalog price).
@@ -315,7 +326,9 @@ export function buildCheckoutViewModel(
     expectedTotalVnd: totals.totalVnd,
   });
 
+  const listPriceSavingsText = describeListPriceSavings(input.lines, totals.merchandiseSubtotalVnd);
   return Object.freeze({
+    ...(listPriceSavingsText ? { listPriceSavingsText } : {}),
     state: "ready",
     lines: Object.freeze(
       input.lines.map((line) =>
@@ -328,7 +341,7 @@ export function buildCheckoutViewModel(
           // The charged unit price: a struck-through catalog price is only honest beside the price paid, and
           // the line total on the right cannot stand in for it when more than one is bought.
           unitPriceText: line.price === null ? null : currency.format(line.price),
-          ...checkoutDiscountEntry(describeLineDiscount(line.basePrice, line.price)),
+          ...checkoutDiscountEntry(describeLineDiscount(line.basePrice, line.price, undefined, line.variantId)),
           quantity: line.quantity,
           // `ready` means every line priced, so the fallback is unreachable rather than lenient.
           lineTotalText: currency.format((line.price ?? 0) * line.quantity),
@@ -431,7 +444,7 @@ export function buildBenefitCheckoutViewModel(
         optionLabel: cartLine ? [cartLine.color, cartLine.size].filter(Boolean).join(" / ") || "Biến thể" : "Biến thể",
         quantity: fact.quantity,
         unitPriceText: currency.format(fact.unitPriceVnd),
-        ...paidLineDiscount(cartLine, stripVoucherStep(fact)),
+        ...paidLineDiscount(cartLine, fact),
         lineTotalText: currency.format(fact.lineTotalVnd),
         preorderLabel: fact.fulfillmentState === "PREORDER" ? PREORDER_LABEL : null,
       }),
@@ -491,7 +504,9 @@ export function buildBenefitCheckoutViewModel(
         ...(shippingVoucher ? { shippingVoucher } : {}),
       });
 
+  const listPriceSavingsText = describeListPriceSavings(input.lines, facts.paidSubtotalVnd);
   return Object.freeze({
+    ...(listPriceSavingsText ? { listPriceSavingsText } : {}),
     state: "ready",
     lines: Object.freeze(paidLines),
     totals: Object.freeze({

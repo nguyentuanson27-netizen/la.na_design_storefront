@@ -1,3 +1,6 @@
+import { describeListPriceSavings } from "./list-price-savings.ts";
+import { computeListPriceVnd } from "../commerce/list-price.ts";
+import { readListPriceConfig } from "../commerce/list-price-config.ts";
 import {
   buildPreorderFulfillmentNotice,
   PREORDER_LABEL,
@@ -40,6 +43,7 @@ export type CartLineView = Readonly<{
   priceText: string;
   /** A per-product promotion: the catalog price to strike through. Absent on an undiscounted line. */
   originalPriceText?: string;
+  isListReference?: boolean;
   /** Whole percent off for that promotion; absent when there is none or it rounds under 1%. */
   discountPercent?: number;
   available: boolean;
@@ -64,6 +68,7 @@ export type CartLineView = Readonly<{
    */
   preorderLabel: string | null;
   paidSegments?: readonly string[];
+  paidSegmentPrices?: readonly Readonly<{ quantity: number; priceText: string; originalPriceText?: string; discountPercent?: number; isListReference?: boolean }>[];
   /** What this line costs in total (benefit-tier prices included); absent when it is not bought. */
   lineTotalText?: string;
   /**
@@ -76,6 +81,7 @@ export type CartLineView = Readonly<{
 }>;
 
 export type CartViewModel = Readonly<{
+  listPriceSavingsText?: string;
   isEmpty: boolean;
   lines: readonly CartLineView[];
   lineCount: number;
@@ -111,7 +117,7 @@ export type CartViewModel = Readonly<{
    * The list-price total struck through beside what the buyer saves, when something is saved
    * (per-product sales and benefit-tier prices). Absent when nothing is, or the total is unknown.
    */
-  savings?: Readonly<{ originalTotalText: string; savingText: string }>;
+  savings?: Readonly<{ originalTotalLabel: string; savingLabel: string; originalTotalText: string; savingText: string }>;
 }>;
 
 /** A line's countdown and "Còn x", said only for a line being bought, and a countdown only beside a struck price. */
@@ -269,17 +275,22 @@ function savingsEntry(
   let original = 0;
   for (const line of lines) {
     if (!line.available || line.price === null) continue;
-    original += Math.max(line.basePrice ?? line.price, line.price) * line.quantity;
+    original += Math.max((readListPriceConfig().display ? computeListPriceVnd(line.basePrice ?? line.price) : null) ?? line.basePrice ?? line.price, line.price) * line.quantity;
   }
   const saving = original - payableVnd;
   if (!Number.isSafeInteger(original) || !Number.isSafeInteger(saving) || saving <= 0) return {};
-  return { savings: Object.freeze({ originalTotalText: currency.format(original), savingText: currency.format(saving) }) };
+  const displayListPrice = readListPriceConfig().display;
+  return { savings: Object.freeze({
+    originalTotalLabel: displayListPrice ? "Tổng theo giá niêm yết" : "Tổng",
+    savingLabel: displayListPrice ? "Tiết kiệm so với giá niêm yết" : "Tiết kiệm",
+    originalTotalText: currency.format(original), savingText: currency.format(saving),
+  }) };
 }
 
-function lineDiscountEntry(line: StorefrontCartLine): { originalPriceText?: string; discountPercent?: number } {
-  const discount = line.available ? describeLineDiscount(line.basePrice, line.price) : null;
+function lineDiscountEntry(line: StorefrontCartLine): { originalPriceText?: string; isListReference?: boolean; discountPercent?: number } {
+  const discount = line.available ? describeLineDiscount(line.basePrice, line.price, undefined, line.variantId) : null;
   if (!discount) return {};
-  return { originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
+  return { ...(discount.isListReference ? { isListReference: true } : {}), originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
 }
 
 /**
@@ -347,6 +358,11 @@ export function buildCartViewModel(
           quantity: line.quantity,
           priceText: line.price === null ? "Giá đang cập nhật" : currency.format(line.price),
           ...lineDiscountEntry(line),
+          ...(readListPriceConfig().display && paidBenefits?.groups.some((group) => group.lineKey === line.variantId && group.unitPriceVnd !== line.price)
+            ? { paidSegmentPrices: paidBenefits.groups.filter((group) => group.lineKey === line.variantId).map((group) => {
+                const discount = describeLineDiscount(line.basePrice ?? line.price, group.unitPriceVnd, true, line.variantId);
+                return { quantity: group.quantity, priceText: currency.format(group.unitPriceVnd), ...(discount ? { originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }), ...(discount.isListReference ? { isListReference: true } : {}) } : {}) };
+              }) } : {}),
           available: line.available,
           availabilityLabel: line.available ? "Có thể mua" : cartUnavailableLabel(line),
           canUpdate: line.available || line.unavailableReason === "INSUFFICIENT_STOCK",
@@ -369,6 +385,7 @@ export function buildCartViewModel(
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
     ...promotionsEntry(state, benefitBlocked, input.lines),
     ...savingsEntry(input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true),
+    ...(!input.benefitsUnavailable && describeListPriceSavings(input.lines, paidBenefits?.subtotalVnd ?? subtotal) ? { listPriceSavingsText: describeListPriceSavings(input.lines, paidBenefits?.subtotalVnd ?? subtotal)! } : {}),
     ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines), input.shippingQuote),
     ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa kiểm tra được ưu đãi của giỏ hàng. Nàng thử lại trước khi đặt hàng nhé." : state && !state.validation.ok
       ? "Quà nàng chọn không còn hợp lệ, có thể do số lượng sản phẩm vừa thay đổi nên chương trình tặng quà đã đổi, hoặc quà đã hết hàng. Nàng chọn lại quà trong giỏ hàng trước khi đặt hàng nhé."

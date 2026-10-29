@@ -8,7 +8,7 @@ import { CartLineJumpLink } from "@/components/brand/cart-line-jump-link";
 import { CartLineUrgency } from "@/components/brand/cart-line-urgency";
 import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
-import { LinePrice } from "@/components/brand/line-price";
+import { LinePrice, LinePriceSegments } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { OrderTrustLine } from "@/components/brand/order-trust-line";
 import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
@@ -96,14 +96,14 @@ function render(data: CartRouteViewModel) {
       <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.34fr)] lg:gap-16">
         <div className="min-w-0">
           {data.savings ? (
-            <dl className="mb-6 ml-auto w-full max-w-[17.5rem] space-y-1.5 text-[0.95rem]" data-cart-savings>
+            <dl className="mb-6 ml-auto w-full max-w-sm space-y-1.5 text-[0.95rem]" data-cart-savings>
               <div className="flex items-baseline justify-between gap-4 px-3">
-                <dt className="text-black/70">Tổng</dt>
-                <dd className="text-black/60 line-through">{data.savings.originalTotalText}</dd>
+                <dt className="text-black/70">{data.savings.originalTotalLabel}</dt>
+                <dd className="shrink-0 text-black/60 line-through">{data.savings.originalTotalText}</dd>
               </div>
               <div className="flex items-baseline justify-between gap-4 rounded-lg border border-[#1f7a5c] px-3 py-1 font-semibold text-[#1f6b51]">
-                <dt>Tiết kiệm</dt>
-                <dd>{data.savings.savingText}</dd>
+                <dt>{data.savings.savingLabel}</dt>
+                <dd className="shrink-0">{data.savings.savingText}</dd>
               </div>
             </dl>
           ) : null}
@@ -158,14 +158,15 @@ function render(data: CartRouteViewModel) {
                   )}
                   {/* The per-product sale stays on the line whatever else applies; a quantity or order-value
                       price is the breakdown below it, never a replacement for it. */}
-                  <p className="mt-1 text-sm text-black/65">
+                  {line.paidSegmentPrices ? <LinePriceSegments segments={line.paidSegmentPrices} /> : <p className="mt-1 text-sm text-black/65">
                     <LinePrice
                       discountPercent={line.discountPercent}
+                      isListReference={line.isListReference}
                       originalPriceText={line.originalPriceText}
                       priceText={line.priceText}
                     />
-                  </p>
-                  {line.paidSegments ? <p className="mt-1 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
+                  </p>}
+                  {line.paidSegments && !line.paidSegmentPrices ? <p className="mt-1 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
                   <CartLineUrgency className="mt-1.5" flashRemainingMs={line.flashRemainingMs} lowStockText={line.lowStockText} />
                   {line.available ? null : (
                     <p className="mt-1.5 text-xs font-semibold uppercase tracking-[0.12em]" data-line-problem="">
