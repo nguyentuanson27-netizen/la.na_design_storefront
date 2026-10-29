@@ -74,18 +74,18 @@ page-load autoplay"; the owner asked for it). It is built to cost the photograph
 - It is not mounted at all under `prefers-reduced-motion`, Data Saver or a 2G link
   (`use-inline-video-allowed.ts`, which also follows the shopper changing reduced motion or the
   connection while the page is open); the frame stays a poster and the dialog is one tap away.
-- At every width a close button (`Đóng video nhỏ`) on the frame's corner stops and unmounts the preview
-  (WCAG 2.2.2 pause/stop/hide for motion that starts by itself); the poster frame stays, and the
-  preview stays stopped through opening and closing the dialog.
+- At every width and in both floating/docked layouts, the close button (`Đóng video nhỏ`) stays available
+  even for a poster under reduced motion, Data Saver, slow connections or preview errors. It dismisses
+  the entire frame, including the preview, poster and Xem video opener
+  (WCAG 2.2.2 pause/stop/hide). Playback is released and focus returns to the photo gallery.
+  The frame stays dismissed for this page view, including preference and layout changes.
 - A load error, or metadata with no picture (HEVC discarded by the browser), removes the preview and
   leaves the poster. It sends no telemetry, so attempt/failure counters still mean explicit openings.
 
 Desktop mini-player rules. It floats only while the photographs are in view (the gallery's bottom edge
 is in the top three quarters of the viewport); scrolling on towards the purchase panel docks it back
 onto the photograph, where it would otherwise sit over the price and the buy buttons, and scrolling
-back up floats it again. Stopping it with the button ends the preview for that page view: on desktop the original
-small 96x76 poster tile (no preview) stays on the photograph's right edge, as it does when the
-preview is not allowed; on a phone the 9:16 poster frame stays. Before the page has loaded the tile is that same small poster tile.
+back up floats it again. Closing it with the button removes the whole video frame at every width.
 Dismissal is not remembered across pages.
 
 Tapping the frame opens a native modal dialog with a 9:16 player (`max-w-md`, the same on every width).

@@ -125,7 +125,7 @@ for (const width of [320, 390, 768, 1024, 1440]) {
       await page.mouse.wheel(0, 700);
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
       await expect(slot).toHaveAttribute("data-float", "false");
-      await expect(stop).toHaveCount(0);
+      await expect(stop).toBeVisible();
       await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
       await page.evaluate(() => window.scrollTo(0, 0));
       await expect(slot).toHaveAttribute("data-float", "true");
@@ -153,38 +153,18 @@ for (const width of [320, 390, 768, 1024, 1440]) {
     await expect(page.locator("dialog video, dialog source")).toHaveCount(0);
     await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
 
+    // Dismiss removes the whole frame, poster and opener at every width.
+    await stop.click();
+    await expect(page.locator(".pdp-video-slot, video, source")).toHaveCount(0);
+    await expect(tile).toHaveCount(0);
+    await expect(page.locator(".pdp-stage")).toBeFocused();
     if (floatingLayout) {
-      // Closing the mini-player leaves the original small poster tile inside the primary photo.
-      await stop.click();
-      await expect(stop).toHaveCount(0);
-      await expect(page.locator("video, source")).toHaveCount(0);
-      await expect(tile).toBeFocused();
-      const small = (await tile.boundingBox())!;
-      expect([small.width, small.height]).toEqual([96, 76]);
-      const primaryPhoto = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
-      expect(small.x).toBeGreaterThanOrEqual(primaryPhoto.x - 1);
-      expect(small.y).toBeGreaterThanOrEqual(primaryPhoto.y - 1);
-      expect(small.x + small.width).toBeLessThanOrEqual(primaryPhoto.x + primaryPhoto.width + 1);
-      expect(small.y + small.height).toBeLessThanOrEqual(primaryPhoto.y + primaryPhoto.height + 1);
-      expect(primaryPhoto.x + primaryPhoto.width - small.x - small.width).toBeCloseTo(16, 0);
-      expect(small.y + small.height).toBeLessThanOrEqual(c.y);
       await page.getByRole("button", { name: "Ảnh tiếp theo", exact: true }).click();
       await expect(counter).toHaveText("Trang ảnh 2 / 2");
-      await page.getByRole("button", { name: "Ảnh trước", exact: true }).click();
-      await expect(counter).toHaveText("Trang ảnh 1 / 2");
     } else {
-      // Stopping leaves the 9:16 poster frame, which stays stopped, and the page stays usable.
-      await stop.click();
-      await expect(stop).toHaveCount(0);
-      await expect(page.locator("video, source")).toHaveCount(0);
-      await expect(tile).toBeFocused();
-      const poster = (await tile.boundingBox())!;
-      expect(poster.height / poster.width).toBeCloseTo(16 / 9, 1);
       await page.locator(".pdp-mobile-gallery__image").first().focus();
       await page.keyboard.press("ArrowRight");
       await expect(counter).toHaveText("2/3");
-      await page.keyboard.press("ArrowLeft");
-      await expect(counter).toHaveText("1/3");
     }
   });
 }
@@ -200,7 +180,7 @@ test("one-photo desktop gallery anchors the fallback tile inside its centered pr
     await expect(tile).toHaveCount(1);
     await page.waitForLoadState("load");
     await expect(page.locator("video")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toBeVisible();
     const photo = (await page.locator('.pdp-stage__slide[data-active="true"] .pdp-stage__cell').first().boundingBox())!;
     const t = (await tile.boundingBox())!;
     expect([t.width, t.height]).toEqual([96, 76]);
@@ -218,7 +198,7 @@ test("one-photo desktop gallery anchors the fallback tile inside its centered pr
   }
 });
 
-test("on a phone the shopper can stop the preview and opening or closing the dialog never restarts it", async ({ page }) => {
+test("on a phone dismiss removes the entire video frame and selection stays usable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await serveVideo(page);
   await page.goto(`${BASE}/shop/${slug}`);
@@ -226,13 +206,13 @@ test("on a phone the shopper can stop the preview and opening or closing the dia
   await expect(tile.locator("video")).toHaveAttribute("data-playing", "true");
   await page.getByRole("button", { name: "Đóng video nhỏ", exact: true }).click();
   await expect(page.locator("video")).toHaveCount(0);
-  await tile.click();
-  const dialog = page.getByRole("dialog", { name: `Video ${productName}` });
-  await expect(dialog).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(dialog).not.toBeVisible();
-  await page.waitForTimeout(300);
-  await expect(page.locator("video")).toHaveCount(0);
+  await expect(tile).toHaveCount(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(page.locator(".pdp-video-slot, video")).toHaveCount(0);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator(".pdp-video-slot, video")).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 800 });
   await page.getByRole("group", { name: /^Kích cỡ/ }).getByText("L", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "L", exact: true })).toBeChecked();
 });
@@ -272,7 +252,7 @@ test("turning on reduced motion while the page is open stops and removes the pre
   await expect(tile.locator("video")).toHaveAttribute("data-playing", "true");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.locator("video")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toBeVisible();
   await expect(tile).toBeVisible();
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await expect(tile.locator("video")).toHaveAttribute("data-playing", "true");
@@ -358,7 +338,7 @@ test("in a window too short for the mini-player it stays a small poster tile on 
   await page.waitForLoadState("load");
   await page.waitForTimeout(400);
   await expect(page.locator(".pdp-video-slot")).toHaveAttribute("data-float", "false");
-  await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Đóng video nhỏ", exact: true })).toBeVisible();
   const box = (await tile.boundingBox())!;
   expect([box.width, box.height]).toEqual([96, 76]);
   expect(box.y).toBeGreaterThanOrEqual(0);
@@ -368,6 +348,44 @@ test("in a window too short for the mini-player it stays a small poster tile on 
   await tile.click();
   await expect(page.getByRole("dialog", { name: `Video ${productName}` })).toBeVisible();
 });
+
+for (const mode of ["reduced-motion", "data-saver", "2g", "preview-error", "desktop-dock"] as const) {
+  test(`the entire frame can be dismissed with ${mode}`, async ({ page }) => {
+    await page.setViewportSize({ width: mode === "desktop-dock" ? 1280 : 390, height: 800 });
+    if (mode === "reduced-motion") await page.emulateMedia({ reducedMotion: "reduce" });
+    if (mode === "data-saver" || mode === "2g") {
+      await page.addInitScript((mode) => {
+        const connection = Object.assign(new EventTarget(), { saveData: mode === "data-saver", effectiveType: mode === "2g" ? "2g" : "4g" });
+        Object.defineProperty(navigator, "connection", { configurable: true, value: connection });
+      }, mode);
+    }
+    let previewRequested = false;
+    if (mode === "preview-error") await page.route(VIDEO_A, (route) => { previewRequested = true; return route.abort(); });
+    else await serveVideo(page);
+    await page.goto(`${BASE}/shop/${slug}`);
+    const tile = page.getByRole("button", { name: "Xem video", exact: true });
+    await expect(tile).toBeVisible();
+    if (mode === "preview-error") await expect.poll(() => previewRequested).toBe(true);
+    if (mode === "desktop-dock") {
+      await expect(page.locator(".pdp-video-slot")).toHaveAttribute("data-float", "true");
+      await page.mouse.wheel(0, 350);
+      await expect(page.locator(".pdp-video-slot")).toHaveAttribute("data-float", "false");
+      await expect.poll(() => tile.locator("video").evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+    } else {
+      await expect(tile.locator("video")).toHaveCount(0);
+    }
+    const dismiss = page.getByRole("button", { name: "Đóng video nhỏ", exact: true });
+    await expect(dismiss).toBeVisible();
+    await dismiss.click();
+    await expect(page.locator(".pdp-video-slot, video, source")).toHaveCount(0);
+    await expect(tile).toHaveCount(0);
+    await expect(page.locator(".pdp-stage")).toBeFocused();
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.locator(".pdp-video-slot")).toHaveCount(0);
+  });
+}
 
 test("a browser that refuses sound without its own gesture leaves the player on its controls with a hint", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });

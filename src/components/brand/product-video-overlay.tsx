@@ -26,8 +26,7 @@ function releaseVideo(video: HTMLVideoElement | null) {
  * The frame is a 9:16 muted, looping preview that starts by itself: on the photograph below `lg`, a
  * floating mini-player pinned to the viewport's bottom right from `lg` while the photographs are in
  * view (scrolling on to the purchase panel docks it back onto the photograph). At every width a
- * close button on its corner stops the preview (WCAG 2.2.2) and leaves the poster, which stays
- * stopped through opening and closing the dialog. Tapping the frame opens the same video in a dialog with
+ * close button on its corner dismisses the entire video frame for this page view (WCAG 2.2.2). Tapping the frame opens the same video in a dialog with
  * sound and controls, which carries on from the second the preview had reached rather than
  * restarting, and hands the second it left off at back to the preview. The preview costs the photographs nothing: the poster is an
  * optimised photograph that paints with the page, and the video is requested only once the document
@@ -160,6 +159,8 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
     if (previewVisible.current && !document.hidden) void preview.current?.play().catch(() => undefined);
   }
 
+  if (stopped) return null;
+
   return (
     <div className="pdp-video-slot" data-float={floating ? "true" : "false"}>
       <button
@@ -216,19 +217,19 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
           Xem video
         </span>
       </button>
-      {showPreview && (layout === "phone" || floating) ? (
-        <button
-          type="button"
-          className="pdp-video-slot__close"
-          aria-label="Đóng video nhỏ"
-          onClick={() => {
-            setStopped(true);
-            opener.current?.focus({ preventScroll: true });
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className="pdp-video-slot__close"
+        aria-label="Đóng video nhỏ"
+        onClick={() => {
+          releaseVideo(preview.current);
+          const gallery = opener.current?.closest<HTMLElement>(".pdp-stage");
+          gallery?.focus({ preventScroll: true });
+          setStopped(true);
+        }}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
       <dialog
         ref={dialog}
         aria-labelledby={titleId}
