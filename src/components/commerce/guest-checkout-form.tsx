@@ -525,11 +525,11 @@ export function GuestCheckoutForm({
       <div className="checkout-receiving-fields min-w-0 space-y-5">
       {/* UX-08: why the order cannot be placed, and how to fix it, before the first field. */}
       {unavailableNotice ? <div id="checkout-blocking-notice" tabIndex={-1} role="alert" className="border border-[#b42318]/50 px-4 py-3 text-sm"><p className="font-semibold">Giỏ hàng cần xem lại một chút</p><p className="mt-1 leading-6">{unavailableNotice}</p><div className="flex flex-wrap items-center gap-x-4"><button type="button" className="min-h-11 underline" disabled={isRefreshingQuote || giftPending || isSubmitting} onClick={refreshQuote}>Cập nhật giá</button><Link href="/cart" className="min-h-11 content-center underline">Quay lại giỏ hàng</Link></div></div> : null}
-      {upsellEnabled && quoteProof ? (
+      {upsellEnabled ? (
         <CheckoutUpsellLoader
           quoteProof={quoteProof}
           quoteRenderId={quoteRenderId}
-          // Keep this component mounted across transient geo failures: it owns D-06 dismissal.
+          // Geo failures or a missing quote must not unmount the D-06 dismissal owner.
           ready={!provinceLoading && !communeLoading && !geoError && provinces.length > 0}
           locked={isSubmitting || lockSubmission || giftPending || isRefreshingQuote}
         />
