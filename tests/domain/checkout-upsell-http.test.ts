@@ -41,3 +41,48 @@ test("upsell read rejects non-json media types and content-length over the byte 
     body: JSON.stringify({ quoteProof: "abc.def" }),
   })), null);
 });
+
+test("an unfinished body cannot occupy an upsell slot forever, even if cancellation never resolves", { timeout: 4000 }, async () => {
+  let cancellationRequested = false;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"quoteProof":"abc.def"'));
+      // The client keeps the connection open without finishing the JSON.
+    },
+    cancel() {
+      cancellationRequested = true;
+      return new Promise<void>(() => {}); // an uncooperative stream
+    },
+  });
+  const stalled = new Request("https://store.example/api/checkout/upsell", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+  const started = Date.now();
+  assert.equal(await readCheckoutUpsellProof(stalled), null);
+  assert.equal(cancellationRequested, true);
+  assert.ok(Date.now() - started < 3000, "the deadline must release the body-read slot promptly");
+});
+
+test("oversized streaming bodies fail without awaiting a stuck cancel handler", { timeout: 4000 }, async () => {
+  let cancellationRequested = false;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) { controller.enqueue(new Uint8Array(MAX_UPSELL_REQUEST_BYTES + 1)); },
+    cancel() {
+      cancellationRequested = true;
+      return new Promise<void>(() => {});
+    },
+  });
+  const oversized = new Request("https://store.example/api/checkout/upsell", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+  const started = Date.now();
+  assert.equal(await readCheckoutUpsellProof(oversized), null);
+  assert.equal(cancellationRequested, true);
+  assert.ok(Date.now() - started < 3000, "rejecting an oversized body must not wait on cancellation");
+});
