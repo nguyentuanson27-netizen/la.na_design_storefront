@@ -11,14 +11,15 @@ function request(body: string, origin = "https://store.example") {
 }
 
 test("upsell read requires a same-origin POST even when browser cookies would be attached", () => {
-  assert.equal(isSameOriginUpsellRequest(request("{}")), true);
-  assert.equal(isSameOriginUpsellRequest(request("{}", "https://evil.example")), false);
+  assert.equal(isSameOriginUpsellRequest(request("{}"), "https://store.example"), true);
+  assert.equal(isSameOriginUpsellRequest(request("{}", "https://evil.example"), "https://store.example"), false);
+  assert.equal(isSameOriginUpsellRequest(request("{}"), "https://other.example"), false, "never trust the request Host over configured origin");
   assert.equal(isSameOriginUpsellRequest(new Request("https://store.example/api/checkout/upsell", {
     method: "POST", headers: { "content-type": "application/json" }, body: "{}",
-  })), false);
+  }), "https://store.example"), false);
   assert.equal(isSameOriginUpsellRequest(new Request("https://store.example/api/checkout/upsell", {
     method: "POST", headers: { origin: "https://store.example", "sec-fetch-site": "cross-site" }, body: "{}",
-  })), false);
+  }), "https://store.example"), false);
 });
 
 test("upsell request accepts only one bounded quote proof, never cart ids or client prices", async () => {
