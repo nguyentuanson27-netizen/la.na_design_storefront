@@ -289,7 +289,40 @@ export function createCartGiftSelectionService(client: PrismaClient, store: Cook
 
   async function get(now = new Date()) {
     if (!isGiftQuantityPromotionsEnabled(env)) return { enabled: false } as const;
-    return withCart(now, async (tx, cartId) => ({ ok: true, state: await readCartGiftState(tx, cartId, shopId, now, env) } as const));
+    return withCart(now, async (tx, cartId) => {
+      let state = await readCartGiftState(tx, cartId, shopId, now, env);
+      if (state.replacedSelections.length === 0) return { ok: true, state } as const;
+
+      // On the first cart read after an upgraded milestone, retire superseded gifts under the
+      // same cart/campaign locks as a buyer mutation. Preserve the exact variant only when an
+      // eligible higher campaign offers it and the full selection still passes stock/slot rules.
+      // Different gifts must not reappear if the cart later drops back to an earlier milestone.
+      const kept: GiftSelectionLine[] = [...state.selections];
+      const canTransfer = state.validation.ok && state.quote.lines.every((line) => line.available);
+      for (const old of state.replacedSelections) {
+        if (canTransfer) for (const higherId of old.replacedByCampaignIds) {
+          const campaign = state.campaigns.find((row) => row.id === higherId);
+          const entitlement = state.entitlements.find((row) => row.campaignId === higherId);
+          if (!campaign || !entitlement || entitlement.entitled < 1 ||
+            !campaign.options.some((option) => option.variantId === old.variantId && option.readyAvailable > 0)) continue;
+
+          const candidate: GiftSelectionLine = {
+            campaignId: higherId, variantId: old.variantId, quantity: old.quantity,
+            campaignRevision: entitlement.revision,
+          };
+          if (!validateGiftSelections({ campaigns: state.campaigns, entitlements: state.entitlements,
+            selection: [...kept, candidate] }).ok) continue;
+          const saved = await setCartGiftSelection(tx, { cartId, ...candidate });
+          if (!saved.ok) throw new Error("Gift milestone transfer failed");
+          kept.push(candidate);
+          break;
+        }
+        await removeCartGiftSelection(tx, { cartId, campaignId: old.campaignId, variantId: old.variantId });
+      }
+      // Return the post-reconciliation authority, never a model computed from obsolete rows.
+      state = await readCartGiftState(tx, cartId, shopId, now, env);
+      return { ok: true, state } as const;
+    });
   }
 
   async function set(input: unknown, now = new Date()) {
