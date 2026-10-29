@@ -112,7 +112,7 @@ test("cart has one functional gift picker above paid products on mobile and desk
   await expect(page.locator('[data-promotion-banner="full"] [data-promotion-kind="GIFT"][data-promotion-state="achieved"]')).toHaveCount(0);
 });
 
-test("moving up to a higher gift milestone sets the earlier gift aside, back down restores it, and taking the new gift swaps it out", async ({ page }) => {
+test("moving up to a higher gift milestone retires the earlier gift on the next read, and back down does not restore it", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   // Two milestones that do not stack: 200.000đ earns the lower one, 300.000đ the higher one.
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { awardMode: "ONCE", maxGiftsPerOrder: 1 } });
@@ -134,28 +134,27 @@ test("moving up to a higher gift milestone sets the earlier gift aside, back dow
 
   await setPaidQuantity(3);
   await page.reload();
-  await expect(picker.locator("[data-gift-replaced-notice]")).toBeVisible();
+  // The cart read after the upgrade retires the lower milestone's gift: nothing is kept aside.
+  await expect(picker.locator("[data-gift-replaced-notice]")).toHaveCount(0);
+  await expect(picker.locator("[data-gift-replaced]")).toHaveCount(0);
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/1", { message: "the earlier gift no longer counts towards the order" });
   await expect(picker.getByText("liên hệ shop", { exact: false })).toHaveCount(0);
+  await expect.poll(() => prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
   const toggle = picker.locator("button[aria-controls]");
   await toggle.click();
-  await expect(picker.locator(`[data-gift-replaced="${campaignId}/${giftId}"]`)).toContainText("Quà mốc trước: Khăn quà");
   expect((await new AxeBuilder({ page }).include("#cart-gifts").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
 
-  // Back at the lower milestone before swapping, the kept choice counts again.
+  // Back at the lower milestone the retired choice does not come back.
   await setPaidQuantity(2);
   await page.reload();
-  await expect(picker.locator("[data-gift-replaced-notice]")).toHaveCount(0);
-  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/1");
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/1");
 
   await setPaidQuantity(3);
   await page.reload();
   await toggle.click();
   await picker.getByRole("button", { name: "Túi quà", exact: true }).click();
   await picker.getByRole("button", { name: "Nhận quà này" }).click();
-  await expect(picker.getByRole("status")).toContainText("Quà của mốc trước đã được thay bằng món này");
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/1");
-  await expect(picker.locator("[data-gift-replaced]")).toHaveCount(0);
   await expect.poll(() => prisma.cartGiftSelection.findMany({ where: { cartId }, select: { campaignId: true } })).toEqual([{ campaignId: higherId }]);
 });
 

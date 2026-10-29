@@ -9,6 +9,8 @@ export function useCartGifts(onBusyChange?: (pending: boolean) => void, locked =
   const [pending, startTransition] = useTransition();
   const [uncertain, setUncertain] = useState(false);
   const [message, setMessage] = useState("");
+  // Counts server-confirmed saves only; a refusal or a read-back never raises it.
+  const [savedCount, setSavedCount] = useState(0);
   const busy = useRef(false);
   const unknown = useRef(false);
   useEffect(() => {
@@ -43,6 +45,7 @@ export function useCartGifts(onBusyChange?: (pending: boolean) => void, locked =
       const outcome = giftMutationOutcome(result);
       if (outcome === "readback") { await readback(); return; }
       if (outcome === "saved") {
+        setSavedCount((count) => count + 1);
         const swapped = result && "replaced" in result && (result.replaced ?? 0) > 0;
         setMessage(removed > 0 ? `Đã bỏ ${removed} quà ${label} khỏi đơn.`
           : `Đã thêm vào đơn: ${label}.${swapped ? " Quà của mốc trước đã được thay bằng món này." : ""}`);
@@ -55,5 +58,5 @@ export function useCartGifts(onBusyChange?: (pending: boolean) => void, locked =
     });
     return true;
   }
-  return { pending, uncertain, message, change, retryRead };
+  return { pending, uncertain, message, savedCount, change, retryRead };
 }
