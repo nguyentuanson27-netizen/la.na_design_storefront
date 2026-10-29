@@ -21,6 +21,8 @@ const bucketIds = [
   `checkout-client:${otherClientKey}`,
   `checkout-geo-client:${clientKey}`,
   `checkout-geo-client:${otherClientKey}`,
+  `checkout-upsell-client:${clientKey}`,
+  `checkout-upsell-client:${otherClientKey}`,
 ];
 const start = new Date("2026-08-12T05:40:00.000Z");
 
@@ -110,6 +112,22 @@ test("checkout geo reads use a separate trusted-client bucket from checkout subm
   });
   assert.equal(geoBucket.count, 4);
   assert.equal(geoBucket.lastRequest, BigInt(start.getTime()));
+});
+
+test("upsell recommendations have a separate limiter that cannot block checkout or geo reads", async () => {
+  await cleanup();
+  const limiter = createGuestCheckoutRateLimiter(prisma, {
+    maxUpsellClientAttempts: 2,
+    upsellClientWindowMs: 60_000,
+    maxClientAttempts: 1,
+    maxGeoClientAttempts: 1,
+  });
+  const attempts = await Promise.all(Array.from({ length: 4 }, () => limiter.consumeUpsellClient({ clientKey, now: start })));
+  assert.equal(attempts.filter(Boolean).length, 2);
+  assert.equal(await limiter.consumeUpsellClient({ clientKey: otherClientKey, now: start }), true);
+  assert.equal(await limiter.consumeClient({ clientKey, now: start }), true);
+  assert.equal(await limiter.consumeGeoClient({ clientKey, now: start }), true);
+  assert.equal(await limiter.consumeUpsellClient({ clientKey, now: new Date(start.getTime() + 60_001) }), true);
 });
 
 test("guest checkout limiter rejects malformed local configuration before database access", async () => {
