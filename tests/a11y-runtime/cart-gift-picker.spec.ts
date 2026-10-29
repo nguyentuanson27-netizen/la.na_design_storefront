@@ -462,15 +462,23 @@ test("variant chips keep product context in their accessible names when two gift
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
   await openPicker(picker);
-  await picker.getByRole("button", { name: "Nơ quà", exact: true }).click();
+  const khan = picker.getByRole("button", { name: "Khăn quà", exact: true });
+  const bow = picker.getByRole("button", { name: "Nơ quà", exact: true });
+  // One card is open at a time: each group and chip is checked while its own card is open.
+  await expect(khan).toHaveAttribute("aria-expanded", "true");
+  await expect(bow).toHaveAttribute("aria-expanded", "false");
   await expect(picker.getByRole("group", { name: "Phiên bản Khăn quà" })).toBeVisible();
-  await expect(picker.getByRole("group", { name: "Phiên bản Nơ quà" })).toBeVisible();
-  const chips = picker.getByRole("button", { name: /— Trắng \/ M$/ });
-  await expect(chips).toHaveCount(2);
-  await expect(chips.nth(0)).toHaveAccessibleName("Khăn quà — Trắng / M");
-  await expect(chips.nth(1)).toHaveAccessibleName("Nơ quà — Trắng / M");
-  const box = await chips.nth(0).boundingBox();
+  await expect(picker.getByRole("button", { name: /— Trắng \/ M$/ })).toHaveAccessibleName("Khăn quà — Trắng / M");
+  const box = await picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true }).boundingBox();
   expect(box && box.height >= 36 && box.width >= 36).toBe(true);
+  expect((await new AxeBuilder({ page }).include("#cart-gifts").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+
+  await bow.click();
+  await expect(bow).toHaveAttribute("aria-expanded", "true");
+  await expect(khan).toHaveAttribute("aria-expanded", "false");
+  await expect(picker.getByRole("group", { name: "Phiên bản Nơ quà" })).toBeVisible();
+  await expect(picker.getByRole("group", { name: "Phiên bản Khăn quà" })).toHaveCount(0);
+  await expect(picker.getByRole("button", { name: /— Trắng \/ M$/ })).toHaveAccessibleName("Nơ quà — Trắng / M");
   expect((await new AxeBuilder({ page }).include("#cart-gifts").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
 });
 test("duplicate product policy disables selecting the same gift again", async ({ page }) => {
@@ -484,6 +492,9 @@ test("duplicate product policy disables selecting the same gift again", async ({
   expect(await prisma.warehouseStock.findFirst({where:{variantId:giftId}})).toHaveProperty("quantity",10);
   await picker.getByRole("button", { name: "Nhận quà này" }).click();
   await expect(picker).toContainText("Đã thêm 1");
+  // The confirmed save collapsed the list: reopen it to see the duplicate restriction.
+  await expect(picker.locator("button[aria-controls]")).toHaveAttribute("aria-expanded", "false");
+  await openPicker(picker);
   await expect(picker.getByRole("button", { name: "Nhận quà này" })).toBeDisabled();
 });
 
@@ -646,11 +657,14 @@ test("UX-04/AC-04: receiving then removing a gift does not revive the unsaved-dr
   await picker.getByRole("button", { name: "Nhận quà này", exact: true }).click();
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
   await expect(picker.locator("[data-gift-draft]")).toHaveCount(0);
+  // The confirmed save collapsed the list; open only the list (not a card) to reach the saved gift.
+  await picker.locator("button[aria-controls]").click();
   await picker.getByRole("button", { name: /^Bỏ quà để chọn lại/ }).click();
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/2");
   await expect.poll(() => prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
   await expect(picker.locator("[data-gift-draft]")).toHaveCount(0);
   // Picking another version afterwards is a new intent and is warned about again until saved.
+  await picker.getByRole("button", { name: "Khăn quà", exact: true }).click();
   await picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true }).click();
   await expect(picker.locator("[data-gift-draft]")).toBeVisible();
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);

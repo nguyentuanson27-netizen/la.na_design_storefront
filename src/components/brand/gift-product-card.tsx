@@ -7,7 +7,8 @@ import type { ReactNode } from "react";
  * stays short on a phone; `children` is the rest of the card below.
  */
 export function GiftProductCard({ name, imageUrl, open, onOpen, chips, children }: Readonly<{name: string; imageUrl: string | null; open: boolean; onOpen: () => void; chips?: ReactNode; children: ReactNode}>) {
-  return <article className="min-w-0 border border-black/15 bg-[#fcf8f6] p-3">
+  // The open card is the one being chosen from: brand-brown border and a warm tint set it apart.
+  return <article className={`min-w-0 border p-3 transition-colors ${open ? "border-[#634936] bg-[#f3ebe4]" : "border-black/15 bg-[#fcf8f6]"}`}>
     <div className={open ? "flex items-start gap-4" : "flex items-center gap-4"}>
       {imageUrl ? <Image src={imageUrl} alt="" width={64} height={80} className="h-20 w-16 shrink-0 object-cover" /> : <span aria-hidden="true" className="flex h-20 w-16 shrink-0 items-center justify-center bg-black/5 text-xs">Quà</span>}
       <div className="min-w-0 flex-1">
