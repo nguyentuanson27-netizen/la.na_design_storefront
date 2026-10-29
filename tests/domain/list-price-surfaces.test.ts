@@ -5,6 +5,8 @@ import { buildStorefrontVariantOptions } from "../../src/commerce/storefront-pro
 import { buildProductCardModel } from "../../src/components/headless/build-product-card-model.ts";
 import { resolveVariantSelectionView } from "../../src/components/headless/variant-selection-model.ts";
 import { describeLineDiscount } from "../../src/routes/line-discount-model.ts";
+import { buildCartViewModel } from "../../src/routes/cart-model.ts";
+import type { StorefrontCartLine } from "../../src/commerce/storefront-cart.ts";
 const variants = [429000, 590000].map((price, i) => ({
   id: "variant" + i,
   pancakeVariationId: "ext" + i,
@@ -76,4 +78,26 @@ test("display toggle leaves payable facts alone; representative and selected tri
   assert.equal(availableB.price.displayText, vnd("590.000"));
   assert.equal(availableB.price.compareAtText, vnd("749.000"));
   assert.equal(availableB.price.discountPercent, 21);
+});
+
+test("cart savings labels name the list reference only with display ON, without changing payable money", () => {
+  const line = {
+    variantId: "variant1", pancakeVariationId: "ext1", pancakeProductId: "product",
+    productName: "Set", productSlug: "set", color: null, size: "M",
+    quantity: 1, basePrice: 590000, price: 531000, available: true,
+    unavailableReason: null, isPreorderSale: false, media: { primary: null, gallery: [] },
+  } as StorefrontCartLine;
+  for (const display of [false, true]) {
+    process.env.LIST_PRICE_DISPLAY = String(display);
+    const cart = buildCartViewModel({ lines: [line], commerceTrackingEnabled: false });
+    assert.deepEqual(cart.savings, {
+      originalTotalLabel: display ? "Tổng theo giá niêm yết" : "Tổng",
+      savingLabel: display ? "Tiết kiệm so với giá niêm yết" : "Tiết kiệm",
+      originalTotalText: vnd(display ? "749.000" : "590.000"),
+      savingText: vnd(display ? "218.000" : "59.000"),
+    });
+    assert.equal(cart.subtotalText, vnd("531.000"));
+    assert.equal(cart.lines[0]!.priceText, vnd("531.000"));
+    assert.equal(cart.canCheckout, true);
+  }
 });
