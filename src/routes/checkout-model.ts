@@ -157,7 +157,7 @@ export type CheckoutViewModel = Readonly<{
   attemptKey?: string;
   /** UI refresh identity, never a form key or quote authority. */
   quoteRenderId?: string;
-  upsell?: CheckoutUpsellBanner;
+  upsellEnabled?: boolean;
   /** Whether bank transfer is offered beside COD. The loader reads it from the server environment. */
   bankTransferEnabled?: boolean;
   /** Physical items remain visible during gift repair; prices are withheld without a valid quote. */
