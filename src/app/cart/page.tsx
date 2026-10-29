@@ -96,14 +96,14 @@ function render(data: CartRouteViewModel) {
       <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.34fr)] lg:gap-16">
         <div className="min-w-0">
           {data.savings ? (
-            <dl className="mb-6 ml-auto w-full max-w-[17.5rem] space-y-1.5 text-[0.95rem]" data-cart-savings>
+            <dl className="mb-6 ml-auto w-full max-w-sm space-y-1.5 text-[0.95rem]" data-cart-savings>
               <div className="flex items-baseline justify-between gap-4 px-3">
-                <dt className="text-black/70">Tổng</dt>
-                <dd className="text-black/60 line-through">{data.savings.originalTotalText}</dd>
+                <dt className="text-black/70">{data.savings.originalTotalLabel}</dt>
+                <dd className="shrink-0 text-black/60 line-through">{data.savings.originalTotalText}</dd>
               </div>
               <div className="flex items-baseline justify-between gap-4 rounded-lg border border-[#1f7a5c] px-3 py-1 font-semibold text-[#1f6b51]">
-                <dt>Tiết kiệm</dt>
-                <dd>{data.savings.savingText}</dd>
+                <dt>{data.savings.savingLabel}</dt>
+                <dd className="shrink-0">{data.savings.savingText}</dd>
               </div>
             </dl>
           ) : null}

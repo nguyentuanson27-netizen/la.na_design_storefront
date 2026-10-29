@@ -117,7 +117,7 @@ export type CartViewModel = Readonly<{
    * The list-price total struck through beside what the buyer saves, when something is saved
    * (per-product sales and benefit-tier prices). Absent when nothing is, or the total is unknown.
    */
-  savings?: Readonly<{ originalTotalText: string; savingText: string }>;
+  savings?: Readonly<{ originalTotalLabel: string; savingLabel: string; originalTotalText: string; savingText: string }>;
 }>;
 
 /** A line's countdown and "Còn x", said only for a line being bought, and a countdown only beside a struck price. */
@@ -279,7 +279,12 @@ function savingsEntry(
   }
   const saving = original - payableVnd;
   if (!Number.isSafeInteger(original) || !Number.isSafeInteger(saving) || saving <= 0) return {};
-  return { savings: Object.freeze({ originalTotalText: currency.format(original), savingText: currency.format(saving) }) };
+  const displayListPrice = readListPriceConfig().display;
+  return { savings: Object.freeze({
+    originalTotalLabel: displayListPrice ? "Tổng theo giá niêm yết" : "Tổng",
+    savingLabel: displayListPrice ? "Tiết kiệm so với giá niêm yết" : "Tiết kiệm",
+    originalTotalText: currency.format(original), savingText: currency.format(saving),
+  }) };
 }
 
 function lineDiscountEntry(line: StorefrontCartLine): { originalPriceText?: string; isListReference?: boolean; discountPercent?: number } {
