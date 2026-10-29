@@ -13,6 +13,7 @@ import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 
 import {
   missingPurchaseOptionMessage,
+  resolveInitialVariantSelection,
   resolveMissingPurchaseOptions,
   resolveSelectionAfterColorChange,
   resolveSelectionAfterKindChange,
@@ -80,11 +81,9 @@ export function useVariantSelection({
   colorDimensionLabel,
 }: UseVariantSelectionInput) {
   const router = useRouter();
-  const [state, setState] = useState<VariantSelectionState>({
-    kindKey: initialSelection?.kindKey ?? null,
-    color: initialSelection?.color ?? null,
-    size: initialSelection?.size ?? null,
-  });
+  const [state, setState] = useState<VariantSelectionState>(() =>
+    resolveInitialVariantSelection(options, initialSelection),
+  );
   const [message, setMessage] = useState("");
   const [validation, setValidation] = useState<PurchaseOptionValidation>({});
   const [isPending, startTransition] = useTransition();

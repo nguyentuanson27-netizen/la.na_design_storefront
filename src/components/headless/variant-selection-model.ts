@@ -31,6 +31,18 @@ export type VariantSelectionState = Readonly<{
   size: string | null;
 }>;
 
+/** Explicit product links win; otherwise default only the FULL SET classification. */
+export function resolveInitialVariantSelection(
+  options: readonly StorefrontProjectionOption[],
+  initialSelection?: VariantSelectionState | null,
+): VariantSelectionState {
+  if (initialSelection) return initialSelection;
+  const fullSet = options.find((option) =>
+    option.kindKey !== null && option.kindLabel?.normalize("NFC").trim().toUpperCase() === "FULL SET",
+  );
+  return { kindKey: fullSet?.kindKey ?? null, color: null, size: null };
+}
+
 export type VariantSelectionViewInput = Readonly<{
   options: readonly StorefrontProjectionOption[];
   /** Product-level options only: composite components must not speak for the parent before selection. */
