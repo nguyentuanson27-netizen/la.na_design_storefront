@@ -112,7 +112,7 @@ test("cart has one functional gift picker above paid products on mobile and desk
   await expect(page.locator('[data-promotion-banner="full"] [data-promotion-kind="GIFT"][data-promotion-state="achieved"]')).toHaveCount(0);
 });
 
-test("moving up to a higher gift milestone sets the earlier gift aside, back down restores it, and taking the new gift swaps it out", async ({ page }) => {
+test("moving up to a higher gift milestone retires the earlier gift on the next read, and back down does not restore it", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   // Two milestones that do not stack: 200.000đ earns the lower one, 300.000đ the higher one.
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { awardMode: "ONCE", maxGiftsPerOrder: 1 } });
@@ -134,28 +134,27 @@ test("moving up to a higher gift milestone sets the earlier gift aside, back dow
 
   await setPaidQuantity(3);
   await page.reload();
-  await expect(picker.locator("[data-gift-replaced-notice]")).toBeVisible();
+  // The cart read after the upgrade retires the lower milestone's gift: nothing is kept aside.
+  await expect(picker.locator("[data-gift-replaced-notice]")).toHaveCount(0);
+  await expect(picker.locator("[data-gift-replaced]")).toHaveCount(0);
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/1", { message: "the earlier gift no longer counts towards the order" });
   await expect(picker.getByText("liên hệ shop", { exact: false })).toHaveCount(0);
+  await expect.poll(() => prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
   const toggle = picker.locator("button[aria-controls]");
   await toggle.click();
-  await expect(picker.locator(`[data-gift-replaced="${campaignId}/${giftId}"]`)).toContainText("Quà mốc trước: Khăn quà");
   expect((await new AxeBuilder({ page }).include("#cart-gifts").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
 
-  // Back at the lower milestone before swapping, the kept choice counts again.
+  // Back at the lower milestone the retired choice does not come back.
   await setPaidQuantity(2);
   await page.reload();
-  await expect(picker.locator("[data-gift-replaced-notice]")).toHaveCount(0);
-  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/1");
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/1");
 
   await setPaidQuantity(3);
   await page.reload();
   await toggle.click();
   await picker.getByRole("button", { name: "Túi quà", exact: true }).click();
   await picker.getByRole("button", { name: "Nhận quà này" }).click();
-  await expect(picker.getByRole("status")).toContainText("Quà của mốc trước đã được thay bằng món này");
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/1");
-  await expect(picker.locator("[data-gift-replaced]")).toHaveCount(0);
   await expect.poll(() => prisma.cartGiftSelection.findMany({ where: { cartId }, select: { campaignId: true } })).toEqual([{ campaignId: higherId }]);
 });
 
@@ -316,7 +315,7 @@ test("mobile keyboard picker saves partial/full/zero choices without changing pa
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
   await expect(picker).toContainText("Đã thêm 0/2");
   await openPicker(picker);
-  await picker.getByRole("button", {name: "Trắng / M", exact:true}).focus();
+  await picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(picker).toContainText("Chưa thêm vào đơn");
   expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(0);
@@ -324,8 +323,15 @@ test("mobile keyboard picker saves partial/full/zero choices without changing pa
   await page.keyboard.press("Enter");
   await expect(picker.getByRole("status")).toContainText("Đã thêm vào đơn");
   await expect(picker).toContainText("Đã thêm 1/2");
+  // A confirmed save collapses the list and hands keyboard focus to the toggle instead of the hidden button.
+  const toggle = picker.locator("button[aria-controls]");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(toggle).toBeFocused();
+  await openPicker(picker);
   await picker.getByRole("button", { name: "Nhận quà này" }).click();
   await expect(picker).toContainText("Đã thêm 2/2");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await openPicker(picker);
   await expect(picker.getByRole("button", { name: "Nhận quà này" })).toBeDisabled();
   await expect.poll(() => prisma.cartItem.count({ where: { cartId } })).toBe(1);
   await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toHaveCount(0);
@@ -412,11 +418,22 @@ test("all-out gifts show stock shortage and allow leaving choices empty", async 
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
   await expect(picker).toContainText("Hiện chưa có lựa chọn phù hợp cho 2 suất quà");
-  await openPicker(picker);
-  await expect(picker.getByRole("button", { name: "Nhận quà này" })).toBeDisabled();
+  await picker.locator("button[aria-controls]").click();
+  await expect(picker.getByRole("button", { name: "Khăn quà", exact: true })).toHaveCount(0, { message: "a sold-out gift is not offered" });
+  await expect(picker.getByRole("button", { name: "Nhận quà này" })).toHaveCount(0);
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
 });
-test("stock changed after rendering refuses the click and announces an error", async ({ page }) => {
+test("a saved gift that sold out stays visible for repair while the sold-out option is not offered", async ({ page }) => {
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, campaignRevision: 1, quantity: 1 } });
+  await prisma.warehouseStock.updateMany({ where: { variantId: giftId }, data: { quantity: 0 } });
+  await page.goto(`${URL}/cart`);
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await picker.locator("button[aria-controls]").click();
+  await expect(picker.locator(`[data-gift-selection="${campaignId}/${giftId}"]`)).toContainText("Khăn quà");
+  await expect(picker.getByRole("button", { name: /^Bỏ quà để chọn lại/ })).toBeVisible();
+  await expect(picker.getByRole("button", { name: "Khăn quà", exact: true })).toHaveCount(0);
+});
+test("stock changed after rendering refuses the click, announces an error and keeps the list open", async ({ page }) => {
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
   await openPicker(picker);
@@ -424,6 +441,45 @@ test("stock changed after rendering refuses the click and announces an error", a
   await picker.getByRole("button", { name: "Nhận quà này" }).click();
   await expect(picker.getByRole("status")).toContainText("Chưa thêm quà");
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+  await expect(picker.locator("button[aria-controls]")).toHaveAttribute("aria-expanded", "true");
+});
+test("a refused second receive of an already saved gift does not collapse the list", async ({ page }) => {
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, campaignRevision: 1, quantity: 1 } });
+  await page.goto(`${URL}/cart`);
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await openPicker(picker);
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { revision: 2 } });
+  await picker.getByRole("button", { name: "Nhận quà này" }).click();
+  await expect(picker.getByRole("status")).toContainText("Chưa thêm quà");
+  await expect(picker.locator("button[aria-controls]")).toHaveAttribute("aria-expanded", "true");
+  expect(await prisma.cartGiftSelection.findMany({ where: { cartId } })).toEqual([expect.objectContaining({ variantId: giftId, quantity: 1 })]);
+});
+test("variant chips keep product context in their accessible names when two gifts share a version", async ({ page }) => {
+  const other = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: PREFIX + "bow", slug: PREFIX + "bow", name: "Nơ quà", syncedAt: new Date(),
+    variants: { create: { pancakeVariationId: PREFIX + "bow", color: "Trắng", size: "M", syncedAt: new Date(),
+      warehouseStocks: { create: { pancakeWarehouseId: "gq14-wh", quantity: 10, syncedAt: new Date() } } } } }, include: { variants: true } });
+  await prisma.giftOption.create({ data: { campaignId, variantId: other.variants[0].id } });
+  await page.goto(`${URL}/cart`);
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await openPicker(picker);
+  const khan = picker.getByRole("button", { name: "Khăn quà", exact: true });
+  const bow = picker.getByRole("button", { name: "Nơ quà", exact: true });
+  // One card is open at a time: each group and chip is checked while its own card is open.
+  await expect(khan).toHaveAttribute("aria-expanded", "true");
+  await expect(bow).toHaveAttribute("aria-expanded", "false");
+  await expect(picker.getByRole("group", { name: "Phiên bản Khăn quà" })).toBeVisible();
+  await expect(picker.getByRole("button", { name: /— Trắng \/ M$/ })).toHaveAccessibleName("Khăn quà — Trắng / M");
+  const box = await picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true }).boundingBox();
+  expect(box && box.height >= 36 && box.width >= 36).toBe(true);
+  expect((await new AxeBuilder({ page }).include("#cart-gifts").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+
+  await bow.click();
+  await expect(bow).toHaveAttribute("aria-expanded", "true");
+  await expect(khan).toHaveAttribute("aria-expanded", "false");
+  await expect(picker.getByRole("group", { name: "Phiên bản Nơ quà" })).toBeVisible();
+  await expect(picker.getByRole("group", { name: "Phiên bản Khăn quà" })).toHaveCount(0);
+  await expect(picker.getByRole("button", { name: /— Trắng \/ M$/ })).toHaveAccessibleName("Nơ quà — Trắng / M");
+  expect((await new AxeBuilder({ page }).include("#cart-gifts").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
 });
 test("duplicate product policy disables selecting the same gift again", async ({ page }) => {
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { allowDuplicateGifts: false } });
@@ -436,10 +492,13 @@ test("duplicate product policy disables selecting the same gift again", async ({
   expect(await prisma.warehouseStock.findFirst({where:{variantId:giftId}})).toHaveProperty("quantity",10);
   await picker.getByRole("button", { name: "Nhận quà này" }).click();
   await expect(picker).toContainText("Đã thêm 1");
+  // The confirmed save collapsed the list: reopen it to see the duplicate restriction.
+  await expect(picker.locator("button[aria-controls]")).toHaveAttribute("aria-expanded", "false");
+  await openPicker(picker);
   await expect(picker.getByRole("button", { name: "Nhận quà này" })).toBeDisabled();
 });
 
-test("F3: unavailable size explains disabled receive, another size stays browsable and chip-only never saves", async ({ page }) => {
+test("F3: an unavailable size is not offered, another size is, and chip-only never saves", async ({ page }) => {
   const gift = await prisma.variantMirror.findUniqueOrThrow({ where: { id: giftId } });
   await prisma.variantMirror.update({ where: { id: giftId }, data: { size: "S" } });
   await prisma.warehouseStock.updateMany({ where: { variantId: giftId }, data: { quantity: 0 } });
@@ -450,23 +509,22 @@ test("F3: unavailable size explains disabled receive, another size stays browsab
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
   await openPicker(picker);
   const receive = picker.getByRole("button", { name: "Nhận quà này", exact: true });
-  await expect(receive).toBeDisabled();
-  await expect(receive).toHaveAccessibleDescription("Chọn phiên bản trước khi nhận quà.");
-  await picker.getByRole("button", { name: "Trắng / S", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  await expect(receive).toBeDisabled();
-  await expect(receive).toHaveAccessibleDescription("Phiên bản này không còn đủ hàng để nhận thêm. Nàng chọn phiên bản khác nhé.");
-  await picker.getByRole("button", { name: "Trắng / M", exact: true }).focus();
-  await page.keyboard.press("Enter");
+  await expect(picker.getByRole("button", { name: "Khăn quà — Trắng / S", exact: true })).toHaveCount(0, { message: "the sold-out size is hidden" });
+  await expect(picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true })).toHaveCount(1);
+  // With the sold-out size gone the product has a single version, so opening its card selects it (as for any
+  // one-version gift): receiving is possible straight away, but nothing is saved until the buyer asks.
+  await expect(picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(receive).toBeEnabled();
   await expect(receive).not.toHaveAttribute("aria-describedby");
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/2");
   await receive.click();
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
+  await openPicker(picker);
   await receive.click();
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 2/2");
-  await picker.getByRole("button", { name: "Trắng / S", exact: true }).click();
+  await openPicker(picker);
+  await picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true }).click();
   await expect(receive).toHaveAccessibleDescription(/Đã đủ suất/);
   expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
 });
@@ -481,7 +539,7 @@ test("F3: duplicate-product restriction describes the chosen model, not stock ex
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
   await openPicker(picker);
-  await picker.getByRole("button", { name: "Trắng / S", exact: true }).click();
+  await picker.getByRole("button", { name: "Khăn quà — Trắng / S", exact: true }).click();
   const receive = picker.getByRole("button", { name: "Nhận quà này", exact: true });
   await expect(receive).toBeDisabled();
   await expect(receive).toHaveAccessibleDescription("Nàng đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ.");
@@ -598,12 +656,15 @@ test("UX-04/AC-04: receiving then removing a gift does not revive the unsaved-dr
   await picker.getByRole("button", { name: "Nhận quà này", exact: true }).click();
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
   await expect(picker.locator("[data-gift-draft]")).toHaveCount(0);
+  // The confirmed save collapsed the list; open only the list (not a card) to reach the saved gift.
+  await picker.locator("button[aria-controls]").click();
   await picker.getByRole("button", { name: /^Bỏ quà để chọn lại/ }).click();
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/2");
   await expect.poll(() => prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
   await expect(picker.locator("[data-gift-draft]")).toHaveCount(0);
   // Picking another version afterwards is a new intent and is warned about again until saved.
-  await picker.getByRole("button", { name: "Trắng / M", exact: true }).click();
+  await picker.getByRole("button", { name: "Khăn quà", exact: true }).click();
+  await picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true }).click();
   await expect(picker.locator("[data-gift-draft]")).toBeVisible();
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
 });

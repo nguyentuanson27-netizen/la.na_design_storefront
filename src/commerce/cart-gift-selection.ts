@@ -266,20 +266,80 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     })) };
 }
 
+/**
+ * The locks a gift write takes, in the order every writer takes them: the anonymous cart row, then the
+ * campaigns the buyer could earn from or already chose. `false` when the cart is gone or expired.
+ */
+async function lockCartForGiftWrite(tx: Prisma.TransactionClient, cartId: string, now: Date) {
+  const carts = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Cart" WHERE "id" = ${cartId} AND "userId" IS NULL AND "expiresAt" > ${now} FOR UPDATE`;
+  if (carts.length !== 1) return false;
+  // Same rows Admin revises: no accepted choice can race a rule/revision edit.
+  const campaigns = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "GiftQuantityCampaign"
+    WHERE ("isEnabled" = true AND ("startsAt" IS NULL OR "startsAt" <= ${now}) AND ("endsAt" IS NULL OR "endsAt" > ${now}))
+      OR "id" IN (SELECT "campaignId" FROM "CartGiftSelection" WHERE "cartId" = ${cartId})
+    ORDER BY "id" LIMIT 151 FOR SHARE`;
+  if (campaigns.length > 150) throw new Error("Campaign bound exceeded");
+  return true;
+}
+
+/**
+ * Reads the cart's gift state, first retiring gifts of a milestone the cart has moved past.
+ *
+ * Every reader that shows the buyer their gifts (cart page, checkout page) goes through this, so the
+ * same cart cannot look different on the two pages. An exact variant is carried to the higher milestone
+ * only when an eligible higher campaign offers it and the full selection still passes stock/slot rules;
+ * different gifts never reappear if the cart later drops back to an earlier milestone.
+ *
+ * The common case (nothing superseded) is a plain read. Writes happen only under the cart/campaign
+ * locks a buyer mutation takes; pass `locked` when the caller already holds them. Call it before a
+ * quote is derived and signed, never after: it does not change a quote that already exists.
+ */
+export async function readReconciledCartGiftState(
+  tx: Prisma.TransactionClient, cartId: string, shopId: number, now: Date,
+  env: Readonly<Record<string, string | undefined>>, { locked = false }: { locked?: boolean } = {},
+) {
+  let state = await readCartGiftState(tx, cartId, shopId, now, env);
+  if (state.replacedSelections.length === 0) return state;
+  if (!locked) {
+    if (!await lockCartForGiftWrite(tx, cartId, now)) return state;
+    // Another request may have reconciled while this one waited for the lock.
+    state = await readCartGiftState(tx, cartId, shopId, now, env);
+    if (state.replacedSelections.length === 0) return state;
+  }
+
+  const kept: GiftSelectionLine[] = [...state.selections];
+  const canTransfer = state.validation.ok && state.quote.lines.every((line) => line.available);
+  for (const old of state.replacedSelections) {
+    if (canTransfer) for (const higherId of old.replacedByCampaignIds) {
+      const campaign = state.campaigns.find((row) => row.id === higherId);
+      const entitlement = state.entitlements.find((row) => row.campaignId === higherId);
+      if (!campaign || !entitlement || entitlement.entitled < 1 ||
+        !campaign.options.some((option) => option.variantId === old.variantId && option.readyAvailable > 0)) continue;
+
+      const candidate: GiftSelectionLine = {
+        campaignId: higherId, variantId: old.variantId, quantity: old.quantity,
+        campaignRevision: entitlement.revision,
+      };
+      if (!validateGiftSelections({ campaigns: state.campaigns, entitlements: state.entitlements,
+        selection: [...kept, candidate] }).ok) continue;
+      const saved = await setCartGiftSelection(tx, { cartId, ...candidate });
+      if (!saved.ok) throw new Error("Gift milestone transfer failed");
+      kept.push(candidate);
+      break;
+    }
+    await removeCartGiftSelection(tx, { cartId, campaignId: old.campaignId, variantId: old.variantId });
+  }
+  // Return the post-reconciliation authority, never a model computed from obsolete rows.
+  return readCartGiftState(tx, cartId, shopId, now, env);
+}
+
 export function createCartGiftSelectionService(client: PrismaClient, store: CookieReader, { shopId, env = process.env }: { shopId: number; env?: Readonly<Record<string, string | undefined>> }) {
   async function withCart<T>(now: Date, work: (tx: Prisma.TransactionClient, cartId: string) => Promise<T>) {
     const cartId = readAnonymousCartCookie(store);
     if (!cartId) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
     try {
       return await client.$transaction(async (tx) => {
-        const carts = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Cart" WHERE "id" = ${cartId} AND "userId" IS NULL AND "expiresAt" > ${now} FOR UPDATE`;
-        if (carts.length !== 1) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
-        // Same rows Admin revises: no accepted choice can race a rule/revision edit.
-        const campaigns = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "GiftQuantityCampaign"
-          WHERE ("isEnabled" = true AND ("startsAt" IS NULL OR "startsAt" <= ${now}) AND ("endsAt" IS NULL OR "endsAt" > ${now}))
-            OR "id" IN (SELECT "campaignId" FROM "CartGiftSelection" WHERE "cartId" = ${cartId})
-          ORDER BY "id" LIMIT 151 FOR SHARE`;
-        if (campaigns.length > 150) throw new Error("Campaign bound exceeded");
+        if (!await lockCartForGiftWrite(tx, cartId, now)) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
         return work(tx, cartId);
       });
     } catch {
@@ -289,7 +349,7 @@ export function createCartGiftSelectionService(client: PrismaClient, store: Cook
 
   async function get(now = new Date()) {
     if (!isGiftQuantityPromotionsEnabled(env)) return { enabled: false } as const;
-    return withCart(now, async (tx, cartId) => ({ ok: true, state: await readCartGiftState(tx, cartId, shopId, now, env) } as const));
+    return withCart(now, async (tx, cartId) => ({ ok: true, state: await readReconciledCartGiftState(tx, cartId, shopId, now, env, { locked: true }) } as const));
   }
 
   async function set(input: unknown, now = new Date()) {

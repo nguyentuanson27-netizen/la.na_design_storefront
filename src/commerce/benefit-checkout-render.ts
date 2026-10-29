@@ -16,7 +16,7 @@
  *                  explicit non-claim acknowledgement (FR-06).
  */
 
-import { readCartGiftState } from "./cart-gift-selection.ts";
+import { readReconciledCartGiftState } from "./cart-gift-selection.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import { buildCartGiftPickerModel, type CartGiftPickerModel } from "../routes/cart-gift-model.ts";
 import type { PrismaClient } from "../generated/prisma/client.ts";
@@ -79,7 +79,9 @@ export async function readBenefitCheckoutRender({
   let resolution: Awaited<ReturnType<typeof resolveBenefitCheckoutQuote>>;
   try {
     resolution = await client.$transaction(async (tx) => {
-      const giftState = isGiftQuantityPromotionsEnabled(env) ? await readCartGiftState(tx, cartId, shopId, now, env) : undefined;
+      // Same reconciliation the cart page runs, before the quote (and its proof) is derived: a buyer who goes
+      // straight to checkout after reaching a higher milestone sees the same gifts as one who opened the cart.
+      const giftState = isGiftQuantityPromotionsEnabled(env) ? await readReconciledCartGiftState(tx, cartId, shopId, now, env) : undefined;
       if (giftState) {
         const picker = buildCartGiftPickerModel(giftState);
         if (picker.selections.length || picker.campaigns.some((c) => c.entitled > 0)) giftPicker = picker;

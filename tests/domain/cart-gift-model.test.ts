@@ -37,6 +37,29 @@ test("component-backed gift is selectable in the cart picker under a configured 
   assert.equal(model.campaigns[0]?.products[0]?.options[0]?.stock, 2);
 });
 
+test("gift picker hides every out-of-stock option and sold-out product but keeps a selected gift visible for repair", () => {
+  const fixture = state();
+  const model = buildCartGiftPickerModel({
+    ...fixture,
+    labels: [
+      { variantId: "sold", productId: "sold-product", productName: "Hết hàng", optionLabel: "Hồng / S", color: "Hồng", size: "S" },
+      { variantId: "small", productId: "available-product", productName: "Còn hàng", optionLabel: "Xanh / S", color: "Xanh", size: "S" },
+      { variantId: "medium", productId: "available-product", productName: "Còn hàng", optionLabel: "Xanh / M", color: "Xanh", size: "M" },
+    ],
+    campaigns: [{ id: "campaign", allowDuplicateGifts: false, options: [
+      { variantId: "sold", productId: "sold-product", readyAvailable: 0, composite: false },
+      { variantId: "small", productId: "available-product", readyAvailable: 0, composite: false },
+      { variantId: "medium", productId: "available-product", readyAvailable: 2, composite: false },
+    ] }],
+    selections: [{ campaignId: "campaign", variantId: "sold", campaignRevision: 2, quantity: 1 }],
+    validation: { ok: false, issues: [] },
+  } as unknown as CartGiftState);
+  assert.deepEqual(model.campaigns[0].products.map((product) => product.name), ["Còn hàng"]);
+  assert.deepEqual(model.campaigns[0].products[0].options.map((option) => option.variantId), ["medium"]);
+  assert.deepEqual(model.campaigns[0].products[0].options.map(({ color, size }) => [color, size]), [["Xanh", "M"]]);
+  assert.deepEqual(model.selections.map((selection) => selection.variantId), ["sold"], "repair still exposes the previously chosen option");
+});
+
 test("cart displays split paid prices and total while gifts never increase paid count", () => {
   const model = buildCartViewModel({ lines: [line], commerceTrackingEnabled: false, giftState: state() });
   assert.match(model.subtotalText, /290.003/);

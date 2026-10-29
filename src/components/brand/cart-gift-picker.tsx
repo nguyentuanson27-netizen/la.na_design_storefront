@@ -15,8 +15,14 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   model: CartGiftPickerModel; onBusyChange?: (pending: boolean) => void; locked?: boolean;
   isLocked?: () => boolean; onDraftChange?: (notice: string | null) => void; onReturnToPayment?: () => void;
 }>) {
-  const { pending, uncertain, message, change, retryRead } = useCartGifts(onBusyChange, locked, isLocked);
+  const { pending, uncertain, message, savedCount, change, retryRead } = useCartGifts(onBusyChange, locked, isLocked);
   const [expanded, setExpanded] = useState(false);
+  // The `savedCount` a receive started from: collapse only once a later save is confirmed, never on a
+  // refusal or read-back while an older choice of the same gift is still in the model.
+  const [collapseFromSave, setCollapseFromSave] = useState<number | null>(null);
+  const [collapseFocus, setCollapseFocus] = useState(0);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const detailsRef = useRef<HTMLDivElement>(null);
   const [card, setCard] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const detailsId = useId();
@@ -70,6 +76,19 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   const available = model.campaigns.reduce((sum, row) => sum + (row.selectable ?? 0), 0);
   const complete = !model.invalid && selected >= entitled && entitled > 0;
   const draftSaved = draft && model.selections.some((row) => row.campaignId === draft.campaignId && row.variantId === draft.variantId);
+  if (collapseFromSave !== null && savedCount > collapseFromSave && !pending && !uncertain && draftSaved) {
+    setExpanded(false);
+    setCard("");
+    setCollapseFromSave(null);
+    setCollapseFocus((n) => n + 1);
+  }
+  useEffect(() => {
+    if (collapseFocus === 0) return;
+    // Only when focus was left behind by the list that just closed (or dropped to BODY with it); a buyer
+    // who has already moved elsewhere keeps their place.
+    const active = document.activeElement;
+    if (active === document.body || (active && detailsRef.current?.contains(active))) toggleRef.current?.focus({ preventScroll: true });
+  }, [collapseFocus]);
   // UX-04: the intent ends only on a confirmed (or read-back) model that contains it. A newer chip the
   // buyer picks replaces the draft object, so it starts uncommitted and keeps its own notice.
   if (draft && draftSaved && !draft.committed) setDraft({ ...draft, committed: true });
@@ -127,12 +146,12 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
       {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Nàng còn quà chưa chọn. Các chương trình dùng chung lượng quà, nàng chọn từng món để cập nhật nhé." : `Nàng còn có thể chọn ${available} món quà.`}</p> : null}
       {unavailable > 0 ? <p className="mt-2 text-sm">Hiện chưa có lựa chọn phù hợp cho {unavailable} suất quà còn lại.</p> : null}
     </>}
-    {replaced.length > 0 ? <p className="mt-3 text-sm" data-gift-replaced-notice>Đơn của nàng đã lên mốc quà cao hơn nên quà đã chọn ở mốc trước không đi kèm đơn nữa. Nàng chọn quà của mốc mới, quà cũ sẽ được thay; nếu giỏ quay về mốc cũ, quà cũ được áp dụng lại.</p> : null}
+    {replaced.length > 0 ? <p className="mt-3 text-sm" data-gift-replaced-notice>Đơn của nàng đã lên mốc quà cao hơn nên quà đã chọn ở mốc trước không đi kèm đơn nữa. Nàng chọn quà của mốc mới, quà cũ sẽ được thay.</p> : null}
     {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Giỏ hàng của nàng đủ điều kiện nhận quà từ nhiều chương trình, nhưng các chương trình này không được dùng cùng lúc nên một số quà chưa được tặng. Nàng điều chỉnh lại giỏ hàng hoặc liên hệ shop để được hỗ trợ nhé.</p> : null}
-    <button type="button" className="mt-3 min-h-11 text-left text-sm font-semibold underline underline-offset-4" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
+    <button type="button" ref={toggleRef} className="mt-3 min-h-11 text-left text-sm font-semibold underline underline-offset-4" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
       {expanded ? "Thu gọn quà tặng" : model.invalid ? "Kiểm tra quà đã chọn" : complete ? "Xem quà đã chọn" : available > 0 ? "Chọn quà ngay" : "Xem lựa chọn quà"}
     </button>
-    <div id={detailsId} hidden={!expanded}>
+    <div id={detailsId} ref={detailsRef} hidden={!expanded}>
       {model.repairGroups?.map((group, index) => <div key={index} role="group" aria-label="Nhóm quà cần kiểm tra" className="mt-4 border border-[#b42318]/40 p-3 text-sm">
         <p>{group.message}</p>
         <ul className="mt-2 list-disc pl-5">{model.selections.filter(row => group.selectionKeys.includes(`${row.campaignId}/${row.variantId}`)).map(row => <li key={`${row.campaignId}/${row.variantId}`}>{row.label} · {row.quantity} quà</li>)}</ul>
@@ -176,24 +195,24 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
             : option.stock <= stockChosen ? "Phiên bản này không còn đủ hàng để nhận thêm. Nàng chọn phiên bản khác nhé."
             : null;
           const receiveReasonId = `${detailsId}-${index}-${product.productId}-receive-reason`;
-          return <GiftProductCard key={product.productId} name={product.name} imageUrl={product.imageUrl} open={card === key} onOpen={() => {
+          return <GiftProductCard key={product.productId} name={product.name} imageUrl={product.imageUrl} open={card === key} chips={<div className="flex flex-wrap gap-1" role="group" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-label={`${product.name} — ${o.label}`} aria-pressed={option?.variantId === o.variantId} className="group min-h-9 min-w-9 border border-black/30 px-2 py-0.5 text-xs leading-5 aria-pressed:bg-[#634936] aria-pressed:text-white sm:text-sm" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.color && o.size ? <>{o.color} <span className="text-black/40 group-aria-pressed:text-white/70">/</span> {o.size}</> : o.label}</button>)}</div>} onOpen={() => {
             setCard(card === key ? "" : key);
             if (product.options.length === 1) setDraft({campaignId: campaign.campaignId, variantId: product.options[0]!.variantId, label: `${product.name} — ${product.options[0]!.label}`});
           }}>
-            <div className="flex flex-wrap gap-2" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-pressed={option?.variantId === o.variantId} className="min-h-11 border border-black/30 px-3 text-sm aria-pressed:bg-[#634936] aria-pressed:text-white" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.label}</button>)}</div>
             {option ? <p className="mt-3 text-sm">{uncertain ? "Đang chờ kiểm tra kết quả lưu quà…" : pending ? "Đang cập nhật quà…" : chosen > 0 ? "Đã thêm vào đơn" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">Chọn phiên bản để xem.</p>}
             {receiveBlockReason ? <p id={receiveReasonId} className="mt-2 text-xs" aria-live="polite">{receiveBlockReason}</p> : null}
-            <button type="button" className="btn btn--secondary mt-3 w-full" disabled={receiveBlockReason !== null} aria-describedby={receiveBlockReason ? receiveReasonId : undefined} onClick={() => {
+            <button type="button" className="btn btn--secondary mt-3 min-h-10 w-full py-1.5" disabled={receiveBlockReason !== null} aria-describedby={receiveBlockReason ? receiveReasonId : undefined} onClick={() => {
               if (!option) return;
               // A new receive is a new intent: until the server confirms it, an earlier save no longer covers it.
               if (draft?.committed) setDraft({ ...draft, committed: false });
-              change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0);
+              if (change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0)) setCollapseFromSave(savedCount);
             }}>Nhận quà này</button>
           </GiftProductCard>;
         })}</div>
       </div>)}
-      {onReturnToPayment ? <button type="button" className="mt-4 min-h-11 text-sm underline" onClick={onReturnToPayment}>Quay lại thanh toán</button> : null}
     </div>
+    {/* Outside the collapsible list: after a confirmed save collapses it, the way back to payment stays reachable. */}
+    {onReturnToPayment ? <button type="button" className="mt-4 min-h-11 text-sm underline" onClick={onReturnToPayment}>Quay lại thanh toán</button> : null}
     {draftNotice ? <p className="mt-3 text-sm" data-gift-draft>{draftNotice}</p> : null}
     </> : null}
     <p className="mt-3 text-sm" role="status" aria-live="polite" aria-atomic="true">{pending ? "Đang kiểm tra và làm mới báo giá…" : message}{present && !pending && !uncertain && message && !model.invalid ? ` Còn ${unclaimed} suất chưa chọn.` : ""}</p>

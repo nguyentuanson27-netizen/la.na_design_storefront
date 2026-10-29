@@ -214,16 +214,24 @@ for (const [quantity, width] of [[0,390],[1,1440],[2,390]] as const) {
     const picker = page.getByRole("region", {name:"Quà tặng trong giỏ"});
     await expect(picker).toBeFocused();
     await picker.getByRole("button", {name:"Khăn quà",exact:true}).click();
-    await picker.getByRole("button", {name:"Trắng / M",exact:true}).click();
+    await picker.getByRole("button", {name:"Khăn quà — Trắng / M",exact:true}).click();
     await expect(picker).toContainText("Chưa thêm vào đơn");
     expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(0);
+    const toggle=picker.locator("button[aria-controls]");
     for(let n=1;n<=quantity;n++) {
       await picker.getByRole("button",{name:"Nhận quà này",exact:true}).click();
       await expect(picker.locator("[data-gift-progress]")).toContainText(`Đã thêm ${n}/2`);
       await expect(picker).toHaveAttribute("aria-busy","false");
+      // A confirmed save collapses the list; the buyer reopens it to take the next gift.
+      await expect(toggle).toHaveAttribute("aria-expanded","false");
+      if(n<quantity) {
+        await toggle.click();
+        await picker.getByRole("button",{name:"Khăn quà",exact:true}).click();
+        await picker.getByRole("button",{name:"Khăn quà — Trắng / M",exact:true}).click();
+      }
     }
-    // Receiving the last gift never collapses management.
-    await expect(picker.getByRole("button",{name:"Thu gọn quà tặng",exact:true})).toHaveAttribute("aria-expanded","true");
+    // Nothing saved, nothing collapsed.
+    if(quantity===0) await expect(picker.getByRole("button",{name:"Thu gọn quà tặng",exact:true})).toHaveAttribute("aria-expanded","true");
     await picker.getByRole("button",{name:"Quay lại thanh toán",exact:true}).click();
     await expect(page.getByRole("heading",{name:"Tổng kết thanh toán",exact:true})).toBeFocused();
     await expectReceiving(page);
@@ -700,10 +708,14 @@ test("UX-10/AC-11: the line above the button names unchosen gifts and opens the 
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
   await picker.getByRole("button", { name: "Khăn quà", exact: true }).click();
-  await picker.getByRole("button", { name: "Trắng / M", exact: true }).click();
+  await picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true }).click();
   await picker.getByRole("button", { name: "Nhận quà này", exact: true }).click();
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
   await expect(hint).toContainText("Nàng còn 1 món quà chưa chọn.");
+  // The confirmed save collapsed the list: reopen it for the second gift.
+  await picker.locator("button[aria-controls]").click();
+  await picker.getByRole("button", { name: "Khăn quà", exact: true }).click();
+  await picker.getByRole("button", { name: "Khăn quà — Trắng / M", exact: true }).click();
   await picker.getByRole("button", { name: "Nhận quà này", exact: true }).click();
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 2/2");
   await expect(hint).toHaveCount(0);
