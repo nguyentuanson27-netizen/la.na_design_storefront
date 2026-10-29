@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   missingPurchaseOptionMessage,
+  resolveInitialVariantSelection,
   resolveMissingPurchaseOptions,
   resolveMobilePurchasePresentation,
   resolveSelectionAfterSizeChange,
@@ -24,6 +25,15 @@ import {
  */
 
 const NBSP = " ";
+
+test("defaults to FULL SET without choosing a color or size, and preserves explicit links", () => {
+  const options = [option({ kindKey: "shirt", kindLabel: "ÁO LẺ" }), option({ kindKey: "parent", kindLabel: " full set " })];
+  assert.deepEqual(resolveInitialVariantSelection(options), { kindKey: "parent", color: null, size: null });
+  const linked = { kindKey: "shirt", color: "Đen", size: "M" };
+  assert.deepEqual(resolveInitialVariantSelection(options, linked), linked);
+  assert.deepEqual(resolveInitialVariantSelection(options.slice(0, 1)), { kindKey: null, color: null, size: null });
+  assert.deepEqual(resolveInitialVariantSelection([]), { kindKey: null, color: null, size: null });
+});
 const vnd = (amount: string): string => `${amount}${NBSP}₫`;
 
 function option({
