@@ -17,6 +17,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
 }>) {
   const { pending, uncertain, message, change, retryRead } = useCartGifts(onBusyChange, locked, isLocked);
   const [expanded, setExpanded] = useState(false);
+  const [collapseAfterSave, setCollapseAfterSave] = useState(false);
   const [card, setCard] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const detailsId = useId();
@@ -70,6 +71,12 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   const available = model.campaigns.reduce((sum, row) => sum + (row.selectable ?? 0), 0);
   const complete = !model.invalid && selected >= entitled && entitled > 0;
   const draftSaved = draft && model.selections.some((row) => row.campaignId === draft.campaignId && row.variantId === draft.variantId);
+  useEffect(() => {
+    if (!collapseAfterSave || pending || uncertain || !draftSaved) return;
+    setExpanded(false);
+    setCard("");
+    setCollapseAfterSave(false);
+  }, [collapseAfterSave, pending, uncertain, draftSaved]);
   // UX-04: the intent ends only on a confirmed (or read-back) model that contains it. A newer chip the
   // buyer picks replaces the draft object, so it starts uncommitted and keeps its own notice.
   if (draft && draftSaved && !draft.committed) setDraft({ ...draft, committed: true });
@@ -180,14 +187,14 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
             setCard(card === key ? "" : key);
             if (product.options.length === 1) setDraft({campaignId: campaign.campaignId, variantId: product.options[0]!.variantId, label: `${product.name} — ${product.options[0]!.label}`});
           }}>
-            <div className="flex flex-wrap gap-2" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-pressed={option?.variantId === o.variantId} className="min-h-11 border border-black/30 px-3 text-sm aria-pressed:bg-[#634936] aria-pressed:text-white" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.label}</button>)}</div>
+            <div className="flex flex-wrap gap-1.5" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-label={o.label} aria-pressed={option?.variantId === o.variantId} className="min-h-10 min-w-10 border border-black/30 px-2.5 py-1 text-xs leading-5 aria-pressed:bg-[#634936] aria-pressed:text-white sm:min-h-11 sm:text-sm" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.color && o.size ? <>{o.color} <span className="text-black/40 aria-pressed:text-white/70">/</span> {o.size}</> : o.label}</button>)}</div>
             {option ? <p className="mt-3 text-sm">{uncertain ? "Đang chờ kiểm tra kết quả lưu quà…" : pending ? "Đang cập nhật quà…" : chosen > 0 ? "Đã thêm vào đơn" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">Chọn phiên bản để xem.</p>}
             {receiveBlockReason ? <p id={receiveReasonId} className="mt-2 text-xs" aria-live="polite">{receiveBlockReason}</p> : null}
             <button type="button" className="btn btn--secondary mt-3 w-full" disabled={receiveBlockReason !== null} aria-describedby={receiveBlockReason ? receiveReasonId : undefined} onClick={() => {
               if (!option) return;
               // A new receive is a new intent: until the server confirms it, an earlier save no longer covers it.
               if (draft?.committed) setDraft({ ...draft, committed: false });
-              change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0);
+              if (change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0)) setCollapseAfterSave(true);
             }}>Nhận quà này</button>
           </GiftProductCard>;
         })}</div>
