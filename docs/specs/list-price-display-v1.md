@@ -52,20 +52,22 @@ Sản phẩm có `null` hiển thị như hiện tại, một giá, không badge
 
 ## 4. Tương tác với chương trình giảm giá
 
-**Quy tắc mặc định (cần xác nhận, mục Q1):** khi một biến thể có chiến dịch/bậc giảm đang áp dụng, **giá niêm yết bị ẩn** và việc hiển thị theo đúng cơ chế hiện tại:
+**Quy tắc đã chốt (Q1):** khi một biến thể có chiến dịch/bậc giảm đang áp dụng, **giá POS bị ẩn**; giá niêm yết vẫn gạch ngang và giá chính là giá chiến dịch.
 
 | Trạng thái biến thể | Gạch ngang | Giá chính | Badge |
 |---|---|---|---|
 | Không có chiến dịch, có giá niêm yết | `listPrice` | giá POS | `-X%` (so với `listPrice`) |
-| Có chiến dịch hợp lệ | giá POS | giá chiến dịch | `-Y%` (so với giá POS, đúng như hiện nay) |
-| Không có giá niêm yết (guard `null`) | không | giá POS | không |
+| Có chiến dịch hợp lệ, có giá niêm yết | `listPrice` (giá POS không hiện) | giá chiến dịch | `-Y%` (so với `listPrice`) |
+| Không có giá niêm yết (guard `null`) | giá POS nếu có chiến dịch, ngược lại không | giá POS hoặc giá chiến dịch | như hiện nay (so với giá POS), hoặc không |
 
-Lý do: chiến dịch tiếp tục tính trên giá POS (không sửa tiền), `/sale/*` vẫn phân biệt được hàng đang sale thật, và badge của chiến dịch phản ánh mức giảm thật thay vì cộng dồn với giá niêm yết.
+Chiến dịch vẫn **tính trên giá POS** (không sửa tiền). Giá niêm yết chỉ thay giá POS ở vai trò "giá gạch" và làm mốc cho badge. Hệ quả cần biết:
 
-Các lựa chọn khác đã cân nhắc:
+- Badge khi có chiến dịch lớn hơn mức giảm thật của chiến dịch. Ví dụ POS 590.000, niêm yết 749.000, chiến dịch 20% → giá 472.000, badge **-37%** (chiến dịch thật chỉ giảm 20% so với giá POS).
+- Mốc so sánh của badge trên card, PDP, giỏ hàng và trang đơn luôn là giá niêm yết khi có, nên các bề mặt nhất quán với nhau.
+- Quy tắc nghiệp vụ của chiến dịch (không cộng dồn, xung đột về giá cơ sở, `/sale/*` theo `isDiscounted`) giữ nguyên. Chỉ phần trình bày thay đổi.
+- Rủi ro pháp lý và chính sách quảng cáo tăng vì mức "giảm" hiển thị phình lên so với lựa chọn ẩn giá niêm yết khi có chiến dịch (xem §9).
 
-- *Gạch cả hai giá* (niêm yết và POS) khi có chiến dịch: badge phình lên, rủi ro chính sách quảng cáo/pháp lý cao hơn. Không khuyến nghị.
-- *Chiến dịch tính trên giá niêm yết*: chiến dịch % nhỏ (ví dụ 10% của 699k = 629k) sẽ cho giá cao hơn giá POS 590k, tức là tăng giá bán. Phải cấu hình lại toàn bộ chiến dịch. Không khuyến nghị.
+Lựa chọn khác đã cân nhắc và loại: *chiến dịch tính trên giá niêm yết* (chiến dịch % nhỏ như 10% của 749k = 674k sẽ cao hơn giá POS 590k, tức tăng giá bán).
 
 **Quy tắc bất biến:** `effective price ≤ POS price` ở mọi trạng thái; giá niêm yết không bao giờ làm tăng số tiền khách trả.
 
@@ -73,9 +75,9 @@ Các lựa chọn khác đã cân nhắc:
 
 | Bề mặt | Hành vi | File chính (dự kiến) |
 |---|---|---|
-| Product card (lưới, tìm kiếm, liên quan, home) | Giá niêm yết gạch ngang + giá POS + badge `-%` | `src/components/headless/build-product-card-model.ts`, `src/components/brand/product-card.tsx` |
+| Product card (lưới, tìm kiếm, liên quan, home) | Giá niêm yết gạch ngang + giá bán (giá POS hoặc giá chiến dịch) + badge `-%` so với giá niêm yết | `src/components/headless/build-product-card-model.ts`, `src/components/brand/product-card.tsx` |
 | Trang sản phẩm (PDP), chọn biến thể | Như bảng §4; badge cập nhật theo biến thể được chọn | `src/components/headless/variant-selection-model.ts`, `src/components/brand/purchase-panel.tsx` |
-| Giỏ hàng, drawer, checkout | Mỗi dòng gạch giá niêm yết; dòng "Tiết kiệm" = Σ((giá tham chiếu − giá trả) × số lượng), giá tham chiếu theo §4; dòng quà tặng 0đ không tính | `src/routes/line-discount-model.ts`, `src/routes/cart-model.ts`, `src/components/brand/line-price.tsx`, `src/app/cart/page.tsx` |
+| Giỏ hàng, drawer, checkout | Mỗi dòng gạch giá niêm yết; dòng "Tiết kiệm" = Σ((giá niêm yết − giá trả) × số lượng); dòng không có giá niêm yết dùng giá POS làm mốc; dòng quà tặng 0đ không tính | `src/routes/line-discount-model.ts`, `src/routes/cart-model.ts`, `src/components/brand/line-price.tsx`, `src/app/cart/page.tsx` |
 | Trang đơn hàng / tra cứu đơn / email xác nhận (nếu có) | Hiện giá niêm yết đã đóng băng của từng dòng và "Bạn đã tiết kiệm" | `src/routes/order-summary-model.ts` + snapshot (§6) |
 | Feed Google Merchant | `g:price` = giá niêm yết, `g:sale_price` = giá khách trả (giá POS hoặc giá chiến dịch). Bật theo pha riêng, có cờ riêng (§8) | `src/commerce/merchant-offer-mapper.ts`, `src/commerce/merchant-feed-serializer.ts` |
 | JSON-LD (structured data) | `Offer.price` giữ giá khách trả; thêm `priceSpecification` loại `ListPrice` cho giá niêm yết | `src/seo/structured-data.ts` |
@@ -93,7 +95,7 @@ Các lựa chọn khác đã cân nhắc:
 ## 7. Vận hành và nội dung
 
 - **Chính sách giá** (`/policies#chinh-sach-gia`): thêm đoạn định nghĩa "Giá niêm yết" và "Giá bán", viết theo sự thật về cách giá niêm yết được xác định (xem G0). Nội dung do chủ shop duyệt.
-- **Admin:** trang sản phẩm hiển thị giá niêm yết tính ra (chỉ đọc) cạnh giá POS, kèm cảnh báo khi guard trả `null`. v1 không có ghi đè theo từng sản phẩm (xem Q5).
+- **Admin:** trang sản phẩm hiển thị giá niêm yết tính ra (chỉ đọc) cạnh giá POS, kèm cảnh báo khi guard trả `null`. ghi đè theo từng sản phẩm tùy kết quả Q5.
 - **Cache:** feed Merchant dùng cache khóa cố định kèm `promotion pricing revision`. Bật/tắt cờ hoặc đổi công thức phải làm mất hiệu lực cache này, nếu không feed và PDP có thể lệch nhau (đúng loại sai lệch mà test `merchant-feed-pdp-price-parity` đang chặn).
 
 ## 8. Cờ và pha triển khai
@@ -125,7 +127,7 @@ Domain (`tests/domain`):
 
 - `computeListPriceVnd`: ví dụ 565.000 → 699.000; ranh giới đúng bằng mốc (POS 582.500 → target 699.000 → 699.000); POS 1 đồng, 100.000, 250.000, 429.000, số lớn gần `MAX_SAFE_INTEGER`; luôn thỏa `list > pos`, `list ≥ 1,2 × pos` và `list mod 50.000 = 49.000`; guard markup; đầu vào không hợp lệ.
 - Property test: với dải giá POS ngẫu nhiên, số 49/99 trả về là nhỏ nhất thỏa điều kiện.
-- Quy tắc §4: chiến dịch hoạt động ⇒ không hiện giá niêm yết; chiến dịch xung đột (`PROMOTION_CONFLICT`) ⇒ hiển thị như không chiến dịch.
+- Quy tắc §4: chiến dịch hoạt động ⇒ gạch giá niêm yết, giá POS không hiện, badge so với giá niêm yết; chiến dịch xung đột (`PROMOTION_CONFLICT`) ⇒ hiển thị như không chiến dịch.
 - **Bất biến tiền (hồi quy):** `effectivePriceVnd`, `unitPriceVnd`, `baseUnitPriceVnd`, tổng giỏ, `retail_price` gửi Pancake, giá tracking, giá trong snapshot đơn giống hệt khi bật và tắt cờ.
 - `isDiscounted` không đổi khi bật cờ; `/sale/*` chỉ liệt kê sản phẩm có chiến dịch.
 - Parity: `g:price`/`g:sale_price`, JSON-LD và PDP khớp nhau cho cùng biến thể, có và không có chiến dịch.
@@ -148,12 +150,23 @@ Trình duyệt (`tests/a11y-runtime`): card, PDP, giỏ trên mobile; nhãn a11y
 
 ## 12. Quyết định còn mở
 
-| # | Câu hỏi | Mặc định trong spec |
+| # | Câu hỏi | Trạng thái |
 |---|---|---|
-| Q1 | Chiến dịch đang chạy thì hiển thị giá niêm yết thế nào? | Ẩn giá niêm yết, gạch giá POS, badge theo chiến dịch (§4) |
-| Q2 | "Gần nhất kèm sàn, luôn làm tròn lên" chốt là làm tròn lên? | Làm tròn lên (§3) |
-| Q3 | Mức guard `LIST_PRICE_MAX_MARKUP` (giá thấp)? | 1,5 |
-| Q4 | Giá niêm yết đã từng bán thật ở kênh nào (offline, Shopee, live Facebook...)? | Chưa trả lời; quyết định mức rủi ro G0 |
-| Q5 | Cần ghi đè/loại trừ theo từng sản phẩm (cần lưu DB) không? | Không có ở v1 |
+| Q1 | Chiến dịch đang chạy thì hiển thị thế nào? | **Đã chốt:** ẩn giá POS, gạch giá niêm yết, giá chính là giá chiến dịch (§4) |
+| Q2 | "Gần nhất kèm sàn, luôn làm tròn lên" chốt là làm tròn lên? | Đang dùng: làm tròn lên (§3); chủ shop chưa phản hồi lại |
+| Q3 | Mức guard `LIST_PRICE_MAX_MARKUP` (giá thấp)? | **Đã chốt:** 1,5 |
+| Q4 | Giá niêm yết đã từng bán thật ở kênh nào? | **Chưa từng.** Đây là trường hợp rủi ro cao nhất: xem G0 và §9 |
+| Q5 | Ghi đè/loại trừ theo từng sản phẩm? | **Chờ quyết định** (giải thích ở dưới) |
 
 **G0 — cổng trước khi bật production:** chủ shop xác nhận cách mô tả giá niêm yết trong chính sách giá và đã tham khảo luật sư/tư vấn pháp lý về việc dùng giá tham chiếu cao hơn giá bán thực tế, đặc biệt cho pha 3 (Merchant).
+
+### Q5 — Ghi đè theo từng sản phẩm là gì
+
+Mặc định công thức §3 áp cho **mọi** sản phẩm. "Ghi đè" cho phép chủ shop đổi hành vi cho **một sản phẩm cụ thể** ngay trong trang admin sản phẩm. Có hai mức:
+
+1. **Tắt giá niêm yết** (một ô tick): sản phẩm đó hiển thị một giá như hiện nay. Dùng cho hàng xả/giá đã rất thấp, bộ set/combo, phụ kiện giá rẻ, sản phẩm mới ra mắt chưa muốn hiện giảm.
+2. **Nhập tay giá niêm yết** (một ô số): thay cho kết quả công thức. Dùng khi sản phẩm có giá cũ thật (đã từng bán ở mức đó) và muốn dùng đúng con số đó.
+
+Chi phí: thêm cột vào `ProductMirror`/bảng website-owned (migration), form admin, kiểm tra giá nhập tay phải lớn hơn giá POS và theo đúng giới hạn, lưu vết ai đổi lúc nào; khoảng 4–6 file thêm. Không có ghi đè thì chỉ tắt/bật được toàn bộ bằng cờ.
+
+Vì Q4 là "chưa từng bán ở giá niêm yết", spec khuyến nghị tối thiểu có mức 1 (tắt theo sản phẩm) trong v1, để bật dần và gỡ nhanh từng sản phẩm khi có khiếu nại. Mức 2 có thể để v1.1.
