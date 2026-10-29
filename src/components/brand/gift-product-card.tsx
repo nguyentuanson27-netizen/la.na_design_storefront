@@ -4,10 +4,9 @@ import type { ReactNode } from "react";
 
 /**
  * `chips` (the version picker) sits in the header beside the photo, under the name, so the open card
- * stays short on a phone. With many versions that column is too narrow (chips would stack one per row),
- * so `chipsBelow` puts them across the full card width instead; `children` is the rest of the card below.
+ * stays short on a phone; `children` is the rest of the card below.
  */
-export function GiftProductCard({ name, imageUrl, open, onOpen, chips, chipsBelow = false, children }: Readonly<{name: string; imageUrl: string | null; open: boolean; onOpen: () => void; chips?: ReactNode; chipsBelow?: boolean; children: ReactNode}>) {
+export function GiftProductCard({ name, imageUrl, open, onOpen, chips, children }: Readonly<{name: string; imageUrl: string | null; open: boolean; onOpen: () => void; chips?: ReactNode; children: ReactNode}>) {
   // The open card is the one being chosen from: brand-brown border and a warm tint set it apart.
   return <article className={`min-w-0 border p-3 transition-colors ${open ? "border-[#634936] bg-[#f3ebe4]" : "border-black/15 bg-[#fcf8f6]"}`}>
     <div className={open ? "flex items-start gap-4" : "flex items-center gap-4"}>
@@ -16,10 +15,9 @@ export function GiftProductCard({ name, imageUrl, open, onOpen, chips, chipsBelo
         <button type="button" aria-expanded={open} onClick={onOpen} className="flex min-h-11 w-full items-center gap-4 text-left">
           <span className="min-w-0 flex-1 break-words text-sm font-semibold">{name}</span><span aria-hidden="true">{open ? "−" : "+"}</span>
         </button>
-        {open && chips && !chipsBelow ? <div className="mt-1">{chips}</div> : null}
+        {open && chips ? <div className="mt-1">{chips}</div> : null}
       </div>
     </div>
-    {open && chips && chipsBelow ? <div className="mt-2">{chips}</div> : null}
     {open ? <div className="mt-3 border-t border-black/10 pt-3">{children}</div> : null}
   </article>;
 }
