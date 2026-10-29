@@ -22,4 +22,6 @@
 | [0018](./0018-voucher-v1-accepted-order-architecture.md) | **Accepted** | Voucher v1 durable website-accepted marker (separate insert-only record), DB-enforced immutable accepted quote, reserve-then-consume transaction order, CAS refund and cart-bound selection storage; owner approved gates H1-D / H2 on 2026-10-25 |
 | [0019](./0019-voucher-v1-hold-design.md) | **Accepted** (H3-D, 2026-10-26) | Voucher v1 10-minute hold design (lock order, lazy expiry, one-timestamp TTL, idempotent swap, self-held precedence, verified-shop gate); V11 may be built to it, nothing enabled |
 
+| [0020](./0020-voucher-types-and-tiers.md) | **Proposed** (owner product rules decided 2026-10-28; migration approval pending) | Voucher types and tiers: several MERCHANDISE vouchers of different types stack in sequence by type priority, one tier per type, slot-keyed holds and redemptions |
+
 ADR files are retained as historical records when superseded or amended. The newest accepted ADR governs where decisions overlap, including repository workflow policy documented by ADR 0005, Merchant domain authority documented by ADR 0010, Merchant apparel-fact policy documented by ADR 0007, and Merchant manufacturer-MPN source/ownership semantics documented by ADR 0008.

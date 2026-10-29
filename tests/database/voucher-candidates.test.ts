@@ -6,6 +6,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import {
   MAX_VOUCHER_CANDIDATES,
+  MAX_VOUCHER_SELECTION_LOOKUP,
   lookupVoucherCode,
   readOwnHeldVouchers,
   readPublicVoucherCandidates,
@@ -107,7 +108,7 @@ test("a manual selection is revalidated against the live row; stale ids simply d
   assert.deepEqual(picked.map((c) => c.id), [live.id]);
   assert.deepEqual(await readSelectedVouchers({ client, shopId: SHOP, ids: [], now: NOW, env: ON }), []);
   assert.deepEqual(await readSelectedVouchers({ client, shopId: SHOP, ids: [live.id], now: NOW, env: {} }), []);
-  await assert.rejects(readSelectedVouchers({ client, shopId: SHOP, ids: ["a", "b", "c", "d", "e"], now: NOW, env: ON }), RangeError);
+  await assert.rejects(readSelectedVouchers({ client, shopId: SHOP, ids: Array.from({ length: MAX_VOUCHER_SELECTION_LOOKUP + 1 }, (_, index) => `id${index}`), now: NOW, env: ON }), RangeError);
 });
 
 test("EX-08 / AC-31: the attempt's own live hold stays recognisable after the campaign expires, is disabled, or the flag goes OFF", async () => {

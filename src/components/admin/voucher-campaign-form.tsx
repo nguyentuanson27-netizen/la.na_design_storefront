@@ -19,8 +19,14 @@ function Choice({ name, value, label, checked, onChange, disabled }: Readonly<{ 
   </label>;
 }
 
-export function VoucherCampaignForm({ initial, categories, included = [], excluded = [], action }: Readonly<{
+export type VoucherTypeOption = Readonly<{ id: string; name: string; issuance: "AUTO" | "CODE"; visibility: "PUBLIC" | "PRIVATE"; code: string | null }>;
+
+export function VoucherCampaignForm({ initial, categories, included = [], excluded = [], types = [], presetTypeId = "", action }: Readonly<{
   initial?: VoucherCampaignRow | null;
+  /** The shop's voucher types (ADR 0020): a merchandise voucher can be a tier of one. */
+  types?: readonly VoucherTypeOption[];
+  /** A type to start a new tier in (the "add a tier" link of a type). */
+  presetTypeId?: string;
   categories: readonly { key: string; label: string; parentKey: string | null }[];
   included?: readonly GiftQuantityProductRef[];
   excluded?: readonly GiftQuantityProductRef[];
@@ -28,6 +34,11 @@ export function VoucherCampaignForm({ initial, categories, included = [], exclud
 }>) {
   const identityLocked = initial?.enabledAt != null;
   const [kind, setKind] = useState<string>(initial?.kind ?? "MERCHANDISE");
+  // A tier never changes type, and takes its distribution from it; a plain voucher chooses its own.
+  const [typeId, setTypeId] = useState<string>(initial?.typeId ?? (types.some((type) => type.id === presetTypeId) ? presetTypeId : ""));
+  const chosenType = types.find((type) => type.id === typeId) ?? null;
+  const typed = kind === "MERCHANDISE" && chosenType !== null;
+  const typeLocked = initial?.typeId != null;
   const [issuance, setIssuance] = useState<string>(initial?.issuance ?? "AUTO");
   const [visibility, setVisibility] = useState<string>(initial?.visibility ?? "PUBLIC");
   const [discountType, setDiscountType] = useState<string>(initial?.discountType ?? "FIXED_AMOUNT_VND");
@@ -68,21 +79,35 @@ export function VoucherCampaignForm({ initial, categories, included = [], exclud
       <input type="hidden" name="visibility" value={initial.visibility} />
       {initial.code ? <input type="hidden" name="code" value={initial.code} /> : null}
     </> : null}
+    {kind === "MERCHANDISE" && (types.length > 0 || typeLocked) ? <div className="border-t border-black/20 pt-5">
+      {typeLocked ? <input type="hidden" name="typeId" value={typeId} /> : null}
+      <label className="block text-sm font-semibold">{"Thuộc loại (mốc)"}
+        <select name={typeLocked ? undefined : "typeId"} value={typeId} onChange={(event) => setTypeId(event.target.value)} disabled={typeLocked} className={inputClass}>
+          <option value="">{"Không thuộc loại nào (voucher đơn lẻ)"}</option>
+          {types.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+        </select>
+      </label>
+      <p className="mt-2 text-sm text-black/65">{typed
+        ? `Đây là một mốc của loại “${chosenType!.name}”: khách dùng tối đa một mốc của loại này, hệ thống tự chọn mốc cao nhất khách đạt. Cách phát hành${chosenType!.issuance === "CODE" ? ` (mã ${chosenType!.code ?? ""}, ${chosenType!.visibility === "PRIVATE" ? "riêng tư" : "công khai"})` : " (tự động, công khai)"} lấy theo loại. Mốc cao hơn phải giảm nhiều hơn mốc thấp hơn của cùng loại.`
+        : "Chọn một loại để voucher này trở thành một mốc của loại đó. Loại không đổi được sau khi lưu."}</p>
+    </div> : null}
     <fieldset className="border-t border-black/20 pt-5" disabled={identityLocked}>
-      <legend className="text-sm font-semibold">{"Loại voucher"}</legend>
+      <legend className="text-sm font-semibold">{typed ? "Loại hình" : "Loại voucher"}</legend>
       {identityLocked ? <p className="mt-2 text-sm text-black/65">{"Đã bật nên loại, cách phát hành, hiển thị và mã không đổi được. Hãy sao chép thành voucher mới."}</p> : null}
       <div className="mt-2 grid gap-x-6 sm:grid-cols-2">
         <Choice name="kind" value="MERCHANDISE" label="Giảm tiền hàng" checked={kind === "MERCHANDISE"} onChange={choose(setKind, "MERCHANDISE")} />
         <Choice name="kind" value="SHIPPING_FREE" label="Miễn phí vận chuyển (100% phí còn lại)" checked={kind === "SHIPPING_FREE"} onChange={choose(setKind, "SHIPPING_FREE")} />
-        <Choice name="issuance" value="AUTO" label="Tự động áp dụng" checked={issuance === "AUTO"} onChange={() => { setIssuance("AUTO"); setVisibility("PUBLIC"); }} />
-        <Choice name="issuance" value="CODE" label="Khách nhập mã" checked={issuance === "CODE"} onChange={choose(setIssuance, "CODE")} />
-        <Choice name="visibility" value="PUBLIC" label="Công khai trong danh sách" checked={visibility === "PUBLIC"} onChange={choose(setVisibility, "PUBLIC")} />
-        <Choice name="visibility" value="PRIVATE" label="Riêng tư (chỉ hiện sau khi nhập mã)" checked={visibility === "PRIVATE"} onChange={choose(setVisibility, "PRIVATE")} disabled={issuance === "AUTO"} />
+        {typed ? null : <>
+          <Choice name="issuance" value="AUTO" label="Tự động áp dụng" checked={issuance === "AUTO"} onChange={() => { setIssuance("AUTO"); setVisibility("PUBLIC"); }} />
+          <Choice name="issuance" value="CODE" label="Khách nhập mã" checked={issuance === "CODE"} onChange={choose(setIssuance, "CODE")} />
+          <Choice name="visibility" value="PUBLIC" label="Công khai trong danh sách" checked={visibility === "PUBLIC"} onChange={choose(setVisibility, "PUBLIC")} />
+          <Choice name="visibility" value="PRIVATE" label="Riêng tư (chỉ hiện sau khi nhập mã)" checked={visibility === "PRIVATE"} onChange={choose(setVisibility, "PRIVATE")} disabled={issuance === "AUTO"} />
+        </>}
       </div>
-      {issuance === "CODE" ? <label className="mt-4 block text-sm font-semibold">{"Mã (3–32 ký tự A–Z, 0–9, - hoặc _)"}
+      {issuance === "CODE" && !typed ? <label className="mt-4 block text-sm font-semibold">{"Mã (3–32 ký tự A–Z, 0–9, - hoặc _)"}
         <input name="code" required minLength={3} maxLength={32} pattern="[A-Za-z0-9_\-]{3,32}" defaultValue={initial?.code ?? ""} className={inputClass} autoCapitalize="characters" />
       </label> : null}
-      {visibility === "PRIVATE" && issuance === "CODE" ? <p className="mt-2 text-sm text-black/65">{"Mã riêng tư không phải bí mật bảo mật: ai có mã đều dùng được, vì không giới hạn theo khách."}</p> : null}
+      {visibility === "PRIVATE" && issuance === "CODE" && !typed ? <p className="mt-2 text-sm text-black/65">{"Mã riêng tư không phải bí mật bảo mật: ai có mã đều dùng được, vì không giới hạn theo khách."}</p> : null}
     </fieldset>
 
     {kind === "MERCHANDISE" ? <fieldset className="border-t border-black/20 pt-5">

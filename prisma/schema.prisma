@@ -1303,7 +1303,9 @@ model VoucherCampaign {
   issuance               VoucherIssuance
   visibility             VoucherVisibility
   /// Canonical code (`[A-Z0-9_-]{3,32}`), present exactly when `issuance` is CODE. Unique per shop.
+  /// Present exactly when the campaign is a tier of a `VoucherType`; then `code` stays NULL because the type owns it.
   code                   String?
+  typeId                 String?
   discountType           VoucherDiscountType?
   fixedAmountVnd         BigInt?
   percent                Int?
@@ -1330,9 +1332,31 @@ model VoucherCampaign {
   updatedAt              DateTime             @updatedAt @db.Timestamptz(3)
   holds                  VoucherHold[]
   redemptions            VoucherRedemption[]
+  type                   VoucherType?         @relation(fields: [typeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([pancakeShopId, code])
   @@index([pancakeShopId, isEnabled, kind, issuance, visibility])
+  @@index([typeId])
+}
+
+/// A voucher TYPE (ADR 0020): the unit that decides "only one voucher of this type". Its tiers are `VoucherCampaign` rows with
+/// `typeId`. `priority` is the order types are applied in (smaller first); a CODE type owns one code for all its tiers.
+model VoucherType {
+  id            String            @id @default(cuid())
+  pancakeShopId Int
+  name          String
+  priority      Int
+  issuance      VoucherIssuance
+  visibility    VoucherVisibility
+  code          String?
+  /// Optimistic concurrency token of the Admin form (like `VoucherCampaign.revision`).
+  revision      Int               @default(1)
+  createdAt     DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime          @updatedAt @db.Timestamptz(3)
+  tiers         VoucherCampaign[]
+
+  @@unique([pancakeShopId, code])
+  @@index([pancakeShopId, priority])
 }
 
 /// A 10-minute entitlement for one voucher of one checkout attempt (spec §5.1). `expiresAt` is exactly
@@ -1344,6 +1368,8 @@ model VoucherHold {
   campaignRevision Int
   pancakeShopId    Int
   kind             VoucherKind
+  /// `SHIPPING_FREE`, `MERCHANDISE` or `MERCHANDISE:<typeId>`; '' on insert means "the slot of the campaign" (trigger).
+  slot             String             @default("")
   attemptKey       String
   quoteDigest      String
   paidRevision     BigInt
@@ -1361,6 +1387,7 @@ model VoucherHold {
 
   @@index([campaignId, state, expiresAt])
   @@index([attemptKey, kind, state])
+  @@index([attemptKey, slot, state])
   @@index([orderId])
 }
 
@@ -1371,6 +1398,8 @@ model VoucherRedemption {
   campaignId        String
   campaignRevision  Int
   kind              VoucherKind
+  /// The slot of the hold this redeems; '' on insert means "the slot of the hold" (trigger).
+  slot              String          @default("")
   orderId           String
   holdId            String          @unique
   amountVnd         BigInt
@@ -1384,7 +1413,7 @@ model VoucherRedemption {
   order             OrderMirror     @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   hold              VoucherHold     @relation(fields: [holdId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
-  @@unique([orderId, kind])
+  @@unique([orderId, slot])
   @@index([campaignId, refundedAt])
 }
 
@@ -1418,6 +1447,8 @@ model CartVoucherSelection {
   merchandiseVoucherId String?
   shippingMode         VoucherSelectionMode @default(AUTO)
   shippingVoucherId    String?
+  /// Typed slots (ADR 0020): `{ "<typeId>": { mode, voucherId, unlocked } }`. The untyped slot uses the columns above.
+  typeSelections       Json                 @default("{}")
   expiresAt            DateTime             @db.Timestamptz(3)
   createdAt            DateTime             @default(now()) @db.Timestamptz(3)
   updatedAt            DateTime             @updatedAt @db.Timestamptz(3)

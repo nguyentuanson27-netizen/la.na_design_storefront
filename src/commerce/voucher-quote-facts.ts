@@ -1,7 +1,7 @@
-import type { VoucherPaidLine } from "./voucher-allocation.ts";
+import { stripVoucherSegments } from "./voucher-allocation.ts";
 import type { VoucherCampaign } from "./voucher-campaign.ts";
 import { voucherProofFactsFromQuote, voucherQuoteDigest, type VoucherProofFacts, type VoucherProofLine } from "./voucher-quote-proof.ts";
-import { applyAllocationToLines, type VoucherQuote } from "./voucher-quote.ts";
+import type { VoucherQuote } from "./voucher-quote.ts";
 
 /**
  * Voucher v1 (V12): the one place that turns a computed voucher quote into the facts a hold and a proof are bound to.
@@ -15,7 +15,7 @@ import { applyAllocationToLines, type VoucherQuote } from "./voucher-quote.ts";
 /** The proof binds the NUMBER of retained gift slots; the chosen gift variation stays with the checkout proof. */
 export const GIFT_SLOTS_VARIATION = "gift-slots";
 
-const stripSegment = (lineId: string) => lineId.replace(/\|v\d+$/, "");
+const stripSegment = stripVoucherSegments;
 
 export type VoucherQuoteFacts = Readonly<{
   paidLines: readonly Readonly<{ lineId: string; pancakeVariationId: string; quantity: number; unitPriceVnd: number }>[];
@@ -30,12 +30,11 @@ export type VoucherQuoteFacts = Readonly<{
 export function buildVoucherQuoteFacts(input: Readonly<{
   quote: Extract<VoucherQuote, { ok: true }>;
   campaigns: readonly VoucherCampaign[];
-  lines: readonly VoucherPaidLine[];
   variationOfLine: ReadonlyMap<string, string>;
   paidRevision: bigint;
 }>): VoucherQuoteFacts | null {
-  const { quote, campaigns, lines, variationOfLine, paidRevision } = input;
-  const paidLines = applyAllocationToLines(lines, quote.allocation).map((line) => ({
+  const { quote, campaigns, variationOfLine, paidRevision } = input;
+  const paidLines = quote.linesAfter.map((line) => ({
     lineId: line.lineId,
     pancakeVariationId: variationOfLine.get(stripSegment(line.lineId)) ?? "",
     quantity: line.quantity,

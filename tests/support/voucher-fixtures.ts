@@ -31,6 +31,13 @@ export function createVoucherFixtures(prisma: PrismaClient, shopId: number, pref
   const shippingCampaign = (data: Record<string, unknown> = {}) =>
     campaign({ kind: "SHIPPING_FREE", discountType: null, fixedAmountVnd: null, minEligibleSubtotalVnd: null, ...data });
 
+  /** A voucher type (ADR 0020). AUTO and PUBLIC by default; a CODE type needs `code`. */
+  const type = (data: Record<string, unknown> = {}) =>
+    prisma.voucherType.create({ data: { pancakeShopId: shopId, name: `${prefix} type ${token()}`, priority: 1, issuance: "AUTO", visibility: "PUBLIC", ...data } as never });
+
+  /** A tier of `typeId`: an ACTIVE merchandise campaign that copies its type's issuance/visibility (pass them for a CODE type). */
+  const tier = (typeId: string, data: Record<string, unknown> = {}) => campaign({ typeId, ...data });
+
   const hold = (campaignId: string, data: Record<string, unknown> = {}) => {
     const createdAt = new Date();
     return prisma.voucherHold.create({
@@ -48,7 +55,8 @@ export function createVoucherFixtures(prisma: PrismaClient, shopId: number, pref
       await tx.voucherRedemption.deleteMany({ where: { campaign: { pancakeShopId: shopId } } });
       await tx.voucherHold.deleteMany({ where: { campaign: { pancakeShopId: shopId } } });
       await tx.voucherCampaign.deleteMany({ where: { pancakeShopId: shopId } });
+      await tx.voucherType.deleteMany({ where: { pancakeShopId: shopId } });
     });
 
-  return { token, hex, campaign, shippingCampaign, hold, cleanup, base };
+  return { token, hex, campaign, shippingCampaign, type, tier, hold, cleanup, base };
 }

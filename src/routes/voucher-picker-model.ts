@@ -3,9 +3,9 @@ import type { VoucherSelectionIntent } from "../commerce/voucher-optimizer.ts";
 import type { VoucherCardReason, VoucherCardState, VoucherQuote } from "../commerce/voucher-quote.ts";
 
 /**
- * Voucher v1 (V15): the picker as plain data (spec §7). No pricing happens here and nothing is decided in React:
+ * Voucher v1 (V15, one group per slot per ADR 0020): the picker as plain data (spec §7). No pricing happens here and nothing is decided in React:
  * the model only words and orders what the server-derived `VoucherQuote` already says, so PDP, cart and checkout
- * show the same two groups, the same reasons and the same totals.
+ * show the same groups (one per merchandise type, then shipping), the same reasons and the same totals.
  *
  * Shopper-safe by construction: it receives `VoucherCard`s (no ledger, no budget, no private code) and a quote
  * whose `held` is always false, and every amount is a preview ("Dự kiến"), never a claim that anything is held.
@@ -28,6 +28,8 @@ export type VoucherPickerItem = Readonly<{
 }>;
 
 export type VoucherPickerGroup = Readonly<{
+  /** The slot this group chooses one voucher for: `SHIPPING_FREE`, `MERCHANDISE` (no type) or `MERCHANDISE:<typeId>`. */
+  slot: string;
   kind: "MERCHANDISE" | "SHIPPING_FREE";
   heading: string;
   hint: string;
@@ -41,10 +43,13 @@ export type VoucherPickerGroup = Readonly<{
 export type VoucherPickerModel = Readonly<{
   /** Always a preview: nothing is held and no countdown exists. */
   previewNotHeld: true;
-  groups: readonly [VoucherPickerGroup, VoucherPickerGroup];
+  /** Merchandise groups in application order (type priority), then shipping last. */
+  groups: readonly VoucherPickerGroup[];
   summary: Readonly<{
     paidBeforeText: string;
     merchandiseDiscountText: string | null;
+    /** One line per chosen merchandise voucher, in application order, when more than one applies. */
+    merchandiseLines: readonly Readonly<{ id: string; label: string; amountText: string }>[];
     shippingFeeText: string;
     shippingDiscountText: string | null;
     totalText: string;
@@ -126,15 +131,38 @@ export function buildVoucherPickerModel(input: Readonly<{
   selectionVersion?: string | null;
 }>): VoucherPickerModel {
   const { quote, entries } = input;
-  const group = (kind: "MERCHANDISE" | "SHIPPING_FREE", heading: string, noneLabel: string, noneSelected: boolean): VoucherPickerGroup => {
-    const mode = (kind === "MERCHANDISE" ? input.intent?.merchandise.mode : input.intent?.shipping.mode) ?? "AUTO";
-    const items = entries
-      .filter((entry) => entry.card.kind === kind)
-      .map((entry) => ({ item: itemOf(entry.card, entry.state), saving: entry.state.savingVnd ?? 0, shortfall: entry.state.shortfallVnd ?? Number.MAX_SAFE_INTEGER }));
-    return Object.freeze({ kind, heading, hint: "Chọn 1", noneLabel, noneSelected, mode, items: Object.freeze(order(items)) });
+  const intent = input.intent;
+  const itemsOf = (slotEntries: typeof entries) =>
+    slotEntries.map((entry) => ({ item: itemOf(entry.card, entry.state), saving: entry.state.savingVnd ?? 0, shortfall: entry.state.shortfallVnd ?? Number.MAX_SAFE_INTEGER }));
+  const slotGroup = (slot: string, kind: VoucherPickerGroup["kind"], heading: string, hint: string, noneLabel: string, slotEntries: typeof entries): VoucherPickerGroup => {
+    const mode = (kind === "MERCHANDISE" ? intent?.merchandise[slot]?.mode : intent?.shipping.mode) ?? "AUTO";
+    const items = order(itemsOf(slotEntries));
+    return Object.freeze({ slot, kind, heading, hint, noneLabel, noneSelected: !items.some((item) => item.selected), mode, items: Object.freeze(items) });
   };
-  const merchandiseSelected = quote.selection.merchandiseId !== null;
-  const shippingSelected = quote.selection.shippingId !== null;
+
+  // Merchandise: one group per slot that has a card, in the order the stack is applied (untyped first, then by type priority).
+  const merchandiseEntries = entries.filter((entry) => entry.card.kind === "MERCHANDISE");
+  const slots = new Map<string, { priority: number; name: string | null; entries: (typeof entries)[number][] }>();
+  for (const entry of merchandiseEntries) {
+    const slot = entry.state.slot;
+    const slotInfo = slots.get(slot) ?? { priority: entry.card.type?.priority ?? 0, name: entry.card.type?.name ?? null, entries: [] };
+    slotInfo.entries.push(entry);
+    slots.set(slot, slotInfo);
+  }
+  const merchandiseGroups = [...slots.entries()]
+    .sort(([slotA, a], [slotB, b]) => a.priority - b.priority || (slotA < slotB ? -1 : slotA > slotB ? 1 : 0))
+    .map(([slot, info]) =>
+      info.name === null
+        ? slotGroup(slot, "MERCHANDISE", "Voucher giảm tiền hàng", "Chọn 1", "Không dùng voucher giảm tiền hàng", info.entries)
+        : slotGroup(slot, "MERCHANDISE", info.name, "Chọn 1 mốc", `Không dùng voucher “${info.name}”`, info.entries),
+    );
+  // v1 always listed the (possibly empty) merchandise group; keep that when no card exists.
+  if (merchandiseGroups.length === 0) merchandiseGroups.push(slotGroup("MERCHANDISE", "MERCHANDISE", "Voucher giảm tiền hàng", "Chọn 1", "Không dùng voucher giảm tiền hàng", []));
+  const shippingGroup = slotGroup("SHIPPING_FREE", "SHIPPING_FREE", "Voucher vận chuyển", "Chọn 1", "Không dùng voucher vận chuyển", entries.filter((entry) => entry.card.kind === "SHIPPING_FREE"));
+  const merchandiseLines = quote.merchandise.map((line) => {
+    const card = entries.find((entry) => entry.card.id === line.campaignId)?.card;
+    return Object.freeze({ id: line.campaignId, label: card?.type?.name ?? "Voucher giảm tiền hàng", amountText: `-${formatVoucherVnd(line.discountVnd)}` });
+  });
 
   const notices = quote.notices.map((notice) =>
     notice.group === "MERCHANDISE"
@@ -144,13 +172,11 @@ export function buildVoucherPickerModel(input: Readonly<{
   const giftLoss = quote.giftLoss;
   return Object.freeze({
     previewNotHeld: true as const,
-    groups: Object.freeze([
-      group("MERCHANDISE", "Voucher giảm tiền hàng", "Không dùng voucher giảm tiền hàng", !merchandiseSelected),
-      group("SHIPPING_FREE", "Voucher vận chuyển", "Không dùng voucher vận chuyển", !shippingSelected),
-    ]) as unknown as readonly [VoucherPickerGroup, VoucherPickerGroup],
+    groups: Object.freeze([...merchandiseGroups, shippingGroup]),
     summary: Object.freeze({
       paidBeforeText: formatVoucherVnd(quote.paidBeforeVnd),
       merchandiseDiscountText: quote.merchandiseDiscountVnd > 0 ? `-${formatVoucherVnd(quote.merchandiseDiscountVnd)}` : null,
+      merchandiseLines: Object.freeze(merchandiseLines.length > 1 ? merchandiseLines : []),
       shippingFeeText: formatVoucherVnd(quote.shippingFeeVnd),
       shippingDiscountText: quote.shippingDiscountVnd > 0 ? `-${formatVoucherVnd(quote.shippingDiscountVnd)}` : null,
       totalText: formatVoucherVnd(quote.totalPayableVnd),
@@ -181,6 +207,6 @@ export function buildVoucherPickerModel(input: Readonly<{
 
 /** Changes whenever what the server decided changes, so a client picker can be remounted on the fresh model. */
 export function voucherPickerKey(model: VoucherPickerModel): string {
-  const selected = model.groups.map((group) => `${group.mode}:${group.items.find((item) => item.selected)?.id ?? "-"}`).join("|");
+  const selected = model.groups.map((group) => `${group.slot}=${group.mode}:${group.items.find((item) => item.selected)?.id ?? "-"}`).join("|");
   return `${model.summary.totalVnd}|${model.footer.count}|${selected}`;
 }

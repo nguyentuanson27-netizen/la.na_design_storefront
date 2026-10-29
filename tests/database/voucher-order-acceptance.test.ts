@@ -11,7 +11,6 @@ import { createVoucherHoldService, voucherAttemptKey } from "../../src/commerce/
 import { readVoucherPreview } from "../../src/commerce/voucher-preview.ts";
 import { GIFT_SLOTS_VARIATION } from "../../src/commerce/voucher-quote-facts.ts";
 import { voucherQuoteDigest, type VoucherProofLine } from "../../src/commerce/voucher-quote-proof.ts";
-import { applyAllocationToLines } from "../../src/commerce/voucher-quote.ts";
 import { createVoucherFixtures } from "../support/voucher-fixtures.ts";
 
 /**
@@ -94,7 +93,7 @@ async function shown(cartId: string) {
 type OrderShape = Readonly<{ gift?: ReadonlyArray<{ variation: string; quantity: number }>; mutateShipping?: number; mutateUnit?: number; ignoreVoucher?: boolean; declare?: boolean }>;
 async function orderFor(cartId: string, shape: OrderShape = {}, state: "POS_SUBMITTING" | "DRAFT" = "POS_SUBMITTING") {
   const preview = await shown(cartId);
-  const paid = applyAllocationToLines(preview.lines, shape.ignoreVoucher ? null : preview.quote.allocation);
+  const paid = shape.ignoreVoucher ? preview.lines : preview.quote.linesAfter;
   const unit = (line: { unitPriceVnd: number }) => line.unitPriceVnd + (shape.mutateUnit ?? 0);
   const lines = paid.map((line, index) => ({
     lineId: `P:${index}`, role: "PAID" as const, variantId: stripSegment(line.lineId), pancakeVariationId: preview.variationOfLine.get(stripSegment(line.lineId))!,
@@ -200,7 +199,7 @@ test("a plain order (no declaration) is untouched: nothing is written, the secre
 test("a voucher order whose holds were released is refused, never accepted as a plain order", async () => {
   const { c, order } = await heldOrder();
   const revision = (await prisma.cart.findUniqueOrThrow({ where: { id: c.id } })).paidRevision;
-  const released = await service.hold({ shopId: SHOP, cartId: c.id, paidRevision: Number(revision), quoteDigest: f.hex("none"), grants: [], releaseKinds: ["MERCHANDISE", "SHIPPING_FREE"] });
+  const released = await service.hold({ shopId: SHOP, cartId: c.id, paidRevision: Number(revision), quoteDigest: f.hex("none"), grants: [], releaseUnlisted: true });
   assert.equal(released.ok, true, JSON.stringify(released));
   assert.deepEqual(await states(c.id), ["RELEASED", "RELEASED"]);
   assert.deepEqual(await accept(order.id), { ok: false, reason: "HOLD_UNAVAILABLE" });
@@ -267,7 +266,7 @@ test("a declaration that names another campaign, revision or amount than the liv
     await fixed(50_000, 600_000, { maxUses: 5 });
     await flow.hold({ cartId: c.id, expectedQuoteDigest: (await shown(c.id)).quoteDigest! });
     const order = await orderFor(c.id, { declare: false }, "DRAFT");
-    const forged = { ...order.snapshot, merchandise: change(order.snapshot.merchandise as unknown as Record<string, unknown>) };
+    const forged = { ...order.snapshot, merchandise: order.snapshot.merchandise.map((entry) => change(entry as unknown as Record<string, unknown>)) };
     await prisma.$executeRaw`INSERT INTO "OrderVoucherSnapshot" ("id", "orderId", "snapshot") VALUES (${`ovs_${f.token()}`}, ${order.id}, ${JSON.stringify(forged)}::jsonb)`;
     await advance(order.id);
     assert.deepEqual(await accept(order.id), { ok: false, reason: "HOLD_UNAVAILABLE" });
@@ -282,7 +281,7 @@ test("declaration rules: insert-only, DRAFT-only, at least one voucher", async (
   const row = await prisma.orderVoucherSnapshot.findUniqueOrThrow({ where: { orderId: draft.id } });
   await assert.rejects(() => prisma.orderVoucherSnapshot.update({ where: { id: row.id }, data: { snapshot: { v: 1 } } }), /insert-only/i);
   await assert.rejects(
-    () => prisma.$transaction((tx) => recordVoucherOrderSnapshot(tx, { orderId: draft.id, snapshot: { v: 1, merchandise: null, shipping: null, paidBeforeVnd: 1, paidAfterVnd: 1, shippingFeeBeforeVoucherVnd: 0, shippingFeeVnd: 0, totalVnd: 1 } })),
+    () => prisma.$transaction((tx) => recordVoucherOrderSnapshot(tx, { orderId: draft.id, snapshot: { v: 2, merchandise: [], shipping: null, paidBeforeVnd: 1, paidAfterVnd: 1, shippingFeeBeforeVoucherVnd: 0, shippingFeeVnd: 0, totalVnd: 1 } })),
     /at least one voucher/i,
   );
   await prisma.orderVoucherSnapshot.delete({ where: { id: row.id } }); // still a DRAFT and unaccepted
@@ -297,14 +296,14 @@ test("V13 gate: the voucher proof binds the gift SLOT COUNT; gift A -> B at the 
     const m = await fixed(50_000, 600_000);
     const preview = await shown(c.id);
     const cartRow = await prisma.cart.findUniqueOrThrow({ where: { id: c.id } });
-    const lines: VoucherProofLine[] = applyAllocationToLines(preview.lines, preview.quote.allocation).map((l) => ({
+    const lines: VoucherProofLine[] = preview.quote.linesAfter.map((l) => ({
       pancakeVariationId: preview.variationOfLine.get(stripSegment(l.lineId))!, quantity: l.quantity, unitPriceVnd: l.unitPriceVnd, role: "PAID",
     }));
     if (promisedSlots > 0) lines.push({ pancakeVariationId: GIFT_SLOTS_VARIATION, quantity: promisedSlots, unitPriceVnd: 0, role: "GIFT" });
     // The digest V12 stores for a quote with exactly `promisedSlots` retained gift slots.
     const quoteDigest = voucherQuoteDigest({
       state: "PREVIEW", paidRevision: cartRow.paidRevision, lines, paidSubtotalVnd: Number(preview.quote.paidAfterVnd), shippingFeeVnd: preview.quote.shippingFeeVnd, totalVnd: preview.quote.totalPayableVnd,
-      merchandise: { campaignId: m.id, campaignRevision: m.revision, amountVnd: 50_000, hold: null }, shipping: null,
+      merchandise: [{ campaignId: m.id, campaignRevision: m.revision, amountVnd: 50_000, hold: null }], shipping: null,
     });
     await prisma.voucherCampaign.update({ where: { id: m.id }, data: { reservedUses: 1, reservedVnd: BigInt(50_000) } });
     await f.hold(m.id, { attemptKey: voucherAttemptKey(c.id, SECRET), heldDiscountVnd: BigInt(50_000), quoteDigest, paidRevision: cartRow.paidRevision, campaignRevision: m.revision });

@@ -12,21 +12,27 @@ import { VoucherCard } from "./voucher-card";
  * centred panel; both are a native modal <dialog>, which gives the inert background, focus containment and Escape.
  *
  * It owns no pricing and no eligibility. A radio change only asks the server for a preview of that DRAFT (nothing is
- * saved, nothing is held); "Áp dụng" commits both groups in one server call and the picker shows what the server
+ * saved, nothing is held); "Áp dụng" commits every group in one server call and the picker shows what the server
  * answered, never what the browser expected. Closing or going back discards the draft and keeps the old choice.
  *
  * When the cart changes, the page re-renders it with a new `key` (see `voucherPickerKey`), which remounts the picker
  * on the fresh server model instead of syncing state from props in an effect.
  */
 
+type GroupDraft = Readonly<{ mode: "AUTO" | "MANUAL"; voucherId: string | null }>;
+
+/** One intent per merchandise slot (a type, or the untyped group) and one for shipping. */
 type Draft = Readonly<{
-  merchandise: Readonly<{ mode: "AUTO" | "MANUAL"; voucherId: string | null }>;
-  shipping: Readonly<{ mode: "AUTO" | "MANUAL"; voucherId: string | null }>;
+  merchandise: Readonly<Record<string, GroupDraft>>;
+  shipping: GroupDraft;
 }>;
 
 const draftOf = (model: VoucherPickerModel): Draft => {
-  const of = (group: VoucherPickerGroup) => ({ mode: group.mode, voucherId: group.mode === "MANUAL" ? (group.items.find((item) => item.selected)?.id ?? null) : null }) as const;
-  return { merchandise: of(model.groups[0]), shipping: of(model.groups[1]) };
+  const of = (group: VoucherPickerGroup): GroupDraft => ({ mode: group.mode, voucherId: group.mode === "MANUAL" ? (group.items.find((item) => item.selected)?.id ?? null) : null });
+  const merchandise: Record<string, GroupDraft> = {};
+  for (const group of model.groups) if (group.kind === "MERCHANDISE") merchandise[group.slot] = of(group);
+  const shipping = model.groups.find((group) => group.kind === "SHIPPING_FREE");
+  return { merchandise, shipping: shipping ? of(shipping) : { mode: "AUTO", voucherId: null } };
 };
 
 const CODE_ERROR: Readonly<Record<string, string>> = {
@@ -194,8 +200,9 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
     setDraft(draftOf(saved));
   };
 
-  const choose = (key: "merchandise" | "shipping", voucherId: string | null) => {
-    const next: Draft = { ...draft, [key]: { mode: "MANUAL", voucherId } };
+  const choose = (group: VoucherPickerGroup, voucherId: string | null) => {
+    const choice: GroupDraft = { mode: "MANUAL", voucherId };
+    const next: Draft = group.kind === "SHIPPING_FREE" ? { ...draft, shipping: choice } : { ...draft, merchandise: { ...draft.merchandise, [group.slot]: choice } };
     setPendingCode(null);
     setPendingLink(false);
     setDraft(next);
@@ -445,12 +452,11 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
               </div>
             ) : null}
 
-            {model.groups.map((group, index) => {
+            {model.groups.map((group) => {
               if (group.items.length === 0) return null;
-              const key = index === 0 ? "merchandise" : "shipping";
-              const name = `voucher-${group.kind}`;
+              const name = `voucher-${group.slot}`;
               return (
-                <fieldset key={group.kind} className="mt-6" disabled={pending}>
+                <fieldset key={group.slot} className="mt-6" disabled={pending}>
                   <legend className="flex w-full items-baseline justify-between text-sm font-semibold">
                     <span>{group.heading}</span>
                     <span className="font-normal text-black/65">{group.hint}</span>
@@ -458,12 +464,12 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
                   <ul className="mt-2 space-y-2">
                     <li>
                       <label className={`flex min-h-11 cursor-pointer items-center gap-3 border px-3 py-2 ${group.noneSelected ? "border-black" : "border-black/20"}`}>
-                        <input type="radio" name={name} value="" checked={group.noneSelected} onChange={() => choose(key, null)} className="h-5 w-5 accent-black" />
+                        <input type="radio" name={name} value="" checked={group.noneSelected} onChange={() => choose(group, null)} className="h-5 w-5 accent-black" />
                         <span className="text-sm">{group.noneLabel}</span>
                       </label>
                     </li>
                     {group.items.map((item) => (
-                      <VoucherCard key={item.id} item={item} name={name} disabled={pending} onSelect={() => choose(key, item.id)} />
+                      <VoucherCard key={item.id} item={item} name={name} disabled={pending} onSelect={() => choose(group, item.id)} />
                     ))}
                   </ul>
                 </fieldset>
@@ -472,7 +478,11 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
 
             <dl className="mt-6 space-y-1.5 border-t border-black/15 pt-4 text-sm">
               <div className="flex justify-between gap-4"><dt>Tiền hàng</dt><dd>{model.summary.paidBeforeText}</dd></div>
-              {model.summary.merchandiseDiscountText ? <div className="flex justify-between gap-4"><dt>Voucher giảm tiền hàng</dt><dd>{model.summary.merchandiseDiscountText}</dd></div> : null}
+              {model.summary.merchandiseLines.length > 0
+                ? model.summary.merchandiseLines.map((line) => <div key={line.id} className="flex justify-between gap-4"><dt>{line.label}</dt><dd>{line.amountText}</dd></div>)
+                : model.summary.merchandiseDiscountText
+                  ? <div className="flex justify-between gap-4"><dt>Voucher giảm tiền hàng</dt><dd>{model.summary.merchandiseDiscountText}</dd></div>
+                  : null}
               <div className="flex justify-between gap-4"><dt>Phí vận chuyển</dt><dd>{model.summary.shippingFeeText}</dd></div>
               {model.summary.shippingDiscountText ? <div className="flex justify-between gap-4"><dt>Voucher vận chuyển</dt><dd>{model.summary.shippingDiscountText}</dd></div> : null}
               <div className="flex justify-between gap-4 text-base font-semibold"><dt>Dự kiến thanh toán</dt><dd>{model.summary.totalText}</dd></div>

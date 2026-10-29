@@ -12,7 +12,7 @@ import test from "node:test";
 
 const SRC = resolve(import.meta.dirname, "../../src");
 const ALLOWED = new Set(["commerce/voucher-selection-service.ts", "commerce/voucher-draft-commit.ts"]);
-const WRITERS = /\.(applyCode|applyBoth|setGroup)\s*\(/;
+const WRITERS = /\.(applyCode|applyAll|setSlot)\s*\(/;
 
 function* files(directory: string): Generator<string> {
   for (const name of readdirSync(directory)) {
@@ -30,6 +30,6 @@ test("no file outside the consent gate calls the selection service's writers", (
 
 test("the guard sees the call sites it exists for", () => {
   const gate = readFileSync(join(SRC, "commerce/voucher-draft-commit.ts"), "utf8");
-  assert.match(gate, /\.applyBoth\s*\(/);
+  assert.match(gate, /\.applyAll\s*\(/);
   assert.match(gate, /\.applyCode\s*\(/);
 });

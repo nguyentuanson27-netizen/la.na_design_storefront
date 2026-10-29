@@ -53,7 +53,7 @@ export type BenefitCheckoutRender = GiftDisplay & (
       /** EX-21: a quantity tier whose price became invalid was dropped whole; the buyer is told. */
       tierDropped: boolean;
       /** V18: the vouchers this cart holds are part of the quote, as the lines and totals above already show. */
-      voucher?: Readonly<{ shippingWaivedVnd: number; names: ReadonlyMap<string, string>; merchandiseCampaignId: string | null; shippingCampaignId: string | null; merchandiseDiscountVnd: number }>;
+      voucher?: Readonly<{ shippingWaivedVnd: number; names: ReadonlyMap<string, string>; /** In application order, one per slot. */ merchandise: readonly Readonly<{ campaignId: string; amountVnd: number }>[]; shippingCampaignId: string | null; merchandiseDiscountVnd: number }>;
       /** V18: holds exist but no longer describe this cart; they are NOT applied and the buyer is told to hold again. */
       voucherStale?: true;
     }>);
@@ -119,9 +119,9 @@ export async function readBenefitCheckoutRender({
           voucher: {
             shippingWaivedVnd: resolution.voucher.shippingWaivedVnd,
             names: resolution.voucher.names,
-            merchandiseCampaignId: resolution.voucher.declaration.merchandise?.campaignId ?? null,
+            merchandise: resolution.voucher.declaration.merchandise.map((entry) => ({ campaignId: entry.campaignId, amountVnd: entry.amountVnd })),
             shippingCampaignId: resolution.voucher.declaration.shipping?.campaignId ?? null,
-            merchandiseDiscountVnd: resolution.voucher.declaration.merchandise?.amountVnd ?? 0,
+            merchandiseDiscountVnd: resolution.voucher.declaration.merchandise.reduce((sum, entry) => sum + entry.amountVnd, 0),
           },
         }),
     ...(resolution.voucherStale ? { voucherStale: true as const } : {}),

@@ -7,6 +7,7 @@ import {
   voucherLifecycleStatus,
   type VoucherAvailability,
   type VoucherCampaign,
+  type VoucherTypeRef,
 } from "./voucher-campaign.ts";
 import { canIssueNewVouchers } from "./voucher-gate.ts";
 import { normalizeVoucherCode } from "./voucher-rule-validation.ts";
@@ -26,9 +27,11 @@ import { normalizeVoucherCode } from "./voucher-rule-validation.ts";
  */
 
 export const MAX_VOUCHER_CANDIDATES = 50;
-export const MAX_VOUCHER_SELECTION_LOOKUP = 4;
+export const MAX_VOUCHER_SELECTION_LOOKUP = 12;
+/** Types a cart can have unlocked at once; a tier list is bounded by `MAX_VOUCHER_CANDIDATES`. */
+export const MAX_VOUCHER_UNLOCKED_TYPES = 8;
 
-export type VoucherReadClient = Pick<Prisma.TransactionClient, "voucherCampaign" | "voucherHold">;
+export type VoucherReadClient = Pick<Prisma.TransactionClient, "voucherCampaign" | "voucherHold" | "voucherType">;
 
 function assertShopId(shopId: number): void {
   if (!Number.isSafeInteger(shopId) || shopId <= 0 || shopId > 2_147_483_647) throw new RangeError("Invalid voucher shop");
@@ -48,6 +51,8 @@ export type VoucherCard = Readonly<{
   id: string;
   kind: VoucherCampaign["kind"];
   name: string;
+  /** The type this card is a tier of, or null for a v1 voucher and for shipping. */
+  type: VoucherTypeRef | null;
   revision: number;
   discount: VoucherCampaign["discount"];
   minEligibleSubtotalVnd: number | null;
@@ -62,6 +67,7 @@ export function toVoucherCard(campaign: VoucherCampaign): VoucherCard {
     id: campaign.id,
     kind: campaign.kind,
     name: campaign.name,
+    type: campaign.type ?? null,
     revision: campaign.revision,
     discount: campaign.discount,
     minEligibleSubtotalVnd: campaign.minEligibleSubtotalVnd,
@@ -124,6 +130,63 @@ export async function lookupVoucherCode(input: Readonly<{
     return { ok: false, reason: campaign.visibility === "PUBLIC" ? "VOUCHER_UNAVAILABLE" : "INVALID_CODE" };
   }
   return { ok: true, campaign };
+}
+
+export type VoucherTypeCodeLookup =
+  | Readonly<{ ok: true; type: VoucherTypeRef; tiers: readonly VoucherCampaign[] }>
+  | Readonly<{ ok: false; reason: "INVALID_CODE" | "VOUCHER_UNAVAILABLE" }>;
+
+/**
+ * Resolves the code of a TYPE (ADR 0020 D-6): one code opens the whole ladder. Same disclosure rule as `lookupVoucherCode`:
+ * every way a PRIVATE code can fail answers `INVALID_CODE`; `VOUCHER_UNAVAILABLE` (every tier used up) only for a PUBLIC one.
+ */
+export async function lookupVoucherTypeCode(input: Readonly<{
+  client: VoucherReadClient;
+  shopId: number;
+  rawCode: unknown;
+  now: Date;
+  env?: Readonly<Record<string, string | undefined>>;
+}>): Promise<VoucherTypeCodeLookup> {
+  const { client, shopId, now } = input;
+  assertShopId(shopId);
+  assertClock(now);
+  if (!canIssueNewVouchers(input.env ?? process.env)) return { ok: false, reason: "INVALID_CODE" };
+  const code = normalizeVoucherCode(input.rawCode);
+  if (code === null) return { ok: false, reason: "INVALID_CODE" };
+  const type = await client.voucherType.findFirst({ where: { pancakeShopId: shopId, code, issuance: "CODE" }, select: { id: true, name: true, priority: true, visibility: true } });
+  if (type === null) return { ok: false, reason: "INVALID_CODE" };
+  const tiers = (await readTypeTiers({ client, shopId, typeIds: [type.id], now, env: input.env })).filter((tier) => voucherAvailability(tier) === "AVAILABLE");
+  if (tiers.length === 0) return { ok: false, reason: type.visibility === "PUBLIC" ? "VOUCHER_UNAVAILABLE" : "INVALID_CODE" };
+  return { ok: true, type: { id: type.id, name: type.name, priority: type.priority }, tiers };
+}
+
+/**
+ * The active tiers of the given types, whatever their visibility: the caller (the preview or a selection write) has
+ * already established that the cart unlocked each type. Bounded like every other read; more rows fail closed.
+ */
+export async function readTypeTiers(input: Readonly<{
+  client: VoucherReadClient;
+  shopId: number;
+  typeIds: readonly string[];
+  now: Date;
+  env?: Readonly<Record<string, string | undefined>>;
+}>): Promise<readonly VoucherCampaign[]> {
+  const { client, shopId, now } = input;
+  assertShopId(shopId);
+  assertClock(now);
+  const typeIds = [...new Set(input.typeIds)];
+  if (typeIds.length > MAX_VOUCHER_UNLOCKED_TYPES || typeIds.some((id) => typeof id !== "string" || id.length === 0 || id.length > 64)) {
+    throw new RangeError("Invalid voucher type lookup");
+  }
+  if (typeIds.length === 0 || !canIssueNewVouchers(input.env ?? process.env)) return [];
+  const rows = await client.voucherCampaign.findMany({
+    where: { pancakeShopId: shopId, typeId: { in: typeIds }, ...activeWindow(now) },
+    select: voucherCampaignSelection,
+    orderBy: [{ id: "asc" }],
+    take: MAX_VOUCHER_CANDIDATES + 1,
+  });
+  if (rows.length > MAX_VOUCHER_CANDIDATES) throw new RangeError("Voucher candidate read exceeds its bound");
+  return rows.map(toVoucherCampaign).filter((campaign) => voucherLifecycleStatus(campaign, now) === "ACTIVE");
 }
 
 /**
@@ -190,8 +253,8 @@ export async function readOwnHeldVouchers(input: Readonly<{
       paidRevision: true,
       campaign: { select: voucherCampaignSelection },
     },
-    orderBy: [{ kind: "asc" }, { id: "asc" }],
-    take: 3,
+    orderBy: [{ slot: "asc" }, { id: "asc" }],
+    take: 12,
   });
   return holds.map((hold) => ({
     holdId: hold.id,

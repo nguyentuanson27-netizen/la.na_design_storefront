@@ -6,17 +6,17 @@ import { deriveCampaignLifecycle } from "./promotion-campaign-lifecycle.ts";
 import { canIssueNewVouchers, readVoucherVerifiedShopIds } from "./voucher-gate.ts";
 
 /**
- * Voucher v1 (V11, ADR 0019 D-1/D-2/D-3): the atomic 10-minute hold.
+ * Voucher v1 (V11, ADR 0019 D-1/D-2/D-3; one hold per SLOT per ADR 0020): the atomic 10-minute hold.
  *
- * The database already enforces the invariants (absolute TTL, one live hold per attempt and kind, quota floor,
+ * The database already enforces the invariants (absolute TTL, one live hold per attempt and slot, quota floor,
  * no early expiry, no late consume). This module only SEQUENCES them:
  *
  *   BEGIN; lock the cart row; lock the chosen campaigns FOR UPDATE in ascending id order; lazily expire due
  *   holds of those campaigns (their uses and VND go back); for each requested voucher reuse / swap / grant;
  *   insert with createdAt and expiresAt from ONE database timestamp; COMMIT.
  *
- * All requested vouchers of a call succeed or none does: a combination is quoted as a pair, so a half-granted
- * pair would be a different total than the one the buyer saw. A failed swap therefore leaves the old hold
+ * All requested vouchers of a call succeed or none does: a combination is quoted as a whole, so a half-granted
+ * one would be a different total than the one the buyer saw. A failed swap therefore leaves the old hold
  * exactly as it was (AC-34). Nothing here is reachable from a GET; V12 owns the intentional POST. The settle
  * path (consume, release by order, refund) is V13/V14 and never consults the feature gate.
  */
@@ -25,6 +25,8 @@ export type VoucherGroup = "MERCHANDISE" | "SHIPPING_FREE";
 
 export type VoucherHoldGrant = Readonly<{
   kind: VoucherGroup;
+  /** `SHIPPING_FREE`, `MERCHANDISE` (no type) or `MERCHANDISE:<typeId>`: the campaign's own slot. */
+  slot: string;
   campaignId: string;
   /** The revision the quote was computed against; a campaign edited since is a re-quote, not a silent grant. */
   campaignRevision: number;
@@ -39,13 +41,19 @@ export type VoucherHoldRequest = Readonly<{
   paidRevision: number;
   quoteDigest: string;
   grants: readonly VoucherHoldGrant[];
-  /** Groups this attempt must no longer hold (explicit NONE, or a combination without that group). */
-  releaseKinds?: readonly VoucherGroup[];
+  /** Release the live hold of each of these slots (no grant may name the same slot). */
+  releaseSlots?: readonly string[];
+  /**
+   * Release every other live hold of this attempt: the slots the quote no longer includes (an explicit NONE, or a combination
+   * without that slot). With no grants this releases them all.
+   */
+  releaseUnlisted?: boolean;
 }>;
 
 export type HeldVoucher = Readonly<{
   holdId: string;
   kind: VoucherGroup;
+  slot: string;
   campaignId: string;
   campaignRevision: number;
   heldDiscountVnd: number;
@@ -73,10 +81,13 @@ export type VoucherHoldFailureReason =
   | "PROOF_UNAVAILABLE";
 
 export type VoucherHoldResult =
-  | Readonly<{ ok: true; holds: readonly HeldVoucher[]; released: readonly VoucherGroup[] }>
+  | Readonly<{ ok: true; holds: readonly HeldVoucher[]; /** The slots whose live hold was released (swapped or dropped). */ released: readonly string[] }>
   | Readonly<{ ok: false; reason: VoucherHoldFailureReason; kind: VoucherGroup | null; campaignId: string | null }>;
 
 const MAX_DISCOUNT_VND = 100_000_000_000;
+const SLOT_PATTERN = /^(SHIPPING_FREE|MERCHANDISE(:[A-Za-z0-9_-]{1,64})?)$/;
+/** A cart holds at most one voucher per slot; ADR 0020 D-4 bounds the slots. */
+const MAX_GRANTS = 9;
 const HEX64 = /^[0-9a-f]{64}$/;
 const KEY_CONTEXT = "voucher-hold-attempt:v1\0";
 const MIN_SECRET_LENGTH = 32;
@@ -92,6 +103,7 @@ type CampaignLock = {
   id: string;
   pancakeShopId: number;
   kind: VoucherGroup;
+  typeId: string | null;
   isEnabled: boolean;
   enabledAt: Date | null;
   disabledAt: Date | null;
@@ -111,6 +123,7 @@ type HoldRow = {
   campaignId: string;
   campaignRevision: number;
   kind: VoucherGroup;
+  slot: string;
   quoteDigest: string;
   paidRevision: bigint;
   heldDiscountVnd: bigint;
@@ -120,10 +133,14 @@ type HoldRow = {
 
 const KINDS: readonly VoucherGroup[] = ["MERCHANDISE", "SHIPPING_FREE"];
 
+/** The slot a campaign's holds live in (mirrors `voucherSlotOf`, over the raw columns of the locked row). */
+const slotOfLock = (lock: Pick<CampaignLock, "kind" | "typeId">) => (lock.kind === "SHIPPING_FREE" ? "SHIPPING_FREE" : lock.typeId === null ? "MERCHANDISE" : `MERCHANDISE:${lock.typeId}`);
+
 function toHeld(row: HoldRow, reused: boolean): HeldVoucher {
   return Object.freeze({
     holdId: row.id,
     kind: row.kind,
+    slot: row.slot,
     campaignId: row.campaignId,
     campaignRevision: row.campaignRevision,
     heldDiscountVnd: Number(row.heldDiscountVnd),
@@ -151,20 +168,22 @@ function validRequest(request: VoucherHoldRequest): boolean {
   if (typeof request.cartId !== "string" || request.cartId.length === 0 || request.cartId.length > 64) return false;
   if (!Number.isSafeInteger(request.paidRevision) || request.paidRevision < 0) return false;
   if (typeof request.quoteDigest !== "string" || !HEX64.test(request.quoteDigest)) return false;
-  const release = request.releaseKinds ?? [];
-  if (!Array.isArray(request.grants) || !Array.isArray(release) || request.grants.length + release.length === 0) return false;
-  const seen = new Set<string>();
+  if (!Array.isArray(request.grants) || request.grants.length > MAX_GRANTS) return false;
+  if (request.releaseUnlisted !== undefined && typeof request.releaseUnlisted !== "boolean") return false;
+  const releaseSlots = request.releaseSlots ?? [];
+  if (!Array.isArray(releaseSlots) || releaseSlots.length > MAX_GRANTS || releaseSlots.some((slot) => typeof slot !== "string" || !SLOT_PATTERN.test(slot))) return false;
+  if (request.grants.length + releaseSlots.length + (request.releaseUnlisted === true ? 1 : 0) === 0) return false;
+  const slots = new Set<string>();
   for (const grant of request.grants) {
-    if (grant === null || typeof grant !== "object" || !KINDS.includes(grant.kind) || seen.has(grant.kind)) return false;
-    seen.add(grant.kind);
+    if (grant === null || typeof grant !== "object" || !KINDS.includes(grant.kind) || typeof grant.slot !== "string" || !SLOT_PATTERN.test(grant.slot) || slots.has(grant.slot)) return false;
+    // A kind has its own slots: shipping has one, merchandise has the untyped one and one per type.
+    if ((grant.kind === "SHIPPING_FREE") !== (grant.slot === "SHIPPING_FREE")) return false;
+    slots.add(grant.slot);
     if (typeof grant.campaignId !== "string" || grant.campaignId.length === 0 || grant.campaignId.length > 64) return false;
     if (!Number.isSafeInteger(grant.campaignRevision) || grant.campaignRevision <= 0) return false;
     if (!Number.isSafeInteger(grant.discountVnd) || grant.discountVnd < 1 || grant.discountVnd > MAX_DISCOUNT_VND) return false;
   }
-  for (const kind of release) {
-    if (!KINDS.includes(kind) || seen.has(kind)) return false;
-    seen.add(kind);
-  }
+  if (releaseSlots.some((slot) => slots.has(slot)) || new Set(releaseSlots).size !== releaseSlots.length) return false;
   return new Set(request.grants.map((g) => g.campaignId)).size === request.grants.length;
 }
 
@@ -182,7 +201,7 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
 
   async function lockCampaign(tx: Prisma.TransactionClient, id: string): Promise<CampaignLock | null> {
     const rows = await tx.$queryRaw<CampaignLock[]>`
-      SELECT "id", "pancakeShopId", "kind", "isEnabled", "enabledAt", "disabledAt", "startsAt", "endsAt", "revision",
+      SELECT "id", "pancakeShopId", "kind", "typeId", "isEnabled", "enabledAt", "disabledAt", "startsAt", "endsAt", "revision",
              "maxUses", "maxBudgetVnd", "redeemedUses", "redeemedVnd", "reservedUses", "reservedVnd"
       FROM "VoucherCampaign" WHERE "id" = ${id} FOR UPDATE`;
     return rows[0] ?? null;
@@ -205,19 +224,18 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
     campaign.reservedVnd -= vnd;
   }
 
-  async function liveHold(tx: Prisma.TransactionClient, attemptKey: string, kind: VoucherGroup): Promise<HoldRow | null> {
-    const rows = await tx.$queryRaw<HoldRow[]>`
-      SELECT "id", "campaignId", "campaignRevision", "kind", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
-      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "kind"::text = ${kind} AND "state" = 'HELD'`;
-    return rows[0] ?? null;
+  /** Every live hold of the attempt (at most one per slot). Peeked WITHOUT a row lock; see `liveHoldsLocked`. */
+  async function liveHolds(tx: Prisma.TransactionClient, attemptKey: string): Promise<HoldRow[]> {
+    return tx.$queryRaw<HoldRow[]>`
+      SELECT "id", "campaignId", "campaignRevision", "kind", "slot", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
+      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "state" = 'HELD' ORDER BY "slot"`;
   }
 
   /** Only after the campaign locks are held: campaign row first, hold rows second, the same order as the sweeper. */
-  async function liveHoldLocked(tx: Prisma.TransactionClient, attemptKey: string, kind: VoucherGroup): Promise<HoldRow | null> {
-    const rows = await tx.$queryRaw<HoldRow[]>`
-      SELECT "id", "campaignId", "campaignRevision", "kind", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
-      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "kind"::text = ${kind} AND "state" = 'HELD' FOR UPDATE`;
-    return rows[0] ?? null;
+  async function liveHoldsLocked(tx: Prisma.TransactionClient, attemptKey: string): Promise<HoldRow[]> {
+    return tx.$queryRaw<HoldRow[]>`
+      SELECT "id", "campaignId", "campaignRevision", "kind", "slot", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
+      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "state" = 'HELD' ORDER BY "slot" FOR UPDATE`;
   }
 
   async function releaseHold(tx: Prisma.TransactionClient, hold: HoldRow, campaign: CampaignLock, now: Date): Promise<void> {
@@ -254,7 +272,6 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
   ): Promise<VoucherHoldResult> {
     const { finalize, verifyUnderCartLock, afterGrant } = hooks;
     if (!validRequest(request)) return { ok: false, reason: "INVALID_REQUEST", kind: null, campaignId: null };
-    const releaseKinds = request.releaseKinds ?? [];
     const attemptKey = voucherAttemptKey(request.cartId, options.attemptSecret);
     // A request that only releases is settle-like and must work with the feature off; only NEW holds are gated.
     if (request.grants.length > 0) {
@@ -274,15 +291,13 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
           if (refusal !== null) throw fail(refusal);
         }
 
-        // 2  every campaign involved (requested, or already held for a group in play), ascending id. The hold
-        //    rows are only peeked at here (a hold's campaign never changes, and only this cart's lock creates one);
-        //    they are locked after the campaigns so no path takes hold-then-campaign.
-        const inPlay = KINDS.filter((kind) => request.grants.some((g) => g.kind === kind) || releaseKinds.includes(kind));
-        const peeked: HoldRow[] = [];
-        for (const kind of inPlay) {
-          const row = await liveHold(tx, attemptKey, kind);
-          if (row !== null) peeked.push(row);
-        }
+        // 2  every campaign involved (requested, or already held in a slot in play), ascending id. The hold rows are only
+        //    peeked at here (a hold's campaign never changes, and only this cart's lock creates one); they are locked after
+        //    the campaigns so no path takes hold-then-campaign.
+        const grantSlots = new Set(request.grants.map((grant) => grant.slot));
+        const releaseSlots = new Set(request.releaseSlots ?? []);
+        const inPlay = (slot: string) => request.releaseUnlisted === true || grantSlots.has(slot) || releaseSlots.has(slot);
+        const peeked = (await liveHolds(tx, attemptKey)).filter((row) => inPlay(row.slot));
         const ids = [...new Set([...request.grants.map((g) => g.campaignId), ...peeked.map((h) => h.campaignId)])].sort();
         const locks = new Map<string, CampaignLock>();
         for (const id of ids) {
@@ -294,23 +309,24 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
         const now = await databaseNow(tx);
         for (const lock of locks.values()) await expireDue(tx, lock, now);
         // Under the campaign locks, what is still HELD is final for this request.
-        const existing = new Map<VoucherGroup, HoldRow | null>();
-        for (const kind of inPlay) existing.set(kind, await liveHoldLocked(tx, attemptKey, kind));
+        const existing = new Map<string, HoldRow>();
+        for (const row of await liveHoldsLocked(tx, attemptKey)) if (inPlay(row.slot)) existing.set(row.slot, row);
 
         const held: HeldVoucher[] = [];
-        const released: VoucherGroup[] = [];
+        const released: string[] = [];
         const pendingReleases: Array<{ hold: HoldRow; campaign: CampaignLock }> = [];
         const plan: Array<{ grant: VoucherHoldGrant; campaign: CampaignLock; old: HoldRow | null }> = [];
 
-        for (const kind of releaseKinds) {
-          const old = existing.get(kind) ?? null;
-          if (old === null) continue;
-          const campaign = locks.get(old.campaignId);
-          if (campaign) pendingReleases.push({ hold: old, campaign });
+        if (request.releaseUnlisted === true || releaseSlots.size > 0) {
+          for (const [slot, old] of existing) {
+            if (grantSlots.has(slot) || (request.releaseUnlisted !== true && !releaseSlots.has(slot))) continue;
+            const campaign = locks.get(old.campaignId);
+            if (campaign) pendingReleases.push({ hold: old, campaign });
+          }
         }
 
         for (const grant of request.grants) {
-          const old = existing.get(grant.kind) ?? null;
+          const old = existing.get(grant.slot) ?? null;
 
           // Reuse: same campaign, revision, discount, digest and cart revision => the original hold, untouched.
           if (
@@ -322,7 +338,7 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
           }
 
           const campaign = locks.get(grant.campaignId);
-          if (!campaign || campaign.pancakeShopId !== request.shopId || campaign.kind !== grant.kind) throw fail("CAMPAIGN_NOT_FOUND", grant.kind, grant.campaignId);
+          if (!campaign || campaign.pancakeShopId !== request.shopId || campaign.kind !== grant.kind || slotOfLock(campaign) !== grant.slot) throw fail("CAMPAIGN_NOT_FOUND", grant.kind, grant.campaignId);
           if (campaign.revision !== grant.campaignRevision) throw fail("CAMPAIGN_CHANGED", grant.kind, grant.campaignId);
           const lifecycle = deriveCampaignLifecycle({ isEnabled: campaign.isEnabled, enabledAt: campaign.enabledAt, disabledAt: campaign.disabledAt, startsAt: campaign.startsAt, endsAt: campaign.endsAt, now });
           if (lifecycle.status !== "ACTIVE") throw fail("CAMPAIGN_NOT_ACTIVE", grant.kind, grant.campaignId);
@@ -338,27 +354,27 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
           plan.push({ grant, campaign, old });
         }
 
-        // 4  every check passed: mutate. Releases first (the partial unique index allows one live hold per kind).
+        // 4  every check passed: mutate. Releases first (the partial unique index allows one live hold per slot).
         for (const entry of pendingReleases) {
           await releaseHold(tx, entry.hold, entry.campaign, now);
-          released.push(entry.hold.kind);
+          released.push(entry.hold.slot);
         }
         for (const { grant, campaign, old } of plan) {
           if (old !== null) {
             await releaseHold(tx, old, locks.get(old.campaignId)!, now);
-            released.push(old.kind);
+            released.push(old.slot);
           }
           const inserted = await tx.$queryRaw<HoldRow[]>`
-            INSERT INTO "VoucherHold" ("id", "campaignId", "campaignRevision", "pancakeShopId", "kind", "attemptKey", "quoteDigest", "paidRevision", "heldDiscountVnd", "state", "createdAt", "expiresAt")
-            VALUES (${`vh_${crypto.randomUUID()}`}, ${campaign.id}, ${grant.campaignRevision}, ${request.shopId}, ${grant.kind}::"VoucherKind", ${attemptKey}, ${request.quoteDigest},
+            INSERT INTO "VoucherHold" ("id", "campaignId", "campaignRevision", "pancakeShopId", "kind", "slot", "attemptKey", "quoteDigest", "paidRevision", "heldDiscountVnd", "state", "createdAt", "expiresAt")
+            VALUES (${`vh_${crypto.randomUUID()}`}, ${campaign.id}, ${grant.campaignRevision}, ${request.shopId}, ${grant.kind}::"VoucherKind", ${grant.slot}, ${attemptKey}, ${request.quoteDigest},
                     ${BigInt(request.paidRevision)}, ${BigInt(grant.discountVnd)}, 'HELD', ${now}, ${now}::timestamptz + interval '10 minutes')
-            RETURNING "id", "campaignId", "campaignRevision", "kind", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"`;
+            RETURNING "id", "campaignId", "campaignRevision", "kind", "slot", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"`;
           await tx.$executeRaw`UPDATE "VoucherCampaign" SET "reservedUses" = "reservedUses" + 1, "reservedVnd" = "reservedVnd" + ${BigInt(grant.discountVnd)} WHERE "id" = ${campaign.id}`;
           campaign.reservedUses += 1;
           campaign.reservedVnd += BigInt(grant.discountVnd);
           held.push(toHeld(inserted[0]!, false));
         }
-        const sorted = held.sort((a, b) => a.kind.localeCompare(b.kind));
+        const sorted = held.sort((a, b) => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0));
         if (afterGrant) {
           const afterRefusal = await afterGrant(tx, sorted);
           if (afterRefusal !== null) throw fail(afterRefusal);
@@ -377,23 +393,23 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
    * The live holds of this attempt (HELD and not past `expiresAt` by the database clock), for a preview that must
    * not lose an entitlement the buyer already holds. Read-only; ignores the feature gate like the other settle reads.
    */
-  async function readOwnLiveHoldsIn(db: Pick<PrismaClient, "$queryRaw">, cartId: string): Promise<readonly Readonly<{ kind: VoucherGroup; campaignId: string; campaignRevision: number; heldDiscountVnd: number }>[]> {
+  async function readOwnLiveHoldsIn(db: Pick<PrismaClient, "$queryRaw">, cartId: string): Promise<readonly Readonly<{ kind: VoucherGroup; slot: string; campaignId: string; campaignRevision: number; heldDiscountVnd: number }>[]> {
     const attemptKey = voucherAttemptKey(cartId, options.attemptSecret);
     const rows = await db.$queryRaw<HoldRow[]>`
-      SELECT "id", "campaignId", "campaignRevision", "kind", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
-      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "state" = 'HELD' AND "expiresAt" > clock_timestamp()`;
-    return rows.map((row) => ({ kind: row.kind, campaignId: row.campaignId, campaignRevision: row.campaignRevision, heldDiscountVnd: Number(row.heldDiscountVnd) }));
+      SELECT "id", "campaignId", "campaignRevision", "kind", "slot", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
+      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "state" = 'HELD' AND "expiresAt" > clock_timestamp() ORDER BY "slot"`;
+    return rows.map((row) => ({ kind: row.kind, slot: row.slot, campaignId: row.campaignId, campaignRevision: row.campaignRevision, heldDiscountVnd: Number(row.heldDiscountVnd) }));
   }
 
   /** The same live holds with the facts a checkout must verify them against (what each promised and until when). */
   async function readOwnLiveHoldFactsIn(db: Pick<PrismaClient, "$queryRaw">, cartId: string): Promise<readonly Readonly<{
-    kind: VoucherGroup; campaignId: string; campaignRevision: number; heldDiscountVnd: number; quoteDigest: string; paidRevision: bigint; expiresAt: Date;
+    kind: VoucherGroup; slot: string; campaignId: string; campaignRevision: number; heldDiscountVnd: number; quoteDigest: string; paidRevision: bigint; expiresAt: Date;
   }>[]> {
     const attemptKey = voucherAttemptKey(cartId, options.attemptSecret);
     const rows = await db.$queryRaw<HoldRow[]>`
-      SELECT "id", "campaignId", "campaignRevision", "kind", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
-      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "state" = 'HELD' AND "expiresAt" > clock_timestamp() ORDER BY "kind"::text`;
-    return rows.map((row) => ({ kind: row.kind, campaignId: row.campaignId, campaignRevision: row.campaignRevision, heldDiscountVnd: Number(row.heldDiscountVnd), quoteDigest: row.quoteDigest, paidRevision: BigInt(row.paidRevision), expiresAt: row.expiresAt }));
+      SELECT "id", "campaignId", "campaignRevision", "kind", "slot", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
+      FROM "VoucherHold" WHERE "attemptKey" = ${attemptKey} AND "state" = 'HELD' AND "expiresAt" > clock_timestamp() ORDER BY "slot"`;
+    return rows.map((row) => ({ kind: row.kind, slot: row.slot, campaignId: row.campaignId, campaignRevision: row.campaignRevision, heldDiscountVnd: Number(row.heldDiscountVnd), quoteDigest: row.quoteDigest, paidRevision: BigInt(row.paidRevision), expiresAt: row.expiresAt }));
   }
 
   /**
@@ -418,16 +434,16 @@ export function createVoucherHoldService(client: PrismaClient, options: Readonly
   }
 
   /**
-   * ADR 0019 D-3, the read half used at submit: the live hold of this attempt and group iff it is HELD, not
+   * ADR 0019 D-3, the read half used at submit: the live hold of this attempt and slot iff it is HELD, not
    * past `expiresAt` by the DATABASE clock, and its facts equal the signed ones. The campaign's own state
    * (ended, disabled, edited, full) is deliberately not consulted: a held entitlement survives them (TG-05 A).
    */
-  async function findHonourableHold(input: Readonly<{ cartId: string; kind: VoucherGroup; campaignId: string; campaignRevision: number; discountVnd: number; quoteDigest: string; paidRevision: number }>): Promise<HeldVoucher | null> {
+  async function findHonourableHold(input: Readonly<{ cartId: string; slot: string; campaignId: string; campaignRevision: number; discountVnd: number; quoteDigest: string; paidRevision: number }>): Promise<HeldVoucher | null> {
     const attemptKey = voucherAttemptKey(input.cartId, options.attemptSecret);
     const rows = await client.$queryRaw<HoldRow[]>`
-      SELECT "id", "campaignId", "campaignRevision", "kind", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
+      SELECT "id", "campaignId", "campaignRevision", "kind", "slot", "quoteDigest", "paidRevision", "heldDiscountVnd", "createdAt", "expiresAt"
       FROM "VoucherHold"
-      WHERE "attemptKey" = ${attemptKey} AND "kind"::text = ${input.kind} AND "state" = 'HELD' AND "expiresAt" > clock_timestamp()
+      WHERE "attemptKey" = ${attemptKey} AND "slot" = ${input.slot} AND "state" = 'HELD' AND "expiresAt" > clock_timestamp()
         AND "campaignId" = ${input.campaignId} AND "campaignRevision" = ${input.campaignRevision}
         AND "heldDiscountVnd" = ${BigInt(input.discountVnd)} AND "quoteDigest" = ${input.quoteDigest} AND "paidRevision" = ${BigInt(input.paidRevision)}`;
     return rows[0] ? toHeld(rows[0], true) : null;

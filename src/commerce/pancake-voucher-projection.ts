@@ -1,4 +1,4 @@
-import type { VoucherPaidLine } from "./voucher-allocation.ts";
+import { stripVoucherSegments, type VoucherPaidLine } from "./voucher-allocation.ts";
 import type { EvaluatedCombination } from "./voucher-optimizer.ts";
 import { projectBenefitQuoteForVendor, type ProjectionLine, type VendorLine } from "./pancake-gift-projection.ts";
 
@@ -86,8 +86,8 @@ export function createVoucherPosFeasibility(input: Readonly<{
   return ({ evaluation, linesAfterVoucher }) => {
     const paidLines: VoucherVendorPaidLine[] = [];
     for (const line of linesAfterVoucher) {
-      // A split segment `<lineId>|v<n>` belongs to its source line.
-      const source = line.lineId.replace(/\|v\d+$/, "");
+      // A split segment `<lineId>|v<n>` (one suffix per voucher that split it) belongs to its source line.
+      const source = stripVoucherSegments(line.lineId);
       const pancakeVariationId = input.variationOfLine.get(line.lineId) ?? input.variationOfLine.get(source);
       if (pancakeVariationId === undefined) return false;
       paidLines.push({ lineId: line.lineId, pancakeVariationId, quantity: line.quantity, unitPriceVnd: line.unitPriceVnd });

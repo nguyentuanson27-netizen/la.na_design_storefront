@@ -1,5 +1,6 @@
 import {
   allocateMerchandiseDiscount,
+  applyAllocationToLines,
   validateVoucherPaidLines,
   type VoucherAllocation,
   type VoucherPaidLine,
@@ -66,8 +67,15 @@ export function calculateMerchandiseDiscount(input: Readonly<{
   terms: MerchandiseTerms;
   eligibleSubtotalVnd: number;
   eligibleUnits: number;
+  /**
+   * ADR 0020 D-3: the in-scope subtotal BEFORE any voucher, when the discount base is a reduced one (a later type in
+   * a stack). The threshold is judged on it; the discount and its guards on `eligibleSubtotalVnd`. Absent means
+   * the two are the same number, exactly as in v1.
+   */
+  thresholdSubtotalVnd?: number;
 }>): MerchandiseDiscountResult {
   const { terms, eligibleSubtotalVnd: subtotal, eligibleUnits: units } = input;
+  const thresholdSubtotal = input.thresholdSubtotalVnd ?? subtotal;
   const refuse = (reason: MerchandiseIneligibleReason, shortfallVnd: number | null = null): MerchandiseDiscountResult => ({
     ok: false,
     reason,
@@ -76,7 +84,7 @@ export function calculateMerchandiseDiscount(input: Readonly<{
   });
   if (units === 0 || subtotal === 0) return refuse("NO_ELIGIBLE_LINES");
   const minimum = terms.minEligibleSubtotalVnd;
-  if (minimum !== null && subtotal < minimum) return refuse("BELOW_MINIMUM", minimum - subtotal);
+  if (minimum !== null && thresholdSubtotal < minimum) return refuse("BELOW_MINIMUM", minimum - thresholdSubtotal);
 
   let discount: number;
   if (terms.discount.type === "FIXED_AMOUNT_VND") {
@@ -132,4 +140,74 @@ export function quoteMerchandiseVoucher(input: Readonly<{
     paidAfterVnd: paidBeforeVnd - result.discountVnd,
     allocation: allocated.allocation,
   };
+}
+
+export type MerchandiseStackStep = Readonly<{
+  /** The voucher (campaign) id; the result keys on it. */
+  id: string;
+  terms: MerchandiseTerms;
+  resolver: VoucherScopeResolver;
+}>;
+
+export type MerchandiseStackQuote =
+  | Readonly<{
+      ok: true;
+      /** Sum of every step's `D`. */
+      discountVnd: number;
+      paidBeforeVnd: number;
+      paidAfterVnd: number;
+      steps: readonly Readonly<{
+        id: string;
+        discountVnd: number;
+        /** In-scope subtotal on the pre-voucher lines (the threshold base). */
+        thresholdSubtotalVnd: number;
+        /** In-scope subtotal this step's discount was computed on (after the earlier steps). */
+        eligibleSubtotalVnd: number;
+        /** Allocation over the lines this step received, i.e. after the earlier steps. */
+        allocation: VoucherAllocation;
+      }>[];
+      /** The lines as the POS will see them after every step. */
+      linesAfter: readonly VoucherPaidLine[];
+    }>
+  | Readonly<{
+      ok: false;
+      failedId: string;
+      reason: MerchandiseIneligibleReason;
+      eligibleSubtotalVnd: number;
+      shortfallVnd: number | null;
+    }>;
+
+/**
+ * ADR 0020 D-3: several merchandise vouchers of different types, applied in the order given. Each step's threshold is
+ * judged on the pre-voucher lines `lines`; its discount and guards on the lines the earlier steps left. One step is
+ * exactly `quoteMerchandiseVoucher`. The first step that cannot apply fails the whole stack and names itself, so the
+ * caller can treat that combination as unavailable.
+ */
+export function quoteMerchandiseStack(input: Readonly<{
+  steps: readonly MerchandiseStackStep[];
+  lines: readonly VoucherPaidLine[];
+}>): MerchandiseStackQuote {
+  const { steps, lines } = input;
+  if (!validateVoucherPaidLines(lines)) throw new RangeError("Invalid voucher paid lines");
+  const paidBeforeVnd = lines.reduce((sum, line) => sum + line.quantity * line.unitPriceVnd, 0);
+  let current: readonly VoucherPaidLine[] = lines;
+  let discountVnd = 0;
+  const done: Array<Extract<MerchandiseStackQuote, { ok: true }>["steps"][number]> = [];
+  for (const step of steps) {
+    const threshold = sumEligibleLines(lines, step.resolver);
+    const base = sumEligibleLines(current, step.resolver);
+    const result = calculateMerchandiseDiscount({
+      terms: step.terms,
+      eligibleSubtotalVnd: base.subtotalVnd,
+      eligibleUnits: base.units,
+      thresholdSubtotalVnd: threshold.subtotalVnd,
+    });
+    if (!result.ok) return { ok: false, failedId: step.id, reason: result.reason, eligibleSubtotalVnd: result.eligibleSubtotalVnd, shortfallVnd: result.shortfallVnd };
+    const allocated = allocateMerchandiseDiscount({ lines: current, resolver: step.resolver, discountVnd: result.discountVnd });
+    if (!allocated.ok) return { ok: false, failedId: step.id, reason: "UNIT_PRICE_FLOOR", eligibleSubtotalVnd: base.subtotalVnd, shortfallVnd: null };
+    done.push({ id: step.id, discountVnd: result.discountVnd, thresholdSubtotalVnd: threshold.subtotalVnd, eligibleSubtotalVnd: base.subtotalVnd, allocation: allocated.allocation });
+    discountVnd += result.discountVnd;
+    current = applyAllocationToLines(current, allocated.allocation);
+  }
+  return Object.freeze({ ok: true as const, discountVnd, paidBeforeVnd, paidAfterVnd: paidBeforeVnd - discountVnd, steps: Object.freeze(done), linesAfter: current });
 }

@@ -4,7 +4,7 @@ import type { VoucherCampaign } from "./voucher-campaign.ts";
 import type { VoucherQuote } from "./voucher-quote.ts";
 
 /**
- * Voucher v1 (V10): the signed binding between a voucher quote, the cart it was built from and the holds that
+ * Voucher v1 (V10, extended by ADR 0020): the signed binding between a voucher quote, the cart it was built from and the holds that
  * guarantee it (spec §5.1, §6, AC-22/23/31/34).
  *
  * It follows the rules of the checkout quote proof (`checkout-quote-proof.ts`) and deliberately shares none of its
@@ -24,7 +24,7 @@ import type { VoucherQuote } from "./voucher-quote.ts";
  * reference per voucher and an expiry, and stops being valid at the earliest expiry (absolute, never extended).
  */
 
-export const VOUCHER_PROOF_FORMAT = "lav1";
+export const VOUCHER_PROOF_FORMAT = "lav2";
 export const MAX_VOUCHER_QUOTE_PROOF_BYTES = 16 * 1024;
 const KEY_CONTEXT = "la-clothing:voucher-quote-proof-key:v1";
 const MIN_SECRET_LENGTH = 32;
@@ -32,6 +32,8 @@ const MAC_BYTES = 32;
 const PROOF_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_LINES = 400;
+/** One merchandise voucher per slot, and slots are bounded (ADR 0020 D-4). */
+const MAX_MERCHANDISE_BINDINGS = 8;
 
 export type VoucherProofBinding = Readonly<{
   campaignId: string;
@@ -58,7 +60,8 @@ export type VoucherProofFacts = Readonly<{
   paidSubtotalVnd: number;
   shippingFeeVnd: number;
   totalVnd: number;
-  merchandise: VoucherProofBinding | null;
+  /** The chosen merchandise vouchers in application order (type priority); empty when there is none. */
+  merchandise: readonly VoucherProofBinding[];
   shipping: VoucherProofBinding | null;
 }>;
 
@@ -97,7 +100,9 @@ export function areUsableVoucherProofFacts(facts: VoucherProofFacts): boolean {
     !Array.isArray(facts.lines) || facts.lines.length === 0 || facts.lines.length > MAX_LINES ||
     !isVnd(facts.paidSubtotalVnd, 1) || !isVnd(facts.shippingFeeVnd) || !isVnd(facts.totalVnd, 1) ||
     facts.paidSubtotalVnd + facts.shippingFeeVnd !== facts.totalVnd ||
-    !bindingOk(facts.merchandise, facts.state) || !bindingOk(facts.shipping, facts.state)
+    !Array.isArray(facts.merchandise) || facts.merchandise.length > MAX_MERCHANDISE_BINDINGS ||
+    new Set(facts.merchandise.map((binding) => binding?.campaignId)).size !== facts.merchandise.length ||
+    !facts.merchandise.every((binding) => binding !== null && bindingOk(binding, facts.state)) || !bindingOk(facts.shipping, facts.state)
   ) {
     return false;
   }
@@ -128,7 +133,10 @@ function canonicalBytes(facts: VoucherProofFacts): Buffer {
   const lines = [...facts.lines].sort(byLine);
   let canonical = `${VOUCHER_PROOF_FORMAT}|${facts.state}|${facts.paidRevision.toString()}|${facts.paidSubtotalVnd}|${facts.shippingFeeVnd}|${facts.totalVnd}|${lines.length}`;
   for (const line of lines) canonical += `|L${line.role}:${text(line.pancakeVariationId)}:${line.quantity}:${line.unitPriceVnd}`;
-  canonical += bindingBytes("M", facts.merchandise) + bindingBytes("S", facts.shipping);
+  // The order is part of the quote: the same vouchers applied in another order are a different price.
+  canonical += `|M${facts.merchandise.length}`;
+  for (const binding of facts.merchandise) canonical += bindingBytes("m", binding);
+  canonical += bindingBytes("S", facts.shipping);
   return Buffer.from(canonical, "utf8");
 }
 
@@ -187,7 +195,7 @@ export function verifyVoucherQuoteProof(input: Readonly<{
   if (!areUsableVoucherProofFacts(current) || !payload.equals(canonicalBytes(current))) return reject("STALE_QUOTE");
   if (mode === "SUBMIT") {
     if (current.state !== "HELD") return reject("HOLD_REQUIRED");
-    const expiries = [current.merchandise?.hold?.expiresAtMs, current.shipping?.hold?.expiresAtMs].filter((value): value is number => value !== undefined);
+    const expiries = [...current.merchandise.map((binding) => binding.hold?.expiresAtMs), current.shipping?.hold?.expiresAtMs].filter((value): value is number => value !== undefined);
     if (expiries.length === 0) return reject("HOLD_REQUIRED");
     if (!(now instanceof Date) || !Number.isFinite(now.getTime()) || now.getTime() >= Math.min(...expiries)) return reject("HOLD_EXPIRED");
   }
@@ -204,7 +212,8 @@ export function voucherProofFactsFromQuote(input: Readonly<{
   campaigns: readonly VoucherCampaign[];
   paidRevision: bigint;
   lines: readonly VoucherProofLine[];
-  holds?: Readonly<{ merchandise?: { holdId: string; expiresAtMs: number }; shipping?: { holdId: string; expiresAtMs: number } }>;
+  /** Merchandise holds are keyed by campaign id: a quote can carry one per slot. */
+  holds?: Readonly<{ merchandise?: Readonly<Record<string, { holdId: string; expiresAtMs: number }>>; shipping?: { holdId: string; expiresAtMs: number } }>;
 }>): VoucherProofFacts {
   const { quote, campaigns, holds } = input;
   const revisionOf = new Map(campaigns.map((campaign) => [campaign.id, campaign.revision]));
@@ -214,7 +223,7 @@ export function voucherProofFactsFromQuote(input: Readonly<{
     if (campaignRevision === undefined) throw new TypeError("Voucher proof binds a voucher the quote was not built from");
     return { campaignId, campaignRevision, amountVnd, hold: hold ?? null };
   };
-  const held = holds !== undefined && (holds.merchandise !== undefined || holds.shipping !== undefined);
+  const held = holds !== undefined && (Object.keys(holds.merchandise ?? {}).length > 0 || holds.shipping !== undefined);
   return {
     state: held ? "HELD" : "PREVIEW",
     paidRevision: input.paidRevision,
@@ -222,7 +231,7 @@ export function voucherProofFactsFromQuote(input: Readonly<{
     paidSubtotalVnd: quote.paidAfterVnd,
     shippingFeeVnd: quote.shippingFeeVnd,
     totalVnd: quote.totalPayableVnd,
-    merchandise: bind(quote.selection.merchandiseId, quote.merchandiseDiscountVnd, holds?.merchandise),
+    merchandise: quote.merchandise.map((line) => bind(line.campaignId, line.discountVnd, holds?.merchandise?.[line.campaignId])!),
     shipping: bind(quote.selection.shippingId, quote.shippingDiscountVnd, holds?.shipping),
   };
 }

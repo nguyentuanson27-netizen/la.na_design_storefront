@@ -10,7 +10,6 @@ import { buildVoucherQuoteFacts } from "../../src/commerce/voucher-quote-facts.t
 import { buildVoucherPickerModel } from "../../src/routes/voucher-picker-model.ts";
 import { readVoucherPreview } from "../../src/commerce/voucher-preview.ts";
 import { issueVoucherQuoteProof, verifyVoucherQuoteProof, voucherProofFactsFromQuote, type VoucherProofLine } from "../../src/commerce/voucher-quote-proof.ts";
-import { applyAllocationToLines } from "../../src/commerce/voucher-quote.ts";
 import { createVoucherSelectionService } from "../../src/commerce/voucher-selection-service.ts";
 import { createVoucherFixtures } from "../support/voucher-fixtures.ts";
 
@@ -85,14 +84,15 @@ test.beforeEach(cleanup);
 async function recomputedFacts(cartId: string, result: Extract<VoucherHoldFlowResult, { ok: true; state: "HELD" }>) {
   const preview = await shown(cartId);
   const variation = preview.variationOfLine;
-  const lines: VoucherProofLine[] = applyAllocationToLines(preview.lines, preview.quote.allocation).map((l) => ({
+  const lines: VoucherProofLine[] = preview.quote.linesAfter.map((l) => ({
     pancakeVariationId: variation.get(l.lineId.replace(/\|v\d+$/, ""))!, quantity: l.quantity, unitPriceVnd: l.unitPriceVnd, role: "PAID",
   }));
   const at = (kind: string) => result.holds.find((h) => h.kind === kind);
   const bind = (kind: string) => (at(kind) ? { holdId: at(kind)!.holdId, expiresAtMs: at(kind)!.expiresAtMs } : undefined);
   const m = bind("MERCHANDISE");
   const s = bind("SHIPPING_FREE");
-  return voucherProofFactsFromQuote({ quote: preview.quote, campaigns: preview.campaigns, paidRevision: preview.paidRevision, lines, holds: { ...(m ? { merchandise: m } : {}), ...(s ? { shipping: s } : {}) } });
+  const merchandiseId = preview.quote.selection.merchandiseIds[0];
+  return voucherProofFactsFromQuote({ quote: preview.quote, campaigns: preview.campaigns, paidRevision: preview.paidRevision, lines, holds: { ...(m && merchandiseId ? { merchandise: { [merchandiseId]: m } } : {}), ...(s ? { shipping: s } : {}) } });
 }
 
 test("D-6: feature off or shop not verified answers PREVIEW_ONLY and reads and writes nothing", async () => {
@@ -138,7 +138,7 @@ test("AC-43 / EX-01: the POST holds both vouchers once, returns a HELD proof a s
   assert.deepEqual(verifyVoucherQuoteProof({ proof: result.proof, cartId: c.id, current: facts, secret: SECRET, mode: "SUBMIT", now }), { ok: true, held: true });
   assert.deepEqual(verifyVoucherQuoteProof({ proof: result.proof, cartId: c.id, current: facts, secret: SECRET, mode: "SUBMIT", now: new Date(result.expiresAtMs) }), { ok: false, reason: "HOLD_EXPIRED" });
   assert.equal(verifyVoucherQuoteProof({ proof: result.proof, cartId: "another-cart", current: facts, secret: SECRET, mode: "SUBMIT", now }).ok, false, "bound to this cart");
-  const unheld = { ...facts, state: "PREVIEW" as const, merchandise: { ...facts.merchandise!, hold: null }, shipping: { ...facts.shipping!, hold: null } };
+  const unheld = { ...facts, state: "PREVIEW" as const, merchandise: facts.merchandise.map((binding) => ({ ...binding, hold: null })), shipping: { ...facts.shipping!, hold: null } };
   const previewOnly = issueVoucherQuoteProof({ facts: unheld, cartId: c.id, secret: SECRET })!;
   assert.deepEqual(verifyVoucherQuoteProof({ proof: previewOnly, cartId: c.id, current: unheld, secret: SECRET, mode: "SUBMIT", now }), { ok: false, reason: "HOLD_REQUIRED" });
 });
@@ -208,11 +208,11 @@ test("P1 consent: a quote that changed answers QUOTE_CHANGED even when the TOTAL
   const a = await fixed(50_000, 100_000, { name: "A" });
   const b = await fixed(50_000, 100_000, { name: "B" });
   const selection = createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV });
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: a.id });
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: a.id });
   const seen = await shown(c.id);
-  assert.equal(seen.quote.selection.merchandiseId, a.id);
+  assert.equal(seen.quote.selection.merchandiseIds[0] ?? null, a.id);
   // Another tab switches the cart to B: same discount, same total, different voucher.
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: b.id });
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: b.id });
   const now = await shown(c.id);
   assert.equal(now.quote.totalPayableVnd, seen.quote.totalPayableVnd, "the totals are equal on purpose");
   assert.notEqual(now.quoteDigest, seen.quoteDigest);
@@ -263,7 +263,7 @@ test("P1 proof: if the HELD proof cannot be issued the whole call rolls back (no
 
   const first = held(await click(c.id));
   assert.equal(first.holds[0]!.campaignId, big.id);
-  await createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV }).setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: small.id });
+  await createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV }).setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: small.id });
   assert.deepEqual(await click(c.id, {}, noProof), { ok: false, reason: "PROOF_UNAVAILABLE" });
   const live = await holdsOf();
   assert.deepEqual(live.map((h) => [h.id, h.state]), [[first.holds[0]!.holdId, "HELD"]], "the old hold survives, untouched");
@@ -287,7 +287,7 @@ test("AC-20: even when the preview thought it fine, money the POS cannot take le
   const real = await shown(c.id);
   // 99.999 gift slots cannot be carved out of two paid units: the vendor projection must refuse the whole cart.
   const poisoned = { ...real, quote: { ...real.quote, gifts: { ...real.quote.gifts, retainedSelectedSlots: 99_999 } } };
-  const digest = buildVoucherQuoteFacts({ quote: poisoned.quote, campaigns: poisoned.campaigns, lines: poisoned.lines, variationOfLine: poisoned.variationOfLine, paidRevision: poisoned.paidRevision })!.digest;
+  const digest = buildVoucherQuoteFacts({ quote: poisoned.quote, campaigns: poisoned.campaigns, variationOfLine: poisoned.variationOfLine, paidRevision: poisoned.paidRevision })!.digest;
   const guarded = createVoucherHoldFlow(prisma, { shopId: SHOP, attemptSecret: SECRET, proofSecret: SECRET, env: ENV, readPreview: async () => poisoned });
   assert.deepEqual(await guarded.hold({ cartId: c.id, expectedQuoteDigest: digest }), { ok: false, reason: "POS_INFEASIBLE" });
   assert.equal((await holdsOf()).length, 0);
@@ -302,12 +302,12 @@ test("a swap on a changed quote releases the old hold and holds the new one; cho
   const selection = createVoucherSelectionService(prisma, { shopId: SHOP, env: ENV });
   const first = held(await click(c.id));
   assert.equal(first.holds[0]!.campaignId, big.id);
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: small.id });
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: small.id });
   const swapped = held(await click(c.id));
   assert.equal(swapped.holds[0]!.campaignId, small.id);
   assert.deepEqual((await holdsOf()).map((h) => h.state), ["RELEASED", "HELD"]);
   assert.equal((await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: big.id } })).reservedUses, 0);
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: null });
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: null });
   const none = await click(c.id);
   assert.deepEqual(none.ok && none.state === "NONE" && none.released, ["MERCHANDISE"]);
   assert.equal((await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: small.id } })).reservedUses, 0);
@@ -392,19 +392,19 @@ test("P1 TOCTOU: another tab changes the selection AFTER the preview and BEFORE 
   const a = await fixed(50_000, 100_000, { name: "race A" });
   const b = await fixed(50_000, 100_000, { name: "race B" });
   const c = await cart([{ variantId: await product(450_000), quantity: 2 }]);
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: a.id });
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: a.id });
   const digest = (await shown(c.id)).quoteDigest!;
   const before = (await shown(c.id)).quote.totalPayableVnd;
 
   // A -> B, both worth 50.000: same total, different voucher.
-  const toB = racing(() => selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: b.id }).then(() => undefined));
+  const toB = racing(() => selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: b.id }).then(() => undefined));
   assert.equal((await shown(c.id)).quote.totalPayableVnd, before);
   assert.deepEqual(await toB.hold({ cartId: c.id, expectedQuoteDigest: digest }), { ok: false, reason: "QUOTE_CHANGED" });
   await noHoldAnywhere([a.id, b.id]);
 
   // A -> NONE
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: a.id });
-  const toNone = racing(() => selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: null }).then(() => undefined));
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: a.id });
+  const toNone = racing(() => selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: null }).then(() => undefined));
   const refused = await toNone.hold({ cartId: c.id, expectedQuoteDigest: (await shown(c.id)).quoteDigest! });
   assert.deepEqual(refused, { ok: false, reason: "QUOTE_CHANGED" });
   await noHoldAnywhere([a.id, b.id]);
@@ -426,7 +426,7 @@ test("P1 NONE: a stale tab can neither release a hold it did not agree to releas
   const c = await cart([{ variantId: await product(450_000), quantity: 2 }]);
   const first = held(await click(c.id)); // tab A holds M and still shows M's digest
   const digestM = (await shown(c.id)).quoteDigest!;
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: null }); // tab B chooses NONE
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: null }); // tab B chooses NONE
 
   // Tab A's stale POST: the server now computes the NONE quote, whose digest A never agreed to.
   const stale = await flow.hold({ cartId: c.id, expectedQuoteDigest: digestM });
@@ -437,12 +437,12 @@ test("P1 NONE: a stale tab can neither release a hold it did not agree to releas
 
   // The race: the NONE quote is what the buyer saw, but the selection flips back between the preview and the release.
   const digestNone = (await shown(c.id)).quoteDigest!;
-  const flipBack = racing(() => selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "AUTO" }).then(() => undefined));
+  const flipBack = racing(() => selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "AUTO" }).then(() => undefined));
   assert.deepEqual(await flipBack.hold({ cartId: c.id, expectedQuoteDigest: digestNone }), { ok: false, reason: "QUOTE_CHANGED" });
   assert.deepEqual(await snapshot([m.id]), intact, "the hold is untouched, down to the ledger row");
 
   // The intentional NONE: the buyer's own NONE digest releases it.
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: null });
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: null });
   const released = await click(c.id);
   assert.deepEqual(released.ok && released.state === "NONE" && released.released, ["MERCHANDISE"]);
   assert.equal((await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: m.id } })).reservedUses, 0);

@@ -2313,6 +2313,8 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     background: transparent;
     color: var(--ink);
     border-color: var(--ink);
+    /* Inverting both colours through intermediate shades makes the live label unreadable. */
+    transition: none;
   }
 
   .btn--outline:hover:not(:disabled) {
@@ -3245,14 +3247,24 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   pointer-events: none;
 }
 
-/* A single tile above the counter, outside navigation and swipe tracks. No layout shift. */
-.pdp-video-tile {
+/* The slot is the product video's frame: below `lg`, one 9:16 frame on the photograph's right edge,
+   outside navigation and swipe tracks. Its height follows its width, so the frame never shifts the
+   layout. It sits at about a quarter of the photograph's height from the bottom, clear of the
+   counter and the Flash Sale tag. The tile (the button that opens the dialog) fills it and the
+   close button, when there is a preview to stop, sits on its top right corner. */
+.pdp-video-slot {
   position: absolute;
   pointer-events: auto;
   right: 1rem;
-  bottom: 3.75rem;
-  width: 96px;
-  height: 76px;
+  bottom: 26%;
+  width: clamp(88px, 25vw, 112px);
+  aspect-ratio: 9 / 16;
+}
+.pdp-video-tile {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   border: 1px solid var(--paper);
   border-radius: 4px;
@@ -3260,6 +3272,18 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   color: white;
   box-shadow: 0 2px 8px #0003;
 }
+/* The preview fades in over its poster once it is really playing, so a slow start shows the
+   photograph rather than a black frame. */
+.pdp-video-tile__preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.pdp-video-tile__preview[data-playing="true"] { opacity: 1; }
 .pdp-video-tile:focus-visible {
   outline: 3px solid var(--paper);
   outline-offset: 3px;
@@ -3278,6 +3302,22 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   font-weight: 600;
 }
 .pdp-video-tile__label svg { width: 16px; height: 16px; }
+/* Stops the autoplaying preview (WCAG 2.2.2): the frame stays, as a poster. */
+.pdp-video-slot__close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #000a;
+  color: white;
+}
+.pdp-video-slot__close svg { width: 16px; height: 16px; }
+.pdp-video-slot__close:focus-visible { outline: 3px solid var(--paper); outline-offset: 2px; box-shadow: 0 0 0 6px var(--chocolate); }
 @media (min-width: 1024px) {
   .pdp-video-anchor {
     right: auto;
@@ -3286,5 +3326,22 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     justify-content: center;
   }
   .pdp-video-anchor[data-single-image="true"] { width: 100%; }
-  .pdp-video-tile { right: 1rem; bottom: 4.5rem; }
+  /* The small poster tile on the photograph: the desktop layout before the preview is up, after the
+     shopper has stopped it, and while the shopper is down at the purchase panel. */
+  .pdp-video-slot { right: 1rem; bottom: 4.5rem; width: 96px; height: 76px; aspect-ratio: auto; }
+  /* The mini-player: pinned to the viewport's bottom right, in the column above the chat button,
+     so it stays with the shopper while the photographs are looked at. Under the header, menus and
+     dialogs (50), over the page. */
+  .pdp-video-slot[data-float="true"] {
+    position: fixed;
+    z-index: 44;
+    right: 1.5rem;
+    bottom: 6.5rem;
+    width: 168px;
+    height: auto;
+    aspect-ratio: 9 / 16;
+  }
+  /* Docked back on the photograph: a poster tile again, its preview resting until it floats again. */
+  .pdp-video-slot[data-float="false"] .pdp-video-tile__preview { display: none; }
+  .pdp-video-slot[data-float="true"] .pdp-video-tile { box-shadow: 0 4px 16px #0005; }
 }

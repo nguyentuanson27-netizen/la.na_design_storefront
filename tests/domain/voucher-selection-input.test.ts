@@ -3,22 +3,26 @@ import test from "node:test";
 
 import { parseVoucherCodeInput, parseVoucherSelectionInput } from "../../src/commerce/voucher-selection-input.ts";
 
-test("a selection carries only a group, a mode and a voucher id (or null for 'no voucher')", () => {
-  assert.deepEqual(parseVoucherSelectionInput({ group: "MERCHANDISE", mode: "MANUAL", voucherId: "abc_1-2" }), { group: "MERCHANDISE", mode: "MANUAL", voucherId: "abc_1-2" });
-  assert.deepEqual(parseVoucherSelectionInput({ group: "SHIPPING_FREE", mode: "MANUAL", voucherId: null }), { group: "SHIPPING_FREE", mode: "MANUAL", voucherId: null });
-  assert.deepEqual(parseVoucherSelectionInput({ group: "SHIPPING_FREE", mode: "AUTO" }), { group: "SHIPPING_FREE", mode: "AUTO", voucherId: null });
+test("a selection carries only a slot, a mode and a voucher id (or null for 'no voucher')", () => {
+  assert.deepEqual(parseVoucherSelectionInput({ slot: "MERCHANDISE", mode: "MANUAL", voucherId: "abc_1-2" }), { slot: "MERCHANDISE", mode: "MANUAL", voucherId: "abc_1-2" });
+  assert.deepEqual(parseVoucherSelectionInput({ slot: "SHIPPING_FREE", mode: "MANUAL", voucherId: null }), { slot: "SHIPPING_FREE", mode: "MANUAL", voucherId: null });
+  assert.deepEqual(parseVoucherSelectionInput({ slot: "SHIPPING_FREE", mode: "AUTO" }), { slot: "SHIPPING_FREE", mode: "AUTO", voucherId: null });
 });
 
 test("money, revisions, cart ids and any extra key are refused, not ignored", () => {
   for (const extra of ["discountVnd", "amountVnd", "totalVnd", "revision", "campaignRevision", "cartId", "shopId", "held", "price"]) {
-    assert.equal(parseVoucherSelectionInput({ group: "MERCHANDISE", mode: "AUTO", [extra]: 1 }), null, extra);
+    assert.equal(parseVoucherSelectionInput({ slot: "MERCHANDISE", mode: "AUTO", [extra]: 1 }), null, extra);
   }
 });
 
 test("bad shapes fail closed", () => {
-  for (const bad of [null, undefined, "x", 1, [], {}, { group: "GIFT", mode: "AUTO" }, { group: "MERCHANDISE", mode: "SOMETIMES" }, { group: "MERCHANDISE", mode: "MANUAL", voucherId: "bad id" }, { group: "MERCHANDISE", mode: "MANUAL", voucherId: 7 }, { group: "MERCHANDISE", mode: "AUTO", voucherId: "x" }, { group: "MERCHANDISE", mode: "MANUAL", voucherId: "x".repeat(65) }]) {
+  for (const bad of [null, undefined, "x", 1, [], {}, { slot: "GIFT", mode: "AUTO" }, { slot: "MERCHANDISE:", mode: "AUTO" }, { slot: "MERCHANDISE:bad id", mode: "AUTO" }, { slot: "SHIPPING_FREE:x", mode: "AUTO" }, { group: "MERCHANDISE", mode: "AUTO" }, { slot: "MERCHANDISE", mode: "SOMETIMES" }, { slot: "MERCHANDISE", mode: "MANUAL", voucherId: "bad id" }, { slot: "MERCHANDISE", mode: "MANUAL", voucherId: 7 }, { slot: "MERCHANDISE", mode: "AUTO", voucherId: "x" }, { slot: "MERCHANDISE", mode: "MANUAL", voucherId: "x".repeat(65) }]) {
     assert.equal(parseVoucherSelectionInput(bad), null);
   }
+});
+
+test("ADR 0020: a typed slot is accepted, and the slot never carries a price", () => {
+  assert.deepEqual(parseVoucherSelectionInput({ slot: "MERCHANDISE:type_1-A", mode: "MANUAL", voucherId: "tier1" }), { slot: "MERCHANDISE:type_1-A", mode: "MANUAL", voucherId: "tier1" });
 });
 
 test("a code is one bounded string and nothing else", () => {
@@ -29,18 +33,29 @@ test("a code is one bounded string and nothing else", () => {
 
 import { parseVoucherDraftInput } from "../../src/commerce/voucher-selection-input.ts";
 
-test("the picker draft is one intent per group and nothing else", () => {
-  const draft = { merchandise: { mode: "MANUAL", voucherId: "m1" }, shipping: { mode: "AUTO", voucherId: null } };
+test("the picker draft is one intent per merchandise slot plus shipping, and nothing else", () => {
+  const draft = { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: "m1" } }, shipping: { mode: "AUTO", voucherId: null } };
   assert.deepEqual(parseVoucherDraftInput(draft), draft);
-  assert.deepEqual(parseVoucherDraftInput({ merchandise: { mode: "AUTO" }, shipping: { mode: "MANUAL", voucherId: null } }), { merchandise: { mode: "AUTO", voucherId: null }, shipping: { mode: "MANUAL", voucherId: null } });
-  for (const bad of [null, {}, { merchandise: draft.merchandise }, { ...draft, total: 1 }, { ...draft, merchandise: { mode: "AUTO", voucherId: "x" } }, { ...draft, shipping: { mode: "MANUAL", voucherId: "bad id" } }, { ...draft, shipping: { mode: "MANUAL", voucherId: null, discountVnd: 5 } }]) {
+  assert.deepEqual(parseVoucherDraftInput({ merchandise: { "MERCHANDISE:A": { mode: "AUTO" } }, shipping: { mode: "MANUAL", voucherId: null } }), { merchandise: { "MERCHANDISE:A": { mode: "AUTO", voucherId: null } }, shipping: { mode: "MANUAL", voucherId: null } });
+  assert.deepEqual(parseVoucherDraftInput({ merchandise: {}, shipping: { mode: "AUTO" } }), { merchandise: {}, shipping: { mode: "AUTO", voucherId: null } });
+  for (const bad of [null, {}, { merchandise: draft.merchandise }, { ...draft, total: 1 }, { ...draft, merchandise: { MERCHANDISE: { mode: "AUTO", voucherId: "x" } } }, { ...draft, shipping: { mode: "MANUAL", voucherId: "bad id" } }, { ...draft, shipping: { mode: "MANUAL", voucherId: null, discountVnd: 5 } }]) {
     assert.equal(parseVoucherDraftInput(bad), null);
   }
 });
 
+test("ADR 0020: draft slots are validated and bounded: only merchandise slots, at most eight, no inherited keys", () => {
+  const some = { mode: "AUTO", voucherId: null };
+  for (const slot of ["SHIPPING_FREE", "OTHER", "MERCHANDISE:", "MERCHANDISE:bad id", "__proto__", "constructor"]) {
+    assert.equal(parseVoucherDraftInput(JSON.parse(`{"merchandise":{"${slot}":{"mode":"AUTO"}},"shipping":{"mode":"AUTO"}}`)), null, slot);
+  }
+  const nine = Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`MERCHANDISE:T${index}`, some]));
+  assert.equal(parseVoucherDraftInput({ merchandise: nine, shipping: some }), null);
+  assert.notEqual(parseVoucherDraftInput({ merchandise: Object.fromEntries(Array.from({ length: 8 }, (_, index) => [`MERCHANDISE:T${index}`, some])), shipping: some }), null);
+});
+
 test("the picker's commit carries the version of the saved choice it was built on, and a consent only as a digest and an explicit yes", async () => {
   const { parseVoucherCommitInput } = await import("../../src/commerce/voucher-selection-input.ts");
-  const draft = { merchandise: { mode: "MANUAL", voucherId: "m1" }, shipping: { mode: "AUTO", voucherId: null } };
+  const draft = { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: "m1" } }, shipping: { mode: "AUTO", voucherId: null } };
   const digest = "a".repeat(64);
   const version = "c".repeat(64);
   assert.deepEqual(parseVoucherCommitInput({ ...draft, selection: version }), { draft, consentDigest: null, selectionVersion: version });

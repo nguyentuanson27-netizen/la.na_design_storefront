@@ -264,7 +264,7 @@ test("AC-34: a different quote with the SAME total is refused and holds nothing;
   const a = await fixed(50_000, 100_000, { name: "harness A" });
   const b = await fixed(50_000, 100_000, { name: "harness B" });
   const c = await cart([{ variantId: await product(450_000), quantity: 2 }]);
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: a.id });
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: a.id });
   const context = await buyer(browser, c.id);
   const page = await context.newPage();
   const net: Net[] = [];
@@ -273,7 +273,7 @@ test("AC-34: a different quote with the SAME total is refused and holds nothing;
   const seen = await page.locator("[data-harness=voucher-hold]").getAttribute("data-digest");
   const totalSeen = await page.getByTestId("total").textContent();
   // Another tab switches the cart to the other voucher of equal value.
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: b.id });
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: b.id });
 
   await click(page, net, "hold");
   const refused = await shown(page);
@@ -298,7 +298,7 @@ test("AC-34: a quote that raises the total needs consent: without it nothing is 
   const m = await fixed(10_000, 50_000);
   const c = await cart([{ variantId: await product(100_000, { category: "vayDam" }), quantity: 1 }]);
   await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: SHOP, name: "Harness freeship", isEnabled: true, enabledAt: PAST, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] } });
-  await selection.setGroup({ cartId: c.id, group: "MERCHANDISE", mode: "MANUAL", voucherId: m.id }); // the buyer insists on a voucher that makes shipping cost 30.000
+  await selection.setSlot({ cartId: c.id, slot: "MERCHANDISE", mode: "MANUAL", voucherId: m.id }); // the buyer insists on a voucher that makes shipping cost 30.000
   const context = await buyer(browser, c.id);
   const page = await context.newPage();
   const net: Net[] = [];
