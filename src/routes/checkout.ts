@@ -32,10 +32,11 @@ import { sealRoute, type RouteHandle, type RoutePixelEvent } from "./core.tsx";
 export type CheckoutRouteProps = Readonly<Record<string, never>>;
 
 function withCheckoutExtras(base: CheckoutViewModel): CheckoutViewModel {
-  // The optional feature gate is not permission to fail checkout if promotional configuration
-  // is missing or malformed. The order's canonical quote and proof stay independent.
+  // Keep the optional feature gate stable across ready ↔ unquotable renders. An absent
+  // quote proof disables fetching, not D-06 dismissal persistence within this checkout.
+  // Malformed promotion config must never fail the canonical checkout render.
   let upsellEnabled = false;
-  if (base.state === "ready" && base.quoteProof) {
+  if (base.state !== "empty") {
     try {
       upsellEnabled = isPromotionUpsellEnabled(readPancakeShopId());
     } catch {
