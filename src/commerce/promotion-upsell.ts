@@ -20,6 +20,7 @@ import { isUpsellProofCurrent, issueUpsellQuoteProof, parseUpsellIntent, upsellP
 export const UPSELL_MAX_PRODUCTS = 10;
 export const UPSELL_MAX_VARIANTS_PER_PRODUCT = 3;
 export const UPSELL_MAX_QUOTES = 20;
+export const UPSELL_BANNER_MAX_QUOTES = 6;
 export const UPSELL_READ_TIMEOUT_MS = 2_000;
 const UPSELL_WRITE_TIMEOUT_MS = 5_000;
 type Env = Readonly<Record<string, string | undefined>>;
@@ -123,7 +124,7 @@ async function verifyCandidate(tx: Prisma.TransactionClient, before: Snapshot, o
 
 export function createPromotionUpsellService(client: PrismaClient, store: { get(name: string): { value: string } | undefined }, { shopId, secret, env = process.env, metric = recordUpsellMetric }: { shopId: number; secret: string; env?: Env; metric?: (metric: Metric) => void }) {
   const report = (value: Metric) => { try { metric(value); } catch { /* observability cannot block checkout */ } };
-  async function get(checkoutProof: string, now = new Date()): Promise<CheckoutUpsellModel | null> {
+  async function recommend(checkoutProof: string, now: Date, maxQuotes: number): Promise<CheckoutUpsellModel | null> {
     if (!isPromotionUpsellEnabled(shopId, env)) return null;
     const cartId = readAnonymousCartCookie(store);
     if (!cartId) return null;
@@ -144,7 +145,7 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         // Round-robin variants by product: one product with many sizes cannot consume the whole quote budget.
         for (let option = 0; option < UPSELL_MAX_VARIANTS_PER_PRODUCT; option++) for (const p of products) {
           const v = p.variants[option];
-          if (!v || quotes >= UPSELL_MAX_QUOTES) continue;
+          if (!v || quotes >= maxQuotes) continue;
           if (Date.now() - started >= UPSELL_READ_TIMEOUT_MS) throw new Error("Recommendation deadline");
           quotes++;
           // One hypothetical quote covers every near campaign. No campaign × variant quote explosion.
@@ -176,6 +177,15 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
       report({ event: "recommendation", outcome: Date.now() - started >= 1800 ? "timed_out" : "failed", durationMs: Date.now() - started });
       return null;
     }
+  }
+
+  async function get(checkoutProof: string, now = new Date()) {
+    return recommend(checkoutProof, now, UPSELL_MAX_QUOTES);
+  }
+
+  async function getBanner(checkoutProof: string, now = new Date()) {
+    const model = await recommend(checkoutProof, now, UPSELL_BANNER_MAX_QUOTES);
+    return model ? { paidCartKey: model.paidCartKey, offerName: model.offer?.name ?? null } : null;
   }
 
   async function requote(input: unknown, now = new Date()) {
@@ -247,5 +257,5 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
       return { ok: false, reason: "OFFER_UNAVAILABLE" } as const;
     }
   }
-  return { get, requote, add };
+  return { get, getBanner, requote, add };
 }
