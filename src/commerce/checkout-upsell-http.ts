@@ -2,6 +2,7 @@
 import { MAX_BENEFIT_QUOTE_PROOF_BYTES } from "./checkout-quote-proof.ts";
 
 export const MAX_UPSELL_REQUEST_BYTES = 64 * 1024;
+export const UPSELL_BODY_READ_TIMEOUT_MS = 1_000;
 
 export function isSameOriginUpsellRequest(request: Request, trustedOrigin: string): boolean {
   if (request.method !== "POST") return false;
@@ -25,18 +26,35 @@ export async function readCheckoutUpsellProof(request: Request): Promise<string 
   if (!reader) return null;
   const chunks: Uint8Array[] = [];
   let bytes = 0;
+  let expired = false;
+  let deadlineId: ReturnType<typeof setTimeout> | undefined;
+  // One absolute deadline for the entire body, not a resettable per-chunk idle timeout.
+  const deadline = new Promise<null>((resolve) => {
+    deadlineId = setTimeout(() => {
+      expired = true;
+      resolve(null);
+      // Cancellation can itself stall on an uncooperative upstream stream. Do not await it:
+      // the caller must be able to release its scarce recommendation slot regardless.
+      void reader.cancel("Upsell request body deadline exceeded").catch(() => {});
+    }, UPSELL_BODY_READ_TIMEOUT_MS);
+  });
   try {
     for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
+      const result = await Promise.race([reader.read(), deadline]);
+      // cancel() can settle a pending read with done=true, so check the deadline first.
+      if (expired || result === null) return null;
+      if (result.done) break;
+      bytes += result.value.byteLength;
       if (bytes > MAX_UPSELL_REQUEST_BYTES) {
-        await reader.cancel();
+        void reader.cancel("Upsell request body exceeds limit").catch(() => {});
         return null;
       }
-      chunks.push(value);
+      chunks.push(result.value);
     }
+  } catch {
+    return null;
   } finally {
+    if (deadlineId !== undefined) clearTimeout(deadlineId);
     reader.releaseLock();
   }
 
