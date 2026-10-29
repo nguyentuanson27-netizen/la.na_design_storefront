@@ -38,7 +38,7 @@ campaign locks, then check the shared DB freeze. Disable and early-end remain
 available. Freeze ownership/actor/time and successful preflight revision/time are
 persisted. Release requires a fresh owned preflight, no enabled future/current
 percentage campaign, basis OFF, activation disabled and operator verification of
-all web/worker instances. The following basis phase adds the transactional rollback implementation and runbook.
+all web/worker instances. See the [runbook](../operations/list-price-rollout.md).
 
 `LIST_PRICE_ORDER_HISTORY` reads only immutable metadata after exact code/phone
 verification; incomplete legacy paid references suppress whole-order savings.

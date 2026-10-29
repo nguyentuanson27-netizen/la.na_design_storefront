@@ -1,3 +1,4 @@
+import { readListPriceConfig } from "./list-price-config.ts";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
@@ -445,7 +446,7 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
         basePriceVnd: pricing.basePriceVnd,
         legacy:
           pricing.isDiscounted && pricing.promotion !== null && pricing.effectivePriceVnd !== null
-            ? { campaign: pricing.promotion, effectivePriceVnd: pricing.effectivePriceVnd }
+            ? { campaign: pricing.promotion, effectivePriceVnd: pricing.effectivePriceVnd, ...(readListPriceConfig().campaignBasis ? { priceIsCeiling: true } : {}) }
             : null,
       });
     }

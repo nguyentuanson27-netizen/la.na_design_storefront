@@ -1,3 +1,5 @@
+import { classifyListPriceCampaign, minimumEffectiveListPricePercent, summarizeThresholdWarnings } from "./list-price.ts";
+import { readListPriceConfig } from "./list-price-config.ts";
 /**
  * The transactional boundary for effective promotion mutations.
  *
@@ -70,6 +72,7 @@ export const PROMOTION_REVISION_ID = "current";
 
 export type ActivationFailure =
   | { reason: "ACTIVATION_DISABLED" }
+  | { reason: "PROMOTION_PRICE_UNSAFE"; variantIds: readonly string[] }
   | { reason: "CAMPAIGN_NOT_FOUND" }
   /**
    * The lifecycle status the operation was refused from. Typed as the derived status rather than a
@@ -88,8 +91,10 @@ export type ActivationFailure =
   | { reason: "OVERLAPPING_CAMPAIGN"; conflictingCampaignIds: readonly string[] }
   | { reason: "DUPLICATE_TARGET" };
 
+export type PromotionThresholdWarning = Readonly<{ variantId: string; minimumPercent: number | null }>;
+
 export type ActivationOutcome =
-  | Readonly<{ ok: true; campaignId: string; revision: bigint }>
+  | Readonly<{ ok: true; campaignId: string; revision: bigint; warnings?: readonly PromotionThresholdWarning[]; warningSummary?: Readonly<{ count: number; minimumPercent: number | null }> }>
   | Readonly<{ ok: false; failure: ActivationFailure }>;
 
 export type Tx = Prisma.TransactionClient;
@@ -237,8 +242,10 @@ async function findVariantsTheCampaignCannotDiscount(
   unusableBase: string[];
   discounted: number;
   outcomes: VariantPricingOutcome[];
+  unsafe: string[];
+  thresholds: PromotionThresholdWarning[];
 }> {
-  if (coveredVariantIds.length === 0) return { invalid: [], unusableBase: [], discounted: 0, outcomes: [] };
+  if (coveredVariantIds.length === 0) return { invalid: [], unusableBase: [], discounted: 0, outcomes: [], unsafe: [], thresholds: [] };
 
   const variants = await tx.variantMirror.findMany({
     where: { id: { in: [...coveredVariantIds] } },
@@ -262,13 +269,21 @@ async function findVariantsTheCampaignCannotDiscount(
   const invalid: string[] = [];
   const unusableBase: string[] = [];
   const outcomes: VariantPricingOutcome[] = [];
+  const unsafe: string[] = [];
+  const thresholds: PromotionThresholdWarning[] = [];
   let discounted = 0;
   for (const variant of variants) {
     const pricing = resolvePromotionPricing({
+      campaignBasis: readListPriceConfig().campaignBasis,
       basePriceVnd: variant.pancakeRetailPrice,
       campaigns: [applicable],
       now,
     });
+    if (readListPriceConfig().campaignBasis && candidate.discountType === "PERCENTAGE") {
+      const detail = classifyListPriceCampaign(variant.pancakeRetailPrice, candidate.percentageValue);
+      if (detail.classification === "THRESHOLD_NOT_MET") thresholds.push({ variantId: variant.id, minimumPercent: minimumEffectiveListPricePercent(variant.pancakeRetailPrice) });
+      else if (!["EFFECTIVE", "BASE_PRICE_UNAVAILABLE"].includes(detail.classification)) unsafe.push(variant.id);
+    }
     outcomes.push({
       variantId: variant.id,
       isDiscounted: pricing.isDiscounted,
@@ -283,7 +298,7 @@ async function findVariantsTheCampaignCannotDiscount(
     else invalid.push(variant.id);
   }
 
-  return { invalid, unusableBase, discounted, outcomes };
+  return { invalid, unusableBase, discounted, outcomes, unsafe, thresholds };
 }
 
 function windowsOverlap(
@@ -367,6 +382,7 @@ async function validateEffectiveState(
   candidate: CandidateState,
   now: Date,
   writer?: PromotionSignalWriter,
+  warnings?: PromotionThresholdWarning[],
 ): Promise<ActivationFailure | null> {
   // Owning products, then the variants the probe finds. The caller has already locked the campaign
   // row; everything below is read after these locks are held, so catalog sync cannot move a fact
@@ -417,10 +433,12 @@ async function validateEffectiveState(
   if (money.unusableBase.length > 0) {
     return { reason: "UNUSABLE_BASE_PRICE", variantIds: money.unusableBase };
   }
-  if (money.invalid.length > 0 || money.discounted === 0) {
+  if (money.unsafe.length > 0) return { reason: "PROMOTION_PRICE_UNSAFE", variantIds: money.unsafe.slice(0, 50) };
+  if ((money.invalid.length > 0 && !(readListPriceConfig().campaignBasis && candidate.discountType === "PERCENTAGE" && money.thresholds.length === money.invalid.length)) || money.discounted === 0) {
     return { reason: "NO_EFFECTIVE_DISCOUNT", invalidVariantIds: money.invalid };
   }
 
+  warnings?.push(...money.thresholds);
   return null;
 }
 
@@ -447,6 +465,8 @@ export async function publishPromotionCampaign({
   }
 
   return client.$transaction(async (tx) => {
+    const frozen = await lockCampaignMutationGuard(tx);
+    if (frozen) return { ok: false, failure: { reason: "ACTIVATION_DISABLED" } } as const;
     const currentRevision = await lockRevision(tx);
     await lockRows(tx, "PromotionCampaign", [campaignId]);
 
@@ -466,7 +486,8 @@ export async function publishPromotionCampaign({
       } as const;
     }
 
-    const failure = await validateEffectiveState(tx, campaign.id, campaign, now, writer);
+    const warnings: PromotionThresholdWarning[] = [];
+    const failure = await validateEffectiveState(tx, campaign.id, campaign, now, writer, warnings);
     if (failure !== null) return { ok: false, failure } as const;
     await tx.promotionCampaign.update({
       where: { id: campaign.id },
@@ -476,7 +497,7 @@ export async function publishPromotionCampaign({
     });
 
     const revision = await advanceRevision(tx, currentRevision);
-    return { ok: true, campaignId: campaign.id, revision } as const;
+    return { ok: true, campaignId: campaign.id, revision, ...(warnings.length ? { warnings: warnings.slice(0, 50), warningSummary: summarizeThresholdWarnings(warnings) } : {}) } as const;
   });
 }
 
@@ -655,6 +676,8 @@ export async function editScheduledPromotionCampaign({
   }
 
   return client.$transaction(async (tx) => {
+    const frozen = await lockCampaignMutationGuard(tx);
+    if (frozen) return { ok: false, failure: { reason: "ACTIVATION_DISABLED" } } as const;
     const currentRevision = await lockRevision(tx);
     // Campaign row next, before its state is read: the decision below must be made on state that
     // cannot change before commit, not on the snapshot a plain read would see.
@@ -681,13 +704,14 @@ export async function editScheduledPromotionCampaign({
       return { ok: false, failure: { reason: "INVALID_DRAFT_INPUT", errors: bounds.errors } } as const;
     }
 
-    const failure = await validateEffectiveState(tx, campaign.id, applyPatch(campaign, patch), now, writer);
+    const warnings: PromotionThresholdWarning[] = [];
+    const failure = await validateEffectiveState(tx, campaign.id, applyPatch(campaign, patch), now, writer, warnings);
     if (failure !== null) return { ok: false, failure } as const;
 
     await writePatch(tx, campaign.id, patch);
 
     const revision = await advanceRevision(tx, currentRevision);
-    return { ok: true, campaignId: campaign.id, revision } as const;
+    return { ok: true, campaignId: campaign.id, revision, ...(warnings.length ? { warnings: warnings.slice(0, 50), warningSummary: summarizeThresholdWarnings(warnings) } : {}) } as const;
   });
 }
 
@@ -729,6 +753,8 @@ export async function editDraftPromotionCampaign({
   }
 
   return client.$transaction(async (tx) => {
+    const frozen = await lockCampaignMutationGuard(tx);
+    if (frozen) return { ok: false, failure: { reason: "ACTIVATION_DISABLED" } } as const;
     // The campaign row is locked before its lifecycle is read, so "this is a Draft" is a fact that
     // holds until commit rather than an observation a concurrent publish can invalidate. Without it
     // a publish committing in between would leave this write landing a material change — discount,
@@ -754,8 +780,8 @@ export async function editDraftPromotionCampaign({
 
     await writePatch(tx, campaign.id, patch);
 
-    // Read back rather than reuse the pre-write value: this path takes no revision lock, so the
-    // number it reports is a snapshot, not a claim that it advanced anything.
+    // Draft writes hold the shared mutation lock for the freeze guard, but never advance
+    // the pricing revision: saving a draft cannot change storefront prices.
     const [row] = await tx.$queryRaw<Array<{ revision: bigint }>>`
       SELECT "revision" FROM "PromotionPricingRevision" WHERE "id" = ${PROMOTION_REVISION_ID}
     `;
@@ -812,6 +838,8 @@ export async function createDraftPromotionCampaign({
   }
 
   return client.$transaction(async (tx) => {
+    const frozen = await lockCampaignMutationGuard(tx);
+    if (frozen) return { ok: false, failure: { reason: "ACTIVATION_DISABLED" } } as const;
     const campaign = await tx.promotionCampaign.create({
       data: {
         kind,
@@ -842,7 +870,7 @@ export async function createDraftPromotionCampaign({
 }
 
 export type CopyOutcome =
-  | Readonly<{ ok: true; campaignId: string; revision: bigint }>
+  | Readonly<{ ok: true; campaignId: string; revision: bigint; warnings?: readonly PromotionThresholdWarning[]; warningSummary?: Readonly<{ count: number; minimumPercent: number | null }> }>
   | Readonly<{ ok: false; failure: ActivationFailure }>;
 
 /**
@@ -864,6 +892,8 @@ export async function copyPromotionCampaign({
   if (unbounded !== null) return { ok: false, failure: unbounded };
 
   return client.$transaction(async (tx) => {
+    const frozen = await lockCampaignMutationGuard(tx);
+    if (frozen) return { ok: false, failure: { reason: "ACTIVATION_DISABLED" } } as const;
     // Locked so the snapshot is of one coherent state rather than of a campaign mid-edit.
     await lockRows(tx, "PromotionCampaign", [campaignId]);
 
@@ -903,4 +933,11 @@ export async function copyPromotionCampaign({
     `;
     return { ok: true, campaignId: copy.id, revision: row?.revision ?? BigInt(0) } as const;
   });
+}
+
+/** Every campaign mutation uses revision → campaign lock order, including drafts. */
+export async function lockCampaignMutationGuard(tx: Tx): Promise<boolean> {
+  await lockRevision(tx);
+  const row = await tx.promotionPricingRevision.findUniqueOrThrow({ where: { id: PROMOTION_REVISION_ID }, select: { campaignMutationFrozen: true } });
+  return row.campaignMutationFrozen;
 }

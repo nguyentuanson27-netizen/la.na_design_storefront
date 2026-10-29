@@ -516,3 +516,25 @@ test("vendor projection columns are both-or-neither and bounded; they stay empty
   await rejects(() => prisma.orderQuoteSnapshot.update({ where: { id: row.id }, data: { vendorProjectionHash: null } }), /check constraint|violates/i);
   await rejects(() => prisma.orderQuoteSnapshot.update({ where: { id: row.id }, data: { vendorProjection: { not: "an array" } } }), /check constraint|violates/i);
 });
+
+test("basis snapshots every PAID segment including undiscounted rows, gifts stay null and digest is unchanged",async()=> {
+  const product=await prisma.productMirror.create({data:{pancakeShopId:925227,pancakeProductId:"gq15-list-price",slug:"gq15-list-price",name:"Frozen Name",syncedAt:new Date(),variants:{create:{id:"gq15-list-variant",pancakeVariationId:"gq15-list-external",pancakeRetailPrice:100001,size:"M",syncedAt:new Date()}}}});
+  try {
+    const plain=ex17();
+    const facts={...plain,lines:plain.lines.map(line=>({...line,variantId:"gq15-list-variant"}))};
+    const old=await order(); assert.deepEqual(await write(old.id,facts),{ok:true});
+    const before=await readOrderQuoteSnapshot(prisma,old.id);
+    process.env.LIST_PRICE_DISPLAY="true";process.env.LIST_PRICE_CAMPAIGN_BASIS="true";
+    const current=await order();assert.deepEqual(await write(current.id,facts),{ok:true});
+    assert.deepEqual(await readOrderQuoteSnapshot(prisma,current.id),before);
+    const rows=await prisma.orderQuoteLine.findMany({where:{snapshot:{orderId:current.id}}});
+    assert.deepEqual(rows.map(row=>row.listUnitPriceVnd),[BigInt(149000),BigInt(149000)]);
+    const giftOrder=await order();const giftFacts=paidAndGift();const newGiftFacts={...giftFacts,lines:giftFacts.lines.map(line=>({...line,variantId:"gq15-list-variant"}))};
+    assert.deepEqual(await write(giftOrder.id,newGiftFacts),{ok:true});
+    const gifts=await prisma.orderQuoteLine.findMany({where:{snapshot:{orderId:giftOrder.id}},orderBy:{role:"asc"}});
+    assert.equal(gifts.find(row=>row.role==="GIFT")?.listUnitPriceVnd,null);
+    assert.equal(gifts.find(row=>row.role==="PAID")?.listUnitPriceVnd,BigInt(149000));
+    assert.equal(gifts.find(row=>row.role==="GIFT")?.productName,"Frozen Name");
+
+  } finally {delete process.env.LIST_PRICE_DISPLAY;delete process.env.LIST_PRICE_CAMPAIGN_BASIS;await prisma.productMirror.delete({where:{id:product.id}});}
+});

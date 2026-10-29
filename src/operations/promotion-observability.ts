@@ -271,6 +271,7 @@ export function describeActivationRejection({
   const context = rejectionContext(campaignId);
 
   switch (failure.reason) {
+    case "PROMOTION_PRICE_UNSAFE":
     case "ACTIVATION_DISABLED":
     case "CAMPAIGN_NOT_FOUND":
     case "TARGET_EXPANSION_LIMIT_EXCEEDED":

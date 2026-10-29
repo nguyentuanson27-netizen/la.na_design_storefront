@@ -1,3 +1,5 @@
+import { computeListPriceVnd } from "./list-price.ts";
+import { readListPriceConfig } from "./list-price-config.ts";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { resolveSellingPolicy, type ReservationState } from "./capacity-policy.ts";
@@ -27,7 +29,7 @@ import {
 } from "./checkout-quote-proof.ts";
 import { resolveBenefitCheckoutQuote, toOrderQuoteSnapshotInput } from "./benefit-checkout-quote.ts";
 import { summarizeBenefitQuote, type BenefitQuoteSummary } from "./benefit-quote-summary.ts";
-import { clearOrderQuoteSnapshot, replaceOrderQuoteSnapshot, validateOrderQuoteSnapshot } from "./order-quote-snapshot.ts";
+import { clearOrderQuoteSnapshot, replaceOrderQuoteSnapshot, validateOrderQuoteSnapshot, type OrderQuoteVariantReference } from "./order-quote-snapshot.ts";
 import { removeCartGiftSelection } from "./cart-gift-selection-repository.ts";
 import { recordVoucherOrderSnapshot } from "./voucher-order-acceptance.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
@@ -699,6 +701,7 @@ export function createGuestCheckoutSnapshotService(
           unitPriceVnd: bigint;
           lineTotalVnd: bigint;
           baseUnitPriceVnd: bigint;
+          listUnitPriceVnd: bigint | null;
           promotionCampaignId: string | null;
           promotionName: string | null;
           promotionKind: PromotionCampaignKind | null;
@@ -806,6 +809,7 @@ export function createGuestCheckoutSnapshotService(
               color: line.color,
               size: line.size,
               quantity: row.quantity,
+              listUnitPriceVnd: snapshotListPrice(row.baseUnitPriceVnd),
               baseUnitPriceVnd: BigInt(row.baseUnitPriceVnd),
               unitPriceVnd: BigInt(row.unitPriceVnd),
               lineTotalVnd: BigInt(row.lineTotalVnd),
@@ -875,6 +879,7 @@ export function createGuestCheckoutSnapshotService(
                 color: line.color,
                 size: line.size,
                 quantity: line.quantity,
+                listUnitPriceVnd: snapshotListPrice(pricing.basePriceVnd),
                 baseUnitPriceVnd: BigInt(pricing.basePriceVnd),
                 unitPriceVnd: BigInt(line.price),
                 lineTotalVnd: BigInt(lineTotalVnd),
@@ -980,7 +985,18 @@ export function createGuestCheckoutSnapshotService(
         // written again only when THIS quote carries held vouchers (the trigger allows both while the order is a DRAFT).
         if (mutableDraft) await tx.orderVoucherSnapshot.deleteMany({ where: { orderId: order.id } });
         if (benefitQuoteWrite !== null) {
-          const written = await replaceOrderQuoteSnapshot(tx, order.id, benefitQuoteWrite);
+          const referenceVariants = new Map<string, OrderQuoteVariantReference>();
+          if (resolution.kind === "BENEFIT") {
+            for (const gift of resolution.gifts) referenceVariants.set(gift.variantId, {
+              basePriceVnd: null, productName: gift.productName, color: gift.color, size: gift.size,
+            });
+          }
+          // Reuse the exact description and POS price frozen in the legacy paid rows, including
+          // when the same variant is also a gift. Never re-read these fields from the catalog.
+          for (const line of snapshots) referenceVariants.set(line.variantId, {
+            basePriceVnd: Number(line.baseUnitPriceVnd), productName: line.productName, color: line.color, size: line.size,
+          });
+          const written = await replaceOrderQuoteSnapshot(tx, order.id, benefitQuoteWrite, referenceVariants);
           // Validated above, so a refusal here is a defect; throwing rolls the whole attempt back
           // rather than leaving an order whose quote rows are missing.
           if (!written.ok) throw new Error(`Benefit quote snapshot refused: ${written.issue}`);
@@ -1034,4 +1050,9 @@ export function createGuestCheckoutSnapshotService(
   }
 
   return { create };
+}
+
+function snapshotListPrice(pos: number | null): bigint | null {
+  const list = readListPriceConfig().campaignBasis ? computeListPriceVnd(pos) : null;
+  return list === null ? null : BigInt(list);
 }

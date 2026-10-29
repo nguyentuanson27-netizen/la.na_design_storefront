@@ -1,3 +1,4 @@
+import { readListPriceConfig } from "./list-price-config.ts";
 /**
  * Runtime campaign health, derived from pricing outcomes.
  *
@@ -302,6 +303,7 @@ export async function evaluateCampaignRuntimeHealth({
       ];
 
       const pricing = resolvePromotionPricing({
+        campaignBasis: readListPriceConfig().campaignBasis,
         basePriceVnd: variant.pancakeRetailPrice,
         campaigns: combinedCandidates,
         now,

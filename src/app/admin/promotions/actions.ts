@@ -14,6 +14,7 @@ import {
   publishPromotionCampaign,
   type CampaignPatch,
 } from "@/commerce/promotion-activation-service";
+import { previewListPriceCampaign } from "@/commerce/list-price-campaign-preview";
 import { isBoundedPromotionIdentifier } from "@/commerce/promotion-activation";
 import { deriveCampaignLifecycle } from "@/commerce/promotion-campaign-lifecycle";
 import { createPromotionAdminRepository } from "@/commerce/promotion-admin-repository";
@@ -74,7 +75,7 @@ function campaignIdFrom(formData: FormData): string {
  * inside the catch that translates database errors, which would otherwise swallow the redirect.
  */
 function completeWith(outcome: PromotionActionOutcome): never {
-  if (outcome.ok) redirect("/admin/promotions?status=ok");
+  if (outcome.ok) redirect(`/admin/promotions?status=ok${outcome.warningCount ? `&thresholdCount=${outcome.warningCount}&minimumPercent=${outcome.minimumPercent}` : ""}`);
   redirect(`/admin/promotions?status=error&reason=${encodeURIComponent(outcome.failure.reason)}`);
 }
 
@@ -124,7 +125,7 @@ export async function copyPromotionAction(formData: FormData): Promise<void> {
 }
 
 export async function createPromotionAction(formData: FormData): Promise<void> {
-  const outcome = await runPromotionOperation("create", (session) => {
+  const outcome = await runPromotionOperation("create", async (session) => {
     const parseResult = parseCampaignFormInput(formData);
     if (!parseResult.ok) {
       return Promise.resolve({ ok: false, failure: { reason: parseResult.reason } });
@@ -141,7 +142,7 @@ export async function createPromotionAction(formData: FormData): Promise<void> {
       targets,
     } = parseResult.value;
 
-    return createDraftPromotionCampaign({
+    const result = await createDraftPromotionCampaign({
       name,
       kind,
       discountType,
@@ -152,6 +153,7 @@ export async function createPromotionAction(formData: FormData): Promise<void> {
       targets,
       session,
     });
+    return result.ok ? { ...result, ...await previewListPriceCampaign({ client: prisma, session, campaignId: result.campaignId }) } : result;
   });
 
   completeWith(outcome);
@@ -194,7 +196,8 @@ export async function editPromotionAction(formData: FormData): Promise<void> {
       const patch: CampaignPatch = parseResult.value;
 
       if (lifecycle.status === "DRAFT") {
-        return editDraftPromotionCampaign({ campaignId, now, session, patch });
+        const result = await editDraftPromotionCampaign({ campaignId, now, session, patch });
+        return result.ok ? { ...result, ...await previewListPriceCampaign({ client: prisma, session, campaignId }) } : result;
       }
 
       if (lifecycle.status === "SCHEDULED") {

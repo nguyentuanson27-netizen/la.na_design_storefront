@@ -99,5 +99,6 @@ test("deployed schema stores the immutable guest checkout snapshot fields", asyn
     { column_name: "promotionPercentageValue", data_type: "integer", is_nullable: "YES" },
     { column_name: "promotionFixedPriceVnd", data_type: "bigint", is_nullable: "YES" },
     { column_name: "metaContentId", data_type: "text", is_nullable: "YES" },
+    { column_name: "listUnitPriceVnd", data_type: "bigint", is_nullable: "YES" },
   ]);
 });

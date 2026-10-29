@@ -98,6 +98,23 @@ for (const target of ["production", "temporary"])
     ]);
     assert.equal(audit.calls[0].domain, `${target}.example.test`);
     assert.equal(audit.calls[0].secret, null);
+    const campaigns = run(["campaigns"], target);
+    assert.equal(campaigns.status, 0);
+    assert.equal(
+      campaigns.calls[0].args.at(-1),
+      "scripts/list-price-campaigns.ts",
+    );
+    const preflight = run(
+      ["preflight", "rollback_test", "--all-instances-verified"],
+      target,
+    );
+    assert.equal(preflight.status, 0);
+    assert.deepEqual(preflight.calls[0].args.slice(-4), [
+      "scripts/list-price-rollback.ts",
+      "preflight",
+      "rollback_test",
+      "--all-instances-verified",
+    ]);
     const config = run(["config", "app"], target);
     assert.equal(config.status, 0);
     assert.ok(config.calls[0].args.includes("exec"));

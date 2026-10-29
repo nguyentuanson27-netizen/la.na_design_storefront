@@ -406,3 +406,26 @@ test("P9a a quantity change the buyer did not see is refused like a price change
   assert.equal(result.refreshedQuote.totalQuantity, 3);
   assert.equal(await prisma.orderMirror.count({ where: { sourceCartId: cart.id } }), 0);
 });
+
+
+test("list-basis rollback re-quotes 562000 to 590000 after disable; a direct OFF would be 442500", async () => {
+ process.env.LIST_PRICE_DISPLAY="true";process.env.LIST_PRICE_CAMPAIGN_BASIS="true";
+ try {
+  const product=await seedProduct("list-rollback",590000), cart=await seedCart(product.variants[0]!.id);
+  const campaign=await prisma.promotionCampaign.create({data:{kind:"PROMOTION",name:prefix+"-list-rollback",discountType:"PERCENTAGE",percentageValue:25,isEnabled:true,enabledAt:now,targets:{create:{variantId:product.variants[0]!.id}}}});
+  const seen=await renderQuote(cart.id,now);assert.equal(seen.items[0]!.unitPriceVnd,562000);
+  const proof=issueRenderedQuoteProof({quote:seen,cartId:cart.id,secret});
+  process.env.LIST_PRICE_CAMPAIGN_BASIS="false";
+  assert.equal((await renderQuote(cart.id,now)).items[0]!.unitPriceVnd,442500);
+  process.env.LIST_PRICE_CAMPAIGN_BASIS="true";
+  const { disablePromotionCampaign }=await import("../../src/commerce/promotion-activation-service.ts");
+  assert.ok((await disablePromotionCampaign({campaignId:campaign.id,session:{user:{id:"test-admin",role:"ADMIN"},session:{id:"test"}},now,client:prisma})).ok);
+  process.env.LIST_PRICE_CAMPAIGN_BASIS="false";
+  const result=await snapshotService(proof,cart.id).create({cartId:cart.id,shopId,publicCode:prefix+"-list-rollback-order",checkoutInput,now});
+  assert.ok(!result.ok);assert.equal(result.reason,"QUOTE_UNPROVEN");
+  if(result.reason!=="QUOTE_UNPROVEN")return;
+  assert.equal(result.quoteReason,"PRICE_CHANGED");assert.equal(result.refreshedQuote.items[0]!.unitPriceVnd,590000);
+  const fresh=issueRenderedQuoteProof({quote:result.refreshedQuote,cartId:cart.id,secret});
+  assert.ok((await snapshotService(fresh,cart.id).create({cartId:cart.id,shopId,publicCode:prefix+"-list-rollback-order",checkoutInput,now})).ok);
+ } finally {delete process.env.LIST_PRICE_DISPLAY;delete process.env.LIST_PRICE_CAMPAIGN_BASIS;}
+});

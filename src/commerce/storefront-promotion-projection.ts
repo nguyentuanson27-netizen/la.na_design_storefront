@@ -97,6 +97,7 @@ export function buildPromotionalStorefrontPricing({
 }>): StorefrontPricingRule {
   return (variant) => {
     const pricing = resolvePromotionPricing({
+      campaignBasis: readListPriceConfig().campaignBasis,
       basePriceVnd: variant.retailPrice,
       campaigns: campaignsByVariantId.get(variant.id) ?? [],
       now,
