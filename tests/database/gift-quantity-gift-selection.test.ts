@@ -4,6 +4,8 @@ import { prisma } from "../../src/db/prisma.ts";
 import { createCartGiftSelectionService, readCartGiftState } from "../../src/commerce/cart-gift-selection.ts";
 import { buildCartGiftPickerModel } from "../../src/routes/cart-gift-model.ts";
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
+import { readBenefitCheckoutRender } from "../../src/commerce/benefit-checkout-render.ts";
+import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 
 const SHOP = 910_120;
 const NOW = new Date("2026-10-14T12:00:00Z");
@@ -359,6 +361,41 @@ test("moving up does not carry a variant that is sold out at the higher mileston
   assert.ok("state" in state);
   assert.deepEqual(await storedSelections(), []);
   assert.deepEqual(state.state.replacedSelections, []);
+});
+// Checkout is reached without opening /cart (PDP, drawer, direct link), so it must reconcile exactly as the cart page does.
+async function renderCheckout() {
+  const items = await prisma.cartItem.findMany({ where: { cartId }, select: { variantId: true, quantity: true } });
+  const lines = await createStorefrontCartRepository(prisma).getLines({ shopId: SHOP, items, now: NOW });
+  return readBenefitCheckoutRender({ client: prisma, cartId, lines, shopId: SHOP, now: NOW, secret: "x".repeat(32), env: { ...ON, LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP) } });
+}
+test("checkout render carries the identical variant to the higher milestone without the cart page being opened", async () => {
+  const higherId = `${PREFIX}higher`;
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { awardMode: "ONCE" } });
+  await higherMilestone(higherId, [giftId, secondId]);
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 4, now: NOW });
+  const render = await renderCheckout();
+  assert.deepEqual(await storedSelections(), [{ campaignId: higherId, variantId: giftId }]);
+  const picker = "giftPicker" in render ? render.giftPicker : undefined;
+  assert.deepEqual(picker?.selections.map((row) => [row.campaignId, row.variantId]), [[higherId, giftId]]);
+  assert.deepEqual(picker?.replaced ?? [], []);
+});
+test("checkout render retires a gift the higher milestone does not offer, and one that is sold out", async () => {
+  const higherId = `${PREFIX}higher`;
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { awardMode: "ONCE" } });
+  await higherMilestone(higherId, [secondId]);
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 4, now: NOW });
+  await renderCheckout();
+  assert.deepEqual(await storedSelections(), [], "different variant: retired, not carried");
+
+  await prisma.giftQuantityCampaign.update({ where: { id: higherId }, data: { giftOptions: { create: { variantId: giftId } } } });
+  await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 3, now: NOW });
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  await prisma.warehouseStock.updateMany({ where: { variantId: giftId }, data: { quantity: 0 } });
+  await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 4, now: NOW });
+  await renderCheckout();
+  assert.deepEqual(await storedSelections(), [], "sold out at the higher milestone: retired, not carried");
 });
 test("with two stacking higher milestones, taking a gift from either one swaps out the replaced lower choice in the same write", async () => {
   const [highA, highB] = [`${PREFIX}high-a`, `${PREFIX}high-b`];
