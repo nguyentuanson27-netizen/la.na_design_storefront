@@ -466,7 +466,7 @@ test("a product with kind, colour and size draws them in that order on both surf
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${BASE_URL}/shop/${colourSetSlug}`, { waitUntil: "networkidle" });
   const panel = page.getByRole("region", { name: "Mua sản phẩm" });
-  await panel.getByRole("group", { name: "Loại", exact: true }).getByText("FULL SET", { exact: true }).click();
+  await panel.getByRole("group", { name: "Loại", exact: true }).locator("label").filter({ hasText: /^FULL SET$/ }).click();
   await expect.poll(() => legendsIn(panel)).toEqual(["Loại", "Màu quần đi kèm", "Kích cỡ"]);
   // Colour first, then only the sizes that colour comes in.
   await panel.getByRole("group", { name: /^Màu/ }).getByText("Xanh", { exact: true }).click();
@@ -479,7 +479,7 @@ test("a product with kind, colour and size draws them in that order on both surf
   await page.getByRole("region", { name: "Mua nhanh" }).getByRole("button").click();
   const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
   await expect(sheet).toBeVisible();
-  await sheet.getByRole("group", { name: "Loại", exact: true }).getByText("FULL SET", { exact: true }).click();
+  await sheet.getByRole("group", { name: "Loại", exact: true }).locator("label").filter({ hasText: /^FULL SET$/ }).click();
   await expect.poll(() => legendsIn(sheet)).toEqual(["Loại", "Màu quần đi kèm", "Kích cỡ"]);
 });
 
@@ -534,55 +534,15 @@ test("composite activation opens and closes the real child purchase path while p
   await expect(page.getByRole("radio", { name: pantsName })).toHaveCount(0);
   await expect(page.getByRole("radio", { name: skirtName })).toHaveCount(0);
   await expect(page.getByRole("radio", { name: malformedName })).toHaveCount(0);
-  /*
-   * Refinement spec "Variant UX": the exact approved sentence, and an unresolved size row that
-   * does not borrow sold-out presentation.
-   *
-   * The selection authority is unchanged -- these inputs are still `disabled`, and this test still
-   * says so. What must not happen is a shopper reading "this size is gone" from a state that only
-   * means "you have not chosen a classification yet".
-   */
-  // Owner request 2026-09-24: the sentence is not shown, but it still describes the size group, so
-  // a screen reader meeting the disabled sizes hears why.
-  const sizeGroup = page.getByRole("group", { name: "Kích cỡ" });
-  await expect(sizeGroup).toHaveAccessibleDescription("Nàng chọn phân loại trước để xem size còn hàng");
-  await expect(
-    sizeGroup.getByText("Nàng chọn phân loại trước để xem size còn hàng", { exact: true }),
-  ).toHaveClass(/\bsr-only\b/);
-  await expect(page.getByRole("radio", { name: "M", exact: true })).toBeDisabled();
-
-  const unresolvedSize = sizeGroup.getByText("M", { exact: true });
-  const unresolvedStyle = await unresolvedSize.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return {
-      opacity: style.opacity,
-      textDecorationLine: style.textDecorationLine,
-      borderStyle: style.borderTopStyle,
-    };
-  });
-  expect(unresolvedStyle.opacity, "unresolved is not dimmed like a sold-out option").toBe("1");
-  expect(unresolvedStyle.textDecorationLine, "unresolved is not struck through").toBe("none");
-  // ...and it carries a state cue that is not colour alone.
-  expect(unresolvedStyle.borderStyle).toBe("dashed");
-  await expect(sizeGroup.getByText("Hết hàng")).toHaveCount(0);
-  await expect(page.getByText("Chọn loại × kích cỡ")).toHaveCount(0);
-
-  // Choosing the classification resolves it: the sentence goes, the sizes become selectable.
-  // Click the visible label the way a shopper does; the radio itself is the sr-only peer input.
+  // FULL SET is selected on first load and reload; size remains an explicit shopper choice.
   const kindGroup = page.getByRole("group", { name: "Loại", exact: true });
-  await kindGroup.getByText("FULL SET", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "FULL SET" })).toBeChecked();
   await expect(kindGroup.locator("legend")).toHaveText("Loại: FULL SET");
-  await expect(
-    page.getByText("Nàng chọn phân loại trước để xem size còn hàng", { exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByText("Nàng chọn phân loại trước để xem size còn hàng", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("radio", { name: "M", exact: true })).toBeEnabled();
-
-  // Back to the unresolved state the rest of this test drives from.
+  await expect(page.getByRole("radio", { name: "M", exact: true })).not.toBeChecked();
   await page.reload({ waitUntil: "networkidle" });
-  await expect(page.getByRole("group", { name: "Kích cỡ" })).toHaveAccessibleDescription(
-    "Nàng chọn phân loại trước để xem size còn hàng",
-  );
+  await expect(page.getByRole("radio", { name: "FULL SET" })).toBeChecked();
 
   const structuredDocuments = (await page
     .locator('script[type="application/ld+json"]')
@@ -600,20 +560,13 @@ test("composite activation opens and closes the real child purchase path while p
   });
 
   const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
-  // Nothing chosen yet: the button stays live and asks for the classification, beside it, rather
-  // than sitting dimmed with no reason given.
+  // The default classification does not choose a size or mutate the cart.
   const panel = page.getByRole("region", { name: "Mua sản phẩm" });
-  const panelKindGroup = panel.getByRole("group", { name: "Loại", exact: true });
   await expect(addToBag).toBeEnabled();
   await addToBag.click();
-  await expect(panel.getByText("Nàng chọn phân loại nhé", { exact: true })).toBeVisible();
-  await expect(panelKindGroup).toBeFocused();
+  await expect(panel.getByText("Nàng chọn size nhé", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("group", { name: "Kích cỡ" })).toBeFocused();
   expect(await prisma.cartItem.count({ where: { variantId: parentVariantId } })).toBe(0);
-  // A tap on a size that only the classification can unlock asks for the classification too.
-  // `force`: Playwright treats a label as disabled with its disabled radio and would wait forever,
-  // but the browser still delivers the tap to the label, which is exactly what is under test.
-  await panel.getByRole("group", { name: "Kích cỡ" }).locator("label").filter({ hasText: /^M$/ }).click({ force: true });
-  await expect(panelKindGroup).toBeFocused();
   await expect(page.getByRole("radio", { name: "M", exact: true }).first()).not.toBeChecked();
 
   const sizeM = page.getByRole("radio", { name: "M", exact: true });
@@ -621,7 +574,7 @@ test("composite activation opens and closes the real child purchase path while p
   async function selectAndAdd(kindLabel: string, variantId: string, keepInCart = false) {
     // A size chosen under the previous kind carries over while the new kind still has it.
     const carriesSize = await sizeM.isChecked();
-    await page.getByText(kindLabel, { exact: true }).click();
+    await page.locator("label").filter({ has: page.getByRole("radio", { name: kindLabel, exact: true }) }).click();
     await expect(page.getByRole("radio", { name: kindLabel })).toBeChecked();
     await expect(page.getByRole("group", { name: "Màu" })).toHaveCount(0);
     if (carriesSize) await expect(sizeM).toBeChecked();
