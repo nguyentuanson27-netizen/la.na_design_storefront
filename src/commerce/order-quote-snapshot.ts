@@ -210,11 +210,10 @@ export async function replaceOrderQuoteSnapshot(
 
   await clearOrderQuoteSnapshot(tx, orderId);
 
-  const referenceVariants = readListPriceConfig().campaignBasis
-    ? authoritativeVariants ?? new Map((await tx.variantMirror.findMany({ where: { id: { in: [...new Set(input.lines.map((line) => line.variantId))] } }, select: { id: true, pancakeRetailPrice: true, color: true, size: true, product: { select: { name: true } } } })).map((variant) => [variant.id, {
+  // Descriptions belong to order history even when campaign basis is OFF after a rollback.
+  const referenceVariants = authoritativeVariants ?? new Map((await tx.variantMirror.findMany({ where: { id: { in: [...new Set(input.lines.map((line) => line.variantId))] } }, select: { id: true, pancakeRetailPrice: true, color: true, size: true, product: { select: { name: true } } } })).map((variant) => [variant.id, {
         basePriceVnd: variant.pancakeRetailPrice, productName: variant.product.name, color: variant.color, size: variant.size,
-      }]))
-    : null;
+      }]));
   const { totals } = verdict;
   await tx.orderQuoteSnapshot.create({
     data: {

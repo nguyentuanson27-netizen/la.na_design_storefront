@@ -191,7 +191,8 @@ test.after(async () => {
 
 // -- GQ17: the DRAFT ----------------------------------------------------------------------------------
 
-test("quote descriptions and POS reference stay frozen with checkout when catalog changes before quote persistence", async () => {
+for (const campaignBasis of [true, false])
+test(`quote descriptions and POS reference stay frozen when catalog changes (basis ${campaignBasis ? "ON" : "OFF"}, history ON)`, async () => {
   await seed({ tier: false, quantity: 1 });
   await chooseGift(1);
   const facts = await renderedFacts();
@@ -212,8 +213,10 @@ test("quote descriptions and POS reference stay frozen with checkout when catalo
   } } }) as unknown as PrismaClient;
   const previousDisplay = process.env.LIST_PRICE_DISPLAY;
   const previousBasis = process.env.LIST_PRICE_CAMPAIGN_BASIS;
+  const previousHistory = process.env.LIST_PRICE_ORDER_HISTORY;
   process.env.LIST_PRICE_DISPLAY = "true";
-  process.env.LIST_PRICE_CAMPAIGN_BASIS = "true";
+  process.env.LIST_PRICE_CAMPAIGN_BASIS = String(campaignBasis);
+  process.env.LIST_PRICE_ORDER_HISTORY = "true";
   try {
     const result = await create(snapshotService({ proof, client: changingCatalog }));
     assert.ok(result.ok);
@@ -229,7 +232,7 @@ test("quote descriptions and POS reference stay frozen with checkout when catalo
     assert.deepEqual(description(paidLine), description(legacy));
     assert.deepEqual(description(giftLine), ["GQ17 giftitem", "Black", "M"]);
     assert.equal(paidLine.listUnitPriceVnd, legacy.listUnitPriceVnd);
-    assert.equal(paidLine.listUnitPriceVnd, BigInt(149000));
+    assert.equal(paidLine.listUnitPriceVnd, campaignBasis ? BigInt(149000) : null);
     assert.equal(paidLine.unitPriceVnd, BigInt(100001));
     assert.equal(giftLine.listUnitPriceVnd, null);
     assert.equal(giftLine.unitPriceVnd, BigInt(0));
@@ -241,6 +244,8 @@ test("quote descriptions and POS reference stay frozen with checkout when catalo
     else process.env.LIST_PRICE_DISPLAY = previousDisplay;
     if (previousBasis === undefined) delete process.env.LIST_PRICE_CAMPAIGN_BASIS;
     else process.env.LIST_PRICE_CAMPAIGN_BASIS = previousBasis;
+    if (previousHistory === undefined) delete process.env.LIST_PRICE_ORDER_HISTORY;
+    else process.env.LIST_PRICE_ORDER_HISTORY = previousHistory;
   }
 });
 
