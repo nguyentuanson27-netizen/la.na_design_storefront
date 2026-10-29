@@ -29,7 +29,7 @@ import {
 } from "./checkout-quote-proof.ts";
 import { resolveBenefitCheckoutQuote, toOrderQuoteSnapshotInput } from "./benefit-checkout-quote.ts";
 import { summarizeBenefitQuote, type BenefitQuoteSummary } from "./benefit-quote-summary.ts";
-import { clearOrderQuoteSnapshot, replaceOrderQuoteSnapshot, validateOrderQuoteSnapshot } from "./order-quote-snapshot.ts";
+import { clearOrderQuoteSnapshot, replaceOrderQuoteSnapshot, validateOrderQuoteSnapshot, type OrderQuoteVariantReference } from "./order-quote-snapshot.ts";
 import { removeCartGiftSelection } from "./cart-gift-selection-repository.ts";
 import { recordVoucherOrderSnapshot } from "./voucher-order-acceptance.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
@@ -985,8 +985,18 @@ export function createGuestCheckoutSnapshotService(
         // written again only when THIS quote carries held vouchers (the trigger allows both while the order is a DRAFT).
         if (mutableDraft) await tx.orderVoucherSnapshot.deleteMany({ where: { orderId: order.id } });
         if (benefitQuoteWrite !== null) {
-          const referencePrices = new Map(snapshots.map((line) => [line.variantId, Number(line.baseUnitPriceVnd)]));
-          const written = await replaceOrderQuoteSnapshot(tx, order.id, benefitQuoteWrite, referencePrices);
+          const referenceVariants = new Map<string, OrderQuoteVariantReference>();
+          if (resolution.kind === "BENEFIT") {
+            for (const gift of resolution.gifts) referenceVariants.set(gift.variantId, {
+              basePriceVnd: null, productName: gift.productName, color: gift.color, size: gift.size,
+            });
+          }
+          // Reuse the exact description and POS price frozen in the legacy paid rows, including
+          // when the same variant is also a gift. Never re-read these fields from the catalog.
+          for (const line of snapshots) referenceVariants.set(line.variantId, {
+            basePriceVnd: Number(line.baseUnitPriceVnd), productName: line.productName, color: line.color, size: line.size,
+          });
+          const written = await replaceOrderQuoteSnapshot(tx, order.id, benefitQuoteWrite, referenceVariants);
           // Validated above, so a refusal here is a defect; throwing rolls the whole attempt back
           // rather than leaving an order whose quote rows are missing.
           if (!written.ok) throw new Error(`Benefit quote snapshot refused: ${written.issue}`);

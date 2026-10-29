@@ -87,7 +87,7 @@ test("quote reference reuses priced server POS when a later catalog read has cha
           tx,
           order.id,
           quote,
-          new Map([[variant.id, 100001]]),
+          new Map([[variant.id, { basePriceVnd: 100001, productName: product.name, color: variant.color, size: variant.size }]]),
         ),
         { ok: true },
       );
