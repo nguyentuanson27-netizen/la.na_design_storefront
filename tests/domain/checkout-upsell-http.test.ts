@@ -11,6 +11,7 @@ function request(body: string, origin = "https://store.example") {
 }
 
 test("upsell read requires a same-origin POST even when browser cookies would be attached", () => {
+  assert.equal(isSameOriginUpsellRequest(new Request("https://store.example/api/checkout/upsell", { headers: { origin: "https://store.example" } }), "https://store.example"), false);
   assert.equal(isSameOriginUpsellRequest(request("{}"), "https://store.example"), true);
   assert.equal(isSameOriginUpsellRequest(request("{}", "https://evil.example"), "https://store.example"), false);
   assert.equal(isSameOriginUpsellRequest(request("{}"), "https://other.example"), false, "never trust the request Host over configured origin");
