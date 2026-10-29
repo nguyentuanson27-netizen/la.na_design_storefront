@@ -60,6 +60,30 @@ function render(overrides: Partial<Extract<BenefitCheckoutRender, { kind: "BENEF
   };
 }
 
+test("list badge uses the displayed post-voucher unit price, while the voucher ledger stays separate", () => {
+  process.env.LIST_PRICE_DISPLAY = "true";
+  try {
+    const original = facts(0, 0);
+    const paid = original.lines.find((line) => line.role === "PAID")!;
+    const quote = { ...original, paidSubtotalVnd: 80000, totalVnd: 110000, lines: [{
+      ...paid, quantity: 1, unitPriceVnd: 80000, lineTotalVnd: 80000, baseUnitPriceVnd: 100001,
+      discountSteps: [{ campaignId: "voucher", source: "VOUCHER" as const, campaignKind: "MERCHANDISE", priority: 1,
+        inputPriceVnd: 100001, outputPriceVnd: 80000, appliedQuantity: 1 }],
+    }] };
+    const model = buildBenefitCheckoutViewModel({
+      lines: [{ ...cartLine, quantity: 1 }],
+      render: render({ facts: quote, proof: issueBenefitQuoteProof({ quote, cartId, secret })!, digest: benefitQuoteDigest(quote) }),
+    });
+    assert.equal(model.lines[0]?.unitPriceText, vnd("80.000"));
+    assert.equal(model.lines[0]?.originalPriceText, vnd("149.000"));
+    assert.equal(model.lines[0]?.discountPercent, 46);
+    assert.equal(model.lines[0]?.lineTotalText, vnd("80.000"));
+    assert.equal(model.listPriceSavingsText, vnd("69.000"));
+  } finally {
+    delete process.env.LIST_PRICE_DISPLAY;
+  }
+});
+
 test("split paid prices are separate lines, gifts are 0đ and outside the subtotal", () => {
   const model = buildBenefitCheckoutViewModel({ lines: [cartLine], render: render() });
 

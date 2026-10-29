@@ -242,9 +242,15 @@ function legacyStepDiscount(steps: readonly Readonly<{ source: string; inputPric
  */
 function paidLineDiscount(
   cartLine: StorefrontCartLine | undefined,
-  fact: Readonly<{ unitPriceVnd: number; discountSteps: readonly Readonly<{ source: string; inputPriceVnd: number; outputPriceVnd: number }>[] }>,
+  fact: Pick<QuoteLine, "unitPriceVnd" | "discountSteps">,
 ): { originalPriceText?: string; isListReference?: boolean; discountPercent?: number; promotionPriceText?: string } {
-  if (readListPriceConfig().display && cartLine?.price != null) return checkoutDiscountEntry(describeLineDiscount(cartLine.basePrice ?? cartLine.price, fact.unitPriceVnd, true, cartLine.variantId));
+  if (readListPriceConfig().display && cartLine?.price != null) {
+    const discount = describeLineDiscount(cartLine.basePrice ?? cartLine.price, fact.unitPriceVnd, true, cartLine.variantId);
+    if (discount?.isListReference) return checkoutDiscountEntry(discount);
+  }
+  // The legacy campaign presentation excludes vouchers from its separate promotion label.
+  // A valid list reference instead uses the final unit price displayed on this same line.
+  fact = stripVoucherStep(fact);
   const tierApplied = fact.discountSteps.some((step) => step.source === "QUANTITY_TIER");
   // Without the cart line's own catalog price the quote's legacy step is the only evidence, and it is a
   // sound one only when no tier ran before it (a tier's output is then not the catalog price).
@@ -438,7 +444,7 @@ export function buildBenefitCheckoutViewModel(
         optionLabel: cartLine ? [cartLine.color, cartLine.size].filter(Boolean).join(" / ") || "Biến thể" : "Biến thể",
         quantity: fact.quantity,
         unitPriceText: currency.format(fact.unitPriceVnd),
-        ...paidLineDiscount(cartLine, stripVoucherStep(fact)),
+        ...paidLineDiscount(cartLine, fact),
         lineTotalText: currency.format(fact.lineTotalVnd),
         preorderLabel: fact.fulfillmentState === "PREORDER" ? PREORDER_LABEL : null,
       }),
