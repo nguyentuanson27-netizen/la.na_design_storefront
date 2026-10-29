@@ -1,6 +1,6 @@
 # Spec — Giá niêm yết hiển thị (List Price Display) v1
 
-Status: **DRAFT v5 — bổ sung rollback an toàn, snapshot, activation, audit liên tục và tra cứu đơn; theo quyết định chủ shop, không có cổng phê duyệt pháp lý riêng cho storefront.**
+Status: **DRAFT v6 — chốt freeze mutation server-side, phân loại giá campaign không hợp lệ, list-price presentation độc lập và JSON-LD pha 4; không đặt cổng pháp lý G0 cho storefront theo quyết định chủ shop.**
 
 Nguồn yêu cầu: chủ shop, phiên làm việc 2026-10-24 → 2026-10-29. Spec này tổng hợp yêu cầu, quyết định đã chốt, hợp đồng kỹ thuật, rủi ro và kế hoạch triển khai. Chưa có dòng code nào được sửa.
 
@@ -24,7 +24,7 @@ Trên website, mỗi sản phẩm hiển thị:
    - `campaignBasePriceVnd` = giá niêm yết: là số được nhân với % của chiến dịch giảm theo %.
 3. **`isDiscounted` giữ nghĩa "đang có chiến dịch có tác dụng".** Trang `/sale/*`, badge Flash Sale, đồng hồ đếm ngược, `onlyKind` scope đều đọc `isDiscounted`. Giá niêm yết không được làm `isDiscounted = true`, nếu không mọi sản phẩm sẽ thành "đang sale".
 4. **Bất biến tiền: giá khách trả ≤ giá POS ở mọi trạng thái.** Giá niêm yết không bao giờ làm tăng số tiền khách trả. Chiến dịch có kết quả ≥ giá POS bị coi là không có tác dụng với biến thể đó (§4).
-5. **Cờ bật/tắt theo từng pha** (§8); rollback pha 2 không được chỉ đảo cờ: phải xử lý trước các campaign % còn phụ thuộc cơ sở mới và re-quote checkout. Đơn đã lưu giữ nguyên snapshot.
+5. **Cờ bật/tắt theo từng pha** (§8); rollback pha 2 phải có **fence mutation ở server/database** và xử lý hết campaign % phụ thuộc basis mới trước khi đảo cờ, bảo đảm publish không thể chen vào giữa preflight và chuyển basis. Checkout phải re-quote, đơn đã lưu giữ nguyên snapshot.
 
 ## 3. Công thức giá niêm yết
 
@@ -79,13 +79,22 @@ Ví dụ làm tròn: `749.000 × 75% = 561.750 → 562.000đ`; `549.000 × 75% =
 - Badge `-%` luôn so với giá niêm yết, nên chiến dịch 25% hiện **-25%** dù khách chỉ rẻ hơn giá thường vài phần trăm. Đây là điểm rủi ro pháp lý/quảng cáo lớn nhất của thiết kế này (§9).
 - **Admin chiến dịch phải cảnh báo** lúc tạo/kích hoạt: "N biến thể không có tác dụng vì giá chiến dịch ≥ giá POS" và hiển thị % nguyên tối thiểu có tác dụng sau làm tròn 1.000đ (mở rộng `promotion-runtime-health.ts`, `promotion-activation-service.ts`, form quản lý chiến dịch).
 
-**Hợp đồng activation/publish (cần thay đổi service ở pha 2):**
+**Hợp đồng activation/publish (bắt buộc thực hiện ở pha 2):** `PROMOTION_INVALID` là **lý do tổng hợp của pricing resolver**, không đủ để xác định campaign có thể publish. Activation phải dùng phân loại nội bộ **sau khi kiểm tra input % và theo đúng phép làm tròn 1.000đ**; không bắt buộc đổi enum `PromotionPricingReason` công khai:
 
-- **Một phần không có tác dụng:** nếu `discounted >= 1` và chỉ có một phần biến thể `PROMOTION_INVALID` do không vượt ngưỡng, cho **publish thành công kèm warning** (số lượng, danh sách ID giới hạn và ngưỡng %). Các biến thể không hợp lệ vẫn bán theo POS.
-- **Toàn bộ không có tác dụng:** nếu `discounted === 0`, **chặn publish** với `NO_EFFECTIVE_DISCOUNT`; không duy trì campaign chạy mà không giảm giá cho bất cứ biến thể nào.
-- **Dữ liệu giá POS không hợp lệ:** nếu có bất kỳ `BASE_PRICE_UNAVAILABLE`, **chặn publish** bằng `UNUSABLE_BASE_PRICE` như service hiện tại; không hạ cấp lỗi catalog thành cảnh báo. Giữ kiểm tra scope/overlap, lock và revision.
+| Phân loại nội bộ (dòng PERCENTAGE) | Căn cứ | Kết quả activation |
+|---|---|---|
+| `THRESHOLD_NOT_MET` | POS/list hợp lệ, tiền tính được là số nguyên dương an toàn, nhưng `campaignPriceVnd >= POS` | **Chỉ cảnh báo** nếu vẫn có ít nhất 1 biến thể giảm thật; dòng đó bán POS |
+| `LIST_PRICE_UNAVAILABLE` | POS hợp lệ nhưng `computeListPriceVnd(POS) = null`, ví dụ kết quả list vượt `MAX_SAFE_INTEGER` | **Chặn publish**; không giả làm lỗi POS |
+| `NON_POSITIVE_AFTER_ROUNDING` | `campaignPriceVnd <= 0`, ví dụ list 49.000đ, 99% → 0đ | **Chặn publish** dù biến thể khác giảm được |
+| `ARITHMETIC_OR_CONFIG_INVALID` | % ngoài 1–99/không nguyên, kết quả không biểu diễn thành tiền an toàn hoặc phép tính thất bại | **Chặn publish**; giữ kiểm tra cấu hình campaign hiện có |
+| `BASE_PRICE_UNAVAILABLE` | `isUsableBasePriceVnd(POS)` sai | **Chặn** với `UNUSABLE_BASE_PRICE` như hiện tại |
+| `EFFECTIVE` | `0 < campaignPriceVnd < POS`, list hợp lệ | Được tính là biến thể giảm thật |
 
-`validateEffectiveState()` hiện chặn ngay khi `money.invalid.length > 0`; implementation phải tách cảnh báo khỏi lỗi blocking và kiểm thử **kết quả publish thật**, không chỉ banner UI.
+- **Một phần dưới ngưỡng thuần túy:** `discounted >= 1` và chỉ có thêm `THRESHOLD_NOT_MET` ⇒ **publish thành công kèm warning** (số lượng, ID đã giới hạn và ngưỡng % tối thiểu). Nếu `discounted === 0` nhưng chỉ có `THRESHOLD_NOT_MET`, giữ **chặn `NO_EFFECTIVE_DISCOUNT`**.
+- **Bất kỳ lỗi giá không an toàn** (`LIST_PRICE_UNAVAILABLE`, `NON_POSITIVE_AFTER_ROUNDING`, `ARITHMETIC_OR_CONFIG_INVALID`) ⇒ **chặn toàn campaign**, trả lỗi validation có mã/nguyên nhân rõ ràng (`PROMOTION_PRICE_UNSAFE` là failure mới ở activation contract, hoặc mapping lỗi validation có cấu trúc tương đương); không biến lỗi thành warning và không dùng `UNUSABLE_BASE_PRICE` cho POS thực ra hợp lệ.
+- `FIXED_PRICE` giữ kiểm tra tiền cố định hiện tại, không bắt buộc có list price để tính tiền; các kiểm tra coverage, overlap, lock, revision và `PROMOTION_CONFLICT` vẫn giữ nguyên.
+
+`validateEffectiveState()` hiện chặn khi `money.invalid.length > 0` và pricing resolver dùng chung `PROMOTION_INVALID` cho nhiều trường hợp. Implementation phải bổ sung phân loại nội bộ dựa trên **kết quả phép tính và trạng thái guard thực tế** (không suy từ `reason` đơn lẻ) rồi kiểm thử cả **kết quả publish thật** và fallback POS cho biến thể không giảm.
 
 **Hiển thị:**
 
@@ -112,10 +121,42 @@ Ví dụ làm tròn: `749.000 × 75% = 561.750 → 562.000đ`; `549.000 × 75% =
 | Giỏ hàng, drawer, checkout | Mỗi dòng gạch giá niêm yết; dòng "Tiết kiệm" = Σ((giá niêm yết − giá trả) × số lượng); dòng không có giá niêm yết dùng mốc như hiện nay; dòng quà tặng 0đ không tính | `src/routes/line-discount-model.ts`, `src/routes/cart-model.ts`, `src/components/brand/line-price.tsx`, `src/app/cart/page.tsx` |
 | Trang đơn hàng / tra cứu đơn / email xác nhận (nếu có) | Hiện giá niêm yết đã đóng băng ở dòng PAID có snapshot, "Bạn đã tiết kiệm" chỉ khi đủ dữ liệu; không tính lại từ POS hiện tại | `src/commerce/guest-order-tracking.ts`, `src/commerce/guest-order-tracking-public-actions.ts`, route/UI tra cứu đơn, `src/routes/order-summary-model.ts`, hai loại snapshot (§6) |
 | Feed Google Merchant | `g:price` = giá niêm yết, `g:sale_price` = giá khách trả (giá POS hoặc giá chiến dịch). Bật theo pha riêng, có cờ riêng (§8) | `src/commerce/merchant-offer-mapper.ts`, `src/commerce/merchant-feed-serializer.ts` |
-| JSON-LD (structured data) | `Offer.price` giữ giá khách trả; thêm `priceSpecification` loại `ListPrice` cho giá niêm yết | `src/seo/structured-data.ts` |
-| Badge `-%` | Hiển thị trên card, PDP, giỏ hàng. Làm tròn `Math.round((1 − giá/giáNiêmYết) × 100)`, ẩn nếu < 1% | dùng chung hàm trong `storefront-discount-presentation.ts` |
+| JSON-LD (structured data) | `Offer.price` = giá thực trả; **chỉ sau GO pha 4** mới thêm `priceSpecification` với `@type: UnitPriceSpecification`, `priceType: https://schema.org/StrikethroughPrice` cho giá tham chiếu (§5.2) | `src/seo/structured-data.ts` |
+| Badge `-%` | Hiển thị trên card, PDP, giỏ hàng, tính từ **cùng biến thể** có giá gạch và giá thực trả, `Math.round((1 − giá/giáNiêmYết) × 100)`, ẩn nếu < 1% | **resolver mới** `resolveListPricePresentation` (tách khỏi `resolveStorefrontDiscountPresentation()` hiện tại, §5.1) |
 
 **Không đổi (ngoài phạm vi):** tracking GA4/Meta/Zalo/OpenAI (`value`/`price` vẫn là giá khách trả, không gửi `discount` từ giá niêm yết); giá gửi Pancake; sắp xếp và lọc theo giá (theo giá khách trả); trang `/sale/*` (theo chiến dịch).
+
+### 5.1. Hợp đồng hiển thị list price/badge — pha 1
+
+- **Tách resolver:** xây `resolveListPricePresentation` (hàm thuần ở domain/presentation) nhận một **biến thể đã xác định** có `variantId`, `basePriceVnd` (POS), `effectivePriceVnd` (giá đang trả), `listPriceVnd` (nullable), `isDiscounted` từ promotion projection và trạng thái flag. Trả `referencePriceVnd`, `displayPriceVnd`, `badgePercent`, `variantId`, hoặc `null` khi display OFF/giá không hợp lệ. Tiền gạch, tiền chính và badge phải đều lấy từ **cùng `variantId`**; không tạo resolver giá thứ hai.
+- **Validation:** chỉ tạo bộ giá/badge nếu `listPriceVnd > basePriceVnd >= effectivePriceVnd > 0`, đều là safe integer, và tỷ lệ badge sau `Math.round((1 - effective/list) * 100)` >= 1. `listPriceVnd = null` ⇒ fallback hiển thị giá hiện tại theo cách cũ, không dựng badge list giả. `isDiscounted = false` vẫn được có badge giá niêm yết; **không đổi `isDiscounted`**, `promotion`, `/sale/*` hoặc hành vi Flash Sale.
+- **Card và PDP chưa chọn biến thể:** chọn chính xác `selectRepresentativeOffers(...).representative` từ tập `offered` đã lọc availability, rồi truyền **toàn bộ bộ ba giá từ biến thể đó** cho resolver. Nếu bề mặt vẫn hiện khoảng giá (range), bộ giá/badge đại diện phải là một cụm riêng có nhãn/biến thể rõ ràng, **không lấy đầu khoảng của A ghép list/badge của B**. Không có đại diện/không có list hợp lệ ⇒ giữ giá/range hiện tại, ẩn list badge. `Từ ...` chỉ dùng khi giá trình bày thực sự là mức thấp nhất trong nhóm biến thể tương ứng. Khi khách chọn biến thể, PDP tính lại toàn bộ bộ ba theo **biến thể được chọn**.
+- **Không tái sử dụng nguyên trạng** `resolveStorefrontDiscountPresentation()` cho list badge: helper cũ cố ý lọc `isDiscounted = true` và còn bảo vệ `hasCheaperCurrentVariant` cho campaign thật. Giữ đường này cho trình bày khuyến mãi, không suy trạng thái promotion từ chênh lệch list-vs-POS.
+- **Acceptance ví dụ hai biến thể:** A POS 429.000đ / list 549.000đ ⇒ hiển thị 429.000đ và badge **-22%** (không campaign, `isDiscounted=false`); B POS 590.000đ / list 749.000đ ⇒ badge **-21%**. Khi chọn B có campaign 25%, hiển thị 562.000đ và badge **-25%**, `isDiscounted=true`. Không có trường hợp lấy 429.000đ từ A đi với 749.000đ từ B.
+
+### 5.2. Hợp đồng JSON-LD — chỉ triển khai sau GO của pha 4
+
+**Nguồn chuẩn:** [Google Search Central — Merchant listing structured data, Sale pricing](https://developers.google.com/search/docs/appearance/structured-data/merchant-listing). `ListPrice` là một **giá trị `priceType` chuyển tiếp**, không phải `@type`. Dùng `StrikethroughPrice` theo hướng dẫn hiện hành. Mẫu bên dưới là fragment `offers` thuộc `Product` cho **đúng một variant** A có giá POS 429.000đ và list 549.000đ:
+
+```json
+{
+  "offers": {
+    "@type": "Offer",
+    "price": 429000,
+    "priceCurrency": "VND",
+    "priceSpecification": {
+      "@type": "UnitPriceSpecification",
+      "priceType": "https://schema.org/StrikethroughPrice",
+      "price": 549000,
+      "priceCurrency": "VND"
+    }
+  }
+}
+```
+
+- Giữ các trường `Offer` hiện tại như `url`, `availability` và variant identity; **giá thực trả** ở `Offer.price` không có `priceType`. Khi có chiến dịch thật, `Offer.price` là giá effective của đúng variant. Với `ProductGroup.hasVariant`, mỗi `offers` thuộc **đúng variant của nó**, không đưa giá đại diện của biến thể khác vào node.
+- `LIST_PRICE_MERCHANT=OFF`, quyết định **NO-GO**, thiếu bằng chứng giá gốc thực, hoặc `listPriceVnd = null` ⇒ **không thêm** `StrikethroughPrice`; giữ JSON-LD hiện có, không phát ra mệnh đề sale sai sự thật. Không tạo thời hạn `validFrom`/`priceValidUntil` giả; chỉ gắn khi có đợt giảm giá thực với thời điểm đáng tin cậy.
+- **Acceptance pha 4:** đối chiếu từng offer/variant giữa JSON-LD, feed, PDP và checkout; validate bản HTML **đã render** bằng [Google Rich Results Test](https://search.google.com/test/rich-results) (và kiểm tra Merchant diagnostics sau rollout GO). Parser hợp lệ **không thay thế** quyết định chính sách GO/NO-GO §7.
 
 ## 6. Dữ liệu
 
@@ -138,7 +179,7 @@ Ví dụ làm tròn: `749.000 × 75% = 561.750 → 562.000đ`; `549.000 × 75% =
 - **Admin:** trang sản phẩm hiển thị giá niêm yết tính ra (chỉ đọc) cạnh giá POS, kèm cảnh báo khi guard trả `null`. Không có ghi đè theo từng sản phẩm (Q5, đã bỏ): mọi sản phẩm theo công thức, bật/tắt chỉ bằng cờ toàn cục.
 - **Admin chiến dịch (Q7):** một phần biến thể không có tác dụng ⇒ cảnh báo và vẫn publish; toàn bộ không có tác dụng ⇒ chặn `NO_EFFECTIVE_DISCOUNT`; dữ liệu POS không dùng được ⇒ chặn `UNUSABLE_BASE_PRICE` (§4).
 - **Cache:** feed Merchant dùng cache khóa cố định kèm `promotion pricing revision`. Bật/tắt cờ hoặc đổi công thức phải làm mất hiệu lực cache này, nếu không feed và PDP có thể lệch nhau (đúng loại sai lệch mà test `merchant-feed-pdp-price-parity` đang chặn).
-- **Merchant pha 4 có quyết định GO/NO-GO riêng:** chủ shop/người vận hành phê duyệt việc bật `LIST_PRICE_MERCHANT` sau khi kiểm tra bằng chứng **giá gốc đã từng áp dụng**, tính phù hợp với [chính sách `sale_price` của Google](https://support.google.com/merchants/answer/6324471?hl=vi), đồng nhất landing/checkout/feed, diagnostics và phương án rollback. **Không đáp ứng/không có bằng chứng ⇒ NO-GO:** giữ feed và JSON-LD hiện tại (`g:price` = giá thực trả, không thêm `g:sale_price` hoặc ListPrice). Đây là kiểm soát độc lập cho tích hợp tùy chọn, không tạo cổng pháp lý riêng cho storefront.
+- **Merchant pha 4 có quyết định GO/NO-GO riêng:** chủ shop/người vận hành phê duyệt việc bật `LIST_PRICE_MERCHANT` sau khi kiểm tra bằng chứng **giá gốc đã từng áp dụng**, tính phù hợp với [chính sách `sale_price` của Google](https://support.google.com/merchants/answer/6324471?hl=vi) và [Google Search Central](https://developers.google.com/search/docs/appearance/structured-data/merchant-listing), đồng nhất landing/checkout/feed/JSON-LD, diagnostics và rollback. **Không đáp ứng/không có bằng chứng ⇒ NO-GO:** giữ feed/JSON-LD hiện tại (`g:price` = giá thực trả, không thêm `g:sale_price` hoặc `StrikethroughPrice`). Đây là kiểm soát độc lập cho tích hợp tùy chọn, không tạo cổng pháp lý riêng cho storefront.
 
 ## 8. Cờ và pha triển khai
 
@@ -147,19 +188,26 @@ Ví dụ làm tròn: `749.000 × 75% = 561.750 → 562.000đ`; `549.000 × 75% =
 | `LIST_PRICE_DISPLAY` | 1 | card, PDP, giỏ, checkout, badge; không đổi chiến dịch | Không | tắt |
 | `LIST_PRICE_CAMPAIGN_BASIS` | 2 | chiến dịch % theo sản phẩm tính trên giá niêm yết; ghi `listUnitPriceVnd` cho mọi PAID ở cả hai loại snapshot; cảnh báo admin | **Có** | tắt, chỉ bật khi `LIST_PRICE_DISPLAY` đã bật |
 | `LIST_PRICE_ORDER_HISTORY` | 3 | trang đơn/tra cứu/email hiện giá niêm yết và tiết kiệm | Không | tắt |
-| `LIST_PRICE_MERCHANT` | 4 | `g:price`/`g:sale_price`, JSON-LD `ListPrice` | Không | tắt |
+| `LIST_PRICE_MERCHANT` | 4 | tùy GO/NO-GO: `g:price`/`g:sale_price`, JSON-LD `UnitPriceSpecification` + `StrikethroughPrice` | Không | tắt |
 
 **Phụ thuộc cờ:** tất cả mặc định OFF. `LIST_PRICE_CAMPAIGN_BASIS=ON` chỉ hợp lệ với `LIST_PRICE_DISPLAY=ON`; không tắt display trước basis. Pha 3 chỉ hiện dữ liệu lịch sử đã đóng băng, kể cả khi basis hiện OFF. Pha 4 là tích hợp riêng, chỉ bật sau quyết định GO và kiểm tra parity. Pha 2 phải bật trước khi tạo campaign % mới dựa trên giá niêm yết. **Không coi đảo cờ pha 2 là rollback an toàn.**
 
-### 8.1. Runbook rollback pha 2 — bắt buộc trước khi tắt basis
+### 8.1. Runbook rollback pha 2 — server-side, chống race
 
-1. **Đóng băng thao tác campaign %** (create/publish/edit). Lập danh sách mọi campaign `PERCENTAGE` theo sản phẩm còn `ACTIVE` hoặc `SCHEDULED`, kể cả chạy trong tương lai, và giá dự kiến theo cả hai basis.
-2. **Trong lúc basis vẫn ON**, disable toàn bộ campaign trên bằng activation service hiện có. Chỉ dùng phương án **chuyển đổi** sang campaign thay thế (`FIXED_PRICE` hoặc policy cũ) nếu chủ shop phê duyệt và đã so sánh giá từng biến thể; mặc định disable, không chuyển đổi tự động. Nếu bất kỳ disable nào lỗi, **dừng rollback**.
-3. **Preflight có chứng cứ:** kiểm tra DB và resolver rằng không còn campaign `%` Active/Scheduled có thể áp dụng sau khi tắt basis; kiểm tra pricing revision/cache đã invalidated. Mọi checkout đang mở phải re-quote theo giá mới và khách xác nhận lại nếu giá thực trả đổi; không tái sử dụng proof giá cũ.
-4. **Chỉ sau preflight** mới tắt `LIST_PRICE_CAMPAIGN_BASIS`, giữ `LIST_PRICE_DISPLAY` theo trạng thái mong muốn; smoke-test PDP/cart/checkout, `/sale/*`, Pancake projection và Merchant parity nếu đã bật; theo dõi chênh lệch giá. Nếu chưa disable được campaign, **giữ basis ON**, không đảo env để rollback mù.
-5. Đơn/snapshot cũ và hai cột nullable vẫn giữ nguyên. Bật lại pha 2 yêu cầu audit chiến dịch và staging verify tương tự.
+**Điều kiện bắt buộc trước khi cho phép bật pha 2:** phải triển khai **freeze dùng chung tại database**, không chỉ khóa nút admin. Mở rộng hàng `PromotionPricingRevision` với cờ persisted `campaignMutationFrozen` (mặc định `false`) và audit ai/khi nào/rollback id. Mỗi mutation tạo/publish/sửa/copy campaign (`createDraftPromotionCampaign`, `editDraftPromotionCampaign`, `copyPromotionCampaign`, `publishPromotionCampaign`, `editScheduledPromotionCampaign`, và mọi đường ghi tương đương) phải **lấy `lockRevision(tx)` trước khi ghi**, đọc cờ freeze **trong chính transaction đó** rồi fail-closed nếu frozen. Không được có đường ghi bỏ qua service. Lệnh `disablePromotionCampaign` và `endPromotionCampaignEarly` **vẫn được phép** trong lúc freeze, giữ khóa revision và tăng revision khi thay đổi giá. Các đường tạo/sửa Draft trước đây không lấy revision lock cần được cập nhật **thứ tự lock đồng nhất: revision → campaign** nhưng không tăng revision khi chỉ sửa Draft. Test deadlock/order và xem lại lỗi trả về admin (`ACTIVATION_DISABLED` hoặc trạng thái maintenance tương đương).
 
-**Test hồi quy bắt buộc:** POS 590.000đ, list 749.000đ, chiến dịch 25%: basis ON = **562.000đ**; đảo basis OFF trực tiếp khi campaign còn Active = **442.500đ** (giảm thêm **119.500đ/sản phẩm**, preflight phải từ chối); disable campaign trước rồi tắt basis = **590.000đ** nếu không có ưu đãi khác. Kiểm thử cả Scheduled, revision/cache và quote proof/re-quote.
+**`LA_PROMOTION_ACTIVATION_ENABLED=false` là lớp chặn bổ sung**, có thể dùng trong rollout, nhưng code hiện tại chỉ kiểm tra tại `publishPromotionCampaign` và `editScheduledPromotionCampaign`, **không** bảo vệ create/edit/copy Draft; cấu hình env cũng không đổi đồng thời trên các instance. Freeze trong DB mới là nguồn sự thật chống race. Trước rollout phải bảo đảm **mọi web/worker instance đã chạy phiên bản hỗ trợ DB freeze**; instance cũ không được nhận mutation (drain/terminate).
+
+**Quy trình thao tác (basis vẫn ON cho tới bước 4):**
+
+1. **Freeze ở server trước:** transaction lấy `PromotionPricingRevision FOR UPDATE`, đặt `campaignMutationFrozen=true`, commit và ghi audit + revision tại thời điểm freeze. Các publish/edit đã chạy phải kết thúc trước khi transaction freeze lấy được lock; những mutation bắt đầu sau đó phải bị từ chối. Tiếp theo đặt `LA_PROMOTION_ACTIVATION_ENABLED=false` trên mọi instance; xác nhận từ inventory/config health rằng **100% web/worker instance** dùng phiên bản có guard và đã áp dụng cấu hình (không dựa vào nút admin). Nếu không xác minh được, **không tiếp tục rollback**.
+2. **Xử lý campaign:** trong khi freeze vẫn giữ, liệt kê tất cả `PERCENTAGE` Active/Scheduled, gồm tương lai; **disable** từng campaign qua service (chỉ dùng chuyển đổi thủ công có chủ shop phê duyệt và giá đã so sánh), thất bại bất kỳ lần nào thì dừng. `FIXED_PRICE` không tự đổi cơ sở nên không phải disable hàng loạt.
+3. **Preflight trong trạng thái frozen:** lấy lock revision, kiểm tra cờ vẫn `true`, đọc lại danh sách campaign + giá theo resolver basis OFF; chỉ thông qua nếu **không còn** chiến dịch % Active/Scheduled có thể áp dụng (không chỉ snapshot UI cũ), ghi revision/audit và xác nhận cache invalidated. Khi freeze còn hiệu lực, publish chen vào **không thể commit** sau preflight. Các checkout cũ phải re-quote và đòi xác nhận lại nếu tiền thay đổi; proof giá cũ không được tự dùng.
+4. **Đổi basis rồi xác nhận từng instance:** chỉ khi preflight đạt mới chuyển `LIST_PRICE_CAMPAIGN_BASIS=OFF`; xác minh **100% instance đang nhận traffic và worker** đã đọc cờ OFF và cache/revision đã làm mới, kiểm tra PDP/cart/checkout/`/sale/*`/Pancake và Merchant parity nếu áp dụng. **Giữ DB freeze ON trong toàn bộ giai đoạn chuyển cấu hình.** Nếu sai khác/thiếu instance, dừng tiến trình, không mở freeze và không đảo cờ mù.
+5. **Mở freeze có kiểm soát:** chỉ sau bước 4 và xác nhận lại không còn campaign % cũ mới đặt `campaignMutationFrozen=false` trong transaction có khóa revision; `LA_PROMOTION_ACTIVATION_ENABLED` chỉ được bật lại nếu chủ shop muốn cho phép publish mới theo basis cũ và **mọi instance** đã áp dụng cấu hình. Đơn/snapshot lịch sử và cột nullable giữ nguyên. Bật lại basis mới cần audit và staging verification tương tự.
+
+**Regression/concurrency bắt buộc:** POS 590.000đ, list 749.000đ, campaign 25%: basis ON **562.000đ**, basis OFF trực tiếp khi campaign còn chạy **442.500đ** (lỗ chênh **119.500đ/đơn vị**, preflight phải từ chối), disable rồi OFF **590.000đ** nếu không ưu đãi khác. Test bằng **hai database client/transaction cạnh tranh**: publish nắm lock trước ⇒ freeze chờ và audit thấy campaign vừa publish; freeze nắm lock trước ⇒ publish bị từ chối, không tăng revision/không tạo hiệu lực; publish sau preflight/trước OFF cũng bị chặn. Test các đường create/edit/copy Draft, Scheduled, disable được phép khi frozen, lock order không deadlock, cache/revision và proof/re-quote. Không được chứng minh điều này chỉ bằng test UI.
+
 
 
 ## 9. Rủi ro
@@ -172,7 +220,7 @@ Ví dụ làm tròn: `749.000 × 75% = 561.750 → 562.000đ`; `549.000 × 75% =
 | **Badge phóng đại mức giảm thật:** chiến dịch 25% hiện -25% nhưng khách chỉ rẻ hơn giá thường ~4% (§4). | **Cao** | Admin hiển thị "giảm thật so với giá thường" khi tạo chiến dịch; không dùng con số % của badge trong quảng cáo ngoài website. |
 | Chiến dịch % không có tác dụng vì nhỏ hơn ngưỡng (10% không làm giá giảm). | Trung bình | Cảnh báo ở admin trước khi kích hoạt; hiển thị % tối thiểu. |
 | Đổi cơ sở tính chiến dịch là thay đổi đường tiền: sai ở đây đổi giá khách trả. | **Cao** | Cờ riêng, test bất biến `giá trả ≤ giá POS`, snapshot `listUnitPriceVnd`, kiểm tra chiến dịch tồn tại trước khi bật, ADR ghi quy tắc cơ sở chiến dịch. |
-| **Rollback basis khi campaign % còn Active/Scheduled** làm giảm giá ngoài dự kiến (590.000đ → 442.500đ thay vì 562.000đ). | **Cao** | Runbook §8.1: disable/chuyển đổi trước, preflight, re-quote và revision; không chỉ đảo env. |
+| **Rollback basis khi campaign % còn Active/Scheduled hoặc publish chen vào giữa preflight/OFF** làm giảm giá ngoài dự kiến (590.000đ → 442.500đ thay vì 562.000đ). | **Cao** | Server-side DB freeze trên `PromotionPricingRevision`, khóa mutation xuyên instance, disable trước, preflight có revision lock, re-quote và xác minh config toàn bộ instance (§8.1). |
 | **Catalog sync thêm giá POS thấp**, list/pos và badge vượt dải kỳ vọng (10.000đ → 49.000đ, ~79,6%). | Trung bình–cao | Audit sau mỗi sync + hằng ngày, cảnh báo admin/operator, giữ quyết định không đặt markup cap. |
 | Hiệu ứng lệch badge giữa các sản phẩm (17–33%) và hiệu ứng "luôn sale" làm các đợt sale thật kém nổi bật. | Trung bình | Theo dõi conversion trước/sau. |
 | Hồi quy tiền tệ do đụng nhiều bề mặt giá. | Trung bình | Test khóa các bất biến ở §10. |
@@ -186,17 +234,18 @@ Domain (`tests/domain`):
 - `computeListPriceVnd`: ví dụ 565.000 → 699.000; ranh giới đúng bằng mốc (POS 582.500 → target 699.000 → 699.000); POS 1 đồng, 100.000, 250.000, 429.000, số lớn gần `MAX_SAFE_INTEGER`; luôn thỏa `list > pos`, `list ≥ 1,2 × pos` và `list mod 50.000 = 49.000`; đầu vào không hợp lệ.
 - Property test: với dải giá POS ngẫu nhiên, số 49/99 trả về là nhỏ nhất thỏa điều kiện.
 - **Pha 1 (bất biến tiền):** khi bật/tắt `LIST_PRICE_DISPLAY`, `effectivePriceVnd`, `unitPriceVnd`, `baseUnitPriceVnd`, tổng giỏ, `retail_price` gửi Pancake, giá tracking, snapshot đơn giống hệt nhau; `isDiscounted` không đổi; `/sale/*` chỉ liệt kê sản phẩm có chiến dịch.
-- **Pha 2 (resolver):** `PERCENTAGE` theo sản phẩm tính trên giá niêm yết, làm tròn half-up đến **1.000đ** (749.000 × 75% → 562.000; 549.000 × 75% → 412.000); ranh giới phần dư 500đ (49.000 × 50% → 25.000), kết quả là bội số 1.000đ; kết quả ≤ 0 hoặc ≥ giá POS ⇒ `PROMOTION_INVALID`, giá trả = giá POS; `FIXED_PRICE` không đổi; ranh giới đúng bằng giá POS; `PROMOTION_CONFLICT` vẫn về giá thường; `giá trả ≤ giá POS` là property test trên dải giá/percent ngẫu nhiên.
+- **Pha 1 (presentation):** test `resolveListPricePresentation` có badge khi **không có campaign/isDiscounted=false**; list guard `null` và flag OFF fallback; lựa chọn card/PDP chưa chọn dùng đúng `selectRepresentativeOffers().representative` (availability, tie-break), nhiều biến thể A/B không ghép chéo, chọn lại variant đổi đồng thời gạch/chính/badge; range và `Từ` không đại diện sai mức giá. Giữ test `resolveStorefrontDiscountPresentation()` và `/sale/*` hiện có.
+- **Pha 2 (resolver):** `PERCENTAGE` theo sản phẩm tính trên giá niêm yết, làm tròn half-up đến **1.000đ** (749.000 × 75% → 562.000; 549.000 × 75% → 412.000); ranh giới phần dư 500đ (49.000 × 50% → 25.000), kết quả là bội số 1.000đ; resolver vẫn trả `PROMOTION_INVALID` khi kết quả không hợp lệ nhưng **activation phải phân loại nguyên nhân theo §4**; `FIXED_PRICE` không đổi, `PROMOTION_CONFLICT` không xếp vào warning %, `giá trả ≤ giá POS` là property test trên dải giá/percent ngẫu nhiên.
 - **Không hồi quy:** khi tắt `LIST_PRICE_CAMPAIGN_BASIS`, chiến dịch % giữ công thức/làm tròn VND cũ; các bậc số lượng/giá trị đơn giữ cách làm tròn half-up đến 1đ của ADR 0016. Test ngưỡng phần trăm nguyên nhỏ nhất có tác dụng sau làm tròn 1.000đ (ví dụ A/B: 22%).
 - Bậc số lượng/giá trị đơn và ngưỡng quà: hồi quy toàn bộ test `gift-quantity-*` giữ nguyên; thêm case ngưỡng tính trên giá chiến dịch (sau giảm) chứ không phải giá niêm yết; quà tặng 0đ không đổi.
 - Snapshot: ghi `listUnitPriceVnd` ở **mọi PAID có list hợp lệ** từ pha 2, tại `OrderLineSnapshot` và `OrderQuoteLine` kể cả không có campaign; GIFT `null`, paid segment chung variant giữ đúng list; đơn cũ/pha 1 `null`, không backfill; `laq2`/`laq3` và digest không đổi.
 - Parity: `g:price`/`g:sale_price`, JSON-LD và PDP khớp nhau cho cùng biến thể, có và không có chiến dịch.
 - Tiết kiệm trong giỏ: dòng quà tặng, bậc số lượng, nhiều dòng trộn.
-- Admin chiến dịch: cảnh báo đúng số biến thể không có tác dụng và % tối thiểu; **integration test publish** cho một phần `PROMOTION_INVALID` (thành công kèm warning), toàn bộ không có tác dụng (`NO_EFFECTIVE_DISCOUNT`, bị chặn), bất kỳ `UNUSABLE_BASE_PRICE` (bị chặn).
-- **Rollback pha 2:** chạy đúng từng bước §8.1 với Active và Scheduled; preflight từ chối khi thiếu disable, kiểm tra revision/cache và checkout proof; xác nhận không bao giờ tự đổi 562.000đ thành 442.500đ khi campaign còn chạy.
+- Admin chiến dịch: cảnh báo đúng số biến thể `THRESHOLD_NOT_MET` và % tối thiểu; **integration test publish** partial valid (POS 565.000đ và 590.000đ, cùng 20%: chỉ 565.000đ giảm thật) ⇒ thành công kèm warning; toàn bộ dưới ngưỡng ⇒ `NO_EFFECTIVE_DISCOUNT`; POS `null` ⇒ `UNUSABLE_BASE_PRICE`; POS **hợp lệ rất lớn** nhưng `listPriceVnd=null` ⇒ **chặn lỗi list riêng**; list 49.000đ/99% làm tròn **0đ** ⇒ chặn; percent/config không hợp lệ ⇒ chặn; không lẫn lộn với `PROMOTION_INVALID` public.
+- **Rollback pha 2 (race):** test DB freeze với ít nhất hai transaction cạnh tranh giữa publish và preflight; cả hai thứ tự lock, publish sau preflight trước khi OFF, create/edit/copy Draft, Scheduled, disable/end early khi frozen, toàn bộ instance đổi env, revision/cache và checkout proof. Không được dùng test UI làm bằng chứng khóa mutation.
 - **Catalog mới:** sau sync POS 10.000đ sinh list 49.000đ và cảnh báo outlier > 1,5; không chặn sync/đặt cap; audit định kỳ bắt được trường hợp bỏ lỡ post-sync.
 - **Tra cứu đơn:** đúng mã + số điện thoại mới thấy dòng hàng; sai từng trường không leak; giữ rate limit; test paid segment, gift, đơn cũ `null`, trạng thái chưa hoàn tất.
-- **Merchant:** GO/NO-GO độc lập; NO-GO giữ feed/JSON-LD cũ, GO phải có parity, cache invalidation và test rollback.
+- **Merchant:** GO/NO-GO độc lập; NO-GO giữ feed/JSON-LD cũ; GO mới phát `UnitPriceSpecification` có `priceType=StrikethroughPrice`, đúng variant, giá VND khớp PDP/feed/checkout, không tạo thời hạn sale giả; kiểm tra JSON-LD của **HTML render thật** bằng Google Rich Results Test, cache invalidation và test rollback. Không phát `ListPrice` như `@type`.
 
 Trình duyệt (`tests/a11y-runtime`): card, PDP, giỏ trên mobile; nhãn a11y "Giá gốc"/"Giá giảm"; không tràn layout với giá dài.
 
@@ -205,10 +254,10 @@ Trình duyệt (`tests/a11y-runtime`): card, PDP, giỏ trên mobile; nhãn a11y
 0. Đọc hướng dẫn Next.js trong `node_modules/next/dist/docs/` theo `AGENTS.md` trước khi viết code.
 1. **Ghi nhận quyết định:** viết ADR `docs/decisions/0018` (giá niêm yết làm cơ sở chiến dịch % theo sản phẩm, làm tròn đến 1.000đ) và cập nhật `docs/decisions/README.md`.
 2. **Audit liên tục:** script kiểm catalog/chiến dịch Active/Scheduled trước rollout, audit sau mỗi Pancake sync + hằng ngày với cảnh báo outlier (§3).
-3. **Pha 1, hiển thị (không đổi tiền):** `computeListPriceVnd` + test; thêm `listPriceVnd` vào kết quả rule giá (`storefront-promotion-projection.ts`, `storefront-product.ts`); model và component card/PDP/giỏ, badge, nhãn a11y; trang chính sách giá.
-4. **Pha 2, cơ sở chiến dịch (đổi tiền):** sửa resolver, activation partial/zero/invalid (§4); migration `listUnitPriceVnd` cho hai loại snapshot và ghi mọi PAID (§6); cảnh báo admin; **xây/test preflight rollback §8.1 trước khi bật**, bậc thang giữ nguyên.
+3. **Pha 1, hiển thị (không đổi tiền):** `computeListPriceVnd` + test; thêm `listPriceVnd` vào projection; viết **resolver list-price presentation tách khỏi promotion discount** và dùng `selectRepresentativeOffers()` cho card/PDP chưa chọn (§5.1); model/component card/PDP/giỏ, badge, nhãn a11y; chính sách giá.
+4. **Pha 2, cơ sở chiến dịch (đổi tiền):** sửa resolver và **phân loại invalid trong activation** (§4); migration hai cột `listUnitPriceVnd` và **cờ DB `campaignMutationFrozen` tại `PromotionPricingRevision`**; guard mọi mutation campaign với thứ tự lock revision trước campaign, test cạnh tranh với preflight (§8.1); cảnh báo admin, snapshot PAID (§6). Chỉ bật sau khi freeze/runbook đã được kiểm thử.
 5. **Pha 3:** trang đơn/email + `guest-order-tracking.ts`, public action, view model và UI tra cứu đơn; phân quyền đúng mã + số và legacy `null` (§6.1).
-6. **Pha 4 (tùy chọn, bật cuối):** trước hết quyết định GO/NO-GO Merchant (§7); nếu GO mới làm `sale_price`/JSON-LD, vô hiệu cache và mở rộng parity test, nếu NO-GO giữ output hiện tại.
+6. **Pha 4 (tùy chọn, bật cuối):** quyết định GO/NO-GO Merchant (§7); nếu GO mới làm `sale_price` và JSON-LD theo **mẫu `StrikethroughPrice` §5.2**, invalidate cache, parity test và Google Rich Results Test; NO-GO giữ output hiện tại.
 7. **Rollout:** staging → mobile → bật dần pha 1 → theo dõi conversion, trả hàng, khiếu nại, Merchant diagnostics → các pha sau.
 8. **Rollback:** UI/feed tùy cờ và phụ thuộc; riêng **pha 2 bắt buộc runbook §8.1 trước khi tắt**, hai cột `listUnitPriceVnd` để nguyên.
 
