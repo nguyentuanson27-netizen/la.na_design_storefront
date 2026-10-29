@@ -227,6 +227,51 @@ test("D-06/FR-10: commune lookup failure and retry preserve a dismissed upsell",
   await expect(offer).toHaveCount(0);
 });
 
+test("D-06/FR-10: a temporarily unquotable cart preserves the dismissed offer", async ({ page }) => {
+  await page.goto(`${BASE}/checkout`);
+  const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
+  const proof = page.locator('input[name="quoteProof"]');
+  await expect(offer).toBeVisible();
+  const originalProof = await proof.inputValue();
+  expect(originalProof).not.toBe("");
+  await offer.getByRole("button", { name: "Đóng gợi ý ưu đãi" }).click();
+  await expect(offer).toHaveCount(0);
+  const dismissed = await page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"));
+  expect(JSON.parse(dismissed ?? "null")).toEqual(expect.objectContaining({ dismissed: true }));
+
+  // The checkout page's visibilitychange refresh uses client RSC navigation (not a document reload),
+  // which is the path that previously unmounted the banner and erased its session storage.
+  async function refreshRender() {
+    const before = await page.locator("form").getAttribute("data-checkout-render");
+    const rsc = page.waitForResponse((response) =>
+      response.url().includes("/checkout?") && response.request().headers()["rsc"] === "1");
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await rsc;
+    await expect.poll(() => page.locator("form").getAttribute("data-checkout-render")).not.toBe(before);
+  }
+
+  // Stock is external quote input; changing/restoring it must not bump the paid-cart revision.
+  await prisma.warehouseStock.updateMany({ where: { variantId: paidId }, data: { quantity: 0 } });
+  try {
+    await refreshRender();
+    await expect(proof).toHaveValue("");
+    await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeDisabled();
+    await expect(offer).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"))).toBe(dismissed);
+  } finally {
+    await prisma.warehouseStock.updateMany({ where: { variantId: paidId }, data: { quantity: 20 } });
+  }
+
+  const recommender = page.waitForResponse((response) =>
+    response.url().endsWith("/api/checkout/upsell") && response.request().method() === "POST");
+  await refreshRender();
+  await expect(proof).not.toHaveValue("");
+  await recommender;
+  await expect(offer).toHaveCount(0);
+  expect(await page.evaluate(() => sessionStorage.getItem("la-checkout-upsell-attempt-v1"))).toBe(dismissed);
+  expect(await prisma.cartItem.count({ where: { cartId } })).toBe(1);
+});
+
 test("D-06: a withdrawn offer shows no invitation and leaves checkout usable", async ({ page }) => {
   await page.goto(`${BASE}/checkout`);
   const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
