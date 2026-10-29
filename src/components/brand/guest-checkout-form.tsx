@@ -1,7 +1,6 @@
 "use client";
 
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
-import type { CheckoutUpsellBanner } from "@/routes/checkout-model";
 import type { ReactNode } from "react";
 
 import { GuestCheckoutForm, type GuestCheckoutBenefit } from "@/components/commerce/guest-checkout-form";
@@ -32,7 +31,7 @@ export function BrandGuestCheckoutForm(
     attemptKey?: string;
     quoteRenderId?: string;
     unavailableNotice?: string | null;
-    upsell?: CheckoutUpsellBanner;
+    upsellEnabled?: boolean;
     benefit?: GuestCheckoutBenefit;
     summaryLabel?: string;
     summarySlot?: ReactNode;
