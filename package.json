@@ -44,6 +44,7 @@
     "pancake:geo:probe": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-geo-two-level-probe.ts",
     "pancake:gift-quantity:probe": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-gift-quantity-capability-probe.ts",
     "pancake:gift-quantity:adapter": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-gift-quantity-adapter-acceptance.ts",
+    "list-price:audit": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/list-price-audit.ts",
     "voucher:hold-harness": "node --experimental-strip-types scripts/voucher-hold-harness.ts",
     "pancake:voucher:accept": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-voucher-acceptance.ts",
     "pancake:price:accept": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-p10-custom-price-acceptance.ts",
