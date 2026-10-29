@@ -156,7 +156,11 @@ export function CheckoutUpsellLoader({ quoteProof, quoteRenderId, locked }: Read
         // An optional banner does not interrupt address entry or order submission.
       }
       if (active && !controller.signal.aborted) {
-        setLoaded({ quoteProof, quoteRenderId, model });
+        setLoaded((previous) => ({
+          quoteProof, quoteRenderId,
+          // A temporarily missing offer must not erase an earlier dismissal within this checkout.
+          model: model ?? (previous?.model ? { ...previous.model, offerName: null } : null),
+        }));
       }
     })();
     return () => {
