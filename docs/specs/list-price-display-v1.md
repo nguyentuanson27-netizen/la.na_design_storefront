@@ -1,6 +1,6 @@
 # Spec — Giá niêm yết hiển thị (List Price Display) v1
 
-Status: **DRAFT v6 — chốt freeze mutation server-side, phân loại giá campaign không hợp lệ, list-price presentation độc lập và JSON-LD pha 4; không đặt cổng pháp lý G0 cho storefront theo quyết định chủ shop.**
+Status: **DRAFT v6 — chốt freeze mutation server-side, phân loại giá campaign không hợp lệ, list-price presentation độc lập và JSON-LD pha 4; không có cổng phê duyệt pháp lý riêng cho storefront theo quyết định chủ shop.**
 
 Nguồn yêu cầu: chủ shop, phiên làm việc 2026-10-24 → 2026-10-29. Spec này tổng hợp yêu cầu, quyết định đã chốt, hợp đồng kỹ thuật, rủi ro và kế hoạch triển khai. Chưa có dòng code nào được sửa.
 
