@@ -20,7 +20,14 @@ const empty = (status = 200) => Response.json(null, { status, headers: responseH
 
 /** The optional banner is never a pricing/submit authority and never blocks checkout HTML. */
 export async function POST(request: Request) {
-  if (!isSameOriginUpsellRequest(request)) return empty(403);
+  // Compare to trusted server config, not Request.url/Host (which may differ behind a proxy).
+  let auth: ReturnType<typeof readAuthServerConfig>;
+  try {
+    auth = readAuthServerConfig();
+  } catch {
+    return empty();
+  }
+  if (!isSameOriginUpsellRequest(request, auth.baseURL)) return empty(403);
   let quoteProof: string | null = null;
   try {
     quoteProof = await readCheckoutUpsellProof(request);
@@ -39,7 +46,6 @@ export async function POST(request: Request) {
   if (activeReads >= MAX_CONCURRENT_UPSELL_READS) return empty();
   activeReads++;
   try {
-    const auth = readAuthServerConfig();
     const clientKey = deriveGuestCheckoutClientKey(request.headers, auth);
     const limiter = createGuestCheckoutRateLimiter(prisma);
     if (!(await limiter.consumeUpsellClient({ clientKey }))) return empty(429);
