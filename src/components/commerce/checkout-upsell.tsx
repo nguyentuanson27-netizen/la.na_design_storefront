@@ -129,15 +129,17 @@ function parseUpsellBanner(value: unknown): CheckoutUpsellBanner | null {
  * recommendations never block the quote, form or submission. A render id forces a fresh read even
  * for A -> B -> A cart changes whose signed quote bytes happen to match.
  */
-export function CheckoutUpsellLoader({ quoteProof, quoteRenderId, locked }: Readonly<{
+export function CheckoutUpsellLoader({ quoteProof, quoteRenderId, locked, ready }: Readonly<{
   quoteProof: string;
   quoteRenderId?: string;
   locked: boolean;
+  ready: boolean;
 }>) {
   const [loaded, setLoaded] = useState<LoadedUpsell | null>(null);
 
   useEffect(() => {
-    if (locked) return;
+    // Geo readiness controls network work only; the mounted banner keeps D-06 dismissal state.
+    if (!ready || locked) return;
     const controller = new AbortController();
     let active = true;
     void (async () => {
@@ -167,7 +169,7 @@ export function CheckoutUpsellLoader({ quoteProof, quoteRenderId, locked }: Read
       active = false;
       controller.abort();
     };
-  }, [quoteProof, quoteRenderId, locked]);
+  }, [quoteProof, quoteRenderId, locked, ready]);
 
   // Hide the old offer immediately when the proof/render changes, but keep the paid-cart key
   // mounted so D-06 dismiss state is preserved across a quote-only refresh.
