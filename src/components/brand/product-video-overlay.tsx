@@ -217,22 +217,19 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
           Xem video
         </span>
       </button>
-      {showPreview && (layout === "phone" || floating) ? (
-        <button
-          type="button"
-          className="pdp-video-slot__close"
-          aria-label="Đóng video nhỏ"
-          onClick={() => {
-            releaseVideo(preview.current);
-            const gallery = opener.current?.closest<HTMLElement>(".pdp-stage");
-            gallery?.setAttribute("tabindex", "-1");
-            gallery?.focus({ preventScroll: true });
-            setStopped(true);
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className="pdp-video-slot__close"
+        aria-label="Đóng video nhỏ"
+        onClick={() => {
+          releaseVideo(preview.current);
+          const gallery = opener.current?.closest<HTMLElement>(".pdp-stage");
+          gallery?.focus({ preventScroll: true });
+          setStopped(true);
+        }}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
       <dialog
         ref={dialog}
         aria-labelledby={titleId}

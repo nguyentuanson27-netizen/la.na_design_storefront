@@ -216,6 +216,7 @@ export function BrandProductMediaStage({
   return (
     <section
       className="product-page-hero pdp-stage"
+      tabIndex={-1}
       aria-label={`Ảnh chính của ${productName}`}
       data-header-overlay-hero=""
     >

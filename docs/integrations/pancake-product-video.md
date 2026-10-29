@@ -74,7 +74,9 @@ page-load autoplay"; the owner asked for it). It is built to cost the photograph
 - It is not mounted at all under `prefers-reduced-motion`, Data Saver or a 2G link
   (`use-inline-video-allowed.ts`, which also follows the shopper changing reduced motion or the
   connection while the page is open); the frame stays a poster and the dialog is one tap away.
-- At every width a close button (`Đóng video nhỏ`) on the frame's corner dismisses the entire frame, including the preview, poster and Xem video opener
+- At every width and in both floating/docked layouts, the close button (`Đóng video nhỏ`) stays available
+  even for a poster under reduced motion, Data Saver, slow connections or preview errors. It dismisses
+  the entire frame, including the preview, poster and Xem video opener
   (WCAG 2.2.2 pause/stop/hide). Playback is released and focus returns to the photo gallery.
   The frame stays dismissed for this page view, including preference and layout changes.
 - A load error, or metadata with no picture (HEVC discarded by the browser), removes the preview and
