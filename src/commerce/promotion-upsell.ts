@@ -34,10 +34,10 @@ export type CheckoutUpsellModel = Readonly<{
   giftPicker: CartGiftPickerModel;
   offer: null | Readonly<{ campaignId: string; name: string; products: readonly Readonly<{ productId: string; name: string; imageUrl: string | null; variants: readonly UpsellVariantView[] }>[] }>;
 }>;
-type Metric = Readonly<{ event: "recommendation" | "add"; outcome: "offered" | "empty" | "failed" | "added" | "quote_changed" | "timed_out"; durationMs: number }>;
+type Metric = Readonly<{ event: "recommendation" | "add"; outcome: "offered" | "empty" | "failed" | "added" | "quote_changed" | "timed_out"; durationMs: number; quoteAttempts?: number }>;
 export function recordUpsellMetric(metric: Metric) {
   // Fixed enums + bounded duration only. Never log exceptions, identifiers, input, cookies or tokens.
-  console.info("promotion_upsell", { event: metric.event, outcome: metric.outcome, durationMs: Math.min(60_000, Math.max(0, Math.round(metric.durationMs))) });
+  console.info("promotion_upsell", { event: metric.event, outcome: metric.outcome, durationMs: Math.min(60_000, Math.max(0, Math.round(metric.durationMs))), ...(metric.quoteAttempts === undefined ? {} : { quoteAttempts: Math.min(UPSELL_MAX_QUOTES, Math.max(0, Math.round(metric.quoteAttempts))) }) });
 }
 
 async function snapshot(tx: Prisma.TransactionClient, cartId: string, shopId: number, now: Date, env: Env, items?: CartGiftState["items"]): Promise<Snapshot> {
@@ -129,6 +129,7 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
     const cartId = readAnonymousCartCookie(store);
     if (!cartId) return null;
     const started = Date.now();
+    let quoteAttempts = 0;
     try {
       const model = await client.$transaction(async (tx): Promise<CheckoutUpsellModel | null> => {
         await tx.$executeRaw`SET LOCAL statement_timeout = '1800ms'`;
@@ -141,13 +142,12 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         if (!opportunities.length) return model;
         const products = await discover(tx, before.state, opportunities, shopId);
         const verified: { campaignId: string; productId: string; variantId: string; deltaVnd: number; view: UpsellVariantView }[] = [];
-        let quotes = 0;
         // Round-robin variants by product: one product with many sizes cannot consume the whole quote budget.
         for (let option = 0; option < UPSELL_MAX_VARIANTS_PER_PRODUCT; option++) for (const p of products) {
           const v = p.variants[option];
-          if (!v || quotes >= maxQuotes) continue;
+          if (!v || quoteAttempts >= maxQuotes) continue;
           if (Date.now() - started >= UPSELL_READ_TIMEOUT_MS) throw new Error("Recommendation deadline");
-          quotes++;
+          quoteAttempts++;
           // One hypothetical quote covers every near campaign. No campaign × variant quote explosion.
           const result = await verifyCandidate(tx, before, undefined, v.id, cartId, shopId, now, env);
           if (!result) continue;
@@ -171,10 +171,10 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
             return { productId, name: p.name, imageUrl: parseTrustedProductImageUrl(p.primaryImageUrl), variants: verified.filter((v) => v.campaignId === winner.campaignId && v.productId === productId).map((v) => v.view) };
           }) } };
       }, { isolationLevel: "RepeatableRead", maxWait: 200, timeout: UPSELL_READ_TIMEOUT_MS });
-      report({ event: "recommendation", outcome: model?.offer ? "offered" : "empty", durationMs: Date.now() - started });
+      report({ event: "recommendation", outcome: model?.offer ? "offered" : "empty", durationMs: Date.now() - started, quoteAttempts });
       return model;
     } catch {
-      report({ event: "recommendation", outcome: Date.now() - started >= 1800 ? "timed_out" : "failed", durationMs: Date.now() - started });
+      report({ event: "recommendation", outcome: Date.now() - started >= 1800 ? "timed_out" : "failed", durationMs: Date.now() - started, quoteAttempts });
       return null;
     }
   }
