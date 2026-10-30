@@ -247,9 +247,13 @@ test("falling below an ORDER_SUBTOTAL gift threshold removes the ineligible gift
 });
 
 test("falling below a QUANTITY gift threshold removes the gift and checkout can quote the paid cart", async () => {
+  // QUANTITY gifts cannot use GLOBAL_ALL_PAID_LINES (DB constraint). Scope to the real paid product.
+  const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId }, select: { productId: true } });
+  await prisma.productCategoryMembership.create({ data: { productId: paid.productId, categoryKey: "setVay" } });
   await prisma.giftQuantityCampaign.update({
     where: { id: campaignId },
-    data: { giftTrigger: "QUANTITY", minimumQuantity: 3, minimumSubtotalVnd: null, subtotalScope: null, awardMode: null },
+    data: { giftTrigger: "QUANTITY", minimumQuantity: 3, minimumSubtotalVnd: null,
+      subtotalScope: null, awardMode: null, scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["setVay"] },
   });
   assert.deepEqual(await service().set(choice(), NOW), { ok: true });
   await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 2, now: NOW });
@@ -280,12 +284,12 @@ test("when entitlement drops from two gifts to one, the earliest saved gift stay
   assert.deepEqual((await prisma.cartGiftSelection.findMany({ where: { cartId }, select: { variantId: true } })).map((row) => row.variantId), [secondId]);
 });
 
-test("passive cart reads never erase gifts merely because Admin changed the campaign scope", async () => {
+test("passive cart reads never erase gifts merely because Admin raised the gift threshold", async () => {
   assert.deepEqual(await service().set(choice(), NOW), { ok: true });
-  // No paid cart mutation happened: an external catalog/config edit is not buyer consent to lose a gift.
+  // No paid cart mutation happened: an Admin threshold change is not buyer consent to lose a gift.
   await prisma.giftQuantityCampaign.update({
     where: { id: campaignId },
-    data: { scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["not-in-this-cart"] },
+    data: { minimumSubtotalVnd: 400_000 },
   });
   const result = await service().get(NOW);
   assert.ok("state" in result);
