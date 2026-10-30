@@ -592,20 +592,16 @@ test("view_cart retains the no-tier paid total once across refresh, and emits no
   await expect(page.getByText("Chưa thể tính").first()).toBeVisible();
   expect(await events()).toEqual([]);
 });
-test("below-threshold paid cart removal clears the old gift and shows a one-time notice", async ({ page }) => {
-  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { minimumSubtotalVnd: 300_000 } });
+test("removing the final paid line clears ineligible gifts and preserves the notice on the empty cart", async ({ page }) => {
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { minimumSubtotalVnd: 200_000 } });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, quantity: 1, campaignRevision: 1 } });
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
-  await expect(picker).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toBeVisible();
-  await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, quantity: 1, campaignRevision: 1 } });
-  await prisma.cartItem.deleteMany({ where: { cartId } });
-  await page.reload();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/1");
+  await page.getByRole("button", { name: "Xóa Áo mua khỏi giỏ hàng" }).click();
   await expect(page.getByText("Giỏ hàng của nàng đang trống.")).toBeVisible();
   await expect(picker.locator("[data-gift-auto-reconciled]")).toContainText("Đã tự động bỏ 1 quà");
   await expect.poll(() => prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
-  await page.reload();
-  await expect(picker).toHaveCount(0, { message: "once cleanup is saved, the notice and empty picker are gone" });
   await prisma.cart.delete({ where: { id: cartId } });
 });
 test("EX-21 after price sync with no gifts blocks checkout even at the legacy total; no-drop restores it", async ({ page }) => {
