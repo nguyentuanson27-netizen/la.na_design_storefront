@@ -10,6 +10,7 @@ import {
 import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-events";
 import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 import { trackCommittedMetaAddToCart } from "@/components/analytics/meta-browser-client";
+import { publishAutoRemovedGiftCount } from "./cart-gift-adjustment-notice";
 
 import {
   CART_LINE_MAX_QUANTITY,
@@ -108,6 +109,8 @@ export function useCartLine({
         const result = await updateStorefrontCartLine({ variantId, quantity: value });
         setMessageIsWarning(!result.ok);
         if (result.ok) {
+          if ("autoRemovedGiftCount" in result && typeof result.autoRemovedGiftCount === "number")
+            publishAutoRemovedGiftCount(result.autoRemovedGiftCount);
           trackCommittedMetaAddToCart(result.metaEvent);
           setRefusedLimit(null);
         } else {
@@ -149,7 +152,10 @@ export function useCartLine({
     startTransition(async () => {
       try {
         setMessageIsWarning(true);
-        apply(resolveCartLineRemoveOutcome(await removeStorefrontCartLine({ variantId })));
+        const result = await removeStorefrontCartLine({ variantId });
+        if (result.ok && "autoRemovedGiftCount" in result && typeof result.autoRemovedGiftCount === "number")
+          publishAutoRemovedGiftCount(result.autoRemovedGiftCount);
+        apply(resolveCartLineRemoveOutcome(result));
       } catch {
         setMessageIsWarning(true);
         apply(resolveCartLineThrownOutcome("remove"));

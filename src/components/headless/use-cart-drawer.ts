@@ -8,6 +8,7 @@ import {
   updateStorefrontCartLine,
 } from "@/commerce/storefront-cart-actions";
 import { publishCartSummary } from "@/components/headless/cart-summary-store";
+import { publishAutoRemovedGiftCount } from "@/components/headless/cart-gift-adjustment-notice";
 import { cartStockLimitText, summarizeCartViewModel, type CartViewModel } from "@/routes/cart-model";
 import { trackCommittedMetaAddToCart } from "@/components/analytics/meta-browser-client";
 
@@ -26,6 +27,7 @@ export function useCartDrawer(isOpen: boolean) {
   // A refused quantity change is about one line, so it is said next to that line's stepper and the
   // drawer keeps showing the cart. `error` is reserved for a cart that could not be read at all.
   const [lineNotice, setLineNotice] = useState<CartDrawerLineNotice | null>(null);
+  const [giftNotice, setGiftNotice] = useState<string | null>(null);
 
   // The drawer is where quantities change and lines are removed, so it keeps the chrome's cart
   // summary (header badge, mobile purchase bar) in step with what it just rendered.
@@ -39,6 +41,7 @@ export function useCartDrawer(isOpen: boolean) {
     setIsLoading(true);
     setError(null);
     setLineNotice(null);
+    setGiftNotice(null);
   } else if (!isOpen && prevIsOpen) {
     setPrevIsOpen(false);
   }
@@ -92,11 +95,16 @@ export function useCartDrawer(isOpen: boolean) {
     async (variantId: string, quantity: number): Promise<boolean> => {
       if (quantity < 1) return false;
       setLineNotice(null);
+      setGiftNotice(null);
       return new Promise((resolve) => {
         startTransition(async () => {
           try {
             const result = await updateStorefrontCartLine({ variantId, quantity });
             if (result.ok) {
+              if ("autoRemovedGiftCount" in result && typeof result.autoRemovedGiftCount === "number") {
+                publishAutoRemovedGiftCount(result.autoRemovedGiftCount);
+                setGiftNotice(`Đã tự động bỏ ${result.autoRemovedGiftCount} quà tặng vì giỏ không còn đủ điều kiện.`);
+              }
               trackCommittedMetaAddToCart(result.metaEvent);
               setCart(await getStorefrontCartView());
               resolve(true);
@@ -124,11 +132,16 @@ export function useCartDrawer(isOpen: boolean) {
   const removeItem = useCallback(
     async (variantId: string): Promise<boolean> => {
       setLineNotice(null);
+      setGiftNotice(null);
       return new Promise((resolve) => {
         startTransition(async () => {
           try {
             const result = await removeStorefrontCartLine({ variantId });
             if (result.ok) {
+              if ("autoRemovedGiftCount" in result && typeof result.autoRemovedGiftCount === "number") {
+                publishAutoRemovedGiftCount(result.autoRemovedGiftCount);
+                setGiftNotice(`Đã tự động bỏ ${result.autoRemovedGiftCount} quà tặng vì giỏ không còn đủ điều kiện.`);
+              }
               setCart(await getStorefrontCartView());
               resolve(true);
             } else {
@@ -152,6 +165,7 @@ export function useCartDrawer(isOpen: boolean) {
     isPending,
     error,
     lineNotice,
+    giftNotice,
     loadCart,
     updateQuantity,
     removeItem,

@@ -18,9 +18,9 @@
  * A future revision is refused, so an admin bump can never turn an old choice CURRENT; a bump leaves
  * existing rows STALE until a write supplies the live revision.
  *
- * Lifecycle rule (FR-06, nothing silently lost): rows cascade only from the cart (the cart is gone).
- * A hard delete of a chosen variant or campaign is RESTRICTed by the database, so a choice is never
- * erased as an implicit opt-out. Catalog sync only soft-deletes (`isPresent`/`isActive` false) and
+ * Lifecycle rule: rows cascade only from the cart (the cart is gone).
+ * Confirmed paid-cart reductions may explicitly withdraw unearned gift units under a cart lock.
+ * A hard delete of a chosen variant or campaign is RESTRICTed by the database, never an implicit opt-out. Catalog sync only soft-deletes (`isPresent`/`isActive` false) and
  * campaigns are disabled, not deleted; the list reports those as `issues` so the buyer is told.
  *
  * Writes are single statements keyed by the `(cart, campaign, variant)` unique key, so concurrent
@@ -169,8 +169,8 @@ export class CartGiftSelectionBoundError extends Error {
 
 /**
  * The cart's gift choices in a stable order, with the facts the buyer must be told about (stale
- * revision, disabled campaign, inactive or unstocked variant). A choice is reported, never dropped or
- * repaired. Bounded: a cart with more than the bound is a defect, not a case to truncate, so it fails
+ * revision, disabled campaign, inactive or unstocked variant). This read never changes a choice;
+ * an explicit, cart-locked reconciliation does. Bounded: a cart with more than the bound is a defect, not a case to truncate, so it fails
  * closed instead of quietly dropping the rest.
  */
 export async function listCartGiftSelections(client: Client, cartId: string): Promise<readonly CartGiftSelectionRecord[]> {

@@ -630,7 +630,7 @@ model LegacyPromotionStackConsent {
 /// recomputed from the live cart and campaign every time. `campaignRevision` is the campaign revision
 /// the buyer saw; a later revision marks the choice stale for the buyer to re-confirm, it is never
 /// silently repaired. Deleted with the cart only: a hard delete of the chosen variant or campaign is
-/// RESTRICTed (FR-06: a gift choice is never erased silently); sync soft-deletes, campaigns are disabled.
+/// RESTRICTed: sync/admin cannot cascade-delete buyer choices; confirmed paid-cart reductions may retract unearned gifts.
 model CartGiftSelection {
   id               String                   @id @default(cuid())
   cartId           String

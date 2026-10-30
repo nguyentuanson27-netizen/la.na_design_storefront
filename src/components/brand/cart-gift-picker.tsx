@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { useCartGifts } from "@/components/headless/use-cart-gifts";
+import { readRecentAutoRemovedGiftCount, subscribeAutoRemovedGiftCount } from "@/components/headless/cart-gift-adjustment-notice";
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 import { GiftProductCard } from "./gift-product-card";
 
@@ -16,6 +17,11 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   isLocked?: () => boolean; onDraftChange?: (notice: string | null) => void; onReturnToPayment?: () => void;
 }>) {
   const { pending, uncertain, message, savedCount, change, retryRead } = useCartGifts(onBusyChange, locked, isLocked);
+  const autoRemovedGiftCount = useSyncExternalStore(
+    subscribeAutoRemovedGiftCount,
+    readRecentAutoRemovedGiftCount,
+    () => 0,
+  );
   const [expanded, setExpanded] = useState(false);
   // The `savedCount` a receive started from: collapse only once a later save is confirmed, never on a
   // refusal or read-back while an older choice of the same gift is still in the model.
@@ -95,7 +101,8 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   const draftNotice = draft && !draftSaved && !draft.committed ? `Phiên bản ${draft.label} chưa được thêm. Đơn chỉ gồm quà đã lưu.` : null;
   useEffect(() => { onDraftChange?.(draftNotice); }, [draftNotice, onDraftChange]);
   const replaced = model.replaced ?? [];
-  const present = entitled > 0 || model.selections.length > 0 || replaced.length > 0;
+  const hasChoices = entitled > 0 || model.selections.length > 0 || replaced.length > 0;
+  const present = hasChoices || autoRemovedGiftCount > 0;
   // UX-05: arriving on `#cart-gifts` (the mini-cart's "Chọn quà") opens the picker and puts focus on it.
   // Opening only reveals the choices; nothing is selected or saved on the buyer's behalf. Focus is asked
   // for through state and applied after the commit that shows the picker, so no effect cleanup can drop it.
@@ -141,16 +148,19 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   return <section ref={giftArea} id="cart-gifts" tabIndex={-1} className={present ? "my-6 min-w-0 scroll-mt-32 border border-black/20 bg-[#fcf8f6] p-4 sm:p-5" : "my-4 scroll-mt-32 text-sm"} aria-label="Quà tặng trong giỏ" aria-busy={busy}>
     {present ? <>
     <h2 className="font-display text-2xl">Quà dành cho nàng</h2>
-    <p className="mt-2 text-sm" data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p>
+    {hasChoices ? <p className="mt-2 text-sm" data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p> : null}
+    {autoRemovedGiftCount > 0 ? <p className="mt-3 text-sm text-amber-900" data-gift-auto-reconciled role="status" aria-live="polite">
+      Đã tự động bỏ {autoRemovedGiftCount} quà tặng vì giỏ hàng không còn đủ số lượng hoặc giá trị để nhận. Những quà còn đủ điều kiện vẫn được giữ; hệ thống không tự chọn quà thay thế.
+    </p> : null}
     {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà nàng chọn không còn phù hợp vì giỏ hàng đã thay đổi (số lượng, sản phẩm), quà đã hết hàng hoặc chương trình đã đổi. Nàng bấm “Bỏ quà để chọn lại” ở danh sách quà đã chọn rồi chọn món mới nhé; hệ thống không tự đổi quà thay nàng.</p> : <>
       {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Nàng còn quà chưa chọn. Các chương trình dùng chung lượng quà, nàng chọn từng món để cập nhật nhé." : `Nàng còn có thể chọn ${available} món quà.`}</p> : null}
       {unavailable > 0 ? <p className="mt-2 text-sm">Hiện chưa có lựa chọn phù hợp cho {unavailable} suất quà còn lại.</p> : null}
     </>}
     {replaced.length > 0 ? <p className="mt-3 text-sm" data-gift-replaced-notice>Đơn của nàng đã lên mốc quà cao hơn nên quà đã chọn ở mốc trước không đi kèm đơn nữa. Nàng chọn quà của mốc mới, quà cũ sẽ được thay.</p> : null}
     {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Giỏ hàng của nàng đủ điều kiện nhận quà từ nhiều chương trình, nhưng các chương trình này không được dùng cùng lúc nên một số quà chưa được tặng. Nàng điều chỉnh lại giỏ hàng hoặc liên hệ shop để được hỗ trợ nhé.</p> : null}
-    <button type="button" ref={toggleRef} className="mt-3 min-h-11 text-left text-sm font-semibold underline underline-offset-4" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
+    {hasChoices ? <button type="button" ref={toggleRef} className="mt-3 min-h-11 text-left text-sm font-semibold underline underline-offset-4" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
       {expanded ? "Thu gọn quà tặng" : model.invalid ? "Kiểm tra quà đã chọn" : complete ? "Xem quà đã chọn" : available > 0 ? "Chọn quà ngay" : "Xem lựa chọn quà"}
-    </button>
+    </button> : null}
     <div id={detailsId} ref={detailsRef} hidden={!expanded}>
       {model.repairGroups?.map((group, index) => <div key={index} role="group" aria-label="Nhóm quà cần kiểm tra" className="mt-4 border border-[#b42318]/40 p-3 text-sm">
         <p>{group.message}</p>
