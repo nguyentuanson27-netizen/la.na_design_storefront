@@ -25,7 +25,7 @@ test("upsell read requires a same-origin POST even when browser cookies would be
 
 test("eligible browse accepts only trusted user navigations, not cross-site or speculative GETs", () => {
   const trusted = "https://store.example";
-  const allowed = [
+  const allowed: readonly Record<string, string>[] = [
     { "sec-fetch-site": "same-origin" },
     { "sec-fetch-site": "none" },
     { referer: "https://store.example/checkout" },
@@ -34,7 +34,7 @@ test("eligible browse accepts only trusted user navigations, not cross-site or s
   ];
   for (const values of allowed) assert.equal(isTrustedUpsellBrowseRequest(new Headers(values), trusted), true);
 
-  const denied = [
+  const denied: readonly Record<string, string>[] = [
     { "sec-fetch-site": "cross-site" },
     { "sec-fetch-site": "same-site" },
     { "sec-fetch-site": "other" },
