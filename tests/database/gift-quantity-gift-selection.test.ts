@@ -280,6 +280,20 @@ test("when entitlement drops from two gifts to one, the earliest saved gift stay
   assert.deepEqual((await prisma.cartGiftSelection.findMany({ where: { cartId }, select: { variantId: true } })).map((row) => row.variantId), [secondId]);
 });
 
+test("passive cart reads never erase gifts merely because Admin changed the campaign scope", async () => {
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  // No paid cart mutation happened: an external catalog/config edit is not buyer consent to lose a gift.
+  await prisma.giftQuantityCampaign.update({
+    where: { id: campaignId },
+    data: { scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["not-in-this-cart"] },
+  });
+  const result = await service().get(NOW);
+  assert.ok("state" in result);
+  assert.equal(result.state.validation.ok, false);
+  assert.equal(result.state.autoRemovedGiftCount ?? 0, 0);
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1);
+});
+
 test("an expired or revised campaign does not silently discard an old gift just because the basket shrank", async () => {
   assert.deepEqual(await service().set(choice(), NOW), { ok: true });
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { revision: 2 } });
