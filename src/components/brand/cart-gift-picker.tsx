@@ -24,7 +24,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     refreshNotice();
     return unsubscribe;
   }, []);
-  const autoRemovedGiftCount = Math.max(model.autoRemovedGiftCount ?? 0, recentAutoRemovedGiftCount);
+  const autoRemovedGiftCount = recentAutoRemovedGiftCount;
   const [expanded, setExpanded] = useState(false);
   // The `savedCount` a receive started from: collapse only once a later save is confirmed, never on a
   // refusal or read-back while an older choice of the same gift is still in the model.
