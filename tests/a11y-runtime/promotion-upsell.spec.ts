@@ -147,25 +147,76 @@ test("AM-01/A: the compact banner names the proven offer, links to verified elig
   expect(await prisma.cartItem.count({ where: { cartId } })).toBe(1);
 });
 
-test("GET eligible browsing shares the 20/min trusted-client quota with POST upsell", async ({ page, context }) => {
-  // An empty cart makes each read cheap while still exercising the GET admission boundary.
-  // Dedicated client identity keeps this exhaustion scenario isolated from the checkout tests.
+test("GET without a cart cookie never consumes the shared POST upsell budget", async ({ page, context }) => {
   await context.clearCookies();
   const url = `${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`;
-  const headers = { "x-ci-client-ip": "203.0.113.222" };
-  for (let i = 0; i < 20; i++) {
+  const headers = { "x-ci-client-ip": "203.0.113.222", "sec-fetch-site": "same-origin" };
+  for (let i = 0; i < 25; i++) {
+    const response = await page.request.get(url, { headers });
+    expect(response.status()).toBe(200);
+    expect(await response.text()).not.toContain("Áo candidate");
+  }
+  const post = await page.request.post(`${BASE}/api/checkout/upsell`, {
+    headers: { ...headers, origin: BASE },
+    data: { quoteProof: "abc.def" },
+  });
+  expect(post.status()).toBe(200);
+});
+
+test("forged but well-formed cart UUIDs use a separate bounded GET budget, never the POST bucket", async ({ page, context }) => {
+  await context.clearCookies();
+  await context.addCookies([{ name: "la_cart", value: "11111111-1111-4111-8111-111111111111", url: BASE, httpOnly: true, sameSite: "Lax" }]);
+  const url = `${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`;
+  const headers = { "x-ci-client-ip": "203.0.113.223", "sec-fetch-site": "same-origin" };
+  for (let i = 0; i < 10; i++) {
     const response = await page.request.get(url, { headers });
     expect(response.status()).toBe(200);
     expect(await response.text()).not.toContain("Gợi ý ưu đãi đang có quá nhiều lượt truy cập");
   }
   const excess = await page.request.get(url, { headers });
-  expect(excess.status()).toBe(200);
   expect(await excess.text()).toContain("Gợi ý ưu đãi đang có quá nhiều lượt truy cập");
   const post = await page.request.post(`${BASE}/api/checkout/upsell`, {
     headers: { ...headers, origin: BASE },
-    data: { quoteProof: "invalid.proof" },
+    data: { quoteProof: "abc.def" },
   });
-  expect(post.status()).toBe(429);
+  expect(post.status()).toBe(200);
+});
+
+test("cart-backed GETs are bounded separately and retain a shared POST quote budget", async ({ page }) => {
+  const url = `${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`;
+  const headers = { "x-ci-client-ip": "203.0.113.224", "sec-fetch-site": "same-origin" };
+  for (let i = 0; i < 10; i++) {
+    const response = await page.request.get(url, { headers });
+    expect(response.status()).toBe(200);
+    expect(await response.text()).toContain("Áo candidate");
+  }
+  const excess = await page.request.get(url, { headers });
+  expect(await excess.text()).toContain("Gợi ý ưu đãi đang có quá nhiều lượt truy cập");
+  const post = await page.request.post(`${BASE}/api/checkout/upsell`, {
+    headers: { ...headers, origin: BASE },
+    data: { quoteProof: "abc.def" },
+  });
+  expect(post.status()).toBe(200, "GET browse cannot consume every POST banner slot on a shared IP");
+});
+
+test("cross-site or speculative GET cannot reveal cart offers or touch the POST budget", async ({ page }) => {
+  const url = `${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`;
+  const headers = {
+    "x-ci-client-ip": "203.0.113.225",
+    "sec-fetch-site": "cross-site",
+    referer: "https://foreign.example/offers",
+  };
+  const response = await page.request.get(url, { headers });
+  expect(await response.text()).not.toContain("Áo candidate");
+  const speculative = await page.request.get(url, {
+    headers: { "x-ci-client-ip": "203.0.113.225", "sec-fetch-site": "same-origin", purpose: "prefetch" },
+  });
+  expect(await speculative.text()).not.toContain("Áo candidate");
+  const post = await page.request.post(`${BASE}/api/checkout/upsell`, {
+    headers: { "x-ci-client-ip": "203.0.113.225", origin: BASE, "sec-fetch-site": "same-origin" },
+    data: { quoteProof: "abc.def" },
+  });
+  expect(post.status()).toBe(200);
 });
 
 test("Review P2-2: while an order is being placed the banner link cannot take the buyer away", async ({ page }) => {
