@@ -215,14 +215,78 @@ test("concurrent choices serialize the shared entitlement cap", async () => {
   assert.equal(results.filter((result) => result.ok).length, 1);
   assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1);
 });
-test("paid mutation invalidates prior entitlement without silently deleting the selection", async () => {
-  await service().set(choice(giftId, 3), NOW);
+test("paid reduction automatically trims surplus gift units and leaves valid chosen gifts", async () => {
+  assert.deepEqual(await service().set(choice(giftId, 3), NOW), { ok: true });
   await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 1, now: NOW });
-  const state = await service().get(NOW);
-  assert.ok("state" in state);
-  assert.equal(state.state.entitlements[0].entitled, 1);
-  assert.equal(state.state.selections[0].quantity, 3);
-  assert.equal(state.state.validation.ok, false);
+  const result = await service().get(NOW);
+  assert.ok("state" in result);
+  assert.equal(result.state.entitlements[0].entitled, 1);
+  assert.equal(result.state.selections[0]?.quantity, 1);
+  assert.equal(result.state.validation.ok, true);
+  assert.equal(result.state.autoRemovedGiftCount, 2);
+  assert.equal((await prisma.cartGiftSelection.findFirstOrThrow({ where: { cartId, campaignId } })).quantity, 1);
+  const again = await service().get(NOW);
+  assert.ok("state" in again);
+  assert.equal(again.state.autoRemovedGiftCount ?? 0, 0, "a read never repeats a completed cleanup");
+});
+
+test("falling below an ORDER_SUBTOTAL gift threshold removes the ineligible gift without choosing a replacement", async () => {
+  await prisma.giftQuantityCampaign.update({
+    where: { id: campaignId },
+    data: { minimumSubtotalVnd: 300_000, awardMode: "ONCE" },
+  });
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 2, now: NOW });
+  const result = await service().get(NOW);
+  assert.ok("state" in result);
+  assert.equal(result.state.entitlements[0]?.entitled, 0);
+  assert.equal(result.state.validation.ok, true);
+  assert.deepEqual(result.state.selections, []);
+  assert.equal(result.state.autoRemovedGiftCount, 1);
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0);
+});
+
+test("falling below a QUANTITY gift threshold removes the gift and checkout can quote the paid cart", async () => {
+  await prisma.giftQuantityCampaign.update({
+    where: { id: campaignId },
+    data: { giftTrigger: "QUANTITY", minimumQuantity: 3, minimumSubtotalVnd: null, subtotalScope: null, awardMode: null },
+  });
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 2, now: NOW });
+  const render = await renderCheckout();
+  assert.equal(render.kind, "LEGACY");
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0);
+});
+
+test("when entitlement drops from two gifts to one, the earliest saved gift stays", async () => {
+  assert.deepEqual(await service().set(choice(secondId), NOW), { ok: true });
+  assert.deepEqual(await service().set(choice(giftId), NOW), { ok: true });
+  await prisma.cartGiftSelection.updateMany({
+    where: { cartId, variantId: secondId },
+    data: { createdAt: new Date("2026-10-12T00:00:00Z") },
+  });
+  await prisma.cartGiftSelection.updateMany({
+    where: { cartId, variantId: giftId },
+    data: { createdAt: new Date("2026-10-13T00:00:00Z") },
+  });
+  await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 1, now: NOW });
+  const result = await service().get(NOW);
+  assert.ok("state" in result);
+  assert.equal(result.state.autoRemovedGiftCount, 1);
+  assert.equal(result.state.validation.ok, true);
+  assert.deepEqual(result.state.selections.map((line) => line.variantId), [secondId]);
+  assert.deepEqual((await prisma.cartGiftSelection.findMany({ where: { cartId }, select: { variantId: true } })).map((row) => row.variantId), [secondId]);
+});
+
+test("an expired or revised campaign does not silently discard an old gift just because the basket shrank", async () => {
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { revision: 2 } });
+  await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 1, now: NOW });
+  const result = await service().get(NOW);
+  assert.ok("state" in result);
+  assert.equal(result.state.validation.ok, false);
+  assert.equal(result.state.autoRemovedGiftCount ?? 0, 0);
+  assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 1);
 });
 test("a user-owned cart is never authorized by an anonymous cookie", async () => {
   await prisma.user.create({ data: { id: `${PREFIX}user`, name: "Test", email: "gq12@example.test", emailVerified: false, createdAt: NOW, updatedAt: NOW } });
@@ -266,18 +330,16 @@ test("two gift sets with one remaining shared component cannot both be saved", a
   assert.equal(after.state.validation.ok, true);
   assert.deepEqual(after.state.selections.map((selection) => selection.variantId), [giftId]);
 });
-test("racing paid reduction and gift write leaves a recomputed invalid choice or a refusal, never auto-repairs", async () => {
+test("racing paid reduction and gift write converges to an entitled choice or a refusal", async () => {
   await Promise.all([
     service().set(choice(giftId, 3), NOW),
     createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 1, now: NOW }),
   ]);
-  const state = await service().get(NOW);
-  assert.ok("state" in state);
-  assert.equal(state.state.entitlements[0].entitled, 1);
-  if (state.state.selections.length) {
-    assert.equal(state.state.selections[0].quantity, 3);
-    assert.equal(state.state.validation.ok, false);
-  }
+  const result = await service().get(NOW);
+  assert.ok("state" in result);
+  assert.equal(result.state.entitlements[0].entitled, 1);
+  assert.ok(result.state.selections.reduce((sum, line) => sum + line.quantity, 0) <= 1);
+  assert.equal(result.state.validation.ok, true);
 });
 test("earning gift campaigns require mutual stack consent and share the same stock", async () => {
   const otherId = `${PREFIX}other`;
