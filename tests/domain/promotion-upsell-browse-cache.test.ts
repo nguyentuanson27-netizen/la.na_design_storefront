@@ -74,3 +74,20 @@ test("the TTL outlives the page's periodic refresh, so refreshes of an open page
   assert.deepEqual(outcomes, [true, true, true, false], "only every third refresh recomputes, and the list is never older than the TTL");
   assert.equal(loads, 1);
 });
+
+test("validUntil caps an entry below the TTL, for a seeded entry and a loaded one", async () => {
+  let t = 0;
+  const cache = createUpsellBrowseCache<string>({ ttlMs: 150_000, now: () => t });
+  cache.set("seeded", "a", 30_000);
+  await cache.resolve("loaded", async () => ({ value: "b", store: true, validUntil: 45_000 }));
+  cache.set("uncapped", "c", null);
+  t = 29_999;
+  assert.equal((await cache.resolve("seeded", async () => ({ value: "x", store: false }))).cached, true);
+  t = 30_000;
+  assert.equal((await cache.resolve("seeded", async () => ({ value: "x", store: false }))).cached, false, "ended campaign: no longer served");
+  t = 44_999;
+  assert.equal((await cache.resolve("loaded", async () => ({ value: "x", store: false }))).cached, true);
+  t = 45_000;
+  assert.equal((await cache.resolve("loaded", async () => ({ value: "x", store: false }))).cached, false);
+  assert.equal((await cache.resolve("uncapped", async () => ({ value: "x", store: false }))).cached, true, "no end date: the TTL applies");
+});

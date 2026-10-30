@@ -32,11 +32,16 @@ export const UPSELL_BROWSE_SOFT_DEADLINE_MS = 1_300;
 const UPSELL_WRITE_TIMEOUT_MS = 5_000;
 type Env = Readonly<Record<string, string | undefined>>;
 class UpsellQuoteUnavailable extends Error {}
-type BrowseStatus = { truncated: boolean; retryable: boolean };
+type BrowseStatus = { truncated: boolean; retryable: boolean; validUntil: number | null };
 /** The cart itself has no valid quote (sold-out paid line, invalid gift setup): retrying cannot change it. */
 const isDeterministicQuoteFailure = (error: unknown) => error instanceof UpsellQuoteUnavailable ||
   (error instanceof Error && (error.message === "Quote unavailable" || error.message === "Invalid gift configuration"));
-const browseCacheKey = (paidCartKey: string, campaignId: string) => `${paidCartKey}:${campaignId}`;
+// Key = paid cart (HMAC over cart + paid revision) + promotion pricing revision + campaign. Any effective
+// campaign edit, enable or disable advances the revision, so the next render recomputes instead of hitting.
+const browseCacheKey = (paidCartKey: string, promotionRevision: bigint, campaignId: string) => `${paidCartKey}:${promotionRevision}:${campaignId}`;
+/** A verified list is only true until the first campaign it was checked against ends. */
+const earliestCampaignEnd = (entries: readonly { campaign: { endsAt: Date | null } }[]) =>
+  entries.reduce<number | null>((min, { campaign }) => campaign.endsAt === null ? min : Math.min(min ?? Infinity, campaign.endsAt.getTime()), null);
 type Snapshot = { state: CartGiftState; quote: UpsellQuote; totalVnd: number };
 export type UpsellVariantView = Readonly<{ variantId: string; label: string; priceVnd: number; deltaVnd: number; intent: UpsellIntent }>;
 export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string | null; campaignId: string | null }>;
@@ -164,7 +169,8 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
     let truncated = false;
     let deadlineHit = false;
     // The checkout banner already verified real products for this cart; hand them to the browse page.
-    const seed: { key?: string; value?: CheckoutUpsellBrowse } = {};
+    const seed: { key?: string; value?: CheckoutUpsellBrowse; validUntil?: number | null } = {};
+    let validUntil: number | null = null;
     try {
       const model = await client.$transaction(async (rawTx): Promise<CheckoutUpsellModel | CheckoutUpsellBanner | CheckoutUpsellBrowse | null> => {
         await rawTx.$executeRaw`SET LOCAL statement_timeout = '1800ms'`;
@@ -185,6 +191,7 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
           offer,
         });
         const banner = (offerName: string | null, id: string | null): CheckoutUpsellBanner => ({ paidCartKey, offerName, campaignId: id });
+        validUntil = earliestCampaignEnd(before.state.campaignEntries);
         if (!opportunities.length) return mode === "browse" ? null : mode === "banner" ? banner(null, null) : fullModel(null);
 
         const products = await discover(tx, before.state, opportunities, shopId);
@@ -249,7 +256,9 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
           };
         };
         if (mode === "banner") {
-          seed.key = browseCacheKey(paidCartKey, winner.campaignId); seed.value = browseView();
+          // Same snapshot as the quote, so the revision cannot be newer or older than the verified products.
+          const promotion = await tx.promotionPricingRevision.findUnique({ where: { id: "current" }, select: { revision: true } });
+          if (promotion) { seed.key = browseCacheKey(paidCartKey, promotion.revision, winner.campaignId); seed.value = browseView(); seed.validUntil = validUntil; }
           return banner(name, winner.campaignId);
         }
         if (mode === "browse") return browseView();
@@ -264,8 +273,8 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
       }, { isolationLevel: "RepeatableRead", maxWait: 200, timeout: UPSELL_READ_TIMEOUT_MS });
       const offered = model && ("offerName" in model ? model.offerName !== null : model.offer !== null);
       report({ event, outcome: offered ? (truncated ? "partial" : "offered") : "empty", durationMs: clock() - started, quoteAttempts });
-      if (status) status.truncated = truncated;
-      if (seed.key && seed.value && browseCache) browseCache.set(seed.key, seed.value);
+      if (status) { status.truncated = truncated; status.validUntil = validUntil; }
+      if (seed.key && seed.value && browseCache) browseCache.set(seed.key, seed.value, seed.validUntil);
       return model;
     } catch (error) {
       // A cart without a valid quote is an empty browse, not a failure to retry (retries cost rate limit).
@@ -293,19 +302,23 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
     const none = { offer: null, retryable: false } as const;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId)) return none;
     const compute = async () => {
-      const status: BrowseStatus = { truncated: false, retryable: false };
+      const status: BrowseStatus = { truncated: false, retryable: false, validUntil: null };
       const offer = await recommend(null, now, UPSELL_BROWSE_MAX_QUOTES, "browse", campaignId, status);
       // A partial or failed run must not pin a short list for the TTL; the next visit recomputes.
-      return { value: offer, store: !status.truncated && !status.retryable, failed: status.retryable };
+      return { value: offer, store: !status.truncated && !status.retryable, failed: status.retryable, validUntil: status.validUntil };
     };
     if (!browseCache || !isPromotionUpsellEnabled(shopId, env)) { const r = await compute(); return { offer: r.value, retryable: r.failed }; }
     const cartId = readAnonymousCartCookie(store);
     if (!cartId) return none;
     const started = clock();
     try {
-      const cart = await client.cart.findFirst({ where: { id: cartId, userId: null, expiresAt: { gt: now } }, select: { paidRevision: true } });
+      const [cart, promotion] = await Promise.all([
+        client.cart.findFirst({ where: { id: cartId, userId: null, expiresAt: { gt: now } }, select: { paidRevision: true } }),
+        client.promotionPricingRevision.findUnique({ where: { id: "current" }, select: { revision: true } }),
+      ]);
       if (!cart) return none;
-      const result = await browseCache.resolve(browseCacheKey(upsellPaidCartKey(cartId, cart.paidRevision, secret), campaignId), compute);
+      if (!promotion) throw new Error("Promotion pricing revision row is missing");
+      const result = await browseCache.resolve(browseCacheKey(upsellPaidCartKey(cartId, cart.paidRevision, secret), promotion.revision, campaignId), compute);
       if (result.cached) report({ event: "browse", outcome: "cached", durationMs: clock() - started, quoteAttempts: 0 });
       return { offer: result.value, retryable: result.failed };
     } catch {

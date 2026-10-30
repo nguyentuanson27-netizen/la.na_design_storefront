@@ -3,20 +3,25 @@ import { MAX_STOREFRONT_PROMOTION_REFRESH_MS } from "./storefront-promotion-fres
 /**
  * Short-lived, per-process memo for the read-only /offers/eligible listing.
  *
- * Keys are opaque (`paidCartKey` is an HMAC over cart id + paid revision, plus the campaign id), so a
- * paid-line change invalidates an entry by construction and no cart id is held in memory. Values are
- * the already-public browse view: names, slugs, images and option labels. Stock or campaign edits can
- * make an entry up to `ttlMs` old; the page never authorizes a mutation and `add` re-verifies on the
- * server, so staleness cannot move money or entitlements.
+ * Keys are opaque (`paidCartKey` is an HMAC over cart id + paid revision, plus the promotion pricing
+ * revision and campaign id), so a paid-line change or any effective campaign edit/enable/disable is a
+ * different key by construction and no cart id is held in memory. An entry also never outlives the
+ * earliest `endsAt` of the campaigns it was verified against (`validUntil`). What the key cannot see is
+ * catalog drift (stock, publication, price sync): that is bounded by `ttlMs`. Values are the
+ * already-public browse view: names, slugs, images and option labels; the page never authorizes a
+ * mutation and `add` re-verifies on the server, so staleness cannot move money or entitlements.
  */
+/** `validUntil` (epoch ms) caps the entry's life, for example at a campaign's `endsAt`. */
+export type BrowseLoad<V> = { value: V | null; store: boolean; failed?: boolean; validUntil?: number | null };
+
 export type UpsellBrowseCache<V> = Readonly<{
   /**
    * Return a fresh entry, join an identical in-flight load, or run `load`. `store: false` skips caching
    * (partial/failed); `failed` is passed to every caller sharing the load so they all see a retryable miss.
    */
-  resolve(key: string, load: () => Promise<{ value: V | null; store: boolean; failed?: boolean }>): Promise<{ value: V | null; cached: boolean; failed: boolean }>;
+  resolve(key: string, load: () => Promise<BrowseLoad<V>>): Promise<{ value: V | null; cached: boolean; failed: boolean }>;
   /** Seed an entry computed elsewhere (the checkout banner already verified these products). */
-  set(key: string, value: V): void;
+  set(key: string, value: V, validUntil?: number | null): void;
   readonly size: number;
 }>;
 
@@ -32,10 +37,10 @@ export function createUpsellBrowseCache<V>({ ttlMs = UPSELL_BROWSE_CACHE_TTL_MS,
     throw new TypeError("Browse cache ttl and size must be positive safe integers");
   }
   const entries = new Map<string, { value: V; expiresAt: number }>();
-  const inflight = new Map<string, Promise<{ value: V | null; store: boolean; failed?: boolean }>>();
-  function set(key: string, value: V) {
+  const inflight = new Map<string, Promise<BrowseLoad<V>>>();
+  function set(key: string, value: V, validUntil?: number | null) {
     entries.delete(key); // re-insert so Map order is least-recently-written first
-    entries.set(key, { value, expiresAt: now() + ttlMs });
+    entries.set(key, { value, expiresAt: Math.min(now() + ttlMs, validUntil ?? Infinity) });
     while (entries.size > maxEntries) entries.delete(entries.keys().next().value!);
   }
   return {
@@ -53,7 +58,7 @@ export function createUpsellBrowseCache<V>({ ttlMs = UPSELL_BROWSE_CACHE_TTL_MS,
         inflight.set(key, pending);
       }
       const joined = await pending;
-      if (joined.store && joined.value !== null) set(key, joined.value);
+      if (joined.store && joined.value !== null) set(key, joined.value, joined.validUntil);
       return { value: joined.value, cached: false, failed: joined.failed === true };
     },
   };

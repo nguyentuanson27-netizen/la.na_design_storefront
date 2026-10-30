@@ -9,7 +9,7 @@ import { issueUpsellQuoteProof, type UpsellIntent } from "../../src/commerce/pro
 import { createPromotionUpsellService, UPSELL_BANNER_MAX_QUOTES, UPSELL_BROWSE_MAX_QUOTES, UPSELL_BROWSE_TARGET_PRODUCTS, UPSELL_MAX_QUOTES } from "../../src/commerce/promotion-upsell.ts";
 import { createUpsellBrowseCache } from "../../src/commerce/promotion-upsell-browse-cache.ts";
 import { acquireCatalogSyncLock } from "../../src/commerce/catalog-sync-lock.ts";
-import { lockRevision } from "../../src/commerce/promotion-activation-service.ts";
+import { advanceRevision, lockRevision } from "../../src/commerce/promotion-activation-service.ts";
 
 const SHOP = 929171;
 const PREFIX = "ups171-";
@@ -384,8 +384,44 @@ test("BR-06: a cart with no valid quote is an empty browse, not a retryable fail
 });
 
 test("BR-07: a failure before the cache lookup is retryable and still logged as a browse failure", async () => {
-  const broken = { cart: { findFirst: async () => { throw new Error("db down"); } } } as unknown as typeof prisma;
+  const broken = { cart: { findFirst: async () => { throw new Error("db down"); } }, promotionPricingRevision: { findUnique: async () => ({ revision: BigInt(1) }) } } as unknown as typeof prisma;
   const failing = createPromotionUpsellService(broken, store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: createUpsellBrowseCache<never>() as never });
   assert.deepEqual(await failing.getBrowse(campaignId), { offer: null, retryable: true });
   assert.deepEqual(metrics.at(-1), { event: "browse", outcome: "failed", durationMs: (metrics.at(-1) as { durationMs: number }).durationMs, quoteAttempts: 0 });
+});
+
+test("BR-08: disabling a campaign stops the cached listing at the next render, not after the TTL", async () => {
+  await seedBoundedCatalog();
+  const cache = createUpsellBrowseCache<never>();
+  assert.equal((await service(cache).getBanner(await proof()))?.campaignId, campaignId);
+  assert.ok((await service(cache).getBrowse(campaignId)).offer, "a fresh banner-seeded entry is served");
+  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "cached");
+
+  // The real admin path serializes on the promotion revision row and advances it for an effective change.
+  await prisma.$transaction(async (tx) => {
+    const revision = await lockRevision(tx);
+    await tx.giftQuantityCampaign.update({ where: { id: campaignId }, data: { isEnabled: false } });
+    await advanceRevision(tx, revision);
+  });
+  const after = await service(cache).getBrowse(campaignId);
+  assert.deepEqual(after, { offer: null, retryable: false }, "the page must stop introducing products immediately");
+  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached");
+});
+
+test("BR-09: a cached listing never outlives the campaign's end time", async () => {
+  await seedBoundedCatalog();
+  const base = Date.now();
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { endsAt: new Date(base + 30_000) } });
+  let t = base;
+  const cache = createUpsellBrowseCache<never>({ now: () => t });
+  const seeded = await service(cache).getBanner(await proof(), new Date(base));
+  assert.equal(seeded?.campaignId, campaignId);
+
+  t = base + 20_000; // still before endsAt and well inside the 150 s TTL
+  assert.ok((await service(cache).getBrowse(campaignId, new Date(t))).offer);
+  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "cached");
+
+  t = base + 31_000; // campaign ended 1 s ago: the entry is gone even though the TTL has 119 s left
+  assert.deepEqual(await service(cache).getBrowse(campaignId, new Date(t)), { offer: null, retryable: false });
+  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached");
 });

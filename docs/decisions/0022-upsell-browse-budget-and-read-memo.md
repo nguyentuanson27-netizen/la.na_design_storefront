@@ -46,17 +46,35 @@ unchanged.
 
 ### Phase 2 — the banner seeds a short-lived, cart-scoped browse cache
 
-- Key: `paidCartKey:campaignId`. `paidCartKey` is the existing HMAC over the cart id and paid revision, so
-  any paid-line change (including A→B→A) is a different key and no cart id is held in memory.
+- Key: `paidCartKey : promotionPricingRevision : campaignId`. `paidCartKey` is the existing HMAC over the
+  cart id and paid revision, so any paid-line change (including A→B→A) is a different key and no cart id
+  is held in memory. `PromotionPricingRevision.current` advances on every effective campaign edit, enable
+  or disable (the same row `add` locks), so a campaign change is a different key too. The banner reads the
+  revision inside the quote's snapshot; `getBrowse` reads it with the cart before the lookup (two
+  single-row reads). A key's revision can only be older than the data stored under it, never newer.
+- Each entry also expires at the earliest `endsAt` of the campaigns it was verified against, so a listing
+  never outlives a campaign that ended inside the TTL.
 - Value: the already-public browse view (offer name, slug, name, image, option labels). The banner
   response shape is unchanged; seeding happens inside the service.
 - TTL 150 s (2.5× `MAX_STOREFRONT_PROMOTION_REFRESH_MS`), 500 entries, single-flight for identical
   concurrent loads, per-process (a second instance simply misses and computes). A TTL equal to the 60 s
   page refresh would expire just before every periodic render, so the first two refreshes of an open page
-  hit and only every third recomputes; the list is never older than 150 s. Partial (soft-deadline) and failed results are not stored, so a retry
-  recomputes. A browse result that computed fully is stored for later visits and refreshes.
-- Staleness is bounded by the TTL and cannot move money or entitlements: the page is read-only and
-  `add` re-verifies everything under locks. Disable with `browseCache: null`.
+  hit and only every third recomputes. Partial (soft-deadline) and failed results are not stored, so a
+  retry recomputes.
+
+#### Freshness contract
+
+- **Campaign state** (disabled, edited, published, ended): the next render recomputes, so a visible page
+  stops introducing products within one refresh (≤ 60 s, the storefront bound). Tested by BR-08 (admin
+  path advancing the revision) and BR-09 (`endsAt` cap).
+- **Catalog drift** (stock, product publication, price sync) is the only thing the key cannot see. It is
+  bounded by the TTL: an entry is at most 150 s old when served, and a page that shows it is replaced at
+  its next refresh, so a visible list can reflect catalog state up to ~210 s old in the worst case (served
+  at 149 s, replaced one 60 s refresh later). This is a deliberate exception to the 60 s bound for a
+  names-and-links list; the page copy already says price, stock and entitlement are recomputed on add, and
+  `add` re-verifies under locks, so it cannot move money or entitlements. If product wants catalog drift
+  inside 60 s, set `UPSELL_BROWSE_CACHE_TTL_MS` to 60 s: every periodic refresh then recomputes (bounded
+  by phases 1 and 3), which is the pre-cache behaviour.
 
 ### Phase 3 — transaction-scoped read memo for the read-only paths
 
