@@ -6,7 +6,7 @@ import { loadEligibleOffersRoute, type EligibleOffersRouteProps, type EligibleOf
 import { buildEligibleOffersMetadata } from "@/routes/metadata/eligible-offers";
 
 /** Markup only: the route loader applies trusted-client rate limits and verifies cart-scoped offers. */
-function render({ offer, limited }: EligibleOffersViewModel) {
+function render({ offer, limited, retryHref }: EligibleOffersViewModel) {
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6">
       <Link href="/checkout" className="inline-flex min-h-11 items-center text-sm underline underline-offset-4">
@@ -36,7 +36,9 @@ function render({ offer, limited }: EligibleOffersViewModel) {
         </>
       ) : (
         <div className="mt-7 border border-black/15 p-5">
-          <p className="text-sm leading-6">{limited ? "Gợi ý ưu đãi đang có quá nhiều lượt truy cập. Nàng thử lại sau ít phút nhé." : "Ưu đãi hoặc giỏ hàng đã thay đổi, hiện không có sản phẩm phù hợp được xác nhận."}</p>
+          <p className="text-sm leading-6">{limited ? "Gợi ý ưu đãi đang có quá nhiều lượt truy cập. Nàng thử lại sau ít phút nhé." : retryHref ? "Gợi ý ưu đãi đang tải chậm hơn bình thường. Nàng thử lại giúp mình nhé." : "Ưu đãi hoặc giỏ hàng đã thay đổi, hiện không có sản phẩm phù hợp được xác nhận."}</p>
+          {/* A plain anchor forces a fresh server render; a soft navigation to the same URL may not. */}
+          {retryHref ? <a href={retryHref} className="mt-3 mr-5 inline-flex min-h-11 items-center text-sm underline">Thử lại</a> : null}
           <Link href="/shop" className="mt-3 inline-flex min-h-11 items-center text-sm underline">Xem tất cả sản phẩm</Link>
         </div>
       )}

@@ -15,8 +15,9 @@ import { sealRoute, type RouteHandle } from "./core.tsx";
 
 /** Personalized, read-only offer listing; the view never authorizes a cart mutation. */
 export type EligibleOffersRouteProps = Readonly<{ searchParams: Promise<{ campaign?: string | string[] }> }>;
-export type EligibleOffersViewModel = Readonly<{ offer: CheckoutUpsellBrowse | null; limited: boolean }>;
-const empty: EligibleOffersViewModel = { offer: null, limited: false };
+/** `retryHref` is set only after a timeout or failure, so the page can offer a retry instead of "offer changed". */
+export type EligibleOffersViewModel = Readonly<{ offer: CheckoutUpsellBrowse | null; limited: boolean; retryHref: string | null }>;
+const empty: EligibleOffersViewModel = { offer: null, limited: false, retryHref: null };
 
 async function browseForCart(campaignId: string): Promise<EligibleOffersViewModel> {
   try {
@@ -48,8 +49,8 @@ async function browseForCart(campaignId: string): Promise<EligibleOffersViewMode
       if (!cart) return empty;
       // Only a confirmed, unexpired guest cart may spend the shared POST upsell budget.
       if (!(await limiter.consumeUpsellClient({ clientKey }))) return { ...empty, limited: true };
-      const offer = await createPromotionUpsellService(prisma, store, { shopId, secret: auth.secret }).getBrowse(campaignId);
-      return { offer, limited: false };
+      const { offer, retryable } = await createPromotionUpsellService(prisma, store, { shopId, secret: auth.secret }).getBrowse(campaignId);
+      return { offer, limited: false, retryHref: retryable ? `/offers/eligible?campaign=${encodeURIComponent(campaignId)}` : null };
     } finally {
       release();
     }

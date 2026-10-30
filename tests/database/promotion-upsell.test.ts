@@ -6,7 +6,8 @@ import { readCartGiftState } from "../../src/commerce/cart-gift-selection.ts";
 import { resolveBenefitCheckoutQuote } from "../../src/commerce/benefit-checkout-quote.ts";
 import { buildRenderedCheckoutQuoteFacts } from "../../src/commerce/checkout-quote.ts";
 import { issueUpsellQuoteProof, type UpsellIntent } from "../../src/commerce/promotion-upsell-proof.ts";
-import { createPromotionUpsellService, UPSELL_BANNER_MAX_QUOTES, UPSELL_MAX_QUOTES } from "../../src/commerce/promotion-upsell.ts";
+import { createPromotionUpsellService, UPSELL_BANNER_MAX_QUOTES, UPSELL_BROWSE_MAX_QUOTES, UPSELL_BROWSE_TARGET_PRODUCTS, UPSELL_MAX_QUOTES } from "../../src/commerce/promotion-upsell.ts";
+import { createUpsellBrowseCache } from "../../src/commerce/promotion-upsell-browse-cache.ts";
 import { acquireCatalogSyncLock } from "../../src/commerce/catalog-sync-lock.ts";
 import { lockRevision } from "../../src/commerce/promotion-activation-service.ts";
 
@@ -18,7 +19,7 @@ let cartId = "", paidId = "", candidateProductId = "", giftId = "";
 const campaignId = `${PREFIX}campaign`;
 const metrics: unknown[] = [];
 const store = () => ({ get: (name: string) => name === "la_cart" ? { value: cartId } : undefined });
-const service = () => createPromotionUpsellService(prisma, store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m) });
+const service = (browseCache: ReturnType<typeof createUpsellBrowseCache<never>> | null = null) => createPromotionUpsellService(prisma, store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: browseCache as never });
 async function product(id: string, price = 100000, sizes = ["S"]) {
   return prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: `${PREFIX}${id}`, slug: `${PREFIX}${id}`, name: `Áo ${id}`, syncedAt: new Date(), variants: { create: sizes.map((size, i) => ({ pancakeVariationId: `${PREFIX}${id}-${size}`, color: "Hồng", size, isActive: true, isPresent: true, pancakeRetailPrice: price + i * 10000, pancakeRetailPriceAfterDiscount: price + i * 10000, syncedAt: new Date(), warehouseStocks: { create: { pancakeWarehouseId: `${PREFIX}warehouse`, quantity: 20, syncedAt: new Date() } } })) } }, include: { variants: true } });
 }
@@ -219,15 +220,16 @@ test("UP-00/TG-06: representative 30-product, 3-size catalog; bounded output/quo
   const bannerMetric = metrics.at(-1) as { event: string; quoteAttempts?: number };
   assert.equal(bannerMetric.event, "recommendation");
   assert.equal(bannerMetric.quoteAttempts, UPSELL_BANNER_MAX_QUOTES, "the compact banner uses exactly six quote attempts");
-  const browse = await service().getBrowse(campaignId);
+  const { offer: browse, retryable } = await service().getBrowse(campaignId);
   const browseMetric = metrics.at(-1) as { event: string; quoteAttempts?: number };
-  assert.equal(browseMetric.event, "recommendation");
-  assert.equal(browseMetric.quoteAttempts, UPSELL_MAX_QUOTES, "the eligible-product browse caps the quote work at 20");
+  assert.equal(browseMetric.event, "browse");
+  assert.ok(browseMetric.quoteAttempts! <= UPSELL_BROWSE_MAX_QUOTES, "the eligible-product browse caps the quote work well below the checkout budget");
+  assert.ok(UPSELL_BROWSE_MAX_QUOTES < UPSELL_MAX_QUOTES);
+  assert.equal(retryable, false);
   assert.equal(browse?.offerName, "Mua 3 tặng khăn");
-  assert.ok(browse?.products.some((p) => p.slug === `${PREFIX}candidate`));
-  assert.deepEqual([...(browse?.products.find((p) => p.slug === `${PREFIX}candidate`)?.options ?? [])].sort(), ["Hồng / M", "Hồng / S"]);
+  assert.equal(browse?.products.length, UPSELL_BROWSE_TARGET_PRODUCTS, "the browse stops as soon as enough products are verified");
   assert.equal(JSON.stringify(browse).includes(cartId), false);
-  assert.equal(await service().getBrowse("nonexistent"), null);
+  assert.deepEqual(await service().getBrowse("nonexistent"), { offer: null, retryable: false });
   assert.match(banner?.paidCartKey ?? "", /^[A-Za-z0-9_-]{43}$/);
   assert.deepEqual(Object.keys(banner ?? {}).sort(), ["campaignId", "offerName", "paidCartKey"], "banner mode must not build or serialize add intents");
   console.info("UP-00 fixture benchmark", { products: 33, maxDiscovered: 10, maxQuotes: 20, durationMs: times });
@@ -297,4 +299,75 @@ test("TG-02: an equal-value next rung creates no new benefit and is not advertis
   const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } });
   await prisma.giftQuantityCampaign.create({ data: { id: campaignId, name: "Same value", kind: "QUANTITY_TIER", isEnabled: true, enabledAt: new Date(), scopeMode: "DYNAMIC_CATEGORY", tierBasis: "QUANTITY", tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS", targets: { create: [paid.productId, candidateProductId].map((productId) => ({ productId, role: "INCLUDE" })) }, tiers: { create: [{ minQuantity: 2, discountValue: 10 }, { minQuantity: 3, discountValue: 10 }] } } });
   assert.equal((await service().get(await proof()))?.offer ?? null, null);
+});
+
+// ---- Eligible-offers browse: early stop, soft deadline, retryable timeout, cart-scoped cache ----
+async function seedBoundedCatalog(count = 12) {
+  const products = [];
+  for (let n = 0; n < count; n++) products.push(await product(`browse-${n}`, 100000, ["S", "M", "L"]));
+  await prisma.giftQuantityTarget.createMany({ data: products.map((p) => ({ campaignId, productId: p.id, role: "INCLUDE" })) });
+}
+/** A fake clock advancing a fixed step per read, so deadline behaviour is deterministic. */
+const steppedClock = (stepMs: number) => { let t = 0; return () => (t += stepMs) - stepMs; };
+const browseService = (clock: () => number, browseCache: ReturnType<typeof createUpsellBrowseCache<never>> | null = null) =>
+  createPromotionUpsellService(prisma, store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: browseCache as never, clock });
+
+test("BR-01: browse stops once enough products are verified, spending one quote per product", async () => {
+  await seedBoundedCatalog();
+  const { offer, retryable } = await service().getBrowse(campaignId);
+  assert.equal(retryable, false);
+  assert.equal(offer?.products.length, UPSELL_BROWSE_TARGET_PRODUCTS);
+  const metric = metrics.at(-1) as { event: string; outcome: string; quoteAttempts: number };
+  assert.deepEqual([metric.event, metric.outcome, metric.quoteAttempts], ["browse", "offered", UPSELL_BROWSE_TARGET_PRODUCTS]);
+});
+
+test("BR-02: at the soft deadline browse returns what it verified instead of nothing, and does not cache it", async () => {
+  await seedBoundedCatalog();
+  const cache = createUpsellBrowseCache<never>();
+  // 500 ms per clock read: the third candidate check lands past the 1,300 ms soft deadline.
+  const { offer, retryable } = await browseService(steppedClock(500), cache).getBrowse(campaignId);
+  assert.equal(retryable, false);
+  assert.equal(offer?.products.length, 2);
+  const metric = metrics.at(-1) as { event: string; outcome: string; quoteAttempts: number };
+  assert.deepEqual([metric.event, metric.outcome, metric.quoteAttempts], ["browse", "partial", 2]);
+  assert.equal(cache.size, 0, "a truncated list must not be pinned for the cache lifetime");
+});
+
+test("BR-03: out of time with nothing verified is a retryable timeout, not 'offer changed'", async () => {
+  await seedBoundedCatalog();
+  const { offer, retryable } = await browseService(steppedClock(2_000)).getBrowse(campaignId);
+  assert.equal(offer, null);
+  assert.equal(retryable, true);
+  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "timed_out");
+  // No opportunity at all (campaign switched off) is a normal empty result, not a retry.
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { isEnabled: false } });
+  assert.deepEqual(await service().getBrowse(campaignId), { offer: null, retryable: false });
+});
+
+test("BR-04: the checkout banner seeds the browse page; a paid-line change invalidates it", async () => {
+  await seedBoundedCatalog();
+  const cache = createUpsellBrowseCache<never>();
+  const banner = await service(cache).getBanner(await proof());
+  assert.equal(banner?.campaignId, campaignId);
+  assert.equal(cache.size, 1, "banner verification is reused instead of recomputed");
+
+  const hit = await service(cache).getBrowse(campaignId);
+  assert.ok(hit.offer && hit.offer.products.length > 0);
+  assert.deepEqual(metrics.at(-1), { event: "browse", outcome: "cached", durationMs: (metrics.at(-1) as { durationMs: number }).durationMs, quoteAttempts: 0 });
+  assert.equal(JSON.stringify(hit).includes(cartId), false);
+
+  // The cache never serves another cart, and a different paid revision is a different key.
+  await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 1, now: new Date() });
+  const sizeBefore = cache.size;
+  const miss = await service(cache).getBrowse(campaignId);
+  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached");
+  assert.equal(cache.size, sizeBefore + (miss.offer ? 1 : 0));
+});
+
+test("BR-05: concurrent identical browse requests share one computation", async () => {
+  await seedBoundedCatalog();
+  const cache = createUpsellBrowseCache<never>();
+  const results = await Promise.all([service(cache).getBrowse(campaignId), service(cache).getBrowse(campaignId), service(cache).getBrowse(campaignId)]);
+  assert.ok(results.every((r) => r.offer?.products.length === UPSELL_BROWSE_TARGET_PRODUCTS));
+  assert.equal(metrics.filter((m) => (m as { event: string; outcome: string }).event === "browse" && (m as { outcome: string }).outcome === "offered").length, 1);
 });

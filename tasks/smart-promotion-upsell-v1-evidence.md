@@ -110,3 +110,19 @@ Outstanding before production enablement:
 - Staging pilot with add/timeout/rejection metrics and flag rollback; approve rollout separately.
 
 Rollback behavior by setting LA_PROMOTION_UPSELL_ENABLED=false. Keep both flags OFF by default.
+
+### Eligible-offers browse timeout fix (ADR 0022)
+
+Trigger: preview log showed `/offers/eligible` hitting the 2 s deadline (`quoteAttempts` 11–16) while the
+checkout banner (6 quotes) took 1.3 s. Local verification on disposable PostgreSQL 16:
+
+| Check | Evidence |
+| --- | --- |
+| Upsell DB suite | 27 passed, 0 failed (22 existing + 5 new BR-01…BR-05: early stop, soft-deadline partial, retryable timeout, banner-seeded cache + paid-revision invalidation, single-flight). |
+| New domain tests | 11 passed (browse cache TTL/LRU/single-flight; read memo hit/BigInt key/freeze/pass-through/no replay of failures). |
+| Domain + integration | 3,788 passed, 0 failed, 1 skipped. |
+| Lint / typecheck | Passed; no new warnings. |
+| Profile (33 products × 3 sizes) | Banner 392 → 242 statements, 223 → 163 ms; full 20 quotes 1,162 → 616, 572 → 352 ms; browse after banner 1 statement. |
+
+Still required before enabling a pilot: repeat the preview check on the real catalog and confirm
+`browse` events show `durationMs` < 1,500 ms with no `timed_out`.
