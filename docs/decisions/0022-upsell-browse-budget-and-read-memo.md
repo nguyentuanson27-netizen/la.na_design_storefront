@@ -38,7 +38,13 @@ still has its own server quote; nothing unverified is shown.
 Timeout or a transient failure with nothing verified returns `retryable: true`, and the page then says the
 suggestion is loading slowly and offers a plain-anchor retry (a full server render) instead of "offer
 changed". A cart with no valid quote (sold-out paid line, invalid gift setup) is a normal empty result
-(`retryable: false`, outcome `empty`): retrying cannot change it and costs rate limit. A failure before
+(`retryable: false`, outcome `empty`): retrying cannot change it and costs rate limit. `readCartGiftState`
+refuses carts it cannot price or evaluate with three plain `Error`s ("Quote unavailable", "Invalid gift
+configuration", "Options bound exceeded"); `snapshot` re-throws them as `UpsellQuoteUnavailable`. For the paid
+cart that is the empty result above. For one hypothetical +1 cart, `verifyCandidate` already skips on
+`UpsellQuoteUnavailable`, so that candidate is dropped and the loop goes on instead of discarding candidates
+already verified (BR-12). On `add`, such a +1 cart is now rejected as `QUOTE_CHANGED` (no write) rather than the
+generic `OFFER_UNAVAILABLE` failure. A failure before
 the cache lookup is logged as `event: "browse", outcome: "failed"`, so staging logs account for every
 request. An empty result with no failure keeps the old message. Metrics gain `event: "browse"` and
 `outcome: "partial" | "cached"`, so banner and browse are separable in logs. `get` and `getBanner` are

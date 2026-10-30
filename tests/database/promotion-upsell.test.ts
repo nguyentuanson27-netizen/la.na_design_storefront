@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { prisma } from "../../src/db/prisma.ts";
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
-import { readCartGiftState } from "../../src/commerce/cart-gift-selection.ts";
+import { createCartGiftSelectionService, readCartGiftState } from "../../src/commerce/cart-gift-selection.ts";
 import { resolveBenefitCheckoutQuote } from "../../src/commerce/benefit-checkout-quote.ts";
 import { buildRenderedCheckoutQuoteFacts } from "../../src/commerce/checkout-quote.ts";
 import { issueUpsellQuoteProof, type UpsellIntent } from "../../src/commerce/promotion-upsell-proof.ts";
@@ -446,17 +446,84 @@ test("BR-10: a scheduled campaign that starts inside the TTL ends the cached lis
   assert.equal((await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: "current" } })).revision, revisionBefore, "the start itself wrote nothing");
 });
 
-test("BR-11: changing gift choices on the same paid lines is a different cache key", async () => {
+test("BR-11: choosing or swapping an earned gift through the real selection service re-evaluates the cached listing", async () => {
+  // Campaign A is already earned by the 2 paid units (a real entitlement); campaign B (the offer) is one unit away.
+  const paidProductId = (await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } })).productId;
+  const gift2 = await product("gift2", 1000);
+  const earned = `${PREFIX}earned`;
+  await prisma.giftQuantityCampaign.create({ data: { id: earned, kind: "GIFT_ITEM", name: "Mua 2 tặng quà", isEnabled: true, enabledAt: new Date(), scopeMode: "DYNAMIC_CATEGORY", categoryKeys: [], targets: { create: [{ productId: paidProductId, role: "INCLUDE" }] }, giftTrigger: "QUANTITY", minimumQuantity: 2, maxGiftsPerOrder: 1, allowDuplicateGifts: false, giftOptions: { create: [{ variantId: giftId }, { variantId: gift2.variants[0]!.id }] } } });
+  // Two earned gift campaigns coexist only if both allow stacking; otherwise the +1 would cost the chosen gift.
+  for (const id of [campaignId, earned]) await prisma.giftQuantityCampaign.update({ where: { id }, data: { stackingEnabled: true, stackPeers: { create: { peerKind: "GIFT_ITEM", peerCampaignId: "*" } } } });
+  const revision = (await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: earned } })).revision;
   await seedBoundedCatalog();
+  const gifts = createCartGiftSelectionService(prisma, store(), { shopId: SHOP, env });
+  const paidRevision = async () => (await prisma.cart.findUniqueOrThrow({ where: { id: cartId }, select: { paidRevision: true } })).paidRevision;
+  const outcome = () => (metrics.at(-1) as { outcome: string }).outcome;
   const cache = createUpsellBrowseCache<never>();
+  const paidBefore = await paidRevision();
+
   assert.equal((await service(cache).getBanner(await proof()))?.campaignId, campaignId);
   assert.ok((await service(cache).getBrowse(campaignId)).offer);
-  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "cached");
+  assert.equal(outcome(), "cached", "no gift chosen yet: served from the banner-seeded entry");
 
-  const paidBefore = (await prisma.cart.findUniqueOrThrow({ where: { id: cartId }, select: { paidRevision: true } })).paidRevision;
-  await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, quantity: 1, campaignRevision: 1 } });
-  assert.equal((await prisma.cart.findUniqueOrThrow({ where: { id: cartId }, select: { paidRevision: true } })).paidRevision, paidBefore, "a gift choice does not advance the paid revision");
+  const choose = (variantId: string, quantity: number) => gifts.set({ campaignId: earned, variantId, quantity, campaignRevision: revision });
+  assert.equal((await choose(giftId, 1)).ok, true, "a valid choice of the earned gift");
+  assert.equal(await paidRevision(), paidBefore, "choosing a gift never advances the paid revision");
+  assert.ok((await service(cache).getBrowse(campaignId)).offer);
+  assert.notEqual(outcome(), "cached", "the choice must be re-evaluated, not served from the old list");
+  assert.ok((await service(cache).getBrowse(campaignId)).offer);
+  assert.equal(outcome(), "cached", "unchanged choice: the recomputed list is reused");
 
+  assert.equal((await choose(giftId, 0)).ok, true);
+  assert.equal((await choose(gift2.variants[0]!.id, 1)).ok, true, "swap to the other gift option");
+  assert.equal(await paidRevision(), paidBefore);
   await service(cache).getBrowse(campaignId);
-  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached", "the choice must be re-evaluated, not served from the old list");
+  assert.notEqual(outcome(), "cached", "a swapped gift is a different key again");
+});
+
+/** Make `readCartGiftState` refuse (as it does for a cart it cannot evaluate) only when `variantId` is in the cart being priced. */
+function refusingFor(variantId: string): typeof prisma {
+  type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+  const guard = (tx: Tx) => new Proxy(tx, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver) as unknown;
+      if (property !== "variantMirror") return typeof value === "function" ? value.bind(target) : value;
+      return new Proxy(value as object, {
+        get(model, operation) {
+          const member = Reflect.get(model, operation) as (...args: unknown[]) => unknown;
+          if (operation !== "findMany") return member.bind(model);
+          return (args?: { where?: { id?: { in?: string[] } } }) => {
+            if (args?.where?.id?.in?.includes(variantId) && args.where.id.in.length > 1) throw new Error("Invalid gift configuration");
+            return member.call(model, args);
+          };
+        },
+      });
+    },
+  });
+  return new Proxy(prisma, {
+    get(target, property, receiver) {
+      if (property === "$transaction") return (callback: (tx: Tx) => unknown, options?: unknown) => (target.$transaction as (...a: unknown[]) => unknown)((tx: Tx) => callback(guard(tx)), options);
+      const value = Reflect.get(target, property, receiver) as unknown;
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
+test("BR-12: a candidate whose hypothetical +1 cart cannot be evaluated is skipped; verified candidates are not discarded", async () => {
+  // Created first, so it is the first candidate tried. The paid cart itself stays valid throughout.
+  const bad = await product("bad-first", 100000, ["S"]);
+  await prisma.giftQuantityTarget.create({ data: { campaignId, productId: bad.id, role: "INCLUDE" } });
+  await seedBoundedCatalog();
+  const refusing = (cache: ReturnType<typeof createUpsellBrowseCache<never>> | null = null) =>
+    createPromotionUpsellService(refusingFor(bad.variants[0]!.id), store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: cache as never });
+
+  const browse = await refusing().getBrowse(campaignId);
+  assert.equal(browse.retryable, false);
+  assert.equal(browse.offer?.products.length, UPSELL_BROWSE_TARGET_PRODUCTS, "other candidates are still verified");
+  assert.equal(browse.offer?.products.some((p) => p.slug === `${PREFIX}bad-first`), false, "the unevaluable candidate is never offered");
+  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "offered");
+  assert.equal((await refusing().getBanner(await proof()))?.campaignId, campaignId);
+  const full = await refusing().get(await proof());
+  assert.ok(full?.offer, "the full model keeps the verified candidates too");
+  assert.equal(full.offer.products.some((p) => p.productId === bad.id), false);
 });

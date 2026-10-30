@@ -34,9 +34,14 @@ const UPSELL_WRITE_TIMEOUT_MS = 5_000;
 type Env = Readonly<Record<string, string | undefined>>;
 class UpsellQuoteUnavailable extends Error {}
 type BrowseStatus = { truncated: boolean; retryable: boolean; validUntil: number | null };
-/** The cart itself has no valid quote (sold-out paid line, invalid gift setup): retrying cannot change it. */
-const isDeterministicQuoteFailure = (error: unknown) => error instanceof UpsellQuoteUnavailable ||
-  (error instanceof Error && (error.message === "Quote unavailable" || error.message === "Invalid gift configuration"));
+/**
+ * `readCartGiftState` refuses a cart it cannot price or evaluate with plain Errors. These three are
+ * deterministic for the cart it was given (retrying cannot change them), so `snapshot` re-throws them as
+ * `UpsellQuoteUnavailable`: for the paid cart that means "no valid quote" (empty, not retryable); for one
+ * hypothetical +1 cart it means "skip this candidate" in `verifyCandidate`, never "discard the others".
+ */
+const DETERMINISTIC_QUOTE_ERRORS: ReadonlySet<string> = new Set(["Quote unavailable", "Invalid gift configuration", "Options bound exceeded"]);
+const isDeterministicQuoteFailure = (error: unknown) => error instanceof UpsellQuoteUnavailable;
 // Key = paid cart (HMAC over cart + paid revision) + promotion pricing revision (any effective campaign edit,
 // enable or disable) + the cart's gift choices (they do not advance the paid revision) + campaign. Entries
 // also expire at the next campaign start/end, which advances no revision (see promotion-upsell-browse-key.ts).
@@ -66,7 +71,9 @@ export function recordUpsellMetric(metric: Metric) {
 }
 
 async function snapshot(tx: Prisma.TransactionClient, cartId: string, shopId: number, now: Date, env: Env, items?: CartGiftState["items"]): Promise<Snapshot> {
-  const state = await readCartGiftState(tx, cartId, shopId, now, env, items);
+  let state: Awaited<ReturnType<typeof readCartGiftState>>;
+  try { state = await readCartGiftState(tx, cartId, shopId, now, env, items); }
+  catch (error) { throw error instanceof Error && DETERMINISTIC_QUOTE_ERRORS.has(error.message) ? new UpsellQuoteUnavailable(error.message) : error; }
   if (!state.validation.ok || state.quote.lines.length === 0 || state.quote.lines.some((line) => !line.available)) throw new UpsellQuoteUnavailable("Quote unavailable");
   const resolution = await resolveBenefitCheckoutQuote({ tx, cartId, shopId, now, env, giftState: state });
   if (resolution.kind === "BENEFIT") return { state, quote: { kind: "BENEFIT", facts: resolution.facts }, totalVnd: resolution.facts.totalVnd };
