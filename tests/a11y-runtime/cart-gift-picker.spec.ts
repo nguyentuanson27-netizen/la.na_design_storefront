@@ -363,8 +363,9 @@ test("lowering paid quantity below the gift-value threshold automatically remove
   } });
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  // openPicker already expands the only gift card; clicking it again would collapse the CTA.
   await openPicker(picker);
-  await picker.getByRole("button", { name: "Khăn quà", exact: true }).click();
+  await expect(picker.getByRole("button", { name: "Nhận quà này" })).toBeVisible();
   await picker.getByRole("button", { name: "Nhận quà này" }).click();
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/1");
 
