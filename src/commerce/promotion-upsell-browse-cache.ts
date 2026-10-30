@@ -1,3 +1,5 @@
+import { MAX_STOREFRONT_PROMOTION_REFRESH_MS } from "./storefront-promotion-freshness.ts";
+
 /**
  * Short-lived, per-process memo for the read-only /offers/eligible listing.
  *
@@ -18,7 +20,11 @@ export type UpsellBrowseCache<V> = Readonly<{
   readonly size: number;
 }>;
 
-export const UPSELL_BROWSE_CACHE_TTL_MS = 60_000;
+// The page revalidates every MAX_STOREFRONT_PROMOTION_REFRESH_MS, so a TTL equal to that interval always
+// expires just before the next refresh and every periodic render recomputes. 2.5× lets the first two
+// refreshes of an open page hit, bounds the list's age at 150 s and leaves a recompute every third.
+// The list holds names, slugs and option labels only; prices, stock and entitlements are re-verified by `add`.
+export const UPSELL_BROWSE_CACHE_TTL_MS = Math.round(MAX_STOREFRONT_PROMOTION_REFRESH_MS * 2.5);
 export const UPSELL_BROWSE_CACHE_MAX_ENTRIES = 500;
 
 export function createUpsellBrowseCache<V>({ ttlMs = UPSELL_BROWSE_CACHE_TTL_MS, maxEntries = UPSELL_BROWSE_CACHE_MAX_ENTRIES, now = Date.now }: { ttlMs?: number; maxEntries?: number; now?: () => number } = {}): UpsellBrowseCache<V> {

@@ -371,3 +371,21 @@ test("BR-05: concurrent identical browse requests share one computation", async 
   assert.ok(results.every((r) => r.offer?.products.length === UPSELL_BROWSE_TARGET_PRODUCTS));
   assert.equal(metrics.filter((m) => (m as { event: string; outcome: string }).event === "browse" && (m as { outcome: string }).outcome === "offered").length, 1);
 });
+
+test("BR-06: a cart with no valid quote is an empty browse, not a retryable failure", async () => {
+  await seedBoundedCatalog();
+  await prisma.warehouseStock.updateMany({ where: { variantId: paidId }, data: { quantity: 0 } });
+  const cache = createUpsellBrowseCache<never>();
+  for (const result of [await service().getBrowse(campaignId), await service(cache).getBrowse(campaignId)]) {
+    assert.deepEqual(result, { offer: null, retryable: false });
+  }
+  assert.equal((metrics.at(-1) as { event: string; outcome: string }).outcome, "empty");
+  assert.equal(cache.size, 0);
+});
+
+test("BR-07: a failure before the cache lookup is retryable and still logged as a browse failure", async () => {
+  const broken = { cart: { findFirst: async () => { throw new Error("db down"); } } } as unknown as typeof prisma;
+  const failing = createPromotionUpsellService(broken, store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: createUpsellBrowseCache<never>() as never });
+  assert.deepEqual(await failing.getBrowse(campaignId), { offer: null, retryable: true });
+  assert.deepEqual(metrics.at(-1), { event: "browse", outcome: "failed", durationMs: (metrics.at(-1) as { durationMs: number }).durationMs, quoteAttempts: 0 });
+});

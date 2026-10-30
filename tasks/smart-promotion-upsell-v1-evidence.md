@@ -118,8 +118,8 @@ checkout banner (6 quotes) took 1.3 s. Local verification on disposable PostgreS
 
 | Check | Evidence |
 | --- | --- |
-| Upsell DB suite | 27 passed, 0 failed (22 existing + 5 new BR-01…BR-05: early stop, soft-deadline partial, retryable timeout, banner-seeded cache + paid-revision invalidation, single-flight). |
-| New domain tests | 11 passed (browse cache TTL/LRU/single-flight; read memo hit/BigInt key/freeze/pass-through/no replay of failures). |
+| Upsell DB suite | 29 passed, 0 failed (22 existing + 7 new BR-01…BR-07: early stop, soft-deadline partial, retryable timeout, banner-seeded cache + paid-revision invalidation, single-flight, sold-out paid line is empty not retryable, preflight failure is logged). |
+| New domain tests | 13 passed (browse cache TTL/LRU/single-flight, TTL outlives the 60 s page refresh; read memo hit/BigInt key/freeze/pass-through/no replay of failures). |
 | Domain + integration | 3,788 passed, 0 failed, 1 skipped. |
 | Lint / typecheck | Passed; no new warnings. |
 | Profile (33 products × 3 sizes) | Banner 392 → 242 statements, 223 → 163 ms; full 20 quotes 1,162 → 616, 572 → 352 ms; browse after banner 1 statement. |

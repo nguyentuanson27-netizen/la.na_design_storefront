@@ -35,10 +35,14 @@ Three products fit one row of the three-column grid. The loop still visits one s
 second size, so early stop means a product may list only its first verified size. Every listed size
 still has its own server quote; nothing unverified is shown.
 
-Timeout with nothing verified returns `retryable: true`; the page then says the suggestion is loading
-slowly and offers a plain-anchor retry (a full server render) instead of "offer changed". An empty
-result with no failure keeps the old message. Metrics gain `event: "browse"` and `outcome: "partial" |
-"cached"`, so banner and browse are separable in logs. `get` and `getBanner` are unchanged.
+Timeout or a transient failure with nothing verified returns `retryable: true`, and the page then says the
+suggestion is loading slowly and offers a plain-anchor retry (a full server render) instead of "offer
+changed". A cart with no valid quote (sold-out paid line, invalid gift setup) is a normal empty result
+(`retryable: false`, outcome `empty`): retrying cannot change it and costs rate limit. A failure before
+the cache lookup is logged as `event: "browse", outcome: "failed"`, so staging logs account for every
+request. An empty result with no failure keeps the old message. Metrics gain `event: "browse"` and
+`outcome: "partial" | "cached"`, so banner and browse are separable in logs. `get` and `getBanner` are
+unchanged.
 
 ### Phase 2 — the banner seeds a short-lived, cart-scoped browse cache
 
@@ -46,8 +50,10 @@ result with no failure keeps the old message. Metrics gain `event: "browse"` and
   any paid-line change (including A→B→A) is a different key and no cart id is held in memory.
 - Value: the already-public browse view (offer name, slug, name, image, option labels). The banner
   response shape is unchanged; seeding happens inside the service.
-- TTL 60 s, 500 entries, single-flight for identical concurrent loads, per-process (a second instance
-  simply misses and computes). Partial (soft-deadline) and failed results are not stored, so a retry
+- TTL 150 s (2.5× `MAX_STOREFRONT_PROMOTION_REFRESH_MS`), 500 entries, single-flight for identical
+  concurrent loads, per-process (a second instance simply misses and computes). A TTL equal to the 60 s
+  page refresh would expire just before every periodic render, so the first two refreshes of an open page
+  hit and only every third recomputes; the list is never older than 150 s. Partial (soft-deadline) and failed results are not stored, so a retry
   recomputes. A browse result that computed fully is stored for later visits and refreshes.
 - Staleness is bounded by the TTL and cannot move money or entitlements: the page is read-only and
   `add` re-verifies everything under locks. Disable with `browseCache: null`.

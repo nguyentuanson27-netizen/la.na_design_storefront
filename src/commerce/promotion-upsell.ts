@@ -33,6 +33,9 @@ const UPSELL_WRITE_TIMEOUT_MS = 5_000;
 type Env = Readonly<Record<string, string | undefined>>;
 class UpsellQuoteUnavailable extends Error {}
 type BrowseStatus = { truncated: boolean; retryable: boolean };
+/** The cart itself has no valid quote (sold-out paid line, invalid gift setup): retrying cannot change it. */
+const isDeterministicQuoteFailure = (error: unknown) => error instanceof UpsellQuoteUnavailable ||
+  (error instanceof Error && (error.message === "Quote unavailable" || error.message === "Invalid gift configuration"));
 const browseCacheKey = (paidCartKey: string, campaignId: string) => `${paidCartKey}:${campaignId}`;
 type Snapshot = { state: CartGiftState; quote: UpsellQuote; totalVnd: number };
 export type UpsellVariantView = Readonly<{ variantId: string; label: string; priceVnd: number; deltaVnd: number; intent: UpsellIntent }>;
@@ -264,10 +267,12 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
       if (status) status.truncated = truncated;
       if (seed.key && seed.value && browseCache) browseCache.set(seed.key, seed.value);
       return model;
-    } catch {
-      report({ event, outcome: deadlineHit || clock() - started >= 1800 ? "timed_out" : "failed",
+    } catch (error) {
+      // A cart without a valid quote is an empty browse, not a failure to retry (retries cost rate limit).
+      const deterministic = isDeterministicQuoteFailure(error);
+      report({ event, outcome: deterministic && mode === "browse" ? "empty" : deadlineHit || clock() - started >= 1800 ? "timed_out" : "failed",
         durationMs: clock() - started, quoteAttempts });
-      if (status) status.retryable = true;
+      if (status) status.retryable = !deterministic;
       return null;
     }
   }
@@ -304,6 +309,8 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
       if (result.cached) report({ event: "browse", outcome: "cached", durationMs: clock() - started, quoteAttempts: 0 });
       return { offer: result.value, retryable: result.failed };
     } catch {
+      // Cart-key lookup or cache failure: still a browse request, so it must show up in the aggregate logs.
+      report({ event: "browse", outcome: "failed", durationMs: clock() - started, quoteAttempts: 0 });
       return { offer: null, retryable: true };
     }
   }

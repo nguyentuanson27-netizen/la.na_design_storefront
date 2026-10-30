@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createUpsellBrowseCache } from "../../src/commerce/promotion-upsell-browse-cache.ts";
+import { createUpsellBrowseCache, UPSELL_BROWSE_CACHE_TTL_MS } from "../../src/commerce/promotion-upsell-browse-cache.ts";
+import { MAX_STOREFRONT_PROMOTION_REFRESH_MS } from "../../src/commerce/storefront-promotion-freshness.ts";
 
 test("entries expire after the TTL and are recomputed", async () => {
   let t = 1_000; let loads = 0;
@@ -56,4 +57,20 @@ test("the cache is bounded and evicts the oldest entry", () => {
 test("invalid sizes are rejected", () => {
   assert.throws(() => createUpsellBrowseCache({ ttlMs: 0 }), TypeError);
   assert.throws(() => createUpsellBrowseCache({ maxEntries: 1.5 }), TypeError);
+});
+
+test("the TTL outlives the page's periodic refresh, so refreshes of an open page hit the cache", async () => {
+  assert.ok(UPSELL_BROWSE_CACHE_TTL_MS > MAX_STOREFRONT_PROMOTION_REFRESH_MS, "TTL must exceed the refresh interval");
+  let t = 0; let loads = 0;
+  const cache = createUpsellBrowseCache<string>({ now: () => t });
+  const load = async () => ({ value: `v${++loads}`, store: true });
+  // The checkout banner seeds the entry; the shopper opens the page shortly after, then it refreshes each 60 s.
+  cache.set("k", "seeded");
+  const outcomes: boolean[] = [];
+  for (const at of [3_000, 63_000, 123_000, 183_000]) {
+    t = at;
+    outcomes.push((await cache.resolve("k", load)).cached);
+  }
+  assert.deepEqual(outcomes, [true, true, true, false], "only every third refresh recomputes, and the list is never older than the TTL");
+  assert.equal(loads, 1);
 });
