@@ -40,7 +40,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const previouslyFocusedElement = useRef<HTMLElement | null>(null);
 
-  const { cart, isLoading, isPending, error, lineNotice, loadCart, updateQuantity, removeItem } =
+  const { cart, isLoading, isPending, error, lineNotice, giftNotice, loadCart, updateQuantity, removeItem } =
     useCartDrawer(isOpen);
 
   const wasOpenRef = useRef(false);
@@ -198,6 +198,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto px-6 py-6" tabIndex={-1}>
+            {giftNotice ? <p className="mb-4 border border-amber-700/30 bg-amber-50 p-3 text-sm text-amber-900" data-gift-auto-reconciled role="status" aria-live="polite">{giftNotice}</p> : null}
             {isLoading && !cart ? (
               <div className="space-y-6 animate-pulse" aria-label="Đang tải giỏ hàng">
                 {[1, 2].map((i) => (
