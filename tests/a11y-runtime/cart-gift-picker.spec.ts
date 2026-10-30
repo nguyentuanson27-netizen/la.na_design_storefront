@@ -344,9 +344,8 @@ test("mobile keyboard picker saves partial/full/zero choices without changing pa
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
-test("stale selection is retained and announced after paid reduction or rule change", async ({ page }) => {
+test("an Admin revision change still keeps a stale gift for explicit review", async ({ page }) => {
   await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, quantity: 2, campaignRevision: 1 } });
-  await prisma.cartItem.updateMany({ where: { cartId }, data: { quantity: 1 } });
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { revision: 2 } });
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
@@ -356,6 +355,29 @@ test("stale selection is retained and announced after paid reduction or rule cha
   await picker.getByRole("button", { name: /^Bỏ toàn bộ/ }).click();
   await expect(picker.getByRole("alert")).toHaveCount(0);
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+});
+
+test("lowering paid quantity below the gift-value threshold automatically removes gift and informs the shopper", async ({ page }) => {
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: {
+    minimumSubtotalVnd: 200_000, awardMode: "ONCE", maxGiftsPerOrder: 1,
+  } });
+  await page.goto(`${URL}/cart`);
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await openPicker(picker);
+  await picker.getByRole("button", { name: "Khăn quà", exact: true }).click();
+  await picker.getByRole("button", { name: "Nhận quà này" }).click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/1");
+
+  const quantity = page.getByRole("spinbutton", { name: "Số lượng" });
+  await quantity.fill("1");
+  await quantity.press("Enter");
+
+  await expect.poll(() => prisma.cartItem.findUniqueOrThrow({
+    where: { cartId_variantId: { cartId, variantId: paidId } },
+  }).then((line) => line.quantity)).toBe(1);
+  await expect(picker.locator("[data-gift-auto-reconciled]")).toContainText("Đã tự động bỏ 1 quà", { timeout: 15_000 });
+  await expect.poll(() => prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+  await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toBeVisible();
 });
 
 test("F4: keyboard removal of one gift preserves the other gift and focus in the gift area", async ({ page }) => {
@@ -570,7 +592,7 @@ test("view_cart retains the no-tier paid total once across refresh, and emits no
   await expect(page.getByText("Chưa thể tính").first()).toBeVisible();
   expect(await events()).toEqual([]);
 });
-test("below-threshold shows shortfall; empty paid cart still shows stale gift to remove", async ({ page }) => {
+test("below-threshold paid cart removal clears the old gift and shows a one-time notice", async ({ page }) => {
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { minimumSubtotalVnd: 300_000 } });
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
@@ -580,10 +602,10 @@ test("below-threshold shows shortfall; empty paid cart still shows stale gift to
   await prisma.cartItem.deleteMany({ where: { cartId } });
   await page.reload();
   await expect(page.getByText("Giỏ hàng của nàng đang trống.")).toBeVisible();
-  await expect(picker.getByRole("alert")).toBeVisible();
-  await openPicker(picker);
-  await picker.getByRole("button", { name: /^Bỏ quà để chọn lại/ }).click();
-  await expect(picker.getByRole("alert")).toHaveCount(0);
+  await expect(picker.locator("[data-gift-auto-reconciled]")).toContainText("Đã tự động bỏ 1 quà");
+  await expect.poll(() => prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+  await page.reload();
+  await expect(picker).toHaveCount(0, { message: "once cleanup is saved, the notice and empty picker are gone" });
   await prisma.cart.delete({ where: { id: cartId } });
 });
 test("EX-21 after price sync with no gifts blocks checkout even at the legacy total; no-drop restores it", async ({ page }) => {
