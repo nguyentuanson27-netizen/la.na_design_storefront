@@ -103,7 +103,7 @@ test("upsell POST rejects requests from a foreign origin without exposing data",
   expect(response.headers()["cache-control"]).toContain("no-store");
 });
 
-test("AM-01/A: the compact banner names the proven offer, links to /sale and offers no inline add", async ({ page }) => {
+test("AM-01/A: the compact banner names the proven offer, links to verified eligible products and offers no inline add", async ({ page }) => {
   await page.goto(`${BASE}/checkout`);
   const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
   await expect(offer, output).toBeVisible();
@@ -111,7 +111,7 @@ test("AM-01/A: the compact banner names the proven offer, links to /sale and off
   await expect(offer).toContainText("Mua 3 tặng khăn");
   await expect(offer.getByRole("combobox")).toHaveCount(0);
   await expect(offer.getByRole("button", { name: "Thêm 1 chiếc" })).toHaveCount(0);
-  await expect(offer.getByRole("link", { name: "Chọn thêm món" })).toHaveAttribute("href", "/sale");
+  await expect(offer.getByRole("link", { name: "Chọn thêm món" })).toHaveAttribute("href", `/offers/eligible?campaign=${encodeURIComponent(campaignId)}`);
   // UX-08: the offer never locks submit.
   await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeEnabled();
   expect(await page.locator("form").count()).toBe(1);
@@ -122,20 +122,101 @@ test("AM-01/A: the compact banner names the proven offer, links to /sale and off
   for (const width of [320, 390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    // The campaign title and action must occupy separate rows, not overlap at narrow widths.
+    const nameRect = await offer.getByText("Mua 3 tặng khăn", { exact: true }).boundingBox();
+    const actionRect = await offer.getByRole("link", { name: "Chọn thêm món" }).boundingBox();
+    expect(nameRect).not.toBeNull();
+    expect(actionRect).not.toBeNull();
+    expect(actionRect!.y).toBeGreaterThanOrEqual(nameRect!.y + nameRect!.height);
     expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
   }
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: "test-results/upsell-checkout-banner.png", fullPage: true });
-  // Owner decision (17/10/2026): the link goes straight to /sale, without a leave warning, even when
+  // Current decision: the link goes to the eligible-product browse route, without a leave warning, even when
   // receiving details were typed. Nothing typed is written to storage on the way.
   await page.getByLabel("Họ và tên", { exact: false }).fill("Nàng La.na");
   await page.getByLabel("Số điện thoại", { exact: false }).fill("0901234567");
   await offer.getByRole("link", { name: "Chọn thêm món" }).click();
-  await expect(page).toHaveURL(`${BASE}/sale`);
+  await expect(page).toHaveURL(`${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`);
+  await expect(page.getByRole("heading", { name: "Sản phẩm áp dụng ưu đãi" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Áo candidate/ })).toBeVisible();
+  await expect(page.getByText("Áo paid")).toHaveCount(0);
   const stored = await page.evaluate(() => JSON.stringify({ ...sessionStorage }) + JSON.stringify({ ...localStorage }));
   expect(stored).not.toContain("0901234567");
   expect(stored).not.toContain("Nàng La.na");
   expect(await prisma.cartItem.count({ where: { cartId } })).toBe(1);
+});
+
+test("GET without a cart cookie never consumes the shared POST upsell budget", async ({ page, context }) => {
+  await context.clearCookies();
+  const url = `${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`;
+  const headers = { "x-ci-client-ip": "203.0.113.222", "sec-fetch-site": "same-origin" };
+  for (let i = 0; i < 25; i++) {
+    const response = await page.request.get(url, { headers });
+    expect(response.status()).toBe(200);
+    expect(await response.text()).not.toContain("Áo candidate");
+  }
+  const post = await page.request.post(`${BASE}/api/checkout/upsell`, {
+    headers: { ...headers, origin: BASE },
+    data: { quoteProof: "abc.def" },
+  });
+  expect(post.status()).toBe(200);
+});
+
+test("forged but well-formed cart UUIDs use a separate bounded GET budget, never the POST bucket", async ({ page, context }) => {
+  await context.clearCookies();
+  await context.addCookies([{ name: "la_cart", value: "11111111-1111-4111-8111-111111111111", url: BASE, httpOnly: true, sameSite: "Lax" }]);
+  const url = `${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`;
+  const headers = { "x-ci-client-ip": "203.0.113.223", "sec-fetch-site": "same-origin" };
+  for (let i = 0; i < 10; i++) {
+    const response = await page.request.get(url, { headers });
+    expect(response.status()).toBe(200);
+    expect(await response.text()).not.toContain("Gợi ý ưu đãi đang có quá nhiều lượt truy cập");
+  }
+  const excess = await page.request.get(url, { headers });
+  expect(await excess.text()).toContain("Gợi ý ưu đãi đang có quá nhiều lượt truy cập");
+  const post = await page.request.post(`${BASE}/api/checkout/upsell`, {
+    headers: { ...headers, origin: BASE },
+    data: { quoteProof: "abc.def" },
+  });
+  expect(post.status()).toBe(200);
+});
+
+test("cart-backed GETs are bounded separately and retain a shared POST quote budget", async ({ page }) => {
+  const url = `${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`;
+  const headers = { "x-ci-client-ip": "203.0.113.224", "sec-fetch-site": "same-origin" };
+  for (let i = 0; i < 10; i++) {
+    const response = await page.request.get(url, { headers });
+    expect(response.status()).toBe(200);
+    expect(await response.text()).toContain("Áo candidate");
+  }
+  const excess = await page.request.get(url, { headers });
+  expect(await excess.text()).toContain("Gợi ý ưu đãi đang có quá nhiều lượt truy cập");
+  const post = await page.request.post(`${BASE}/api/checkout/upsell`, {
+    headers: { ...headers, origin: BASE },
+    data: { quoteProof: "abc.def" },
+  });
+  expect(post.status()).toBe(200, "GET browse cannot consume every POST banner slot on a shared IP");
+});
+
+test("cross-site or speculative GET cannot reveal cart offers or touch the POST budget", async ({ page }) => {
+  const url = `${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`;
+  const headers = {
+    "x-ci-client-ip": "203.0.113.225",
+    "sec-fetch-site": "cross-site",
+    referer: "https://foreign.example/offers",
+  };
+  const response = await page.request.get(url, { headers });
+  expect(await response.text()).not.toContain("Áo candidate");
+  const speculative = await page.request.get(url, {
+    headers: { "x-ci-client-ip": "203.0.113.225", "sec-fetch-site": "same-origin", purpose: "prefetch" },
+  });
+  expect(await speculative.text()).not.toContain("Áo candidate");
+  const post = await page.request.post(`${BASE}/api/checkout/upsell`, {
+    headers: { "x-ci-client-ip": "203.0.113.225", origin: BASE, "sec-fetch-site": "same-origin" },
+    data: { quoteProof: "abc.def" },
+  });
+  expect(post.status()).toBe(200);
 });
 
 test("Review P2-2: while an order is being placed the banner link cannot take the buyer away", async ({ page }) => {

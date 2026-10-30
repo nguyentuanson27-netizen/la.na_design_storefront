@@ -4,6 +4,7 @@ import { deriveGuestCheckoutClientKey } from "@/commerce/guest-checkout-client-i
 import { createGuestCheckoutRateLimiter } from "@/commerce/guest-checkout-rate-limit";
 import { isSameOriginUpsellRequest, readCheckoutUpsellProof } from "@/commerce/checkout-upsell-http";
 import { createPromotionUpsellService } from "@/commerce/promotion-upsell";
+import { upsellReadGate } from "@/commerce/checkout-upsell-read-gate";
 import { isPromotionUpsellEnabled } from "@/commerce/promotion-upsell-policy";
 import { prisma } from "@/db/prisma";
 import { readPancakeShopId } from "@/integrations/pancake/config";
@@ -11,10 +12,7 @@ import { readPancakeShopId } from "@/integrations/pancake/config";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Best-effort, process-local overload protection. The trusted-client DB limiter also caps
-// repeated calls across app instances; neither lock nor request queue can delay COD checkout.
-const MAX_CONCURRENT_UPSELL_READS = 2;
-let activeReads = 0;
+// Shared admission with /offers/eligible; repeat reads use the same DB client bucket.
 const responseHeaders = { "cache-control": "private, no-store", "x-content-type-options": "nosniff" } as const;
 const empty = (status = 200) => Response.json(null, { status, headers: responseHeaders });
 
@@ -35,8 +33,8 @@ export async function POST(request: Request) {
   } catch {
     return empty();
   }
-  if (activeReads >= MAX_CONCURRENT_UPSELL_READS) return empty();
-  activeReads++;
+  const release = upsellReadGate.tryAcquire();
+  if (!release) return empty();
   try {
     const clientKey = deriveGuestCheckoutClientKey(request.headers, auth);
     const limiter = createGuestCheckoutRateLimiter(prisma);
@@ -61,6 +59,6 @@ export async function POST(request: Request) {
     // Optional reads fail closed without changing the quote, gift state or submit flow.
     return empty();
   } finally {
-    activeReads--;
+    release();
   }
 }

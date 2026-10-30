@@ -16,6 +16,33 @@ export function isSameOriginUpsellRequest(request: Request, trustedOrigin: strin
   }
 }
 
+/**
+ * Read-only browse still exposes personalized cart offer metadata. SameSite=Lax
+ * sends cookies on top-level cross-site GETs, so reject those requests *before*
+ * consuming any DB quota. Direct address-bar visits use Sec-Fetch-Site: none.
+ * When fetch metadata is absent, require a same-origin Origin or Referer.
+ */
+export function isTrustedUpsellBrowseRequest(
+  headers: Pick<Headers, "get">,
+  trustedOrigin: string,
+): boolean {
+  if (headers.get("next-router-prefetch") !== null ||
+      headers.get("purpose")?.toLowerCase().includes("prefetch") ||
+      headers.get("sec-purpose")?.toLowerCase().includes("prefetch")) return false;
+  const fetchSite = headers.get("sec-fetch-site");
+  if (fetchSite !== null && fetchSite !== "same-origin" && fetchSite !== "none") return false;
+  const origin = headers.get("origin");
+  const referer = headers.get("referer");
+  try {
+    const expected = new URL(trustedOrigin).origin;
+    if (origin !== null && new URL(origin).origin !== expected) return false;
+    if (referer !== null && new URL(referer).origin !== expected) return false;
+  } catch {
+    return false;
+  }
+  return fetchSite !== null || origin !== null || referer !== null;
+}
+
 /** Stream with a hard byte cap: Content-Length is not guaranteed (e.g. chunked HTTP). */
 export async function readCheckoutUpsellProof(request: Request): Promise<string | null> {
   if (request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") return null;

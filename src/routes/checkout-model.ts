@@ -121,7 +121,7 @@ export type CheckoutBenefitView = Readonly<{
  * intents, gift state) stays on the server; the browser gets the paid-cart key for the D-06 skip and
  * the programme name, nothing it could replay.
  */
-export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string | null }>;
+export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string | null; campaignId: string | null }>;
 
 /** V18: one voucher line on the checkout: what it is called and what it takes off. */
 export type CheckoutVoucherLine = Readonly<{ id: string; title: string; amountText: string }>;

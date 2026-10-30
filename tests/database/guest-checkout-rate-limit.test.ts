@@ -23,6 +23,8 @@ const bucketIds = [
   `checkout-geo-client:${otherClientKey}`,
   `checkout-upsell-client:${clientKey}`,
   `checkout-upsell-client:${otherClientKey}`,
+  `checkout-upsell-browse-client:${clientKey}`,
+  `checkout-upsell-browse-client:${otherClientKey}`,
 ];
 const start = new Date("2026-08-12T05:40:00.000Z");
 
@@ -128,6 +130,29 @@ test("upsell recommendations have a separate limiter that cannot block checkout 
   assert.equal(await limiter.consumeClient({ clientKey, now: start }), true);
   assert.equal(await limiter.consumeGeoClient({ clientKey, now: start }), true);
   assert.equal(await limiter.consumeUpsellClient({ clientKey, now: new Date(start.getTime() + 60_001) }), true);
+});
+
+test("GET browse probes have their own atomic DB bucket and do not exhaust POST upsell quota", async () => {
+  await cleanup();
+  const limiter = createGuestCheckoutRateLimiter(prisma, {
+    maxUpsellBrowseClientAttempts: 2,
+    upsellBrowseClientWindowMs: 60_000,
+    maxUpsellClientAttempts: 2,
+  });
+  const probeAttempts = await Promise.all(
+    Array.from({ length: 4 }, () => limiter.consumeUpsellBrowseClient({ clientKey, now: start })),
+  );
+  assert.equal(probeAttempts.filter(Boolean).length, 2);
+  assert.equal(probeAttempts.filter((allowed) => !allowed).length, 2);
+  assert.equal((await prisma.rateLimit.findUniqueOrThrow({
+    where: { id: `checkout-upsell-browse-client:${clientKey}` },
+  })).count, 3, "bounded counters cap at limit + 1");
+
+  assert.equal(await limiter.consumeUpsellClient({ clientKey, now: start }), true);
+  assert.equal(await limiter.consumeUpsellClient({ clientKey, now: start }), true);
+  assert.equal(await limiter.consumeUpsellClient({ clientKey, now: start }), false);
+  assert.equal(await limiter.consumeUpsellBrowseClient({ clientKey: otherClientKey, now: start }), true);
+  assert.equal(await limiter.consumeUpsellBrowseClient({ clientKey, now: new Date(start.getTime() + 60_001) }), true);
 });
 
 test("guest checkout limiter rejects malformed local configuration before database access", async () => {

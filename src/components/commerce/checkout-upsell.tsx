@@ -6,7 +6,7 @@ import type { CheckoutUpsellBanner } from "@/routes/checkout-model";
 
 /**
  * OD-01/A (UX-COMMERCE-001, amendment to SPEC-UPS-001): the checkout no longer adds the +1 itself. It
- * names the opportunity the server proved and offers the way to `/sale`; the cart and checkout quote
+ * names the opportunity the server proved and offers the way to the eligible-products listing; the cart and checkout quote
  * decide again whatever the buyer brings back. Nothing here mutates the cart or the quote.
  */
 let reloadAttemptRestored = false;
@@ -28,7 +28,7 @@ function saveAttempt(value: Attempt) {
 /**
  * `locked` while an order is being placed or its outcome is not yet known (PROCESSING /
  * SYNC_UNKNOWN): leaving then would strand the buyer before they learn whether the order exists.
- * Before submitting, leaving for `/sale` is free (owner decision: no leave warning).
+ * Before submitting, leaving for the eligible listing is free (owner decision: no leave warning).
  */
 export function CheckoutUpsell({ model, locked = false }: Readonly<{ model: CheckoutUpsellBanner; locked?: boolean }>) {
   const [attempt, setAttempt] = useState<Attempt | null>(null);
@@ -83,18 +83,18 @@ export function CheckoutUpsell({ model, locked = false }: Readonly<{ model: Chec
     <section className="flex items-start gap-3 border border-[#e7ded7] bg-[#fbf8f5] px-4 py-3" aria-label="Gợi ý mua thêm">
       <div className="min-w-0 flex-1">
         <h2 className="text-sm font-semibold leading-6">Thêm 1 món để nhận ưu đãi</h2>
-        <p className="flex flex-wrap items-center gap-x-3 text-xs leading-5 text-black/70">
-          <span className="min-w-0">{model.offerName}</span>
+        <div className="mt-1 flex min-w-0 flex-col items-start gap-2 text-xs leading-5 text-black/70">
+          <span className="min-w-0 break-words">{model.offerName}</span>
           {locked ? (
-            <span aria-disabled="true" className="-my-3 inline-flex min-h-11 cursor-not-allowed items-center text-sm font-semibold text-black/45" data-upsell-link-locked>
+            <span aria-disabled="true" className="inline-flex min-h-11 cursor-not-allowed items-center text-sm font-semibold text-black/45" data-upsell-link-locked>
               Chọn thêm món
             </span>
           ) : (
-            <Link href="/sale" className="-my-3 inline-flex min-h-11 items-center text-sm font-semibold text-black underline underline-offset-4">
+            <Link href={`/offers/eligible?campaign=${encodeURIComponent(model.campaignId ?? "")}`} prefetch={false} className="inline-flex min-h-11 items-center text-sm font-semibold text-black underline underline-offset-4">
               Chọn thêm món
             </Link>
           )}
-        </p>
+        </div>
       </div>
       <button
         type="button"
@@ -118,10 +118,12 @@ type LoadedUpsell = Readonly<{
 function parseUpsellBanner(value: unknown): CheckoutUpsellBanner | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  if (Object.keys(record).sort().join(",") !== "offerName,paidCartKey") return null;
+  if (Object.keys(record).sort().join(",") !== "campaignId,offerName,paidCartKey") return null;
   if (typeof record.paidCartKey !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(record.paidCartKey)) return null;
   if (record.offerName !== null && (typeof record.offerName !== "string" || record.offerName.length > 256)) return null;
-  return { paidCartKey: record.paidCartKey, offerName: record.offerName as string | null };
+  if (record.campaignId !== null && (typeof record.campaignId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(record.campaignId))) return null;
+  if ((record.campaignId === null) !== (record.offerName === null)) return null;
+  return { paidCartKey: record.paidCartKey, offerName: record.offerName as string | null, campaignId: record.campaignId as string | null };
 }
 
 /**

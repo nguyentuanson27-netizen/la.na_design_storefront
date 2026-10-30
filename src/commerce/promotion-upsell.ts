@@ -27,7 +27,12 @@ type Env = Readonly<Record<string, string | undefined>>;
 class UpsellQuoteUnavailable extends Error {}
 type Snapshot = { state: CartGiftState; quote: UpsellQuote; totalVnd: number };
 export type UpsellVariantView = Readonly<{ variantId: string; label: string; priceVnd: number; deltaVnd: number; intent: UpsellIntent }>;
-export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string | null }>;
+export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string | null; campaignId: string | null }>;
+/** Read-only, cart-scoped candidates, rechecked at browse time. No cart ids, prices or replayable intents. */
+export type CheckoutUpsellBrowse = Readonly<{
+  offerName: string;
+  products: readonly Readonly<{ slug: string; name: string; imageUrl: string | null; options: readonly string[] }>[];
+}>;
 export type CheckoutUpsellModel = Readonly<{
   paidCartKey: string;
   // UI-only recovery marker for one committed CartItem insert; never authorizes a mutation.
@@ -89,7 +94,7 @@ async function discover(tx: Prisma.TransactionClient, state: CartGiftState, oppo
     ) SELECT "id" FROM pool GROUP BY "id" ORDER BY min(slot), min("campaignId"), "id" LIMIT ${UPSELL_MAX_PRODUCTS}`;
   return tx.productMirror.findMany({
     where: { id: { in: pool.map((p) => p.id) } }, orderBy: { id: "asc" },
-    select: { id: true, name: true, primaryImageUrl: true,
+    select: { id: true, slug: true, name: true, primaryImageUrl: true,
       variants: { where: { isActive: true, isPresent: true }, orderBy: { id: "asc" }, take: UPSELL_MAX_VARIANTS_PER_PRODUCT, select: { id: true, color: true, size: true, sku: true, pancakeDisplayId: true,
         compositeComponents: { select: { componentVariantId: true, quantity: true, componentVariant: { select: { sku: true, pancakeDisplayId: true } } } } } } },
   });
@@ -127,22 +132,25 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
   const report = (value: Metric) => { try { metric(value); } catch { /* observability cannot block checkout */ } };
   function recommend(checkoutProof: string, now: Date, maxQuotes: number, mode: "full"): Promise<CheckoutUpsellModel | null>;
   function recommend(checkoutProof: string, now: Date, maxQuotes: number, mode: "banner"): Promise<CheckoutUpsellBanner | null>;
+  function recommend(checkoutProof: null, now: Date, maxQuotes: number, mode: "browse", campaignId: string): Promise<CheckoutUpsellBrowse | null>;
   async function recommend(
-    checkoutProof: string, now: Date, maxQuotes: number, mode: "full" | "banner",
-  ): Promise<CheckoutUpsellModel | CheckoutUpsellBanner | null> {
+    checkoutProof: string | null, now: Date, maxQuotes: number, mode: "full" | "banner" | "browse", campaignId?: string,
+  ): Promise<CheckoutUpsellModel | CheckoutUpsellBanner | CheckoutUpsellBrowse | null> {
     if (!isPromotionUpsellEnabled(shopId, env)) return null;
     const cartId = readAnonymousCartCookie(store);
     if (!cartId) return null;
     const started = Date.now();
     let quoteAttempts = 0;
     try {
-      const model = await client.$transaction(async (tx): Promise<CheckoutUpsellModel | CheckoutUpsellBanner | null> => {
+      const model = await client.$transaction(async (tx): Promise<CheckoutUpsellModel | CheckoutUpsellBanner | CheckoutUpsellBrowse | null> => {
         await tx.$executeRaw`SET LOCAL statement_timeout = '1800ms'`;
         const cart = await tx.cart.findFirst({ where: { id: cartId, userId: null, expiresAt: { gt: now } }, select: { paidRevision: true } });
         if (!cart) return null;
         const before = await snapshot(tx, cartId, shopId, now, env);
-        if (!verifiesUpsellQuote(before.quote, checkoutProof, cartId, secret)) return null;
-        const opportunities = findUpsellOpportunities(before.state);
+        // Browsing is read-only and bound to this shopper's cart. Checkout API reads still require proof.
+        if (mode !== "browse" && (checkoutProof === null || !verifiesUpsellQuote(before.quote, checkoutProof, cartId, secret))) return null;
+        const opportunities = findUpsellOpportunities(before.state)
+          .filter((opportunity) => mode !== "browse" || opportunity.campaignId === campaignId);
         const paidCartKey = upsellPaidCartKey(cartId, cart.paidRevision, secret);
         const fullModel = (offer: CheckoutUpsellModel["offer"]): CheckoutUpsellModel => ({
           paidCartKey,
@@ -150,13 +158,14 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
           giftPicker: buildCartGiftPickerModel(before.state),
           offer,
         });
-        const banner = (offerName: string | null): CheckoutUpsellBanner => ({ paidCartKey, offerName });
-        if (!opportunities.length) return mode === "banner" ? banner(null) : fullModel(null);
+        const banner = (offerName: string | null, id: string | null): CheckoutUpsellBanner => ({ paidCartKey, offerName, campaignId: id });
+        if (!opportunities.length) return mode === "browse" ? null : mode === "banner" ? banner(null, null) : fullModel(null);
 
         const products = await discover(tx, before.state, opportunities, shopId);
         const verified: {
           campaignId: string; productId: string; variantId: string; deltaVnd: number;
           view?: UpsellVariantView;
+          label?: string;
         }[] = [];
         // Distribute the bounded quote budget across products before trying another size.
         for (let option = 0; option < UPSELL_MAX_VARIANTS_PER_PRODUCT; option++) for (const p of products) {
@@ -172,8 +181,12 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
             if (!unlocksUpsellOpportunity(before.state, after.state, opportunity)) continue;
             const choice = { campaignId: opportunity.campaignId, productId: p.id, variantId: v.id, deltaVnd };
             if (mode === "banner") {
-              // A link to /sale cannot replay an add; do not sign/store unused variant intents.
+              // A browsing link cannot replay an add; do not sign/store unused variant intents.
               verified.push(choice);
+              continue;
+            }
+            if (mode === "browse") {
+              verified.push({ ...choice, label: upsellVariantLabel(v) });
               continue;
             }
             const intent = { campaignId: opportunity.campaignId, variantId: v.id, issuedAt: now.getTime() };
@@ -185,9 +198,24 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         }
         verified.sort(compareUpsellCandidates);
         const winner = verified[0];
-        if (!winner) return mode === "banner" ? banner(null) : fullModel(null);
+        if (!winner) return mode === "browse" ? null : mode === "banner" ? banner(null, null) : fullModel(null);
         const name = before.state.campaignEntries.find((e) => e.campaign.id === winner.campaignId)!.campaign.name;
-        if (mode === "banner") return banner(name);
+        if (mode === "banner") return banner(name, winner.campaignId);
+        if (mode === "browse") {
+          const ids = [...new Set(verified.filter((v) => v.campaignId === winner.campaignId).map((v) => v.productId))]
+            .slice(0, UPSELL_MAX_PRODUCTS);
+          return {
+            offerName: name,
+            products: ids.map((productId) => {
+              const product = products.find((p) => p.id === productId)!;
+              return {
+                slug: product.slug, name: product.name,
+                imageUrl: parseTrustedProductImageUrl(product.primaryImageUrl),
+                options: [...new Set(verified.filter((v) => v.campaignId === winner.campaignId && v.productId === productId).map((v) => v.label!))],
+              };
+            }),
+          };
+        }
 
         const productIds = [...new Set(verified.filter((v) => v.campaignId === winner.campaignId).map((v) => v.productId))].slice(0, 5);
         return fullModel({ campaignId: winner.campaignId, name,
@@ -213,6 +241,12 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
 
   async function getBanner(checkoutProof: string, now = new Date()) {
     return recommend(checkoutProof, now, UPSELL_BANNER_MAX_QUOTES, "banner");
+  }
+
+  /** Recompute verified candidates for one active campaign in the current cart; never mint an add proof. */
+  async function getBrowse(campaignId: string, now = new Date()) {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId)) return null;
+    return recommend(null, now, UPSELL_MAX_QUOTES, "browse", campaignId);
   }
 
   async function requote(input: unknown, now = new Date()) {
@@ -284,5 +318,5 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
       return { ok: false, reason: "OFFER_UNAVAILABLE" } as const;
     }
   }
-  return { get, getBanner, requote, add };
+  return { get, getBanner, getBrowse, requote, add };
 }
