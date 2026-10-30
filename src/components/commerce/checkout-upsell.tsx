@@ -6,7 +6,7 @@ import type { CheckoutUpsellBanner } from "@/routes/checkout-model";
 
 /**
  * OD-01/A (UX-COMMERCE-001, amendment to SPEC-UPS-001): the checkout no longer adds the +1 itself. It
- * names the opportunity the server proved and offers the way to `/sale`; the cart and checkout quote
+ * names the opportunity the server proved and offers the way to the eligible-products listing; the cart and checkout quote
  * decide again whatever the buyer brings back. Nothing here mutates the cart or the quote.
  */
 let reloadAttemptRestored = false;
@@ -28,7 +28,7 @@ function saveAttempt(value: Attempt) {
 /**
  * `locked` while an order is being placed or its outcome is not yet known (PROCESSING /
  * SYNC_UNKNOWN): leaving then would strand the buyer before they learn whether the order exists.
- * Before submitting, leaving for `/sale` is free (owner decision: no leave warning).
+ * Before submitting, leaving for the eligible listing is free (owner decision: no leave warning).
  */
 export function CheckoutUpsell({ model, locked = false }: Readonly<{ model: CheckoutUpsellBanner; locked?: boolean }>) {
   const [attempt, setAttempt] = useState<Attempt | null>(null);
