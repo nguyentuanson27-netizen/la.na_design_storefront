@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
 import { useCartGifts } from "@/components/headless/use-cart-gifts";
+import { readRecentAutoRemovedGiftCount, subscribeAutoRemovedGiftCount } from "@/components/headless/cart-gift-adjustment-notice";
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 import { GiftProductCard } from "./gift-product-card";
 
@@ -16,6 +17,14 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   isLocked?: () => boolean; onDraftChange?: (notice: string | null) => void; onReturnToPayment?: () => void;
 }>) {
   const { pending, uncertain, message, savedCount, change, retryRead } = useCartGifts(onBusyChange, locked, isLocked);
+  const [recentAutoRemovedGiftCount, setRecentAutoRemovedGiftCount] = useState(0);
+  useEffect(() => {
+    const refreshNotice = () => setRecentAutoRemovedGiftCount(readRecentAutoRemovedGiftCount());
+    const unsubscribe = subscribeAutoRemovedGiftCount(refreshNotice);
+    refreshNotice();
+    return unsubscribe;
+  }, []);
+  const autoRemovedGiftCount = Math.max(model.autoRemovedGiftCount ?? 0, recentAutoRemovedGiftCount);
   const [expanded, setExpanded] = useState(false);
   // The `savedCount` a receive started from: collapse only once a later save is confirmed, never on a
   // refusal or read-back while an older choice of the same gift is still in the model.
@@ -96,7 +105,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   useEffect(() => { onDraftChange?.(draftNotice); }, [draftNotice, onDraftChange]);
   const replaced = model.replaced ?? [];
   const hasChoices = entitled > 0 || model.selections.length > 0 || replaced.length > 0;
-  const present = hasChoices || (model.autoRemovedGiftCount ?? 0) > 0;
+  const present = hasChoices || autoRemovedGiftCount > 0;
   // UX-05: arriving on `#cart-gifts` (the mini-cart's "Chọn quà") opens the picker and puts focus on it.
   // Opening only reveals the choices; nothing is selected or saved on the buyer's behalf. Focus is asked
   // for through state and applied after the commit that shows the picker, so no effect cleanup can drop it.
@@ -143,8 +152,8 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     {present ? <>
     <h2 className="font-display text-2xl">Quà dành cho nàng</h2>
     {hasChoices ? <p className="mt-2 text-sm" data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p> : null}
-    {(model.autoRemovedGiftCount ?? 0) > 0 ? <p className="mt-3 text-sm text-amber-900" data-gift-auto-reconciled role="status" aria-live="polite">
-      Đã tự động bỏ {model.autoRemovedGiftCount} quà tặng vì giỏ hàng không còn đủ số lượng hoặc giá trị để nhận. Những quà còn đủ điều kiện vẫn được giữ; hệ thống không tự chọn quà thay thế.
+    {autoRemovedGiftCount > 0 ? <p className="mt-3 text-sm text-amber-900" data-gift-auto-reconciled role="status" aria-live="polite">
+      Đã tự động bỏ {autoRemovedGiftCount} quà tặng vì giỏ hàng không còn đủ số lượng hoặc giá trị để nhận. Những quà còn đủ điều kiện vẫn được giữ; hệ thống không tự chọn quà thay thế.
     </p> : null}
     {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà nàng chọn không còn phù hợp vì giỏ hàng đã thay đổi (số lượng, sản phẩm), quà đã hết hàng hoặc chương trình đã đổi. Nàng bấm “Bỏ quà để chọn lại” ở danh sách quà đã chọn rồi chọn món mới nhé; hệ thống không tự đổi quà thay nàng.</p> : <>
       {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Nàng còn quà chưa chọn. Các chương trình dùng chung lượng quà, nàng chọn từng món để cập nhật nhé." : `Nàng còn có thể chọn ${available} món quà.`}</p> : null}
