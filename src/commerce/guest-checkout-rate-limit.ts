@@ -8,6 +8,8 @@ const DEFAULT_MAX_GEO_CLIENT_ATTEMPTS = 60;
 const DEFAULT_GEO_CLIENT_WINDOW_MS = 60_000;
 const DEFAULT_MAX_UPSELL_CLIENT_ATTEMPTS = 20;
 const DEFAULT_UPSELL_CLIENT_WINDOW_MS = 60_000;
+const DEFAULT_MAX_UPSELL_BROWSE_CLIENT_ATTEMPTS = 10;
+const DEFAULT_UPSELL_BROWSE_CLIENT_WINDOW_MS = 60_000;
 const MAX_CART_ID_LENGTH = 128;
 const PSEUDONYMOUS_CLIENT_KEY = /^v1:[0-9a-f]{64}$/;
 
@@ -20,6 +22,8 @@ type GuestCheckoutRateLimiterOptions = Readonly<{
   geoClientWindowMs?: number;
   maxUpsellClientAttempts?: number;
   upsellClientWindowMs?: number;
+  maxUpsellBrowseClientAttempts?: number;
+  upsellBrowseClientWindowMs?: number;
 }>;
 
 function requirePositiveSafeInteger(value: number, label: string): number {
@@ -99,6 +103,15 @@ export function createGuestCheckoutRateLimiter(
     options.upsellClientWindowMs ?? DEFAULT_UPSELL_CLIENT_WINDOW_MS,
     "Checkout upsell client window",
   );
+  const maxUpsellBrowseClientAttempts = requirePositiveSafeInteger(
+    options.maxUpsellBrowseClientAttempts ?? DEFAULT_MAX_UPSELL_BROWSE_CLIENT_ATTEMPTS,
+    "Checkout upsell browse client max attempts",
+  );
+  const upsellBrowseClientWindowMs = requirePositiveSafeInteger(
+    options.upsellBrowseClientWindowMs ?? DEFAULT_UPSELL_BROWSE_CLIENT_WINDOW_MS,
+    "Checkout upsell browse client window",
+  );
+  const upsellBrowseClientCappedCount = cappedCount(maxUpsellBrowseClientAttempts, "Checkout upsell browse client max attempts");
   const upsellClientCappedCount = cappedCount(maxUpsellClientAttempts, "Checkout upsell client max attempts");
   const cartCappedCount = cappedCount(maxAttempts, "Checkout max attempts");
   const clientCappedCount = cappedCount(maxClientAttempts, "Checkout client max attempts");
@@ -209,5 +222,17 @@ export function createGuestCheckoutRateLimiter(
     });
   }
 
-  return { consume, consumeClient, consumeGeoClient, consumeUpsellClient };
+  // Cheap verification of a potentially forged browse cart UUID is isolated from POST
+  // upsell quota; a successful cart-backed GET still consumes the shared POST budget.
+  async function consumeUpsellBrowseClient({ clientKey, now = new Date() }: { clientKey: string; now?: Date }): Promise<boolean> {
+    return consumeBucket({
+      bucketKey: `checkout-upsell-browse-client:${requireClientKey(clientKey)}`,
+      now,
+      windowMs: upsellBrowseClientWindowMs,
+      maxAttempts: maxUpsellBrowseClientAttempts,
+      cap: upsellBrowseClientCappedCount,
+    });
+  }
+
+  return { consume, consumeClient, consumeGeoClient, consumeUpsellClient, consumeUpsellBrowseClient };
 }
