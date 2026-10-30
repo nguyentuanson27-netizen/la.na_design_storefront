@@ -384,7 +384,7 @@ test("BR-06: a cart with no valid quote is an empty browse, not a retryable fail
 });
 
 test("BR-07: a failure before the cache lookup is retryable and still logged as a browse failure", async () => {
-  const broken = { cart: { findFirst: async () => { throw new Error("db down"); } }, promotionPricingRevision: { findUnique: async () => ({ revision: BigInt(1) }) } } as unknown as typeof prisma;
+  const broken = { cart: { findFirst: async () => { throw new Error("db down"); } }, promotionPricingRevision: { findUnique: async () => ({ revision: BigInt(1) }) }, cartGiftSelection: { findMany: async () => [] } } as unknown as typeof prisma;
   const failing = createPromotionUpsellService(broken, store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: createUpsellBrowseCache<never>() as never });
   assert.deepEqual(await failing.getBrowse(campaignId), { offer: null, retryable: true });
   assert.deepEqual(metrics.at(-1), { event: "browse", outcome: "failed", durationMs: (metrics.at(-1) as { durationMs: number }).durationMs, quoteAttempts: 0 });
@@ -424,4 +424,39 @@ test("BR-09: a cached listing never outlives the campaign's end time", async () 
   t = base + 31_000; // campaign ended 1 s ago: the entry is gone even though the TTL has 119 s left
   assert.deepEqual(await service(cache).getBrowse(campaignId, new Date(t)), { offer: null, retryable: false });
   assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached");
+});
+
+test("BR-10: a scheduled campaign that starts inside the TTL ends the cached listing without any revision write", async () => {
+  await seedBoundedCatalog();
+  const base = Date.now();
+  const revisionBefore = (await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: "current" } })).revision;
+  // Enabled and scheduled: nothing is written when it becomes active, so only its startsAt can invalidate.
+  await prisma.giftQuantityCampaign.create({ data: { id: `${PREFIX}scheduled`, name: "Scheduled tier", kind: "QUANTITY_TIER", isEnabled: true, enabledAt: new Date(base), startsAt: new Date(base + 40_000), scopeMode: "DYNAMIC_CATEGORY", tierBasis: "QUANTITY", tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS", targets: { create: [{ productId: candidateProductId, role: "INCLUDE" }] }, tiers: { create: { minQuantity: 3, discountValue: 50 } } } });
+  let t = base;
+  const cache = createUpsellBrowseCache<never>({ now: () => t });
+  assert.equal((await service(cache).getBanner(await proof(), new Date(base)))?.campaignId, campaignId);
+
+  t = base + 20_000;
+  assert.ok((await service(cache).getBrowse(campaignId, new Date(t))).offer);
+  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "cached");
+
+  t = base + 41_000; // the scheduled campaign started 1 s ago; the TTL has 109 s left and the revision is unchanged
+  await service(cache).getBrowse(campaignId, new Date(t));
+  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached", "must be re-quoted against the campaign that just started");
+  assert.equal((await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: "current" } })).revision, revisionBefore, "the start itself wrote nothing");
+});
+
+test("BR-11: changing gift choices on the same paid lines is a different cache key", async () => {
+  await seedBoundedCatalog();
+  const cache = createUpsellBrowseCache<never>();
+  assert.equal((await service(cache).getBanner(await proof()))?.campaignId, campaignId);
+  assert.ok((await service(cache).getBrowse(campaignId)).offer);
+  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "cached");
+
+  const paidBefore = (await prisma.cart.findUniqueOrThrow({ where: { id: cartId }, select: { paidRevision: true } })).paidRevision;
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, quantity: 1, campaignRevision: 1 } });
+  assert.equal((await prisma.cart.findUniqueOrThrow({ where: { id: cartId }, select: { paidRevision: true } })).paidRevision, paidBefore, "a gift choice does not advance the paid revision");
+
+  await service(cache).getBrowse(campaignId);
+  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached", "the choice must be re-evaluated, not served from the old list");
 });

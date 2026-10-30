@@ -118,11 +118,11 @@ checkout banner (6 quotes) took 1.3 s. Local verification on disposable PostgreS
 
 | Check | Evidence |
 | --- | --- |
-| Upsell DB suite | 31 passed, 0 failed (22 existing + 9 new BR-01…BR-09: early stop, soft-deadline partial, retryable timeout, banner-seeded cache + paid-revision invalidation, single-flight, sold-out paid line is empty not retryable, preflight failure is logged, campaign disable via the revision and `endsAt` cap stop a cached listing). |
+| Upsell DB suite | 33 passed, 0 failed (22 existing + 11 new BR-01…BR-11: early stop, soft-deadline partial, retryable timeout, banner-seeded cache + paid-revision invalidation, single-flight, sold-out paid line is empty not retryable, preflight failure is logged, campaign disable via the revision, `endsAt` cap, scheduled `startsAt` with no revision write, and a gift-choice change each stop a cached listing). |
 | New domain tests | 14 passed (browse cache TTL/LRU/single-flight, TTL outlives the 60 s page refresh; read memo hit/BigInt key/freeze/pass-through/no replay of failures). |
 | Domain + integration | 3,788 passed, 0 failed, 1 skipped. |
 | Lint / typecheck | Passed; no new warnings. |
-| Profile (33 products × 3 sizes) | Banner 392 → 242 statements, 223 → 163 ms; full 20 quotes 1,162 → 616, 572 → 352 ms; browse after banner 1 statement. |
+| Profile (33 products × 3 sizes) | Banner 392 → 242 statements, 223 → 163 ms; full 20 quotes 1,162 → 616, 572 → 352 ms; browse after banner: cache hit = 3 single-row reads (cart, revision, gift choices), ~7 ms. |
 
 Still required before enabling a pilot: repeat the preview check on the real catalog and confirm
 `browse` events show `durationMs` < 1,500 ms with no `timed_out`.

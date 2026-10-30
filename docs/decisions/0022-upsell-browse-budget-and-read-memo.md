@@ -46,14 +46,19 @@ unchanged.
 
 ### Phase 2 — the banner seeds a short-lived, cart-scoped browse cache
 
-- Key: `paidCartKey : promotionPricingRevision : campaignId`. `paidCartKey` is the existing HMAC over the
-  cart id and paid revision, so any paid-line change (including A→B→A) is a different key and no cart id
-  is held in memory. `PromotionPricingRevision.current` advances on every effective campaign edit, enable
-  or disable (the same row `add` locks), so a campaign change is a different key too. The banner reads the
-  revision inside the quote's snapshot; `getBrowse` reads it with the cart before the lookup (two
-  single-row reads). A key's revision can only be older than the data stored under it, never newer.
-- Each entry also expires at the earliest `endsAt` of the campaigns it was verified against, so a listing
-  never outlives a campaign that ended inside the TTL.
+- Key: `paidCartKey : promotionPricingRevision : giftChoicesDigest : campaignId`.
+  - `paidCartKey` is the existing HMAC over the cart id and paid revision, so any paid-line change
+    (including A→B→A) is a different key and no cart id is held in memory.
+  - `PromotionPricingRevision.current` advances on every effective campaign edit, enable or disable (the
+    same row `add` locks), so those are a different key too.
+  - The cart's gift choices do not advance `paidRevision`, yet a "+1" candidate must preserve them, so a
+    short digest of `CartGiftSelection` rows is part of the key (BR-11).
+  - The banner reads the inputs inside the quote's snapshot; `getBrowse` reads them with the cart before the
+    lookup (three single-row/indexed reads). A key can only be older than the data stored under it.
+- Each entry also expires at the next campaign **start or end** among enabled gift/tier, flash-sale price and
+  shipping campaigns (one query per computed list). Nothing is written when a scheduled campaign becomes
+  active, so no revision can signal it (BR-10 asserts the start writes nothing); a list never outlives the
+  campaign set it was verified against.
 - Value: the already-public browse view (offer name, slug, name, image, option labels). The banner
   response shape is unchanged; seeding happens inside the service.
 - TTL 150 s (2.5× `MAX_STOREFRONT_PROMOTION_REFRESH_MS`), 500 entries, single-flight for identical
@@ -64,9 +69,10 @@ unchanged.
 
 #### Freshness contract
 
-- **Campaign state** (disabled, edited, published, ended): the next render recomputes, so a visible page
-  stops introducing products within one refresh (≤ 60 s, the storefront bound). Tested by BR-08 (admin
-  path advancing the revision) and BR-09 (`endsAt` cap).
+- **Campaign state** (disabled, edited, published, ended, or a scheduled campaign starting) and **gift choices**:
+  the next render recomputes, so a visible page stops introducing products within one refresh (≤ 60 s, the
+  storefront bound). Tested by BR-08 (admin path advancing the revision), BR-09 (`endsAt`), BR-10 (`startsAt`
+  with no revision write) and BR-11 (gift choice on unchanged paid lines).
 - **Catalog drift** (stock, product publication, price sync) is the only thing the key cannot see. It is
   bounded by the TTL: an entry is at most 150 s old when served, and a page that shows it is replaced at
   its next refresh, so a visible list can reflect catalog state up to ~210 s old in the worst case (served
@@ -92,7 +98,7 @@ Fixture measurement (33 products, 3 sizes; same machine, before → after):
 | --- | --- | --- |
 | Banner, 6 quotes | 392 → 242 | 223 → 163 ms |
 | Full model, 20 quotes | 1,162 → 616 | 572 → 352 ms |
-| Browse after banner | recompute | 1 statement, ~1 ms (cache) |
+| Browse after banner | recompute | 3 single-row reads (cart, revision, gift choices), ~7 ms, plus the route's own rate-limit reads |
 
 About 29 statements per quote remain. They are candidate-specific (the cart changes), plus empty `IN (NULL)`
 reads Prisma issues for empty id lists and the stock/held reads in `verifyCandidate`. Removing them needs a

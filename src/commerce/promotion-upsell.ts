@@ -13,6 +13,7 @@ import { classifyCompositeComponentSku } from "./storefront-projection.ts";
 import { classifyCompositeSubSetShape, isThreePieceComboShape } from "./composite-subset-authority.ts";
 import { parseTrustedProductImageUrl } from "./product-media.ts";
 import { createUpsellBrowseCache, type UpsellBrowseCache } from "./promotion-upsell-browse-cache.ts";
+import { nextCampaignBoundaryMs, readBrowseKeyInputs } from "./promotion-upsell-browse-key.ts";
 import { memoizeTransactionReads } from "./tx-read-memo.ts";
 import { buildCartGiftPickerModel, type CartGiftPickerModel } from "../routes/cart-gift-model.ts";
 import { compareUpsellCandidates, findUpsellOpportunities, isPromotionUpsellEnabled, preservesUpsellBenefits, unlocksUpsellOpportunity, type UpsellOpportunity } from "./promotion-upsell-policy.ts";
@@ -36,12 +37,11 @@ type BrowseStatus = { truncated: boolean; retryable: boolean; validUntil: number
 /** The cart itself has no valid quote (sold-out paid line, invalid gift setup): retrying cannot change it. */
 const isDeterministicQuoteFailure = (error: unknown) => error instanceof UpsellQuoteUnavailable ||
   (error instanceof Error && (error.message === "Quote unavailable" || error.message === "Invalid gift configuration"));
-// Key = paid cart (HMAC over cart + paid revision) + promotion pricing revision + campaign. Any effective
-// campaign edit, enable or disable advances the revision, so the next render recomputes instead of hitting.
-const browseCacheKey = (paidCartKey: string, promotionRevision: bigint, campaignId: string) => `${paidCartKey}:${promotionRevision}:${campaignId}`;
-/** A verified list is only true until the first campaign it was checked against ends. */
-const earliestCampaignEnd = (entries: readonly { campaign: { endsAt: Date | null } }[]) =>
-  entries.reduce<number | null>((min, { campaign }) => campaign.endsAt === null ? min : Math.min(min ?? Infinity, campaign.endsAt.getTime()), null);
+// Key = paid cart (HMAC over cart + paid revision) + promotion pricing revision (any effective campaign edit,
+// enable or disable) + the cart's gift choices (they do not advance the paid revision) + campaign. Entries
+// also expire at the next campaign start/end, which advances no revision (see promotion-upsell-browse-key.ts).
+const browseCacheKey = (paidCartKey: string, inputs: { promotionRevision: bigint; selectionDigest: string }, campaignId: string) =>
+  `${paidCartKey}:${inputs.promotionRevision}:${inputs.selectionDigest}:${campaignId}`;
 type Snapshot = { state: CartGiftState; quote: UpsellQuote; totalVnd: number };
 export type UpsellVariantView = Readonly<{ variantId: string; label: string; priceVnd: number; deltaVnd: number; intent: UpsellIntent }>;
 export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string | null; campaignId: string | null }>;
@@ -191,7 +191,6 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
           offer,
         });
         const banner = (offerName: string | null, id: string | null): CheckoutUpsellBanner => ({ paidCartKey, offerName, campaignId: id });
-        validUntil = earliestCampaignEnd(before.state.campaignEntries);
         if (!opportunities.length) return mode === "browse" ? null : mode === "banner" ? banner(null, null) : fullModel(null);
 
         const products = await discover(tx, before.state, opportunities, shopId);
@@ -240,6 +239,7 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         const winner = verified[0];
         if (!winner) return mode === "browse" ? null : mode === "banner" ? banner(null, null) : fullModel(null);
         const name = before.state.campaignEntries.find((e) => e.campaign.id === winner.campaignId)!.campaign.name;
+        if (mode !== "full") validUntil = await nextCampaignBoundaryMs(tx, now);
         const browseView = (): CheckoutUpsellBrowse => {
           const ids = [...new Set(verified.filter((v) => v.campaignId === winner.campaignId).map((v) => v.productId))]
             .slice(0, UPSELL_MAX_PRODUCTS);
@@ -256,9 +256,9 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
           };
         };
         if (mode === "banner") {
-          // Same snapshot as the quote, so the revision cannot be newer or older than the verified products.
-          const promotion = await tx.promotionPricingRevision.findUnique({ where: { id: "current" }, select: { revision: true } });
-          if (promotion) { seed.key = browseCacheKey(paidCartKey, promotion.revision, winner.campaignId); seed.value = browseView(); seed.validUntil = validUntil; }
+          // Same snapshot as the quote, so the key inputs cannot be newer or older than the verified products.
+          seed.key = browseCacheKey(paidCartKey, await readBrowseKeyInputs(tx, cartId), winner.campaignId);
+          seed.value = browseView(); seed.validUntil = validUntil;
           return banner(name, winner.campaignId);
         }
         if (mode === "browse") return browseView();
@@ -312,13 +312,12 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
     if (!cartId) return none;
     const started = clock();
     try {
-      const [cart, promotion] = await Promise.all([
+      const [cart, inputs] = await Promise.all([
         client.cart.findFirst({ where: { id: cartId, userId: null, expiresAt: { gt: now } }, select: { paidRevision: true } }),
-        client.promotionPricingRevision.findUnique({ where: { id: "current" }, select: { revision: true } }),
+        readBrowseKeyInputs(client, cartId),
       ]);
       if (!cart) return none;
-      if (!promotion) throw new Error("Promotion pricing revision row is missing");
-      const result = await browseCache.resolve(browseCacheKey(upsellPaidCartKey(cartId, cart.paidRevision, secret), promotion.revision, campaignId), compute);
+      const result = await browseCache.resolve(browseCacheKey(upsellPaidCartKey(cartId, cart.paidRevision, secret), inputs, campaignId), compute);
       if (result.cached) report({ event: "browse", outcome: "cached", durationMs: clock() - started, quoteAttempts: 0 });
       return { offer: result.value, retryable: result.failed };
     } catch {
