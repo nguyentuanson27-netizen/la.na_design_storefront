@@ -216,7 +216,13 @@ test("UP-00/TG-06: representative 30-product, 3-size catalog; bounded output/quo
   const banner = await service().getBanner(rendered);
   assert.equal(banner?.offerName, "Mua 3 tặng khăn");
   assert.equal(banner?.campaignId, campaignId);
+  const bannerMetric = metrics.at(-1) as { event: string; quoteAttempts?: number };
+  assert.equal(bannerMetric.event, "recommendation");
+  assert.equal(bannerMetric.quoteAttempts, UPSELL_BANNER_MAX_QUOTES, "the compact banner uses exactly six quote attempts");
   const browse = await service().getBrowse(campaignId);
+  const browseMetric = metrics.at(-1) as { event: string; quoteAttempts?: number };
+  assert.equal(browseMetric.event, "recommendation");
+  assert.equal(browseMetric.quoteAttempts, 20, "the eligible-product browse caps the quote work at 20");
   assert.equal(browse?.offerName, "Mua 3 tặng khăn");
   assert.ok(browse?.products.some((p) => p.slug === `${PREFIX}candidate`));
   assert.deepEqual([...(browse?.products.find((p) => p.slug === `${PREFIX}candidate`)?.options ?? [])].sort(), ["Hồng / M", "Hồng / S"]);
@@ -224,9 +230,6 @@ test("UP-00/TG-06: representative 30-product, 3-size catalog; bounded output/quo
   assert.equal(await service().getBrowse("nonexistent"), null);
   assert.match(banner?.paidCartKey ?? "", /^[A-Za-z0-9_-]{43}$/);
   assert.deepEqual(Object.keys(banner ?? {}).sort(), ["campaignId", "offerName", "paidCartKey"], "banner mode must not build or serialize add intents");
-  const metric = metrics.at(-1) as { event: string; quoteAttempts?: number };
-  assert.equal(metric.event, "recommendation");
-  assert.equal(metric.quoteAttempts, UPSELL_BANNER_MAX_QUOTES, "the compact banner does not run the full 20 hypothetical quotes");
   console.info("UP-00 fixture benchmark", { products: 33, maxDiscovered: 10, maxQuotes: 20, durationMs: times });
 });
 
