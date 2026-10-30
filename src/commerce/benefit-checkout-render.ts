@@ -84,7 +84,7 @@ export async function readBenefitCheckoutRender({
       const giftState = isGiftQuantityPromotionsEnabled(env) ? await readReconciledCartGiftState(tx, cartId, shopId, now, env) : undefined;
       if (giftState) {
         const picker = buildCartGiftPickerModel(giftState);
-        if (picker.selections.length || picker.campaigns.some((c) => c.entitled > 0) || picker.autoRemovedGiftCount) giftPicker = picker;
+        if (picker.selections.length || picker.campaigns.some((c) => c.entitled > 0)) giftPicker = picker;
       }
       return resolveBenefitCheckoutQuote({ tx, cartId, shopId, now, env, lines, giftState, voucher: { attemptSecret: secret } });
     });
