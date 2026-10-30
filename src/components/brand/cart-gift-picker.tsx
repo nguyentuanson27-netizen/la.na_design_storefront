@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { useCartGifts } from "@/components/headless/use-cart-gifts";
 import { readRecentAutoRemovedGiftCount, subscribeAutoRemovedGiftCount } from "@/components/headless/cart-gift-adjustment-notice";
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
@@ -17,14 +17,11 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   isLocked?: () => boolean; onDraftChange?: (notice: string | null) => void; onReturnToPayment?: () => void;
 }>) {
   const { pending, uncertain, message, savedCount, change, retryRead } = useCartGifts(onBusyChange, locked, isLocked);
-  const [recentAutoRemovedGiftCount, setRecentAutoRemovedGiftCount] = useState(0);
-  useEffect(() => {
-    const refreshNotice = () => setRecentAutoRemovedGiftCount(readRecentAutoRemovedGiftCount());
-    const unsubscribe = subscribeAutoRemovedGiftCount(refreshNotice);
-    refreshNotice();
-    return unsubscribe;
-  }, []);
-  const autoRemovedGiftCount = recentAutoRemovedGiftCount;
+  const autoRemovedGiftCount = useSyncExternalStore(
+    subscribeAutoRemovedGiftCount,
+    readRecentAutoRemovedGiftCount,
+    () => 0,
+  );
   const [expanded, setExpanded] = useState(false);
   // The `savedCount` a receive started from: collapse only once a later save is confirmed, never on a
   // refusal or read-back while an older choice of the same gift is still in the model.
