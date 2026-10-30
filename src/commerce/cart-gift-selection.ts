@@ -40,7 +40,10 @@ function extractCandidateImageUrl(primaryImageUrl: string | null | undefined, pa
   return parseTrustedProductImageUrl(primaryImageUrl);
 }
 
-export type CartGiftState = Awaited<ReturnType<typeof readCartGiftState>>;
+/** Reconciliation reports only the units it removed in this cart read; it is not part of quote authority. */
+export type CartGiftState = Awaited<ReturnType<typeof readCartGiftState>> & Readonly<{
+  autoRemovedGiftCount?: number;
+}>;
 
 /**
  * How a gift variant is named to the shopper. `color` and `size` are the variant's own axes, kept
@@ -282,29 +285,90 @@ async function lockCartForGiftWrite(tx: Prisma.TransactionClient, cartId: string
   return true;
 }
 
+type ShrunkGiftEntitlement = Readonly<{ campaignId: string; revision: number; keepQuantity: number }>;
+
 /**
- * Reads the cart's gift state, first retiring gifts of a milestone the cart has moved past.
+ * Only retract choices when an active, unchanged gift campaign earned fewer units from
+ * today's PAID basket than the buyer previously selected. A stack conflict, stock loss,
+ * disabled/edited campaign or failed paid quote is NOT evidence of a voluntary basket reduction.
+ * Those cases retain their existing manual-repair and fail-closed behavior.
+ */
+function shrunkGiftEntitlements(state: CartGiftState): readonly ShrunkGiftEntitlement[] {
+  if (state.quote.lines.some((line) => !line.available)) return [];
+  const dropped = new Set(state.giftStackDropped.map((row) => row.campaignId));
+  return state.entitlements.flatMap((entitlement) => {
+    if (dropped.has(entitlement.campaignId)) return [];
+    const campaign = state.campaigns.find((row) => row.id === entitlement.campaignId);
+    if (!campaign || campaign.revision !== entitlement.revision) return [];
+    const choices = state.selections.filter((row) => row.campaignId === entitlement.campaignId);
+    const selected = choices.reduce((sum, row) => sum + row.quantity, 0);
+    if (choices.some((row) => row.campaignRevision !== entitlement.revision) ||
+        selected <= entitlement.entitled || selected <= entitlement.earned) return [];
+    return [{ campaignId: entitlement.campaignId, revision: entitlement.revision, keepQuantity: entitlement.entitled }];
+  });
+}
+
+/**
+ * Reduce only surplus gift units, keeping the buyer's oldest selections first. Deterministic
+ * variant-id ties protect retries. Never select a replacement gift. The transaction already owns
+ * the cart row and active campaign share locks; its rollback protects against partial cleanup.
+ */
+async function removeSurplusGiftUnits(
+  tx: Prisma.TransactionClient, cartId: string, targets: readonly ShrunkGiftEntitlement[],
+): Promise<number> {
+  let removedUnits = 0;
+  for (const target of targets) {
+    const choices = await tx.cartGiftSelection.findMany({
+      where: { cartId, campaignId: target.campaignId },
+      select: { variantId: true, quantity: true, campaignRevision: true },
+      orderBy: [{ createdAt: "asc" }, { variantId: "asc" }],
+      take: 101,
+    });
+    if (choices.length > 100 || choices.some((row) => row.campaignRevision !== target.revision)) {
+      throw new Error("Gift reconciliation cannot trust stored choices");
+    }
+    let remaining = target.keepQuantity;
+    for (const choice of choices) {
+      const keep = Math.min(choice.quantity, remaining);
+      remaining -= keep;
+      if (keep === choice.quantity) continue;
+      if (keep > 0) {
+        const saved = await setCartGiftSelection(tx, {
+          cartId, campaignId: target.campaignId, variantId: choice.variantId,
+          quantity: keep, campaignRevision: target.revision,
+        });
+        if (!saved.ok) throw new Error("Gift quantity reduction failed");
+      } else {
+        const result = await removeCartGiftSelection(tx, {
+          cartId, campaignId: target.campaignId, variantId: choice.variantId,
+        });
+        if (!result.removed) throw new Error("Gift choice removal failed");
+      }
+      removedUnits += choice.quantity - keep;
+    }
+  }
+  return removedUnits;
+}
+
+/**
+ * Cart/checkout share a single authoritative read-and-reconcile boundary.
+ * It retires replaced lower-milestone gifts (PR #226) and now also withdraws gift
+ * units the buyer no longer earns after reducing paid quantity or paid order value.
  *
- * Every reader that shows the buyer their gifts (cart page, checkout page) goes through this, so the
- * same cart cannot look different on the two pages. An exact variant is carried to the higher milestone
- * only when an eligible higher campaign offers it and the full selection still passes stock/slot rules;
- * different gifts never reappear if the cart later drops back to an earlier milestone.
- *
- * The common case (nothing superseded) is a plain read. Writes happen only under the cart/campaign
- * locks a buyer mutation takes; pass `locked` when the caller already holds them. Call it before a
- * quote is derived and signed, never after: it does not change a quote that already exists.
+ * Both changes take the same cart/campaign locks used by gift writes, precede every
+ * quote/proof, and never choose an unrelated gift. A read without work stays read-only.
  */
 export async function readReconciledCartGiftState(
   tx: Prisma.TransactionClient, cartId: string, shopId: number, now: Date,
   env: Readonly<Record<string, string | undefined>>, { locked = false }: { locked?: boolean } = {},
-) {
+): Promise<CartGiftState> {
   let state = await readCartGiftState(tx, cartId, shopId, now, env);
-  if (state.replacedSelections.length === 0) return state;
+  if (state.replacedSelections.length === 0 && shrunkGiftEntitlements(state).length === 0) return state;
   if (!locked) {
     if (!await lockCartForGiftWrite(tx, cartId, now)) return state;
     // Another request may have reconciled while this one waited for the lock.
     state = await readCartGiftState(tx, cartId, shopId, now, env);
-    if (state.replacedSelections.length === 0) return state;
+    if (state.replacedSelections.length === 0 && shrunkGiftEntitlements(state).length === 0) return state;
   }
 
   const kept: GiftSelectionLine[] = [...state.selections];
@@ -329,8 +393,10 @@ export async function readReconciledCartGiftState(
     }
     await removeCartGiftSelection(tx, { cartId, campaignId: old.campaignId, variantId: old.variantId });
   }
-  // Return the post-reconciliation authority, never a model computed from obsolete rows.
-  return readCartGiftState(tx, cartId, shopId, now, env);
+  const autoRemovedGiftCount = await removeSurplusGiftUnits(tx, cartId, shrunkGiftEntitlements(state));
+  // Re-evaluate from persisted state, never return the pre-cleanup selection or an old quote.
+  const refreshed = await readCartGiftState(tx, cartId, shopId, now, env);
+  return autoRemovedGiftCount > 0 ? { ...refreshed, autoRemovedGiftCount } : refreshed;
 }
 
 export function createCartGiftSelectionService(client: PrismaClient, store: CookieReader, { shopId, env = process.env }: { shopId: number; env?: Readonly<Record<string, string | undefined>> }) {
