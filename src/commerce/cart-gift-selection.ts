@@ -427,8 +427,20 @@ export function createCartGiftSelectionService(client: PrismaClient, store: Cook
    */
   async function reconcileAfterPaidReduction(now = new Date()) {
     if (!isGiftQuantityPromotionsEnabled(env)) return { enabled: false } as const;
-    return withCart(now, async (tx, cartId) => {
-      const state = await readReconciledCartGiftState(tx, cartId, shopId, now, env, {
+    const cartId = readAnonymousCartCookie(store);
+    if (!cartId) return { ok: false, reason: "CART_UNAVAILABLE" } as const;
+    // Most cart edits have no chosen gifts. A bounded, cookie-scoped preflight avoids a
+    // heavy quote and campaign locks in that common case. A concurrent new gift choice
+    // must independently validate against the already committed paid cart.
+    try {
+      if (await client.cartGiftSelection.count({ where: { cartId } }) === 0) {
+        return { ok: true, autoRemovedGiftCount: 0 } as const;
+      }
+    } catch {
+      return { ok: false, reason: "LOOKUP_FAILED" } as const;
+    }
+    return withCart(now, async (tx, lockedCartId) => {
+      const state = await readReconciledCartGiftState(tx, lockedCartId, shopId, now, env, {
         locked: true, afterPaidReduction: true,
       });
       return { ok: true, autoRemovedGiftCount: state.autoRemovedGiftCount ?? 0 } as const;
