@@ -215,8 +215,15 @@ test("UP-00/TG-06: representative 30-product, 3-size catalog; bounded output/quo
   }
   const banner = await service().getBanner(rendered);
   assert.equal(banner?.offerName, "Mua 3 tặng khăn");
+  assert.equal(banner?.campaignId, campaignId);
+  const browse = await service().getBrowse(campaignId);
+  assert.equal(browse?.offerName, "Mua 3 tặng khăn");
+  assert.ok(browse?.products.some((p) => p.slug === `${PREFIX}candidate`));
+  assert.deepEqual(browse?.products.find((p) => p.slug === `${PREFIX}candidate`)?.options.sort(), ["Hồng / M", "Hồng / S"]);
+  assert.equal(JSON.stringify(browse).includes(cartId), false);
+  assert.equal(await service().getBrowse("nonexistent"), null);
   assert.match(banner?.paidCartKey ?? "", /^[A-Za-z0-9_-]{43}$/);
-  assert.deepEqual(Object.keys(banner ?? {}).sort(), ["offerName", "paidCartKey"], "banner mode must not build or serialize add intents");
+  assert.deepEqual(Object.keys(banner ?? {}).sort(), ["campaignId", "offerName", "paidCartKey"], "banner mode must not build or serialize add intents");
   const metric = metrics.at(-1) as { event: string; quoteAttempts?: number };
   assert.equal(metric.event, "recommendation");
   assert.equal(metric.quoteAttempts, UPSELL_BANNER_MAX_QUOTES, "the compact banner does not run the full 20 hypothetical quotes");
