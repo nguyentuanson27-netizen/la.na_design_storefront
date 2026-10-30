@@ -1,9 +1,13 @@
 import Link from "next/link";
 import Image from "next/image";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { connection } from "next/server";
 import { readAuthServerConfig } from "@/auth/config";
 import { createPromotionUpsellService } from "@/commerce/promotion-upsell";
+import { upsellReadGate } from "@/commerce/checkout-upsell-read-gate";
+import { deriveGuestCheckoutClientKey } from "@/commerce/guest-checkout-client-identity";
+import { createGuestCheckoutRateLimiter } from "@/commerce/guest-checkout-rate-limit";
+import { isPromotionUpsellEnabled } from "@/commerce/promotion-upsell-policy";
 import { prisma } from "@/db/prisma";
 import { readPancakeShopId } from "@/integrations/pancake/config";
 
@@ -17,14 +21,34 @@ export default async function EligibleOfferProducts({ searchParams }: Props) {
   const campaignId = typeof campaign === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(campaign)
     ? campaign : null;
   let offer: Awaited<ReturnType<ReturnType<typeof createPromotionUpsellService>["getBrowse"]>> = null;
+  let limited = false;
   if (campaignId) {
-    try {
-      offer = await createPromotionUpsellService(prisma, await cookies(), {
-        shopId: readPancakeShopId(),
-        secret: readAuthServerConfig().secret,
-      }).getBrowse(campaignId);
-    } catch {
-      // The optional recommendation must fail closed without altering cart or checkout.
+    // An optional GET must have the same resource protections as the checkout POST.
+    // Acquire before hitting the DB; neither a queue nor a failure can block COD checkout.
+    const release = upsellReadGate.tryAcquire();
+    if (!release) {
+      limited = true;
+    } else {
+      try {
+        const auth = readAuthServerConfig();
+        const shopId = readPancakeShopId();
+        if (isPromotionUpsellEnabled(shopId)) {
+          const clientKey = deriveGuestCheckoutClientKey(await headers(), auth);
+          // Shared across instances and with POST /api/checkout/upsell: 20 attempts/minute
+          // per trusted client, independent of the geo and checkout-submit buckets.
+          if (!(await createGuestCheckoutRateLimiter(prisma).consumeUpsellClient({ clientKey }))) {
+            limited = true;
+          } else {
+            offer = await createPromotionUpsellService(prisma, await cookies(), {
+              shopId, secret: auth.secret,
+            }).getBrowse(campaignId);
+          }
+        }
+      } catch {
+        // Fail closed on invalid identity, unavailable limiter or quote failure.
+      } finally {
+        release();
+      }
     }
   }
 
@@ -57,7 +81,7 @@ export default async function EligibleOfferProducts({ searchParams }: Props) {
         </>
       ) : (
         <div className="mt-7 border border-black/15 p-5">
-          <p className="text-sm leading-6">Ưu đãi hoặc giỏ hàng đã thay đổi, hiện không có sản phẩm phù hợp được xác nhận.</p>
+          <p className="text-sm leading-6">{limited ? "Gợi ý ưu đãi đang có quá nhiều lượt truy cập. Nàng thử lại sau ít phút nhé." : "Ưu đãi hoặc giỏ hàng đã thay đổi, hiện không có sản phẩm phù hợp được xác nhận."}</p>
           <Link href="/shop" className="mt-3 inline-flex min-h-11 items-center text-sm underline">Xem tất cả sản phẩm</Link>
         </div>
       )}
