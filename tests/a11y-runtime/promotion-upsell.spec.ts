@@ -103,7 +103,7 @@ test("upsell POST rejects requests from a foreign origin without exposing data",
   expect(response.headers()["cache-control"]).toContain("no-store");
 });
 
-test("AM-01/A: the compact banner names the proven offer, links to /sale and offers no inline add", async ({ page }) => {
+test("AM-01/A: the compact banner names the proven offer, links to verified eligible products and offers no inline add", async ({ page }) => {
   await page.goto(`${BASE}/checkout`);
   const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
   await expect(offer, output).toBeVisible();
@@ -111,7 +111,7 @@ test("AM-01/A: the compact banner names the proven offer, links to /sale and off
   await expect(offer).toContainText("Mua 3 tặng khăn");
   await expect(offer.getByRole("combobox")).toHaveCount(0);
   await expect(offer.getByRole("button", { name: "Thêm 1 chiếc" })).toHaveCount(0);
-  await expect(offer.getByRole("link", { name: "Chọn thêm món" })).toHaveAttribute("href", "/sale");
+  await expect(offer.getByRole("link", { name: "Chọn thêm món" })).toHaveAttribute("href", `/offers/eligible?campaign=${encodeURIComponent(campaignId)}`);
   // UX-08: the offer never locks submit.
   await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeEnabled();
   expect(await page.locator("form").count()).toBe(1);
@@ -131,7 +131,10 @@ test("AM-01/A: the compact banner names the proven offer, links to /sale and off
   await page.getByLabel("Họ và tên", { exact: false }).fill("Nàng La.na");
   await page.getByLabel("Số điện thoại", { exact: false }).fill("0901234567");
   await offer.getByRole("link", { name: "Chọn thêm món" }).click();
-  await expect(page).toHaveURL(`${BASE}/sale`);
+  await expect(page).toHaveURL(`${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`);
+  await expect(page.getByRole("heading", { name: "Sản phẩm áp dụng ưu đãi" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Áo candidate/ })).toBeVisible();
+  await expect(page.getByText("Áo paid")).toHaveCount(0);
   const stored = await page.evaluate(() => JSON.stringify({ ...sessionStorage }) + JSON.stringify({ ...localStorage }));
   expect(stored).not.toContain("0901234567");
   expect(stored).not.toContain("Nàng La.na");
