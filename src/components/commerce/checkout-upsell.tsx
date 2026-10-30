@@ -90,7 +90,7 @@ export function CheckoutUpsell({ model, locked = false }: Readonly<{ model: Chec
               Chọn thêm món
             </span>
           ) : (
-            <Link href={`/offers/eligible?campaign=${encodeURIComponent(model.campaignId ?? "")}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-black underline underline-offset-4">
+            <Link href={`/offers/eligible?campaign=${encodeURIComponent(model.campaignId ?? "")}`} prefetch={false} className="inline-flex min-h-11 items-center text-sm font-semibold text-black underline underline-offset-4">
               Chọn thêm món
             </Link>
           )}
