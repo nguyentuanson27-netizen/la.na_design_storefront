@@ -1,57 +1,12 @@
 import Link from "next/link";
 import Image from "next/image";
-import { cookies, headers } from "next/headers";
-import { connection } from "next/server";
-import { readAuthServerConfig } from "@/auth/config";
-import { createPromotionUpsellService } from "@/commerce/promotion-upsell";
-import { upsellReadGate } from "@/commerce/checkout-upsell-read-gate";
-import { deriveGuestCheckoutClientKey } from "@/commerce/guest-checkout-client-identity";
-import { createGuestCheckoutRateLimiter } from "@/commerce/guest-checkout-rate-limit";
-import { isPromotionUpsellEnabled } from "@/commerce/promotion-upsell-policy";
-import { prisma } from "@/db/prisma";
-import { readPancakeShopId } from "@/integrations/pancake/config";
 
-export const dynamic = "force-dynamic";
+import { createStorefrontRoute } from "@/routes/factory";
+import { loadEligibleOffersRoute, type EligibleOffersRouteProps, type EligibleOffersViewModel } from "@/routes/eligible-offers";
+import { buildEligibleOffersMetadata } from "@/routes/metadata/eligible-offers";
 
-type Props = { searchParams: Promise<{ campaign?: string | string[] }> };
-
-export default async function EligibleOfferProducts({ searchParams }: Props) {
-  await connection();
-  const { campaign } = await searchParams;
-  const campaignId = typeof campaign === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(campaign)
-    ? campaign : null;
-  let offer: Awaited<ReturnType<ReturnType<typeof createPromotionUpsellService>["getBrowse"]>> = null;
-  let limited = false;
-  if (campaignId) {
-    // An optional GET must have the same resource protections as the checkout POST.
-    // Acquire before hitting the DB; neither a queue nor a failure can block COD checkout.
-    const release = upsellReadGate.tryAcquire();
-    if (!release) {
-      limited = true;
-    } else {
-      try {
-        const auth = readAuthServerConfig();
-        const shopId = readPancakeShopId();
-        if (isPromotionUpsellEnabled(shopId)) {
-          const clientKey = deriveGuestCheckoutClientKey(await headers(), auth);
-          // Shared across instances and with POST /api/checkout/upsell: 20 attempts/minute
-          // per trusted client, independent of the geo and checkout-submit buckets.
-          if (!(await createGuestCheckoutRateLimiter(prisma).consumeUpsellClient({ clientKey }))) {
-            limited = true;
-          } else {
-            offer = await createPromotionUpsellService(prisma, await cookies(), {
-              shopId, secret: auth.secret,
-            }).getBrowse(campaignId);
-          }
-        }
-      } catch {
-        // Fail closed on invalid identity, unavailable limiter or quote failure.
-      } finally {
-        release();
-      }
-    }
-  }
-
+/** Markup only: the route loader applies trusted-client rate limits and verifies cart-scoped offers. */
+function render({ offer, limited }: EligibleOffersViewModel) {
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6">
       <Link href="/checkout" className="inline-flex min-h-11 items-center text-sm underline underline-offset-4">
@@ -88,3 +43,11 @@ export default async function EligibleOfferProducts({ searchParams }: Props) {
     </main>
   );
 }
+
+const route = createStorefrontRoute<EligibleOffersRouteProps, EligibleOffersViewModel>({
+  load: loadEligibleOffersRoute,
+  render,
+});
+
+export const metadata = buildEligibleOffersMetadata();
+export default route.Page;
