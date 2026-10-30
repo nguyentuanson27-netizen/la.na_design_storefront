@@ -6,6 +6,8 @@ import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
 import type { AnonymousCartCookieWrite } from "./anonymous-cart-cookie.ts";
 import { createAnonymousCartMutationService } from "./anonymous-cart-mutation.ts";
+import { createCartGiftSelectionService } from "./cart-gift-selection.ts";
+import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import { resolveAnonymousCartRequest } from "./anonymous-cart-request.ts";
 import { createCartLineAuthorityResolver } from "./cart-line-authority.ts";
 import { createStorefrontCartPublicActions } from "./storefront-cart-public-actions.ts";
@@ -65,7 +67,17 @@ async function createActionRuntime() {
     },
   });
 
-  return { ...actions, getLines };
+  async function reconcilePaidReduction(): Promise<number> {
+    if (!isGiftQuantityPromotionsEnabled()) return 0;
+    // A confirmed PAID mutation is the trigger. Passive reads cannot tell a basket
+    // decrease from an Admin/catalog change, and must never silently discard gifts.
+    const result = await createCartGiftSelectionService(prisma, writableCookieStore, { shopId })
+      .reconcileAfterPaidReduction(now);
+    return "autoRemovedGiftCount" in result && typeof result.autoRemovedGiftCount === "number"
+      ? result.autoRemovedGiftCount : 0;
+  }
+
+  return { ...actions, getLines, reconcilePaidReduction };
 }
 
 export async function getStorefrontCartLines() {
@@ -95,11 +107,23 @@ export async function getStorefrontCartView(): Promise<CartViewModel> {
 }
 
 export async function updateStorefrontCartLine(input: unknown) {
-  const result = await (await createActionRuntime()).update(input);
-  if (result.ok) await scheduleMetaAddToCartSafely(result.metaEvent, "/cart");
+  const runtime = await createActionRuntime();
+  const result = await runtime.update(input);
+  if (!result.ok) return result;
+  await scheduleMetaAddToCartSafely(result.metaEvent, "/cart");
+  if (result.transition && result.transition.quantity < result.transition.previousQuantity) {
+    const autoRemovedGiftCount = await runtime.reconcilePaidReduction();
+    if (autoRemovedGiftCount > 0) return { ...result, autoRemovedGiftCount };
+  }
   return result;
 }
 
 export async function removeStorefrontCartLine(input: unknown) {
-  return (await createActionRuntime()).remove(input);
+  const runtime = await createActionRuntime();
+  const result = await runtime.remove(input);
+  if (result.ok && result.removedQuantity > 0) {
+    const autoRemovedGiftCount = await runtime.reconcilePaidReduction();
+    if (autoRemovedGiftCount > 0) return { ...result, autoRemovedGiftCount };
+  }
+  return result;
 }
