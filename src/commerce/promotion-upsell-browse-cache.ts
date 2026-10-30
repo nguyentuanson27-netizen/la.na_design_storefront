@@ -1,19 +1,20 @@
 import { MAX_STOREFRONT_PROMOTION_REFRESH_MS } from "./storefront-promotion-freshness.ts";
 
+/** `validUntil` (epoch ms) caps the entry's life, for example at the next campaign start or end. */
+export type BrowseLoad<V> = { value: V | null; store: boolean; failed?: boolean; validUntil?: number | null };
+
 /**
  * Short-lived, per-process memo for the read-only /offers/eligible listing.
  *
- * Keys are opaque (`paidCartKey` is an HMAC over cart id + paid revision, plus the promotion pricing
- * revision and campaign id), so a paid-line change or any effective campaign edit/enable/disable is a
- * different key by construction and no cart id is held in memory. An entry also never outlives the
- * earliest `endsAt` of the campaigns it was verified against (`validUntil`). What the key cannot see is
- * catalog drift (stock, publication, price sync): that is bounded by `ttlMs`. Values are the
- * already-public browse view: names, slugs, images and option labels; the page never authorizes a
- * mutation and `add` re-verifies on the server, so staleness cannot move money or entitlements.
+ * Keys are opaque and built by the caller (see `promotion-upsell-browse-key.ts`): the HMAC'd paid cart,
+ * the promotion pricing revision, a digest of the cart's gift choices and the campaign id. A paid-line
+ * change, an effective campaign edit/enable/disable or a gift-choice change is therefore a different key,
+ * and no cart id is held in memory. An entry also never outlives `validUntil`, the next campaign start or
+ * end, because nothing is written at those instants. What no key can see is catalog drift (stock,
+ * publication, price sync): that is bounded by `ttlMs`. Values are the already-public browse view
+ * (names, slugs, images, option labels); the page never authorizes a mutation and `add` re-verifies on
+ * the server, so staleness cannot move money or entitlements.
  */
-/** `validUntil` (epoch ms) caps the entry's life, for example at a campaign's `endsAt`. */
-export type BrowseLoad<V> = { value: V | null; store: boolean; failed?: boolean; validUntil?: number | null };
-
 export type UpsellBrowseCache<V> = Readonly<{
   /**
    * Return a fresh entry, join an identical in-flight load, or run `load`. `store: false` skips caching
