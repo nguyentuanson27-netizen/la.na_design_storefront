@@ -95,7 +95,8 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 - Khách được chọn từ **0 đến `entitled` suất**; không bắt buộc nhận hết.
 - Nếu hàng trong danh sách chỉ còn đủ cấp ít hơn `entitled`, cho phép nhận phần còn lại; nếu hết toàn bộ, cho phép đặt đơn không có quà.
 - Trước khi đặt đơn với `selected < entitled`, checkout phải hiển thị **số suất được hưởng / số đã chọn / số bỏ qua hoặc thiếu** và yêu cầu **xác nhận tường minh**. Bao gồm trường hợp khách tự bỏ qua dù còn hàng.
-- Không được âm thầm xóa hay đổi quà khi giỏ/tồn kho thay đổi. Nếu quà không còn, báo giá cũ mất hiệu lực và khách phải xem/xác nhận báo giá mới.
+- **Ngoại lệ cho khách chủ động giảm/xóa hàng mua:** sau khi server xác nhận thao tác làm giảm Q hoặc S và số quà đã chọn vượt số suất hiện tại, hệ thống tự bỏ đúng phần quà vượt suất, ưu tiên giữ lựa chọn được lưu sớm nhất. Thông báo số quà bị bỏ ở giỏ hàng hoặc mini-cart; không tự chọn quà khác. Chỉ một mutation hàng mua đã xác nhận mới được kích hoạt cleanup, không suy đoán nguyên nhân từ lượt đọc giỏ.
+- Trường hợp Admin đổi quy tắc, hết hàng, catalog thay đổi, xung đột stack hay lỗi DB/quote: **không tự xóa**. Lựa chọn được giữ để khách kiểm tra, và checkout fail-closed nếu lựa chọn không hợp lệ.
 - Quyền lợi theo chiến dịch không biến thành phiếu nợ quà giao sau. Order lưu số suất không nhận cùng trạng thái xác nhận.
 
 ### FR-07. Giảm giá theo số lượng
@@ -126,7 +127,7 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 - **Đề xuất:** Admin phải giải quyết trùng độ ưu tiên trong tập chương trình cùng tác động lên một đơn giá trước publish; runtime gặp cấu hình mâu thuẫn phải fail-closed và phát cảnh báo, tuyệt đối không chọn ngẫu nhiên.
 - Gift evaluation chạy **sau toàn bộ bước giảm giá**, để điều kiện `ORDER_SUBTOTAL` không tạo vòng lặp với quà.
 - Khi nhiều gift campaign được phép cùng chạy, số suất và giới hạn tính **theo từng campaign**, quà của campaign này không dùng để đạt điều kiện campaign khác; tồn kho vật lý cần cộng gộp tất cả nhu cầu.
-- **Lên mốc quà cao hơn (không cộng dồn, chỉ áp dụng mốc cao nhất):** quà khách đã chọn ở mốc thấp hơn **không bị xóa khi giỏ thay đổi** (giữ FR-06) nhưng cũng không còn là lỗi chặn giỏ/checkout: khi đó nó được hiển thị riêng là "quà mốc trước", không tính vào đơn và không chặn việc chọn quà mốc mới. Khi khách chủ động nhận quà của mốc mới, hoặc xác nhận đặt hàng (quote đã chứng minh) mà không kèm quà mốc trước, quà mốc trước được thay/bỏ trong cùng transaction. Nếu giỏ quay về mốc cũ trước khi khách đổi, quà cũ tự có hiệu lực lại. Chỉ áp dụng khi có một campaign đang chạy vượt ưu tiên campaign bị loại; xung đột thật (trùng ưu tiên, không ai thắng) vẫn báo như cũ. Gợi ý "+1" không được đẩy khách qua mốc làm thay quà đã chọn.
+- **Lên mốc quà cao hơn (không cộng dồn, chỉ áp dụng mốc cao nhất; PR #226):** khi cart hoặc checkout đọc lại trạng thái, quà mốc cũ tự được rút. Chỉ đúng cùng biến thể được chuyển lên mốc cao nếu còn đủ điều kiện, số suất và tồn kho; không tự chọn quà thay thế. Quà đã rút không hồi sinh khi giảm về mốc cũ. Việc giảm giỏ làm mất suất quà do khách chủ động phải theo ngoại lệ FR-06 ở trên, không phải theo việc đọc thụ động. Giữ xử lý xung đột stack và kiểm tra quote/proof dưới cart/campaign lock.
 
 ### FR-09. Ngữ nghĩa `FIXED_PRICE` legacy
 
