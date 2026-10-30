@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isSameOriginUpsellRequest, readCheckoutUpsellProof, MAX_UPSELL_REQUEST_BYTES } from "../../src/commerce/checkout-upsell-http.ts";
+import { isSameOriginUpsellRequest, isTrustedUpsellBrowseRequest, readCheckoutUpsellProof, MAX_UPSELL_REQUEST_BYTES } from "../../src/commerce/checkout-upsell-http.ts";
 
 function request(body: string, origin = "https://store.example") {
   return new Request("https://store.example/api/checkout/upsell", {
@@ -21,6 +21,33 @@ test("upsell read requires a same-origin POST even when browser cookies would be
   assert.equal(isSameOriginUpsellRequest(new Request("https://store.example/api/checkout/upsell", {
     method: "POST", headers: { origin: "https://store.example", "sec-fetch-site": "cross-site" }, body: "{}",
   }), "https://store.example"), false);
+});
+
+test("eligible browse accepts only trusted user navigations, not cross-site or speculative GETs", () => {
+  const trusted = "https://store.example";
+  const allowed = [
+    { "sec-fetch-site": "same-origin" },
+    { "sec-fetch-site": "none" },
+    { referer: "https://store.example/checkout" },
+    { origin: trusted },
+    { "sec-fetch-site": "same-origin", referer: "https://store.example/checkout" },
+  ];
+  for (const values of allowed) assert.equal(isTrustedUpsellBrowseRequest(new Headers(values), trusted), true);
+
+  const denied = [
+    { "sec-fetch-site": "cross-site" },
+    { "sec-fetch-site": "same-site" },
+    { "sec-fetch-site": "other" },
+    { referer: "https://foreign.example/catalog" },
+    { origin: "https://foreign.example" },
+    { "sec-fetch-site": "same-origin", referer: "https://foreign.example/catalog" },
+    { "sec-fetch-site": "none", origin: "https://foreign.example" },
+    { "sec-fetch-site": "same-origin", purpose: "prefetch" },
+    { "sec-fetch-site": "same-origin", "sec-purpose": "prefetch" },
+    { "sec-fetch-site": "same-origin", "next-router-prefetch": "1" },
+    {},
+  ];
+  for (const values of denied) assert.equal(isTrustedUpsellBrowseRequest(new Headers(values), trusted), false);
 });
 
 test("upsell request accepts only one bounded quote proof, never cart ids or client prices", async () => {
