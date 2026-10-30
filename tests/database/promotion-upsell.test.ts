@@ -6,7 +6,7 @@ import { readCartGiftState } from "../../src/commerce/cart-gift-selection.ts";
 import { resolveBenefitCheckoutQuote } from "../../src/commerce/benefit-checkout-quote.ts";
 import { buildRenderedCheckoutQuoteFacts } from "../../src/commerce/checkout-quote.ts";
 import { issueUpsellQuoteProof, type UpsellIntent } from "../../src/commerce/promotion-upsell-proof.ts";
-import { createPromotionUpsellService, UPSELL_BANNER_MAX_QUOTES } from "../../src/commerce/promotion-upsell.ts";
+import { createPromotionUpsellService, UPSELL_BANNER_MAX_QUOTES, UPSELL_MAX_QUOTES } from "../../src/commerce/promotion-upsell.ts";
 import { acquireCatalogSyncLock } from "../../src/commerce/catalog-sync-lock.ts";
 import { lockRevision } from "../../src/commerce/promotion-activation-service.ts";
 
@@ -222,7 +222,7 @@ test("UP-00/TG-06: representative 30-product, 3-size catalog; bounded output/quo
   const browse = await service().getBrowse(campaignId);
   const browseMetric = metrics.at(-1) as { event: string; quoteAttempts?: number };
   assert.equal(browseMetric.event, "recommendation");
-  assert.equal(browseMetric.quoteAttempts, 20, "the eligible-product browse caps the quote work at 20");
+  assert.equal(browseMetric.quoteAttempts, UPSELL_MAX_QUOTES, "the eligible-product browse caps the quote work at 20");
   assert.equal(browse?.offerName, "Mua 3 tặng khăn");
   assert.ok(browse?.products.some((p) => p.slug === `${PREFIX}candidate`));
   assert.deepEqual([...(browse?.products.find((p) => p.slug === `${PREFIX}candidate`)?.options ?? [])].sort(), ["Hồng / M", "Hồng / S"]);
