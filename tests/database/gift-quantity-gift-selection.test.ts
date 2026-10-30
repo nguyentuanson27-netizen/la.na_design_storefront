@@ -218,16 +218,15 @@ test("concurrent choices serialize the shared entitlement cap", async () => {
 test("paid reduction automatically trims surplus gift units and leaves valid chosen gifts", async () => {
   assert.deepEqual(await service().set(choice(giftId, 3), NOW), { ok: true });
   await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 1, now: NOW });
+  assert.deepEqual(await service().reconcileAfterPaidReduction(NOW), { ok: true, autoRemovedGiftCount: 2 });
   const result = await service().get(NOW);
   assert.ok("state" in result);
   assert.equal(result.state.entitlements[0].entitled, 1);
   assert.equal(result.state.selections[0]?.quantity, 1);
   assert.equal(result.state.validation.ok, true);
-  assert.equal(result.state.autoRemovedGiftCount, 2);
+  assert.equal(result.state.autoRemovedGiftCount ?? 0, 0, "passive reads do not repeat adjustments");
   assert.equal((await prisma.cartGiftSelection.findFirstOrThrow({ where: { cartId, campaignId } })).quantity, 1);
-  const again = await service().get(NOW);
-  assert.ok("state" in again);
-  assert.equal(again.state.autoRemovedGiftCount ?? 0, 0, "a read never repeats a completed cleanup");
+  assert.deepEqual(await service().reconcileAfterPaidReduction(NOW), { ok: true, autoRemovedGiftCount: 0 }, "retry is idempotent");
 });
 
 test("falling below an ORDER_SUBTOTAL gift threshold removes the ineligible gift without choosing a replacement", async () => {
@@ -237,12 +236,13 @@ test("falling below an ORDER_SUBTOTAL gift threshold removes the ineligible gift
   });
   assert.deepEqual(await service().set(choice(), NOW), { ok: true });
   await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 2, now: NOW });
+  assert.deepEqual(await service().reconcileAfterPaidReduction(NOW), { ok: true, autoRemovedGiftCount: 1 });
   const result = await service().get(NOW);
   assert.ok("state" in result);
   assert.equal(result.state.entitlements[0]?.entitled, 0);
   assert.equal(result.state.validation.ok, true);
   assert.deepEqual(result.state.selections, []);
-  assert.equal(result.state.autoRemovedGiftCount, 1);
+  assert.equal(result.state.autoRemovedGiftCount ?? 0, 0);
   assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0);
 });
 
@@ -253,6 +253,7 @@ test("falling below a QUANTITY gift threshold removes the gift and checkout can 
   });
   assert.deepEqual(await service().set(choice(), NOW), { ok: true });
   await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 2, now: NOW });
+  assert.deepEqual(await service().reconcileAfterPaidReduction(NOW), { ok: true, autoRemovedGiftCount: 1 });
   const render = await renderCheckout();
   assert.equal(render.kind, "LEGACY");
   assert.equal(await prisma.cartGiftSelection.count({ where: { cartId } }), 0);
@@ -270,9 +271,10 @@ test("when entitlement drops from two gifts to one, the earliest saved gift stay
     data: { createdAt: new Date("2026-10-13T00:00:00Z") },
   });
   await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 1, now: NOW });
+  assert.deepEqual(await service().reconcileAfterPaidReduction(NOW), { ok: true, autoRemovedGiftCount: 1 });
   const result = await service().get(NOW);
   assert.ok("state" in result);
-  assert.equal(result.state.autoRemovedGiftCount, 1);
+  assert.equal(result.state.autoRemovedGiftCount ?? 0, 0);
   assert.equal(result.state.validation.ok, true);
   assert.deepEqual(result.state.selections.map((line) => line.variantId), [secondId]);
   assert.deepEqual((await prisma.cartGiftSelection.findMany({ where: { cartId }, select: { variantId: true } })).map((row) => row.variantId), [secondId]);
@@ -282,6 +284,7 @@ test("an expired or revised campaign does not silently discard an old gift just 
   assert.deepEqual(await service().set(choice(), NOW), { ok: true });
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { revision: 2 } });
   await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 1, now: NOW });
+  assert.deepEqual(await service().reconcileAfterPaidReduction(NOW), { ok: true, autoRemovedGiftCount: 0 });
   const result = await service().get(NOW);
   assert.ok("state" in result);
   assert.equal(result.state.validation.ok, false);
@@ -335,6 +338,8 @@ test("racing paid reduction and gift write converges to an entitled choice or a 
     service().set(choice(giftId, 3), NOW),
     createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 1, now: NOW }),
   ]);
+  const cleanup = await service().reconcileAfterPaidReduction(NOW);
+  assert.ok("ok" in cleanup && cleanup.ok);
   const result = await service().get(NOW);
   assert.ok("state" in result);
   assert.equal(result.state.entitlements[0].entitled, 1);
