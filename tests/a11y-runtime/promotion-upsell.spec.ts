@@ -126,7 +126,7 @@ test("AM-01/A: the compact banner names the proven offer, links to verified elig
   }
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: "test-results/upsell-checkout-banner.png", fullPage: true });
-  // Owner decision (17/10/2026): the link goes straight to /sale, without a leave warning, even when
+  // Current decision: the link goes to the eligible-product browse route, without a leave warning, even when
   // receiving details were typed. Nothing typed is written to storage on the way.
   await page.getByLabel("Họ và tên", { exact: false }).fill("Nàng La.na");
   await page.getByLabel("Số điện thoại", { exact: false }).fill("0901234567");
@@ -139,6 +139,27 @@ test("AM-01/A: the compact banner names the proven offer, links to verified elig
   expect(stored).not.toContain("0901234567");
   expect(stored).not.toContain("Nàng La.na");
   expect(await prisma.cartItem.count({ where: { cartId } })).toBe(1);
+});
+
+test("GET eligible browsing shares the 20/min trusted-client quota with POST upsell", async ({ page, context }) => {
+  // An empty cart makes each read cheap while still exercising the GET admission boundary.
+  // Dedicated client identity keeps this exhaustion scenario isolated from the checkout tests.
+  await context.clearCookies();
+  const url = `${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`;
+  const headers = { "x-ci-client-ip": "203.0.113.222" };
+  for (let i = 0; i < 20; i++) {
+    const response = await page.request.get(url, { headers });
+    expect(response.status()).toBe(200);
+    expect(await response.text()).not.toContain("Gợi ý ưu đãi đang có quá nhiều lượt truy cập");
+  }
+  const excess = await page.request.get(url, { headers });
+  expect(excess.status()).toBe(200);
+  expect(await excess.text()).toContain("Gợi ý ưu đãi đang có quá nhiều lượt truy cập");
+  const post = await page.request.post(`${BASE}/api/checkout/upsell`, {
+    headers: { ...headers, origin: BASE },
+    data: { quoteProof: "invalid.proof" },
+  });
+  expect(post.status()).toBe(429);
 });
 
 test("Review P2-2: while an order is being placed the banner link cannot take the buyer away", async ({ page }) => {
