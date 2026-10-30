@@ -219,7 +219,7 @@ test("UP-00/TG-06: representative 30-product, 3-size catalog; bounded output/quo
   const browse = await service().getBrowse(campaignId);
   assert.equal(browse?.offerName, "Mua 3 tặng khăn");
   assert.ok(browse?.products.some((p) => p.slug === `${PREFIX}candidate`));
-  assert.deepEqual(browse?.products.find((p) => p.slug === `${PREFIX}candidate`)?.options.sort(), ["Hồng / M", "Hồng / S"]);
+  assert.deepEqual([...(browse?.products.find((p) => p.slug === `${PREFIX}candidate`)?.options ?? [])].sort(), ["Hồng / M", "Hồng / S"]);
   assert.equal(JSON.stringify(browse).includes(cartId), false);
   assert.equal(await service().getBrowse("nonexistent"), null);
   assert.match(banner?.paidCartKey ?? "", /^[A-Za-z0-9_-]{43}$/);
