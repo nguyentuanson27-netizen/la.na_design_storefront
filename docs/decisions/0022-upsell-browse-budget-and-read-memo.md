@@ -72,9 +72,11 @@ unchanged.
   its next refresh, so a visible list can reflect catalog state up to ~210 s old in the worst case (served
   at 149 s, replaced one 60 s refresh later). This is a deliberate exception to the 60 s bound for a
   names-and-links list; the page copy already says price, stock and entitlement are recomputed on add, and
-  `add` re-verifies under locks, so it cannot move money or entitlements. If product wants catalog drift
-  inside 60 s, set `UPSELL_BROWSE_CACHE_TTL_MS` to 60 s: every periodic refresh then recomputes (bounded
-  by phases 1 and 3), which is the pre-cache behaviour.
+  `add` re-verifies under locks, so it cannot move money or entitlements. **Accepted by the repository
+  owner on 2026-10-30 (PR review of this change): keep TTL 150 s**, so an open page recomputes once in
+  three refreshes. Should catalog drift ever need to fit inside 60 s, set `UPSELL_BROWSE_CACHE_TTL_MS` to
+  60 s: every periodic refresh then recomputes (bounded by phases 1 and 3), which is the pre-cache
+  behaviour.
 
 ### Phase 3 — transaction-scoped read memo for the read-only paths
 
