@@ -15,8 +15,6 @@ export type CartGiftPickerModel = Readonly<{
   repairGroups?: readonly Readonly<{ message: string; selectionKeys: readonly string[] }>[];
   invalid: boolean;
   stackConflict: boolean;
-  /** Quantity removed because the buyer's paid basket fell below an earned gift threshold. */
-  autoRemovedGiftCount?: number;
 }>;
 
 const currency = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
@@ -83,7 +81,6 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
     return label ? `${label.productName} — ${label.optionLabel}` : "Quà đã chọn không còn khả dụng";
   };
   return {
-    ...(state.autoRemovedGiftCount ? { autoRemovedGiftCount: state.autoRemovedGiftCount } : {}),
     invalid: !state.validation.ok,
     // Giving way to a higher milestone is the rule working, not a conflict the buyer must fix.
     stackConflict: (state.giftStackDropped ?? []).some((entry) => !superseded.has(entry.campaignId)),
