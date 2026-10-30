@@ -122,6 +122,12 @@ test("AM-01/A: the compact banner names the proven offer, links to verified elig
   for (const width of [320, 390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    // The campaign title and action must occupy separate rows, not overlap at narrow widths.
+    const nameRect = await offer.getByText("Mua 3 tặng khăn", { exact: true }).boundingBox();
+    const actionRect = await offer.getByRole("link", { name: "Chọn thêm món" }).boundingBox();
+    expect(nameRect).not.toBeNull();
+    expect(actionRect).not.toBeNull();
+    expect(actionRect!.y).toBeGreaterThanOrEqual(nameRect!.y + nameRect!.height);
     expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
   }
   await page.evaluate(() => window.scrollTo(0, 0));
