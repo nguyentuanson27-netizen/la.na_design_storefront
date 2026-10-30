@@ -142,7 +142,7 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
     const started = Date.now();
     let quoteAttempts = 0;
     try {
-      const model = await client.$transaction(async (tx): Promise<CheckoutUpsellModel | CheckoutUpsellBanner | null> => {
+      const model = await client.$transaction(async (tx): Promise<CheckoutUpsellModel | CheckoutUpsellBanner | CheckoutUpsellBrowse | null> => {
         await tx.$executeRaw`SET LOCAL statement_timeout = '1800ms'`;
         const cart = await tx.cart.findFirst({ where: { id: cartId, userId: null, expiresAt: { gt: now } }, select: { paidRevision: true } });
         if (!cart) return null;
