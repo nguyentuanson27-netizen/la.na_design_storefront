@@ -352,23 +352,25 @@ async function removeSurplusGiftUnits(
 
 /**
  * Cart/checkout share a single authoritative read-and-reconcile boundary.
- * It retires replaced lower-milestone gifts (PR #226) and now also withdraws gift
- * units the buyer no longer earns after reducing paid quantity or paid order value.
+ * It retires replaced lower-milestone gifts (PR #226), and on an explicitly confirmed
+ * paid-cart reduction withdraws only gift units the buyer no longer earns.
  *
- * Both changes take the same cart/campaign locks used by gift writes, precede every
- * quote/proof, and never choose an unrelated gift. A read without work stays read-only.
+ * Both changes take the same cart/campaign locks used by gift writes. Upward milestones
+ * reconcile on read; downward cleanup requires a confirmed PAID decrease from a cart mutation.
+ * No path ever chooses a different gift.
  */
 export async function readReconciledCartGiftState(
   tx: Prisma.TransactionClient, cartId: string, shopId: number, now: Date,
-  env: Readonly<Record<string, string | undefined>>, { locked = false }: { locked?: boolean } = {},
+  env: Readonly<Record<string, string | undefined>>,
+  { locked = false, afterPaidReduction = false }: { locked?: boolean; afterPaidReduction?: boolean } = {},
 ): Promise<CartGiftState> {
   let state = await readCartGiftState(tx, cartId, shopId, now, env);
-  if (state.replacedSelections.length === 0 && shrunkGiftEntitlements(state).length === 0) return state;
+  if (state.replacedSelections.length === 0 && (!afterPaidReduction || shrunkGiftEntitlements(state).length === 0)) return state;
   if (!locked) {
     if (!await lockCartForGiftWrite(tx, cartId, now)) return state;
     // Another request may have reconciled while this one waited for the lock.
     state = await readCartGiftState(tx, cartId, shopId, now, env);
-    if (state.replacedSelections.length === 0 && shrunkGiftEntitlements(state).length === 0) return state;
+    if (state.replacedSelections.length === 0 && (!afterPaidReduction || shrunkGiftEntitlements(state).length === 0)) return state;
   }
 
   const kept: GiftSelectionLine[] = [...state.selections];
@@ -393,7 +395,8 @@ export async function readReconciledCartGiftState(
     }
     await removeCartGiftSelection(tx, { cartId, campaignId: old.campaignId, variantId: old.variantId });
   }
-  const autoRemovedGiftCount = await removeSurplusGiftUnits(tx, cartId, shrunkGiftEntitlements(state));
+  const autoRemovedGiftCount = afterPaidReduction
+    ? await removeSurplusGiftUnits(tx, cartId, shrunkGiftEntitlements(state)) : 0;
   // Re-evaluate from persisted state, never return the pre-cleanup selection or an old quote.
   const refreshed = await readCartGiftState(tx, cartId, shopId, now, env);
   return autoRemovedGiftCount > 0 ? { ...refreshed, autoRemovedGiftCount } : refreshed;
@@ -416,6 +419,20 @@ export function createCartGiftSelectionService(client: PrismaClient, store: Cook
   async function get(now = new Date()) {
     if (!isGiftQuantityPromotionsEnabled(env)) return { enabled: false } as const;
     return withCart(now, async (tx, cartId) => ({ ok: true, state: await readReconciledCartGiftState(tx, cartId, shopId, now, env, { locked: true }) } as const));
+  }
+
+  /**
+   * Called only after a confirmed paid-cart decrease/removal, never on a passive read.
+   * Category sync, stock changes and Admin edits alone must not erase a buyer's gift.
+   */
+  async function reconcileAfterPaidReduction(now = new Date()) {
+    if (!isGiftQuantityPromotionsEnabled(env)) return { enabled: false } as const;
+    return withCart(now, async (tx, cartId) => {
+      const state = await readReconciledCartGiftState(tx, cartId, shopId, now, env, {
+        locked: true, afterPaidReduction: true,
+      });
+      return { ok: true, autoRemovedGiftCount: state.autoRemovedGiftCount ?? 0 } as const;
+    });
   }
 
   async function set(input: unknown, now = new Date()) {
@@ -442,5 +459,5 @@ export function createCartGiftSelectionService(client: PrismaClient, store: Cook
       return swapped.length > 0 ? { ok: true, replaced: swapped.reduce((sum, row) => sum + row.quantity, 0) } as const : { ok: true } as const;
     });
   }
-  return { get, set };
+  return { get, set, reconcileAfterPaidReduction };
 }
