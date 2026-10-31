@@ -11,7 +11,7 @@ import { CATALOG_SYNC_LOCK_NAMESPACE } from "./catalog-sync-lock.ts";
 import { classifyCompositeComponentSku } from "./storefront-projection.ts";
 import { classifyCompositeSubSetShape, isThreePieceComboShape } from "./composite-subset-authority.ts";
 import { parseTrustedProductImageUrl } from "./product-media.ts";
-import { listUpsellScopeProductPage, upsellAddableProduct, upsellScopeFacts, upsellScopeRecordset, UPSELL_IN_SCOPE } from "./promotion-upsell-scope.ts";
+import { listUpsellScopeProductPage, upsellAddableProduct, upsellScopeFacts, upsellScopeRecordset, UPSELL_IN_SCOPE, UPSELL_PUBLICLY_LISTED } from "./promotion-upsell-scope.ts";
 import { memoizeTransactionReads } from "./tx-read-memo.ts";
 import { buildCartGiftPickerModel, type CartGiftPickerModel } from "../routes/cart-gift-model.ts";
 import { compareUpsellCandidates, findUpsellOpportunities, isPromotionUpsellEnabled, preservesUpsellBenefits, unlocksUpsellOpportunity, type UpsellOpportunity } from "./promotion-upsell-policy.ts";
@@ -60,7 +60,7 @@ export type CheckoutUpsellModel = Readonly<{
   giftPicker: CartGiftPickerModel;
   offer: null | Readonly<{ campaignId: string; name: string; products: readonly Readonly<{ productId: string; name: string; imageUrl: string | null; variants: readonly UpsellVariantView[] }>[] }>;
 }>;
-type Metric = Readonly<{ event: "recommendation" | "scope" | "add"; outcome: "offered" | "empty" | "failed" | "added" | "quote_changed" | "timed_out"; durationMs: number; quoteAttempts?: number }>;
+type Metric = Readonly<{ event: "recommendation" | "scope" | "hydrate" | "add"; outcome: "offered" | "empty" | "failed" | "added" | "quote_changed" | "timed_out"; durationMs: number; quoteAttempts?: number }>;
 export function recordUpsellMetric(metric: Metric) {
   // Fixed enums + bounded duration only. Never log exceptions, identifiers, input, cookies or tokens.
   console.info("promotion_upsell", { event: metric.event, outcome: metric.outcome, durationMs: Math.min(60_000, Math.max(0, Math.round(metric.durationMs))), ...(metric.quoteAttempts === undefined ? {} : { quoteAttempts: Math.min(UPSELL_MAX_QUOTES, Math.max(0, Math.round(metric.quoteAttempts))) }) });
@@ -88,13 +88,15 @@ async function discover(tx: Prisma.TransactionClient, state: CartGiftState, oppo
   // One bounded lateral lookup per near campaign, batched in one statement. Round-robin slots
   // allocate the combined pool across campaigns before quote ranking (which never uses priority).
   // Each lateral subquery stops at the product cap; the intermediate pool is <= 50 × cap rows.
+  // Only publicly listed products are candidates: the banner links to the scope listing, which hides the rest, so an
+  // offer whose only candidate is hidden there would send the shopper to an empty page.
   const pool = await tx.$queryRaw<{ id: string }[]>`
     WITH pool AS (
       SELECT s."campaignId", p."id", row_number() OVER (PARTITION BY s."campaignId" ORDER BY p."id") AS slot
       FROM ${upsellScopeRecordset(scopes)}
       CROSS JOIN LATERAL (
         SELECT p."id" FROM "ProductMirror" p
-        WHERE ${upsellAddableProduct(shopId, paidIds)} AND ${UPSELL_IN_SCOPE}
+        WHERE ${upsellAddableProduct(shopId, paidIds)} AND ${UPSELL_PUBLICLY_LISTED} AND ${UPSELL_IN_SCOPE}
         ORDER BY p."id" LIMIT ${UPSELL_MAX_PRODUCTS}
       ) p
     ) SELECT "id" FROM pool GROUP BY "id" ORDER BY min(slot), min("campaignId"), "id" LIMIT ${UPSELL_MAX_PRODUCTS}`;

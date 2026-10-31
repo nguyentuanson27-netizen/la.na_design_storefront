@@ -8,7 +8,7 @@ import { isTrustedUpsellBrowseRequest } from "@/commerce/checkout-upsell-http";
 import { upsellReadGate } from "@/commerce/checkout-upsell-read-gate";
 import { deriveGuestCheckoutClientKey } from "@/commerce/guest-checkout-client-identity";
 import { createGuestCheckoutRateLimiter } from "@/commerce/guest-checkout-rate-limit";
-import { createPromotionUpsellService, UPSELL_SCOPE_PAGE_SIZE } from "@/commerce/promotion-upsell";
+import { createPromotionUpsellService, recordUpsellMetric, UPSELL_SCOPE_PAGE_SIZE } from "@/commerce/promotion-upsell";
 import { isPromotionUpsellEnabled } from "@/commerce/promotion-upsell-policy";
 import { listConfiguredStorefrontListingProductsByIds } from "@/commerce/storefront-catalog-runtime";
 import { parseStorefrontListingPage, type StorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
@@ -55,6 +55,10 @@ async function listForCart(campaignId: string, page: number): Promise<Loaded> {
 
     const release = upsellReadGate.tryAcquire();
     if (!release) return fallback({ ...empty, limited: true });
+    let scope: Awaited<ReturnType<ReturnType<typeof createPromotionUpsellService>["getScope"]>>;
+    const now = new Date();
+    // The gate admits quote work only (shared with the checkout banner). It is released as soon as the scope is known,
+    // so slow catalog hydration below can never hold both slots and make the banner's POST return nothing.
     try {
       const clientKey = deriveGuestCheckoutClientKey(requestHeaders, auth);
       const limiter = createGuestCheckoutRateLimiter(prisma);
@@ -70,43 +74,48 @@ async function listForCart(campaignId: string, page: number): Promise<Loaded> {
       if (!cart) return fallback(empty);
       // Only a confirmed, unexpired guest cart may spend the shared POST upsell budget (first page only).
       if (firstPage && !(await limiter.consumeUpsellClient({ clientKey }))) return fallback({ ...empty, limited: true });
-      const now = new Date();
-      const scope = await createPromotionUpsellService(prisma, store, { shopId, secret: auth.secret }).getScope(campaignId, page, now);
-      const retryHref = scope.retryable ? eligibleHref(campaignId, page) : null;
-      if (!scope.page) return fallback({ ...empty, retryHref });
-      const totalPages = Math.ceil(scope.page.totalCount / UPSELL_SCOPE_PAGE_SIZE);
-      // A page past the end is a URL that does not exist; page 1 of an empty scope is the empty state.
-      if (page > Math.max(totalPages, 1)) notFound();
-
-      let catalog: Awaited<ReturnType<typeof listConfiguredStorefrontListingProductsByIds>>;
-      // The scope is known; a failing catalog read is a hiccup to retry, not "the offer changed".
-      try { catalog = await listConfiguredStorefrontListingProductsByIds({ ids: scope.page.productIds, now }); }
-      catch { return fallback({ ...empty, retryHref: eligibleHref(campaignId, page) }); }
-      const listing = buildFlashSaleViewModel({
-        basePath: "/offers/eligible",
-        products: catalog.products,
-        totalCount: scope.page.totalCount,
-        totalPages,
-        page,
-        pageSize: UPSELL_SCOPE_PAGE_SIZE,
-        selectEventBySlug: new Map(),
-        pricingRule: catalog.pricingRule,
-      });
-      return {
-        view: {
-          offerName: scope.page.offerName,
-          // The shared builder pages on `?page=`; this route also carries the campaign.
-          listing: { ...listing,
-            previousHref: page > 1 ? eligibleHref(campaignId, page - 1) : null,
-            nextHref: page < totalPages ? eligibleHref(campaignId, page + 1) : null },
-          limited: false,
-          retryHref: null,
-        },
-        refreshAfterMs: catalog.refreshAfterMs,
-      };
+      scope = await createPromotionUpsellService(prisma, store, { shopId, secret: auth.secret }).getScope(campaignId, page, now);
     } finally {
       release();
     }
+    const retryHref = scope.retryable ? eligibleHref(campaignId, page) : null;
+    if (!scope.page) return fallback({ ...empty, retryHref });
+    const totalPages = Math.ceil(scope.page.totalCount / UPSELL_SCOPE_PAGE_SIZE);
+    // A page past the end is a URL that does not exist; page 1 of an empty scope is the empty state.
+    if (page > Math.max(totalPages, 1)) notFound();
+
+    let catalog: Awaited<ReturnType<typeof listConfiguredStorefrontListingProductsByIds>>;
+    // The scope is known; a failing catalog read is a hiccup to retry, not "the offer changed".
+    // Its own metric (`hydrate`) so end-to-end latency is visible next to the quote-and-SQL `scope` event.
+    const hydrating = Date.now();
+    try { catalog = await listConfiguredStorefrontListingProductsByIds({ ids: scope.page.productIds, now }); }
+    catch {
+      recordUpsellMetric({ event: "hydrate", outcome: "failed", durationMs: Date.now() - hydrating });
+      return fallback({ ...empty, retryHref: eligibleHref(campaignId, page) });
+    }
+    recordUpsellMetric({ event: "hydrate", outcome: "offered", durationMs: Date.now() - hydrating });
+    const listing = buildFlashSaleViewModel({
+      basePath: "/offers/eligible",
+      products: catalog.products,
+      totalCount: scope.page.totalCount,
+      totalPages,
+      page,
+      pageSize: UPSELL_SCOPE_PAGE_SIZE,
+      selectEventBySlug: new Map(),
+      pricingRule: catalog.pricingRule,
+    });
+    return {
+      view: {
+        offerName: scope.page.offerName,
+        // The shared builder pages on `?page=`; this route also carries the campaign.
+        listing: { ...listing,
+          previousHref: page > 1 ? eligibleHref(campaignId, page - 1) : null,
+          nextHref: page < totalPages ? eligibleHref(campaignId, page + 1) : null },
+        limited: false,
+        retryHref: null,
+      },
+      refreshAfterMs: catalog.refreshAfterMs,
+    };
   } catch (error) {
     // Next signals notFound()/redirect by throwing; those must reach the framework.
     if (error instanceof Error && "digest" in error) throw error;

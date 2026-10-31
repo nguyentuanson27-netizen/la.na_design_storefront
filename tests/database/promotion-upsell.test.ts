@@ -414,6 +414,24 @@ test("SC-07: a product that is only a component of a combo stays hidden, exactly
   assert.equal(second.productIds.length, 2);
 });
 
+test("SC-08: the banner never links to an offer whose only candidate the listing hides, so the link cannot land on an empty page", async () => {
+  // The scope's only addable product is a piece of a set elsewhere in the catalog: /shop hides it, so the listing is empty.
+  const outerSet = await product("outer-set", 300000, ["S"]);
+  const candidate = await prisma.variantMirror.findFirstOrThrow({ where: { productId: candidateProductId } });
+  await prisma.compositeComponentMirror.create({ data: { parentVariantId: outerSet.variants[0]!.id, componentVariantId: candidate.id, quantity: 1, syncedAt: new Date() } });
+  assert.equal((await service().getScope(campaignId, 1)).page?.totalCount, 0, "the listing has nothing to show");
+  assert.equal((await service().getBanner(await proof()))?.offerName, null, "so the banner offers nothing that leads there");
+  assert.equal((await service().get(await proof()))?.offer ?? null, null, "and neither does the full recommendation");
+
+  // A second, publicly listed candidate restores the offer, and the banner's link then lands on a non-empty page.
+  const listed = await product("listed-candidate", 100000, ["S"]);
+  await prisma.giftQuantityTarget.create({ data: { campaignId, productId: listed.id, role: "INCLUDE" } });
+  const banner = await service().getBanner(await proof());
+  assert.equal(banner?.campaignId, campaignId);
+  const page = (await service().getScope(campaignId, 1)).page!;
+  assert.deepEqual(page.productIds, [listed.id]);
+});
+
 test("SC-03: a cart that is not one unit away from the offer, a bad id or page, a disabled feature or no cart list nothing", async () => {
   await seedBoundedCatalog(3);
   assert.deepEqual(await service().getScope("nonexistent", 1), { page: null, retryable: false });

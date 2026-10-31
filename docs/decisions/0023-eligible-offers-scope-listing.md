@@ -27,14 +27,18 @@ Owner decision (2026-10-31): list the **whole offer scope without per-product qu
   (`listConfiguredStorefrontListingProductsByIds`). Photographs therefore come from the variants, like everywhere else.
 - The cart is still the key. `getScope` runs **one** canonical quote to learn the cart and confirms the campaign is
   currently one unit away from it; otherwise the page says the offer or cart changed. Products already in the cart
-  are excluded. The trusted-request check, read gate and both rate-limit buckets are unchanged.
+  are excluded. The trusted-request check, read gate and both rate-limit buckets are unchanged. The read gate (2 slots a
+  process, shared with the banner's POST) admits quote work only: it is released as soon as the scope is known, before
+  the catalog hydrates the page's cards, so slow card reads cannot hold both slots and silence the banner.
 - "In scope" is one SQL fragment (`promotion-upsell-scope.ts`) shared by this listing and the banner's candidate
   discovery, so the two cannot disagree: whole catalog, a frozen fixed set, or include/exclude/category membership
   with descendants, an explicit exclusion winning over category membership.
 - **Public-listing visibility.** The listing applies the default rule of every public listing (`buildBaseProductFilters`):
   a product with a variant that is a component of a combo is not listed. The rule is in the count and page SQL, before the
-  page is cut, so counts, cards and pages agree. The checkout banner's candidate discovery keeps its own rule, unchanged,
-  so it may still recommend such a product; the listing will not show it.
+  page is cut, so counts, cards and pages agree. The banner's candidate discovery applies the **same** rule: the banner
+  links to this listing, so an offer whose only candidate is hidden here would lead to an empty page. A campaign whose
+  addable products are all component-only is therefore not advertised at checkout (the component can still be bought
+  from its own product page; only the upsell no longer proposes it).
 - **Rate limits.** Page 1 keeps the existing budgets (10 a minute browse bucket, plus the 20 a minute budget shared with the
   banner's POST), so a GET can never exhaust the banner's POST budget. Page 2 and later use a separate bucket
   (`checkout-upsell-page-client`, 30 a minute): paging through a large scope does not trip the first-page limit or spend the
@@ -61,7 +65,8 @@ also serves `getScope`.
 
 - The page can show a product that will not unlock the offer for this cart (sold out, a stacking conflict, a
   composite sharing stock). It is a listing of the offer's scope, not a promise per product.
-- Metrics: `promotion_upsell` gains `event: "scope"` (`offered` / `empty` / `failed` / `timed_out`); the `browse`
-  event and the `partial` / `cached` outcomes no longer exist.
+- Metrics: `promotion_upsell` gains `event: "scope"` (`offered` / `empty` / `failed` / `timed_out`; quote and SQL only)
+  and `event: "hydrate"` (`offered` / `failed`; the catalog read for the page's cards), so end-to-end latency is the sum
+  of the two; the `browse` event and the `partial` / `cached` outcomes no longer exist.
 - Product-list analytics events are not emitted for this page (as before); selecting a card still opens the PDP.
 - Rollback is unchanged: `LA_PROMOTION_UPSELL_ENABLED=false`.
