@@ -364,3 +364,34 @@ test("D-06: a withdrawn offer shows no invitation and leaves checkout usable", a
   await expect(offer).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeEnabled();
 });
+
+test("ER-UI: /offers/eligible is the storefront listing: every in-scope product, paged, in the shared chrome", async ({ page, context }) => {
+  // The listing takes an unused client key so the shared GET budget of earlier tests cannot decide this one.
+  await context.setExtraHTTPHeaders({ "x-ci-client-ip": "203.0.113.230" });
+  // 26 more products in scope: more than one 24-product page, and far more than the four a quote budget could verify.
+  for (let n = 0; n < 26; n++) {
+    const extra = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: `${P}extra-${n}`, slug: `${P}extra-${n}`, name: `Áo extra ${String(n).padStart(2, "0")}`, syncedAt: new Date(), variants: { create: { pancakeVariationId: `${P}extra-${n}S`, color: "Hồng", size: "S", ...(n === 0 ? { pancakeImageUrls: ["https://content.pancake.vn/media/1/2/3/upsell-photo.jpg"] } : {}), pancakeRetailPrice: 100000, pancakeRetailPriceAfterDiscount: 100000, syncedAt: new Date(), warehouseStocks: { create: { pancakeWarehouseId: `${P}wh`, quantity: 20, syncedAt: new Date() } } } } } });
+    await prisma.giftQuantityTarget.create({ data: { campaignId, productId: extra.id, role: "INCLUDE" } });
+  }
+  const path = `/offers/eligible?campaign=${encodeURIComponent(campaignId)}`;
+  const url = `${BASE}${path}`;
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(url);
+    await expect(page.getByRole("heading", { level: 1, name: "Sản phẩm áp dụng ưu đãi" })).toBeVisible();
+    // Photographs live on the variants (the product row has none): the card of a product with a variant photo shows it.
+    await expect(page.locator(".listing-product-grid article", { hasText: "Áo extra 00" }).locator("img").first()).toBeAttached();
+    await expect(page.locator(".listing-product-grid article", { hasText: "Áo extra 01" }).locator("img")).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toBeVisible();
+    await expect(page.locator(".listing-product-grid article")).toHaveCount(24);
+    await expect(page.getByText("27 sản phẩm", { exact: true })).toBeVisible(); // 26 extra + the candidate; the paid product is in the cart
+    await expect(page.getByText("Áo paid")).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+  }
+  await page.getByRole("link", { name: /Trang sau/ }).click();
+  await expect(page).toHaveURL(`${url}&page=2`);
+  await expect(page.locator(".listing-product-grid article")).toHaveCount(3);
+  await expect(page.getByRole("link", { name: /Trang trước/ })).toHaveAttribute("href", path);
+  await page.screenshot({ path: "test-results/upsell-eligible-listing.png", fullPage: true });
+});

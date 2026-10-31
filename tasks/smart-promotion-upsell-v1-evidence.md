@@ -126,3 +126,19 @@ checkout banner (6 quotes) took 1.3 s. Local verification on disposable PostgreS
 
 Still required before enabling a pilot: repeat the preview check on the real catalog and confirm
 `browse` events show `durationMs` < 1,500 ms with no `timed_out`.
+
+### `/offers/eligible` as a storefront listing (ADR 0023)
+
+Trigger: the page showed no product photographs (they live on variants; the upsell code read the empty
+`ProductMirror.primaryImageUrl`) and only four products (each needed a hypothetical +1 quote). Owner decision
+2026-10-31: list the whole offer scope without per-product quotes, as the category pages do.
+
+| Check | Evidence |
+| --- | --- |
+| Upsell DB suite (local, PostgreSQL 16) | 29 passed, 0 failed: 22 existing TG tests + ER-01 (a +1 candidate that cannot be evaluated is skipped) + SC-01…SC-06 (whole scope paged 24/page and not limited by the quote budget, paid product excluded, same order as `/shop`; exclusions/inactive/absent products, category membership with descendants and exclusion winning over category; not-one-unit-away cart, bad id/page, disabled feature and no cart list nothing; sold-out paid line is empty not retryable; transient read failure retryable vs `RangeError` not; banner stays a bounded quote). SC-01/SC-02 were checked red with the "not already in the cart" rule and the exclusion rule removed. |
+| Browser (local, Chromium, `next dev`) | `promotion-upsell.spec.ts` AM-01/A and the new ER-UI passed: listing chrome, 24 cards on page 1 and 3 on page 2, "27 sản phẩm", variant photograph rendered for the product that has one and none for the others, no horizontal overflow, axe clean at 390 and 1280 px, prev/next links. The full spec file was not run locally; CI runs it. |
+| Domain + integration | 3,782 passed, 0 failed, 1 skipped. Typecheck passed; lint 0 errors (existing warnings only). |
+
+Removed with this change: browse mode, the browse cache and its key inputs, the campaign-boundary query and its
+time-zone handling, banner seeding, and their tests (BR-01…BR-16). Not measured: latency of the new page on the real
+catalog; check `promotion_upsell` `event: "scope"` durations on staging.

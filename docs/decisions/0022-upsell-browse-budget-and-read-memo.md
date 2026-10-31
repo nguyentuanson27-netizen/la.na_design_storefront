@@ -1,7 +1,10 @@
 # ADR 0022 — Upsell browse budget, banner-seeded cache and read memo
 
-Status: implementation proposed for review. Amends the "U-03 budget and measurement boundary" section of
-[ADR 0017](./0017-smart-promotion-upsell-implementation.md). No schema, flag, dependency or checkout-path change.
+Status: **phases 1 and 2 (browse budget, banner-seeded cache) are superseded by
+[ADR 0023](./0023-eligible-offers-scope-listing.md)**, which lists the whole offer scope instead and removes that
+code. Phase 3 (read memo) and the quote-error classification below still apply. Amends the "U-03 budget and
+measurement boundary" section of [ADR 0017](./0017-smart-promotion-upsell-implementation.md). No schema, flag,
+dependency or checkout-path change.
 
 ## Evidence that triggered this
 
