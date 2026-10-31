@@ -75,7 +75,12 @@ unchanged.
 - Each entry also expires at the next campaign **start or end** among enabled gift/tier, flash-sale price and
   shipping campaigns (one query per computed list). Nothing is written when a scheduled campaign becomes
   active, so no revision can signal it (BR-10 asserts the start writes nothing); a list never outlives the
-  campaign set it was verified against.
+  campaign set it was verified against. Gift/price campaigns store `timestamp(3)` (a UTC wall clock) and shipping
+  `timestamptz(3)`; a plain UNION of the two is converted in the database session's TimeZone, and with the old SQL a
+  `Asia/Bangkok` session missed a shipping campaign's start (BR-15 failed with it, 25 s early boundary reported as
+  40 s). The query now declares the `timestamp` columns UTC with `AT TIME ZONE 'UTC'` and exchanges "now" and the
+  result as epoch milliseconds, so it depends on neither the session TimeZone nor the driver's date parsing. Other
+  raw SQL in the codebase still assumes a UTC session; that is out of scope here.
 - Value: the already-public browse view (offer name, slug, name, image, option labels). The banner
   response shape is unchanged; seeding happens inside the service.
 - TTL 150 s (2.5× `MAX_STOREFRONT_PROMOTION_REFRESH_MS`), 500 entries, single-flight for identical

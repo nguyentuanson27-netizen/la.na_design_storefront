@@ -8,6 +8,7 @@ import { buildRenderedCheckoutQuoteFacts } from "../../src/commerce/checkout-quo
 import { issueUpsellQuoteProof, type UpsellIntent } from "../../src/commerce/promotion-upsell-proof.ts";
 import { createPromotionUpsellService, UPSELL_BANNER_MAX_QUOTES, UPSELL_BROWSE_MAX_QUOTES, UPSELL_BROWSE_TARGET_PRODUCTS, UPSELL_MAX_QUOTES } from "../../src/commerce/promotion-upsell.ts";
 import { createUpsellBrowseCache } from "../../src/commerce/promotion-upsell-browse-cache.ts";
+import { nextCampaignBoundaryMs } from "../../src/commerce/promotion-upsell-browse-key.ts";
 import { acquireCatalogSyncLock } from "../../src/commerce/catalog-sync-lock.ts";
 import { advanceRevision, lockRevision } from "../../src/commerce/promotion-activation-service.ts";
 
@@ -577,4 +578,30 @@ test("BR-14: a transient shipping read failure is retryable and logged as failed
   // A RangeError is the cart's own shape (the shipping reader rejects it), so a retry cannot help.
   assert.deepEqual(await flaky(new RangeError("Shipping product identity is unavailable")).getBrowse(campaignId), { offer: null, retryable: false });
   assert.equal((metrics.at(-1) as { outcome: string }).outcome, "empty");
+});
+
+test("BR-15: the next campaign boundary is the same instant whatever TimeZone the database session uses", async () => {
+  // GiftQuantityCampaign/PromotionCampaign store `timestamp(3)` (UTC wall clock), ShippingPromotionCampaign `timestamptz(3)`.
+  // A UNION of the two is read in the session TimeZone unless the SQL normalizes it, and a driver may hide that by
+  // misreading the result the same way, so each type must be the earliest boundary in turn.
+  const base = Date.now();
+  const giftStart = new Date(base + 40_000);
+  const shippingStart = new Date(base + 25_000);
+  await prisma.giftQuantityCampaign.create({ data: { id: `${PREFIX}tz-gift`, name: "TZ gift", kind: "QUANTITY_TIER", isEnabled: true, enabledAt: new Date(base), startsAt: giftStart, scopeMode: "DYNAMIC_CATEGORY", tierBasis: "QUANTITY", tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS", targets: { create: [{ productId: candidateProductId, role: "INCLUDE" }] }, tiers: { create: { minQuantity: 3, discountValue: 50 } } } });
+  const boundaryIn = (zone: string | null) => prisma.$transaction(async (tx) => {
+    if (zone) await tx.$executeRawUnsafe(`SET LOCAL TIME ZONE '${zone}'`);
+    return nextCampaignBoundaryMs(tx, new Date(base));
+  });
+  const zones = ["UTC", "Asia/Bangkok", "America/Los_Angeles", "Pacific/Kiritimati", null];
+
+  for (const zone of zones) assert.equal(await boundaryIn(zone), giftStart.getTime(), `timestamp columns only, ${zone ?? "default"} session`);
+
+  const shipping = await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: SHOP, name: "TZ shipping", isEnabled: true, enabledAt: new Date(base), startsAt: shippingStart, minimumQuantity: 2, includeProductIds: [candidateProductId] } });
+  try {
+    for (const zone of zones) assert.equal(await boundaryIn(zone), shippingStart.getTime(), `timestamptz column is earliest, ${zone ?? "default"} session`);
+    await prisma.shippingPromotionCampaign.update({ where: { id: shipping.id }, data: { startsAt: null, endsAt: new Date(base + 90_000) } });
+    for (const zone of zones) assert.equal(await boundaryIn(zone), giftStart.getTime(), `a later timestamptz end does not win, ${zone ?? "default"} session`);
+  } finally {
+    await prisma.shippingPromotionCampaign.delete({ where: { id: shipping.id } });
+  }
 });
