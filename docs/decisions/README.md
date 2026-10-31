@@ -27,3 +27,4 @@
 ADR files are retained as historical records when superseded or amended. The newest accepted ADR governs where decisions overlap, including repository workflow policy documented by ADR 0005, Merchant domain authority documented by ADR 0010, Merchant apparel-fact policy documented by ADR 0007, and Merchant manufacturer-MPN source/ownership semantics documented by ADR 0008.
 
 - [0021 — Derived list prices and campaign basis](0021-list-price-display-and-campaign-basis.md)
+- [0022 — Upsell browse budget, banner-seeded cache and read memo](0022-upsell-browse-budget-and-read-memo.md) (amends ADR 0017 U-03)

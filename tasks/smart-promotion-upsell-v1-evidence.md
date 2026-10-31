@@ -110,3 +110,19 @@ Outstanding before production enablement:
 - Staging pilot with add/timeout/rejection metrics and flag rollback; approve rollout separately.
 
 Rollback behavior by setting LA_PROMOTION_UPSELL_ENABLED=false. Keep both flags OFF by default.
+
+### Eligible-offers browse timeout fix (ADR 0022)
+
+Trigger: preview log showed `/offers/eligible` hitting the 2 s deadline (`quoteAttempts` 11–16) while the
+checkout banner (6 quotes) took 1.3 s. Local verification on disposable PostgreSQL 16:
+
+| Check | Evidence |
+| --- | --- |
+| Upsell DB suite | 38 passed, 0 failed (22 existing + 16 new BR-01…BR-16: early stop, soft-deadline partial, retryable timeout, banner-seeded cache + paid-revision invalidation, single-flight, sold-out paid line is empty not retryable, preflight failure is logged, campaign disable via the revision, `endsAt` cap, scheduled `startsAt` with no revision write, and a gift choice or swap through the real selection service each stop a cached listing; a candidate whose +1 cart cannot be evaluated is skipped, not fatal; a list computed under gift choice B is never cached under the key read for A; a transient shipping read failure is retryable while an unquotable cart is not; the campaign-boundary query returns the same instant under UTC, Asia/Bangkok, America/Los_Angeles and Pacific/Kiritimati sessions; a banner list shorter than the browse target is not seeded). |
+| New domain tests | 14 passed (browse cache TTL/LRU/single-flight, TTL outlives the 60 s page refresh; read memo hit/BigInt key/freeze/pass-through/no replay of failures). |
+| Domain + integration | 3,788 passed, 0 failed, 1 skipped. |
+| Lint / typecheck | Passed; no new warnings. |
+| Profile (33 products × 3 sizes) | Banner 392 → 242 statements, 223 → 163 ms; full 20 quotes 1,162 → 616, 572 → 352 ms; browse after banner: cache hit = 3 single-row reads (cart, revision, gift choices), ~7 ms. |
+
+Still required before enabling a pilot: repeat the preview check on the real catalog and confirm
+`browse` events show `durationMs` < 1,500 ms with no `timed_out`.

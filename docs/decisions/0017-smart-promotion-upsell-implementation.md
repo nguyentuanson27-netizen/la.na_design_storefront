@@ -70,6 +70,9 @@ Staging must repeat the bounded-pool/latency check on the real catalog before en
 Timeout or failure hides Upsell and leaves the ordinary checkout alone. Existing checkout quote
 failures retain their existing fail-closed behavior.
 
+Amended by [ADR 0022](./0022-upsell-browse-budget-and-read-memo.md): the eligible-offers browse read now
+has its own smaller budget, a soft deadline, a banner-seeded cache and a read-only-transaction read memo.
+
 ## Checkout attempt and gift lifecycle
 
 The shared checkout form remains mounted across Server Action refreshes. Its receiving fields stay
