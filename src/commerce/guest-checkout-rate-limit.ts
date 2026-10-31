@@ -10,6 +10,10 @@ const DEFAULT_MAX_UPSELL_CLIENT_ATTEMPTS = 20;
 const DEFAULT_UPSELL_CLIENT_WINDOW_MS = 60_000;
 const DEFAULT_MAX_UPSELL_BROWSE_CLIENT_ATTEMPTS = 10;
 const DEFAULT_UPSELL_BROWSE_CLIENT_WINDOW_MS = 60_000;
+// Pages 2.. of the offer listing: one canonical quote and two SQL statements each, about an eighth of the cost the
+// 10/min first-page budget was sized for, and kept off the shared POST budget so paging cannot starve the banner.
+const DEFAULT_MAX_UPSELL_PAGE_CLIENT_ATTEMPTS = 30;
+const DEFAULT_UPSELL_PAGE_CLIENT_WINDOW_MS = 60_000;
 const MAX_CART_ID_LENGTH = 128;
 const PSEUDONYMOUS_CLIENT_KEY = /^v1:[0-9a-f]{64}$/;
 
@@ -24,6 +28,8 @@ type GuestCheckoutRateLimiterOptions = Readonly<{
   upsellClientWindowMs?: number;
   maxUpsellBrowseClientAttempts?: number;
   upsellBrowseClientWindowMs?: number;
+  maxUpsellPageClientAttempts?: number;
+  upsellPageClientWindowMs?: number;
 }>;
 
 function requirePositiveSafeInteger(value: number, label: string): number {
@@ -111,6 +117,15 @@ export function createGuestCheckoutRateLimiter(
     options.upsellBrowseClientWindowMs ?? DEFAULT_UPSELL_BROWSE_CLIENT_WINDOW_MS,
     "Checkout upsell browse client window",
   );
+  const maxUpsellPageClientAttempts = requirePositiveSafeInteger(
+    options.maxUpsellPageClientAttempts ?? DEFAULT_MAX_UPSELL_PAGE_CLIENT_ATTEMPTS,
+    "Checkout upsell page client max attempts",
+  );
+  const upsellPageClientWindowMs = requirePositiveSafeInteger(
+    options.upsellPageClientWindowMs ?? DEFAULT_UPSELL_PAGE_CLIENT_WINDOW_MS,
+    "Checkout upsell page client window",
+  );
+  const upsellPageClientCappedCount = cappedCount(maxUpsellPageClientAttempts, "Checkout upsell page client max attempts");
   const upsellBrowseClientCappedCount = cappedCount(maxUpsellBrowseClientAttempts, "Checkout upsell browse client max attempts");
   const upsellClientCappedCount = cappedCount(maxUpsellClientAttempts, "Checkout upsell client max attempts");
   const cartCappedCount = cappedCount(maxAttempts, "Checkout max attempts");
@@ -234,5 +249,21 @@ export function createGuestCheckoutRateLimiter(
     });
   }
 
-  return { consume, consumeClient, consumeGeoClient, consumeUpsellClient, consumeUpsellBrowseClient };
+  /**
+   * Page 2 and later of the offer listing. A separate bucket: the first page keeps the browse + shared POST budgets
+   * exactly as before, so a shopper paging through a large scope neither trips the first-page limit nor spends the
+   * checkout banner's quote budget, while the total quotes one client can cause per minute stays below what the
+   * first-page budget alone allowed when each view ran up to eight.
+   */
+  async function consumeUpsellPageClient({ clientKey, now = new Date() }: { clientKey: string; now?: Date }): Promise<boolean> {
+    return consumeBucket({
+      bucketKey: `checkout-upsell-page-client:${requireClientKey(clientKey)}`,
+      now,
+      windowMs: upsellPageClientWindowMs,
+      maxAttempts: maxUpsellPageClientAttempts,
+      cap: upsellPageClientCappedCount,
+    });
+  }
+
+  return { consume, consumeClient, consumeGeoClient, consumeUpsellClient, consumeUpsellBrowseClient, consumeUpsellPageClient };
 }

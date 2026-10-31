@@ -135,6 +135,30 @@ export async function listConfiguredManualNewArrivalsPage({
   };
 }
 
+/**
+ * The given products, in the given order, as listing cards: read through the same visibility rules, priced
+ * through the same promotion resolution and given the same Flash Sale presentation as every other listing.
+ * For a surface that already knows which ids it wants (it paged them itself) and only needs them drawn.
+ */
+export async function listConfiguredStorefrontListingProductsByIds({
+  ids,
+  now,
+}: {
+  ids: readonly string[];
+  now?: Date;
+}) {
+  const shopId = readPancakeShopId();
+  const products = await createStorefrontCatalogRepository(prisma).listProductsByIds({ shopId, ids });
+  const at = now ?? new Date();
+  const { pricingRule, refreshAfterMs, campaignsByVariantId } =
+    await resolveStorefrontPromotionForProducts({ products, now: at });
+  return {
+    products: withListingFlashSale(products, campaignsByVariantId, at),
+    pricingRule,
+    refreshAfterMs,
+  };
+}
+
 export async function listConfiguredStorefrontDiscoveryPage({
   discovery,
   pageSize,

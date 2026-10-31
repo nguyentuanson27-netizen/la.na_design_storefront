@@ -2,15 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { prisma } from "../../src/db/prisma.ts";
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
-import { createCartGiftSelectionService, readCartGiftState } from "../../src/commerce/cart-gift-selection.ts";
+import { readCartGiftState } from "../../src/commerce/cart-gift-selection.ts";
 import { resolveBenefitCheckoutQuote } from "../../src/commerce/benefit-checkout-quote.ts";
 import { buildRenderedCheckoutQuoteFacts } from "../../src/commerce/checkout-quote.ts";
 import { issueUpsellQuoteProof, type UpsellIntent } from "../../src/commerce/promotion-upsell-proof.ts";
-import { createPromotionUpsellService, UPSELL_BANNER_MAX_QUOTES, UPSELL_BROWSE_MAX_QUOTES, UPSELL_BROWSE_TARGET_PRODUCTS, UPSELL_MAX_QUOTES } from "../../src/commerce/promotion-upsell.ts";
-import { createUpsellBrowseCache } from "../../src/commerce/promotion-upsell-browse-cache.ts";
-import { nextCampaignBoundaryMs } from "../../src/commerce/promotion-upsell-browse-key.ts";
+import { createPromotionUpsellService, UPSELL_BANNER_MAX_QUOTES, UPSELL_SCOPE_PAGE_SIZE } from "../../src/commerce/promotion-upsell.ts";
 import { acquireCatalogSyncLock } from "../../src/commerce/catalog-sync-lock.ts";
-import { advanceRevision, lockRevision } from "../../src/commerce/promotion-activation-service.ts";
+import { lockRevision } from "../../src/commerce/promotion-activation-service.ts";
 
 const SHOP = 929171;
 const PREFIX = "ups171-";
@@ -20,7 +18,7 @@ let cartId = "", paidId = "", candidateProductId = "", giftId = "";
 const campaignId = `${PREFIX}campaign`;
 const metrics: unknown[] = [];
 const store = () => ({ get: (name: string) => name === "la_cart" ? { value: cartId } : undefined });
-const service = (browseCache: ReturnType<typeof createUpsellBrowseCache<never>> | null = null) => createPromotionUpsellService(prisma, store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: browseCache as never });
+const service = () => createPromotionUpsellService(prisma, store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m) });
 async function product(id: string, price = 100000, sizes = ["S"]) {
   return prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: `${PREFIX}${id}`, slug: `${PREFIX}${id}`, name: `Áo ${id}`, syncedAt: new Date(), variants: { create: sizes.map((size, i) => ({ pancakeVariationId: `${PREFIX}${id}-${size}`, color: "Hồng", size, isActive: true, isPresent: true, pancakeRetailPrice: price + i * 10000, pancakeRetailPriceAfterDiscount: price + i * 10000, syncedAt: new Date(), warehouseStocks: { create: { pancakeWarehouseId: `${PREFIX}warehouse`, quantity: 20, syncedAt: new Date() } } })) } }, include: { variants: true } });
 }
@@ -221,16 +219,6 @@ test("UP-00/TG-06: representative 30-product, 3-size catalog; bounded output/quo
   const bannerMetric = metrics.at(-1) as { event: string; quoteAttempts?: number };
   assert.equal(bannerMetric.event, "recommendation");
   assert.equal(bannerMetric.quoteAttempts, UPSELL_BANNER_MAX_QUOTES, "the compact banner uses exactly six quote attempts");
-  const { offer: browse, retryable } = await service().getBrowse(campaignId);
-  const browseMetric = metrics.at(-1) as { event: string; quoteAttempts?: number };
-  assert.equal(browseMetric.event, "browse");
-  assert.ok(browseMetric.quoteAttempts! <= UPSELL_BROWSE_MAX_QUOTES, "the eligible-product browse caps the quote work well below the checkout budget");
-  assert.ok(UPSELL_BROWSE_MAX_QUOTES < UPSELL_MAX_QUOTES);
-  assert.equal(retryable, false);
-  assert.equal(browse?.offerName, "Mua 3 tặng khăn");
-  assert.equal(browse?.products.length, UPSELL_BROWSE_TARGET_PRODUCTS, "the browse stops as soon as enough products are verified");
-  assert.equal(JSON.stringify(browse).includes(cartId), false);
-  assert.deepEqual(await service().getBrowse("nonexistent"), { offer: null, retryable: false });
   assert.match(banner?.paidCartKey ?? "", /^[A-Za-z0-9_-]{43}$/);
   assert.deepEqual(Object.keys(banner ?? {}).sort(), ["campaignId", "offerName", "paidCartKey"], "banner mode must not build or serialize add intents");
   console.info("UP-00 fixture benchmark", { products: 33, maxDiscovered: 10, maxQuotes: 20, durationMs: times });
@@ -307,212 +295,8 @@ async function seedBoundedCatalog(count = 12) {
   const products = [];
   for (let n = 0; n < count; n++) products.push(await product(`browse-${n}`, 100000, ["S", "M", "L"]));
   await prisma.giftQuantityTarget.createMany({ data: products.map((p) => ({ campaignId, productId: p.id, role: "INCLUDE" })) });
+  return products;
 }
-/** A fake clock advancing a fixed step per read, so deadline behaviour is deterministic. */
-const steppedClock = (stepMs: number) => { let t = 0; return () => (t += stepMs) - stepMs; };
-const browseService = (clock: () => number, browseCache: ReturnType<typeof createUpsellBrowseCache<never>> | null = null) =>
-  createPromotionUpsellService(prisma, store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: browseCache as never, clock });
-
-test("BR-01: browse stops once enough products are verified, spending one quote per product", async () => {
-  await seedBoundedCatalog();
-  const { offer, retryable } = await service().getBrowse(campaignId);
-  assert.equal(retryable, false);
-  assert.equal(offer?.products.length, UPSELL_BROWSE_TARGET_PRODUCTS);
-  const metric = metrics.at(-1) as { event: string; outcome: string; quoteAttempts: number };
-  assert.deepEqual([metric.event, metric.outcome, metric.quoteAttempts], ["browse", "offered", UPSELL_BROWSE_TARGET_PRODUCTS]);
-});
-
-test("BR-02: at the soft deadline browse returns what it verified instead of nothing, and does not cache it", async () => {
-  await seedBoundedCatalog();
-  const cache = createUpsellBrowseCache<never>();
-  // 500 ms per clock read: the third candidate check lands past the 1,300 ms soft deadline.
-  const { offer, retryable } = await browseService(steppedClock(500), cache).getBrowse(campaignId);
-  assert.equal(retryable, false);
-  assert.equal(offer?.products.length, 2);
-  const metric = metrics.at(-1) as { event: string; outcome: string; quoteAttempts: number };
-  assert.deepEqual([metric.event, metric.outcome, metric.quoteAttempts], ["browse", "partial", 2]);
-  assert.equal(cache.size, 0, "a truncated list must not be pinned for the cache lifetime");
-});
-
-test("BR-03: out of time with nothing verified is a retryable timeout, not 'offer changed'", async () => {
-  await seedBoundedCatalog();
-  const { offer, retryable } = await browseService(steppedClock(2_000)).getBrowse(campaignId);
-  assert.equal(offer, null);
-  assert.equal(retryable, true);
-  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "timed_out");
-  // No opportunity at all (campaign switched off) is a normal empty result, not a retry.
-  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { isEnabled: false } });
-  assert.deepEqual(await service().getBrowse(campaignId), { offer: null, retryable: false });
-});
-
-test("BR-04: the checkout banner seeds the browse page; a paid-line change invalidates it", async () => {
-  await seedBoundedCatalog();
-  const cache = createUpsellBrowseCache<never>();
-  const banner = await service(cache).getBanner(await proof());
-  assert.equal(banner?.campaignId, campaignId);
-  assert.equal(cache.size, 1, "banner verification is reused instead of recomputed");
-
-  const hit = await service(cache).getBrowse(campaignId);
-  assert.ok(hit.offer && hit.offer.products.length > 0);
-  assert.deepEqual(metrics.at(-1), { event: "browse", outcome: "cached", durationMs: (metrics.at(-1) as { durationMs: number }).durationMs, quoteAttempts: 0 });
-  assert.equal(JSON.stringify(hit).includes(cartId), false);
-
-  // The cache never serves another cart, and a different paid revision is a different key.
-  await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 1, now: new Date() });
-  const sizeBefore = cache.size;
-  const miss = await service(cache).getBrowse(campaignId);
-  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached");
-  assert.equal(cache.size, sizeBefore + (miss.offer ? 1 : 0));
-});
-
-test("BR-05: concurrent identical browse requests share one computation", async () => {
-  await seedBoundedCatalog();
-  const cache = createUpsellBrowseCache<never>();
-  const results = await Promise.all([service(cache).getBrowse(campaignId), service(cache).getBrowse(campaignId), service(cache).getBrowse(campaignId)]);
-  assert.ok(results.every((r) => r.offer?.products.length === UPSELL_BROWSE_TARGET_PRODUCTS));
-  assert.equal(metrics.filter((m) => (m as { event: string; outcome: string }).event === "browse" && (m as { outcome: string }).outcome === "offered").length, 1);
-});
-
-test("BR-06: a cart with no valid quote is an empty browse, not a retryable failure", async () => {
-  await seedBoundedCatalog();
-  await prisma.warehouseStock.updateMany({ where: { variantId: paidId }, data: { quantity: 0 } });
-  const cache = createUpsellBrowseCache<never>();
-  for (const result of [await service().getBrowse(campaignId), await service(cache).getBrowse(campaignId)]) {
-    assert.deepEqual(result, { offer: null, retryable: false });
-  }
-  assert.equal((metrics.at(-1) as { event: string; outcome: string }).outcome, "empty");
-  assert.equal(cache.size, 0);
-});
-
-test("BR-07: a failure before the cache lookup is retryable and still logged as a browse failure", async () => {
-  const broken = { cart: { findFirst: async () => { throw new Error("db down"); } }, promotionPricingRevision: { findUnique: async () => ({ revision: BigInt(1) }) }, cartGiftSelection: { findMany: async () => [] } } as unknown as typeof prisma;
-  const failing = createPromotionUpsellService(broken, store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: createUpsellBrowseCache<never>() as never });
-  assert.deepEqual(await failing.getBrowse(campaignId), { offer: null, retryable: true });
-  assert.deepEqual(metrics.at(-1), { event: "browse", outcome: "failed", durationMs: (metrics.at(-1) as { durationMs: number }).durationMs, quoteAttempts: 0 });
-});
-
-test("BR-08: disabling a campaign stops the cached listing at the next render, not after the TTL", async () => {
-  await seedBoundedCatalog();
-  const cache = createUpsellBrowseCache<never>();
-  assert.equal((await service(cache).getBanner(await proof()))?.campaignId, campaignId);
-  assert.ok((await service(cache).getBrowse(campaignId)).offer, "a fresh banner-seeded entry is served");
-  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "cached");
-
-  // The real admin path serializes on the promotion revision row and advances it for an effective change.
-  await prisma.$transaction(async (tx) => {
-    const revision = await lockRevision(tx);
-    await tx.giftQuantityCampaign.update({ where: { id: campaignId }, data: { isEnabled: false } });
-    await advanceRevision(tx, revision);
-  });
-  const after = await service(cache).getBrowse(campaignId);
-  assert.deepEqual(after, { offer: null, retryable: false }, "the page must stop introducing products immediately");
-  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached");
-});
-
-test("BR-09: a cached listing never outlives the campaign's end time", async () => {
-  await seedBoundedCatalog();
-  const base = Date.now();
-  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { endsAt: new Date(base + 30_000) } });
-  let t = base;
-  const cache = createUpsellBrowseCache<never>({ now: () => t });
-  const seeded = await service(cache).getBanner(await proof(), new Date(base));
-  assert.equal(seeded?.campaignId, campaignId);
-
-  t = base + 20_000; // still before endsAt and well inside the 150 s TTL
-  assert.ok((await service(cache).getBrowse(campaignId, new Date(t))).offer);
-  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "cached");
-
-  t = base + 31_000; // campaign ended 1 s ago: the entry is gone even though the TTL has 119 s left
-  assert.deepEqual(await service(cache).getBrowse(campaignId, new Date(t)), { offer: null, retryable: false });
-  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached");
-});
-
-test("BR-10: a scheduled campaign that starts inside the TTL ends the cached listing without any revision write", async () => {
-  await seedBoundedCatalog();
-  const base = Date.now();
-  const revisionBefore = (await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: "current" } })).revision;
-  // Enabled and scheduled: nothing is written when it becomes active, so only its startsAt can invalidate.
-  await prisma.giftQuantityCampaign.create({ data: { id: `${PREFIX}scheduled`, name: "Scheduled tier", kind: "QUANTITY_TIER", isEnabled: true, enabledAt: new Date(base), startsAt: new Date(base + 40_000), scopeMode: "DYNAMIC_CATEGORY", tierBasis: "QUANTITY", tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS", targets: { create: [{ productId: candidateProductId, role: "INCLUDE" }] }, tiers: { create: { minQuantity: 3, discountValue: 50 } } } });
-  let t = base;
-  const cache = createUpsellBrowseCache<never>({ now: () => t });
-  assert.equal((await service(cache).getBanner(await proof(), new Date(base)))?.campaignId, campaignId);
-
-  t = base + 20_000;
-  assert.ok((await service(cache).getBrowse(campaignId, new Date(t))).offer);
-  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "cached");
-
-  t = base + 41_000; // the scheduled campaign started 1 s ago; the TTL has 109 s left and the revision is unchanged
-  await service(cache).getBrowse(campaignId, new Date(t));
-  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached", "must be re-quoted against the campaign that just started");
-  assert.equal((await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: "current" } })).revision, revisionBefore, "the start itself wrote nothing");
-});
-
-/** Campaign A is already earned by the 2 paid units (a real entitlement); campaign B (the offer) is one unit away. */
-async function earnedGiftFixture() {
-  const paidProductId = (await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } })).productId;
-  const gift2 = await product("gift2", 1000);
-  const earned = `${PREFIX}earned`;
-  await prisma.giftQuantityCampaign.create({ data: { id: earned, kind: "GIFT_ITEM", name: "Mua 2 tặng quà", isEnabled: true, enabledAt: new Date(), scopeMode: "DYNAMIC_CATEGORY", categoryKeys: [], targets: { create: [{ productId: paidProductId, role: "INCLUDE" }] }, giftTrigger: "QUANTITY", minimumQuantity: 2, maxGiftsPerOrder: 1, allowDuplicateGifts: false, giftOptions: { create: [{ variantId: giftId }, { variantId: gift2.variants[0]!.id }] } } });
-  // Two earned gift campaigns coexist only if both allow stacking; otherwise the +1 would cost the chosen gift.
-  for (const id of [campaignId, earned]) await prisma.giftQuantityCampaign.update({ where: { id }, data: { stackingEnabled: true, stackPeers: { create: { peerKind: "GIFT_ITEM", peerCampaignId: "*" } } } });
-  const revision = (await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: earned } })).revision;
-  await seedBoundedCatalog();
-  const gifts = createCartGiftSelectionService(prisma, store(), { shopId: SHOP, env });
-  return {
-    gift2Id: gift2.variants[0]!.id,
-    choose: (variantId: string, quantity: number) => gifts.set({ campaignId: earned, variantId, quantity, campaignRevision: revision }),
-    paidRevision: async () => (await prisma.cart.findUniqueOrThrow({ where: { id: cartId }, select: { paidRevision: true } })).paidRevision,
-  };
-}
-
-test("BR-11: choosing or swapping an earned gift through the real selection service re-evaluates the cached listing", async () => {
-  const { gift2Id, choose, paidRevision } = await earnedGiftFixture();
-  const outcome = () => (metrics.at(-1) as { outcome: string }).outcome;
-  const cache = createUpsellBrowseCache<never>();
-  const paidBefore = await paidRevision();
-
-  assert.equal((await service(cache).getBanner(await proof()))?.campaignId, campaignId);
-  assert.ok((await service(cache).getBrowse(campaignId)).offer);
-  assert.equal(outcome(), "cached", "no gift chosen yet: served from the banner-seeded entry");
-
-  assert.equal((await choose(giftId, 1)).ok, true, "a valid choice of the earned gift");
-  assert.equal(await paidRevision(), paidBefore, "choosing a gift never advances the paid revision");
-  assert.ok((await service(cache).getBrowse(campaignId)).offer);
-  assert.notEqual(outcome(), "cached", "the choice must be re-evaluated, not served from the old list");
-  assert.ok((await service(cache).getBrowse(campaignId)).offer);
-  assert.equal(outcome(), "cached", "unchanged choice: the recomputed list is reused");
-
-  assert.equal((await choose(giftId, 0)).ok, true);
-  assert.equal((await choose(gift2Id, 1)).ok, true, "swap to the other gift option");
-  assert.equal(await paidRevision(), paidBefore);
-  await service(cache).getBrowse(campaignId);
-  assert.notEqual(outcome(), "cached", "a swapped gift is a different key again");
-});
-
-test("BR-13: a list verified under gift choice B is never cached under the key read for choice A (A→B→A inside one request)", async () => {
-  const { gift2Id, choose } = await earnedGiftFixture();
-  assert.equal((await choose(giftId, 1)).ok, true, "state A");
-  const inner = createUpsellBrowseCache<never>();
-  let raced = false;
-  // The other tab acts exactly between `getBrowse`'s key lookup (state A) and its quote transaction.
-  const racing = {
-    get size() { return inner.size; },
-    set: inner.set,
-    async resolve(key: string, load: Parameters<typeof inner.resolve>[1]) {
-      if (!raced) { raced = true; assert.equal((await choose(giftId, 0)).ok, true); assert.equal((await choose(gift2Id, 1)).ok, true); }
-      return inner.resolve(key, load);
-    },
-  };
-  const first = await service(racing as never).getBrowse(campaignId);
-  assert.ok(first.offer, "this request is still answered, computed under the newer choice B");
-  assert.equal(inner.size, 0, "a list computed under B must not be stored under the key that was read for A");
-
-  assert.equal((await choose(gift2Id, 0)).ok, true);
-  assert.equal((await choose(giftId, 1)).ok, true, "back to A");
-  await service(inner as never).getBrowse(campaignId);
-  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached", "A must be re-verified, not served B's list");
-});
-
 /** A client whose transactions throw `fault(model, operation, args)` instead of running that read, when it returns an Error. */
 function injectingFault(fault: (model: string, operation: string, args: unknown) => Error | null): typeof prisma {
   type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
@@ -545,83 +329,154 @@ function injectingFault(fault: (model: string, operation: string, args: unknown)
 const refusingFor = (variantId: string) => injectingFault((model, operation, args) =>
   model === "variantMirror" && operation === "findMany" && (args as { where?: { id?: { in?: string[] } } })?.where?.id?.in?.includes(variantId) && (args as { where: { id: { in: string[] } } }).where.id.in.length > 1
     ? new Error("Invalid gift configuration") : null);
+const lastMetric = () => metrics.at(-1) as { event: string; outcome: string; quoteAttempts?: number };
 
-test("BR-12: a candidate whose hypothetical +1 cart cannot be evaluated is skipped; verified candidates are not discarded", async () => {
+test("ER-01: a candidate whose hypothetical +1 cart cannot be evaluated is skipped; verified candidates are not discarded", async () => {
   // Created first, so it is the first candidate tried. The paid cart itself stays valid throughout.
   const bad = await product("bad-first", 100000, ["S"]);
   await prisma.giftQuantityTarget.create({ data: { campaignId, productId: bad.id, role: "INCLUDE" } });
   await seedBoundedCatalog();
-  const refusing = (cache: ReturnType<typeof createUpsellBrowseCache<never>> | null = null) =>
-    createPromotionUpsellService(refusingFor(bad.variants[0]!.id), store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: cache as never });
-
-  const browse = await refusing().getBrowse(campaignId);
-  assert.equal(browse.retryable, false);
-  assert.equal(browse.offer?.products.length, UPSELL_BROWSE_TARGET_PRODUCTS, "other candidates are still verified");
-  assert.equal(browse.offer?.products.some((p) => p.slug === `${PREFIX}bad-first`), false, "the unevaluable candidate is never offered");
-  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "offered");
+  const refusing = () => createPromotionUpsellService(refusingFor(bad.variants[0]!.id), store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m) });
   assert.equal((await refusing().getBanner(await proof()))?.campaignId, campaignId);
   const full = await refusing().get(await proof());
-  assert.ok(full?.offer, "the full model keeps the verified candidates too");
-  assert.equal(full.offer.products.some((p) => p.productId === bad.id), false);
+  assert.ok(full?.offer, "the full model keeps the verified candidates");
+  assert.equal(full.offer.products.some((p) => p.productId === bad.id), false, "the unevaluable candidate is never offered");
 });
 
-test("BR-14: a transient shipping read failure is retryable and logged as failed; an unquotable cart stays non-retryable", async () => {
+// ---- /offers/eligible: every addable product in the offer's scope, paged, with no per-product quote ----
+
+test("SC-01: the scope listing is not limited by the quote budget: every addable product, paged like a category", async () => {
+  const total = UPSELL_SCOPE_PAGE_SIZE + 7;
+  await seedBoundedCatalog(total);
+  const first = await service().getScope(campaignId, 1);
+  assert.equal(first.retryable, false);
+  assert.equal(first.page?.offerName, "Mua 3 tặng khăn");
+  // total = the bounded products plus the fixture's one candidate; the paid product is already in the cart.
+  assert.equal(first.page?.totalCount, total + 1);
+  assert.equal(first.page?.productIds.length, UPSELL_SCOPE_PAGE_SIZE);
+  assert.deepEqual(lastMetric(), { ...lastMetric(), event: "scope", outcome: "offered" });
+  assert.equal(lastMetric().quoteAttempts, undefined, "no per-product quote is run for the listing");
+
+  const second = await service().getScope(campaignId, 2);
+  assert.equal(second.page?.productIds.length, total + 1 - UPSELL_SCOPE_PAGE_SIZE);
+  const ids = [...first.page!.productIds, ...second.page!.productIds];
+  assert.equal(new Set(ids).size, ids.length, "pages do not overlap");
+  const paidProductId = (await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } })).productId;
+  assert.equal(ids.includes(paidProductId), false, "a product already in the cart is not offered again");
+
+  const names = (await prisma.productMirror.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }));
+  const byId = new Map(names.map((n) => [n.id, n.name]));
+  const sorted = [...ids].sort((a, b) => byId.get(a)!.localeCompare(byId.get(b)!, "en") || a.localeCompare(b));
+  assert.equal(JSON.stringify(ids.map((id) => byId.get(id))), JSON.stringify(sorted.map((id) => byId.get(id))), "same order as /shop: name, then id");
+  assert.equal(JSON.stringify(first).includes(cartId), false);
+  assert.equal(JSON.stringify(first).includes("proof"), false, "no add intent or proof is minted by a listing");
+});
+
+test("SC-02: exclusions, inactive and absent products never appear; category membership and descendants are in scope", async () => {
+  const products = await seedBoundedCatalog(4);
+  await prisma.giftQuantityTarget.update({ where: { campaignId_productId: { campaignId, productId: products[0]!.id } }, data: { role: "EXCLUDE" } });
+  await prisma.productMirror.update({ where: { id: products[1]!.id }, data: { isActive: false } });
+  await prisma.productMirror.update({ where: { id: products[2]!.id }, data: { isPresent: false } });
+  const ids = (await service().getScope(campaignId, 1)).page!.productIds;
+  assert.equal(ids.includes(products[0]!.id), false, "an explicit exclusion wins");
+  assert.equal(ids.includes(products[1]!.id), false, "an inactive product is not offered");
+  assert.equal(ids.includes(products[2]!.id), false, "a product no longer in the catalog is not offered");
+  assert.equal(ids.includes(products[3]!.id), true);
+
+  // Category scope: the parent key expands to its descendants, exactly as the +1 discovery does.
+  const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } });
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { categoryKeys: ["aoDai"], targets: { deleteMany: {} } } });
+  await prisma.productCategoryMembership.createMany({ data: [paid.productId, candidateProductId, products[3]!.id].map((productId) => ({ productId, categoryKey: "aoDaiCachTan" })) });
+  const byCategory = (await service().getScope(campaignId, 1)).page!.productIds;
+  assert.deepEqual([...byCategory].sort(), [candidateProductId, products[3]!.id].sort(), "descendant category members, minus the product in the cart");
+  // An explicit exclusion still wins over category membership.
+  await prisma.giftQuantityTarget.create({ data: { campaignId, productId: candidateProductId, role: "EXCLUDE" } });
+  assert.deepEqual((await service().getScope(campaignId, 1)).page!.productIds, [products[3]!.id], "a category member that is explicitly excluded is not offered");
+});
+
+test("SC-07: a product that is only a component of a combo stays hidden, exactly as on /shop, in the count and in every page", async () => {
+  // Enough products for two pages, so a filter applied after the page is cut would leave page 1 one card short.
+  await seedBoundedCatalog(UPSELL_SCOPE_PAGE_SIZE);
+  // A set (the parent) built from a piece (the component). /shop hides the piece unless a curated collection shows it.
+  const set = await product("combo-set", 300000, ["S"]);
+  const piece = await product("combo-piece", 100000, ["S"]);
+  await prisma.giftQuantityTarget.createMany({ data: [set, piece].map((p) => ({ campaignId, productId: p.id, role: "INCLUDE" as const })) });
+  await prisma.compositeComponentMirror.create({ data: { parentVariantId: set.variants[0]!.id, componentVariantId: piece.variants[0]!.id, quantity: 1, syncedAt: new Date() } });
+
+  const first = (await service().getScope(campaignId, 1)).page!;
+  const second = (await service().getScope(campaignId, 2)).page!;
+  const ids = [...first.productIds, ...second.productIds];
+  assert.equal(ids.includes(piece.id), false, "the component-only product is not listed on any page");
+  assert.equal(ids.includes(set.id), true, "the combo itself is");
+  // 24 bounded + the fixture's candidate + the set; the piece and the paid product are not offered.
+  assert.equal(first.totalCount, UPSELL_SCOPE_PAGE_SIZE + 2);
+  assert.equal(first.productIds.length, UPSELL_SCOPE_PAGE_SIZE, "page 1 is full: the exclusion happens in SQL before the page is cut");
+  assert.equal(second.productIds.length, 2);
+});
+
+test("SC-08: the banner never links to an offer whose only candidate the listing hides, so the link cannot land on an empty page", async () => {
+  // The scope's only addable product is a piece of a set elsewhere in the catalog: /shop hides it, so the listing is empty.
+  const outerSet = await product("outer-set", 300000, ["S"]);
+  const candidate = await prisma.variantMirror.findFirstOrThrow({ where: { productId: candidateProductId } });
+  await prisma.compositeComponentMirror.create({ data: { parentVariantId: outerSet.variants[0]!.id, componentVariantId: candidate.id, quantity: 1, syncedAt: new Date() } });
+  assert.equal((await service().getScope(campaignId, 1)).page?.totalCount, 0, "the listing has nothing to show");
+  assert.equal(lastMetric().outcome, "empty", "and the metric says so, not \"offered\"");
+  assert.equal((await service().getBanner(await proof()))?.offerName, null, "so the banner offers nothing that leads there");
+  assert.equal((await service().get(await proof()))?.offer ?? null, null, "and neither does the full recommendation");
+
+  // A second, publicly listed candidate restores the offer, and the banner's link then lands on a non-empty page.
+  const listed = await product("listed-candidate", 100000, ["S"]);
+  await prisma.giftQuantityTarget.create({ data: { campaignId, productId: listed.id, role: "INCLUDE" } });
+  const banner = await service().getBanner(await proof());
+  assert.equal(banner?.campaignId, campaignId);
+  const page = (await service().getScope(campaignId, 1)).page!;
+  assert.deepEqual(page.productIds, [listed.id]);
+  assert.equal(lastMetric().outcome, "offered", "a listing with a product is offered");
+});
+
+test("SC-03: a cart that is not one unit away from the offer, a bad id or page, a disabled feature or no cart list nothing", async () => {
+  await seedBoundedCatalog(3);
+  assert.deepEqual(await service().getScope("nonexistent", 1), { page: null, retryable: false });
+  assert.deepEqual(await service().getScope("bad id with spaces", 1), { page: null, retryable: false });
+  assert.deepEqual(await service().getScope(campaignId, 0), { page: null, retryable: false });
+  assert.deepEqual(await service().getScope(campaignId, 1.5), { page: null, retryable: false });
+  const closed = createPromotionUpsellService(prisma, store(), { shopId: SHOP, secret, env: { ...env, LA_PROMOTION_UPSELL_ENABLED: undefined }, metric: (m) => metrics.push(m) });
+  assert.deepEqual(await closed.getScope(campaignId, 1), { page: null, retryable: false });
+  const noCart = createPromotionUpsellService(prisma, { get: () => undefined }, { shopId: SHOP, secret, env, metric: (m) => metrics.push(m) });
+  assert.deepEqual(await noCart.getScope(campaignId, 1), { page: null, retryable: false });
+
+  // Three paid units already earn the offer: it is no longer "one unit away", so the page reports a changed cart.
+  await createAnonymousCartService(prisma).setItemQuantity({ cartId, variantId: paidId, quantity: 3, now: new Date() });
+  assert.deepEqual(await service().getScope(campaignId, 1), { page: null, retryable: false });
+  assert.equal(lastMetric().outcome, "empty");
+});
+
+test("SC-04: a paid product that sold out is an empty listing, not a retryable failure", async () => {
+  await seedBoundedCatalog(3);
+  await prisma.warehouseStock.updateMany({ where: { variantId: paidId }, data: { quantity: 0 } });
+  assert.deepEqual(await service().getScope(campaignId, 1), { page: null, retryable: false });
+  assert.deepEqual(lastMetric(), { ...lastMetric(), event: "scope", outcome: "empty" });
+});
+
+test("SC-05: a transient read failure is retryable and logged as failed; an unquotable cart stays non-retryable", async () => {
+  await seedBoundedCatalog(3);
   const flaky = (error: Error) => createPromotionUpsellService(
     injectingFault((model, operation) => model === "shippingPromotionCampaign" && operation === "findMany" ? error : null),
-    store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: null });
+    store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m) });
 
-  // resolveBenefitCheckoutQuote swallows the exception into UNAVAILABLE; the upsell must still see that it was infrastructure.
-  assert.deepEqual(await flaky(new Error("terminating connection due to administrator command")).getBrowse(campaignId), { offer: null, retryable: true });
-  assert.equal((metrics.at(-1) as { event: string; outcome: string }).event, "browse");
-  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "failed", "not 'empty': that would hide an outage from the staging log");
+  // resolveBenefitCheckoutQuote swallows the exception into UNAVAILABLE; the listing must still see that it was infrastructure.
+  assert.deepEqual(await flaky(new Error("terminating connection due to administrator command")).getScope(campaignId, 1), { page: null, retryable: true });
+  assert.deepEqual(lastMetric(), { ...lastMetric(), event: "scope", outcome: "failed" });
 
   // A RangeError is the cart's own shape (the shipping reader rejects it), so a retry cannot help.
-  assert.deepEqual(await flaky(new RangeError("Shipping product identity is unavailable")).getBrowse(campaignId), { offer: null, retryable: false });
-  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "empty");
+  assert.deepEqual(await flaky(new RangeError("Shipping product identity is unavailable")).getScope(campaignId, 1), { page: null, retryable: false });
+  assert.equal(lastMetric().outcome, "empty");
 });
 
-test("BR-15: the next campaign boundary is the same instant whatever TimeZone the database session uses", async () => {
-  // GiftQuantityCampaign/PromotionCampaign store `timestamp(3)` (UTC wall clock), ShippingPromotionCampaign `timestamptz(3)`.
-  // A UNION of the two is read in the session TimeZone unless the SQL normalizes it, and a driver may hide that by
-  // misreading the result the same way, so each type must be the earliest boundary in turn.
-  const base = Date.now();
-  const giftStart = new Date(base + 40_000);
-  const shippingStart = new Date(base + 25_000);
-  await prisma.giftQuantityCampaign.create({ data: { id: `${PREFIX}tz-gift`, name: "TZ gift", kind: "QUANTITY_TIER", isEnabled: true, enabledAt: new Date(base), startsAt: giftStart, scopeMode: "DYNAMIC_CATEGORY", tierBasis: "QUANTITY", tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS", targets: { create: [{ productId: candidateProductId, role: "INCLUDE" }] }, tiers: { create: { minQuantity: 3, discountValue: 50 } } } });
-  const boundaryIn = (zone: string | null) => prisma.$transaction(async (tx) => {
-    if (zone) await tx.$executeRawUnsafe(`SET LOCAL TIME ZONE '${zone}'`);
-    return nextCampaignBoundaryMs(tx, new Date(base));
-  });
-  const zones = ["UTC", "Asia/Bangkok", "America/Los_Angeles", "Pacific/Kiritimati", null];
-
-  for (const zone of zones) assert.equal(await boundaryIn(zone), giftStart.getTime(), `timestamp columns only, ${zone ?? "default"} session`);
-
-  const shipping = await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: SHOP, name: "TZ shipping", isEnabled: true, enabledAt: new Date(base), startsAt: shippingStart, minimumQuantity: 2, includeProductIds: [candidateProductId] } });
-  try {
-    for (const zone of zones) assert.equal(await boundaryIn(zone), shippingStart.getTime(), `timestamptz column is earliest, ${zone ?? "default"} session`);
-    await prisma.shippingPromotionCampaign.update({ where: { id: shipping.id }, data: { startsAt: null, endsAt: new Date(base + 90_000) } });
-    for (const zone of zones) assert.equal(await boundaryIn(zone), giftStart.getTime(), `a later timestamptz end does not win, ${zone ?? "default"} session`);
-  } finally {
-    await prisma.shippingPromotionCampaign.delete({ where: { id: shipping.id } });
-  }
-});
-
-test("BR-16: a banner that found fewer products than the browse target does not pin that short list", async () => {
-  // Five sold-out candidates come first, so the banner's six quotes verify only one product; browse has the budget for three.
-  for (let n = 0; n < 5; n++) {
-    const soldOut = await product(`soldout-${n}`, 100000, ["S", "M", "L"]);
-    await prisma.warehouseStock.updateMany({ where: { variantId: { in: soldOut.variants.map((v) => v.id) } }, data: { quantity: 0 } });
-    await prisma.giftQuantityTarget.create({ data: { campaignId, productId: soldOut.id, role: "INCLUDE" } });
-  }
+test("SC-06: the banner no longer does listing work: it stays a bounded quote with no cache seeding", async () => {
   await seedBoundedCatalog();
-  const cache = createUpsellBrowseCache<never>();
-
-  const banner = await service(cache).getBanner(await proof());
-  assert.equal(banner?.campaignId, campaignId, "the banner still names the offer");
-  assert.equal(cache.size, 0, "one verified product is not enough to stand in for the browse page");
-
-  const { offer } = await service(cache).getBrowse(campaignId);
-  assert.equal(offer?.products.length, UPSELL_BROWSE_TARGET_PRODUCTS, "browse tops the list up to its target");
-  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "offered");
-  assert.equal(cache.size, 1, "the complete list is what gets cached");
+  const banner = await service().getBanner(await proof());
+  assert.equal(banner?.campaignId, campaignId);
+  assert.deepEqual(Object.keys(banner ?? {}).sort(), ["campaignId", "offerName", "paidCartKey"]);
+  assert.ok(lastMetric().quoteAttempts! <= UPSELL_BANNER_MAX_QUOTES);
 });

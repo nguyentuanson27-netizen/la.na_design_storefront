@@ -28,3 +28,4 @@ ADR files are retained as historical records when superseded or amended. The new
 
 - [0021 — Derived list prices and campaign basis](0021-list-price-display-and-campaign-basis.md)
 - [0022 — Upsell browse budget, banner-seeded cache and read memo](0022-upsell-browse-budget-and-read-memo.md) (amends ADR 0017 U-03)
+- [0023 — `/offers/eligible` lists the whole offer scope as a storefront listing](0023-eligible-offers-scope-listing.md) (supersedes ADR 0022 phases 1–2)
