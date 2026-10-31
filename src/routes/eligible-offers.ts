@@ -24,13 +24,14 @@ import { sealRoute, type RouteHandle } from "./core.tsx";
  */
 export type EligibleOffersRouteProps = Readonly<{ searchParams: Promise<StorefrontDiscoverySearchParams> }>;
 export type EligibleOffersViewModel = Readonly<{
+  campaignId: string | null;
   offerName: string | null;
   listing: FlashSaleViewModel | null;
   limited: boolean;
   /** Set only after a timeout or failure, so the page can offer a retry instead of "offer changed". */
   retryHref: string | null;
 }>;
-const empty: EligibleOffersViewModel = { offerName: null, listing: null, limited: false, retryHref: null };
+const empty: EligibleOffersViewModel = { campaignId: null, offerName: null, listing: null, limited: false, retryHref: null };
 
 const eligibleHref = (campaignId: string, page: number) =>
   `/offers/eligible?campaign=${encodeURIComponent(campaignId)}${page > 1 ? `&page=${page}` : ""}`;
@@ -38,7 +39,12 @@ const eligibleHref = (campaignId: string, page: number) =>
 type Loaded = Readonly<{ view: EligibleOffersViewModel; refreshAfterMs: number }>;
 const fallback = (view: EligibleOffersViewModel): Loaded => ({ view, refreshAfterMs: MAX_STOREFRONT_PROMOTION_REFRESH_MS });
 
-async function listForCart(campaignId: string, page: number): Promise<Loaded> {
+async function listForCart(
+  campaignId: string,
+  page: number,
+  options?: { throwOnNotFound?: boolean },
+): Promise<Loaded> {
+  const throwOnNotFound = options?.throwOnNotFound ?? true;
   try {
     const store = await cookies();
     const cartId = readAnonymousCartCookie(store);
@@ -54,7 +60,7 @@ async function listForCart(campaignId: string, page: number): Promise<Loaded> {
     if (!isPromotionUpsellEnabled(shopId)) return fallback(empty);
 
     const release = upsellReadGate.tryAcquire();
-    if (!release) return fallback({ ...empty, limited: true });
+    if (!release) return fallback({ ...empty, campaignId, limited: true });
     let scope: Awaited<ReturnType<ReturnType<typeof createPromotionUpsellService>["getScope"]>>;
     const now = new Date();
     // The gate admits quote work only (shared with the checkout banner). It is released as soon as the scope is known,
@@ -66,23 +72,26 @@ async function listForCart(campaignId: string, page: number): Promise<Loaded> {
       // It cannot use up the POST banner's 20/minute budget. Page 2 onward has its own bucket (see the limiter), so
       // paging through a large scope neither trips this first-page limit nor spends the banner's budget.
       const firstPage = page === 1;
-      if (!(await (firstPage ? limiter.consumeUpsellBrowseClient({ clientKey }) : limiter.consumeUpsellPageClient({ clientKey })))) return fallback({ ...empty, limited: true });
+      if (!(await (firstPage ? limiter.consumeUpsellBrowseClient({ clientKey }) : limiter.consumeUpsellPageClient({ clientKey })))) return fallback({ ...empty, campaignId, limited: true });
       const cart = await prisma.cart.findFirst({
         where: { id: cartId, userId: null, expiresAt: { gt: new Date() }, items: { some: {} } },
         select: { id: true },
       });
       if (!cart) return fallback(empty);
       // Only a confirmed, unexpired guest cart may spend the shared POST upsell budget (first page only).
-      if (firstPage && !(await limiter.consumeUpsellClient({ clientKey }))) return fallback({ ...empty, limited: true });
+      if (firstPage && !(await limiter.consumeUpsellClient({ clientKey }))) return fallback({ ...empty, campaignId, limited: true });
       scope = await createPromotionUpsellService(prisma, store, { shopId, secret: auth.secret }).getScope(campaignId, page, now);
     } finally {
       release();
     }
     const retryHref = scope.retryable ? eligibleHref(campaignId, page) : null;
-    if (!scope.page) return fallback({ ...empty, retryHref });
+    if (!scope.page) return fallback({ ...empty, campaignId, retryHref });
     const totalPages = Math.ceil(scope.page.totalCount / UPSELL_SCOPE_PAGE_SIZE);
     // A page past the end is a URL that does not exist; page 1 of an empty scope is the empty state.
-    if (page > Math.max(totalPages, 1)) notFound();
+    if (page > Math.max(totalPages, 1)) {
+      if (throwOnNotFound) notFound();
+      return fallback({ ...empty, campaignId, listing: null });
+    }
 
     let catalog: Awaited<ReturnType<typeof listConfiguredStorefrontListingProductsByIds>>;
     // The scope is known; a failing catalog read is a hiccup to retry, not "the offer changed".
@@ -91,7 +100,7 @@ async function listForCart(campaignId: string, page: number): Promise<Loaded> {
     try { catalog = await listConfiguredStorefrontListingProductsByIds({ ids: scope.page.productIds, now }); }
     catch {
       recordUpsellMetric({ event: "hydrate", outcome: "failed", durationMs: Date.now() - hydrating });
-      return fallback({ ...empty, retryHref: eligibleHref(campaignId, page) });
+      return fallback({ ...empty, campaignId, retryHref: eligibleHref(campaignId, page) });
     }
     recordUpsellMetric({ event: "hydrate", outcome: "offered", durationMs: Date.now() - hydrating });
     const listing = buildFlashSaleViewModel({
@@ -106,6 +115,7 @@ async function listForCart(campaignId: string, page: number): Promise<Loaded> {
     });
     return {
       view: {
+        campaignId,
         offerName: scope.page.offerName,
         // The shared builder pages on `?page=`; this route also carries the campaign.
         listing: { ...listing,
@@ -122,6 +132,64 @@ async function listForCart(campaignId: string, page: number): Promise<Loaded> {
     // Optional recommendations always fail closed; checkout submit and quote remain independent.
     return fallback(empty);
   }
+}
+
+export type EligibleOffersNextPageResult = Readonly<{
+  ok: boolean;
+  cards: readonly Readonly<{ id: string; model: import("@/components/headless/build-product-card-model").ProductCardModel }>[];
+  page: number;
+  totalPages: number;
+  totalCount: number;
+  hasNext: boolean;
+  limited?: boolean;
+  error?: string | null;
+}>;
+
+export async function fetchEligibleOffersPage({
+  campaignId,
+  page,
+}: {
+  campaignId: string;
+  page: number;
+}): Promise<EligibleOffersNextPageResult> {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId) || !Number.isSafeInteger(page) || page < 1) {
+    return { ok: false, cards: [], page, totalPages: 0, totalCount: 0, hasNext: false };
+  }
+  const { view } = await listForCart(campaignId, page, { throwOnNotFound: false });
+  if (view.limited) {
+    return {
+      ok: false,
+      cards: [],
+      page,
+      totalPages: 0,
+      totalCount: 0,
+      hasNext: false,
+      limited: true,
+      error: "Gợi ý ưu đãi đang có quá nhiều lượt truy cập, nàng thử lại sau ít phút nhé.",
+    };
+  }
+  if (view.retryHref) {
+    return {
+      ok: false,
+      cards: [],
+      page,
+      totalPages: 0,
+      totalCount: 0,
+      hasNext: false,
+      error: "Đang tải chậm hơn bình thường, nàng thử lại nhé.",
+    };
+  }
+  if (!view.listing) {
+    return { ok: false, cards: [], page, totalPages: 0, totalCount: 0, hasNext: false };
+  }
+  return {
+    ok: true,
+    cards: view.listing.cards,
+    page: view.listing.page,
+    totalPages: view.listing.totalPages,
+    totalCount: view.listing.totalCount,
+    hasNext: view.listing.page < view.listing.totalPages,
+  };
 }
 
 export async function loadEligibleOffersRoute({ searchParams }: EligibleOffersRouteProps): Promise<RouteHandle<EligibleOffersViewModel>> {

@@ -1,26 +1,18 @@
 import Link from "next/link";
 
-import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import {
   ListingBreadcrumbs,
   ListingEmptyState,
   ListingHeader,
-  ListingPagination,
-  ListingProductGrid,
   ListingResultCount,
   ListingShell,
 } from "@/components/brand/listing-chrome";
+import { EligibleOffersInfiniteGrid } from "@/components/brand/eligible-offers-infinite-grid";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadEligibleOffersRoute, type EligibleOffersRouteProps, type EligibleOffersViewModel } from "@/routes/eligible-offers";
 import { buildEligibleOffersMetadata } from "@/routes/metadata/eligible-offers";
 
-/**
- * Markup only, drawn with the listing chrome, cards and paging every storefront listing uses. The route loader applies
- * the trusted-client rate limits and lists the products of the offer the cart is one unit away from.
- */
-const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
-
-function render({ offerName, listing, limited, retryHref }: EligibleOffersViewModel) {
+function render({ campaignId, offerName, listing, limited, retryHref }: EligibleOffersViewModel) {
   return (
     <ListingShell>
       <ListingBreadcrumbs
@@ -42,24 +34,13 @@ function render({ offerName, listing, limited, retryHref }: EligibleOffersViewMo
           <div className="border-b border-[#3B2219]/15 pb-4">
             <ListingResultCount>{listing.totalCount} sản phẩm</ListingResultCount>
           </div>
-          <div className="mt-8">
-            <ListingProductGrid>
-              {listing.cards.map((card, index) => (
-                <ProductCard
-                  key={card.id}
-                  model={card.model}
-                  tone={tones[(listing.toneOffset + index) % tones.length]!}
-                  eager={index < PRODUCT_CARD_EAGER_COUNT}
-                />
-              ))}
-            </ListingProductGrid>
-          </div>
-          <ListingPagination
-            label="Phân trang sản phẩm ưu đãi"
-            page={listing.page}
+          <EligibleOffersInfiniteGrid
+            initialCards={listing.cards}
+            totalCount={listing.totalCount}
             totalPages={listing.totalPages}
-            previousHref={listing.previousHref}
-            nextHref={listing.nextHref}
+            initialPage={listing.page}
+            campaignId={campaignId ?? ""}
+            toneOffset={listing.toneOffset}
           />
         </section>
       ) : limited ? (
