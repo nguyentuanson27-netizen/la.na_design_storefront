@@ -1,5 +1,6 @@
 import { Prisma } from "../generated/prisma/client.ts";
 import { expandScopeCategoryKeys } from "./gift-quantity-scope.ts";
+import { buildVariantStockCte } from "./storefront-catalog.ts";
 
 /**
  * Which products a gift campaign's scope covers, as one SQL fragment shared by the checkout banner's candidate
@@ -72,15 +73,35 @@ type RawReader = Readonly<{ $queryRaw: <T = unknown>(query: Prisma.Sql) => Prism
  */
 export async function listUpsellScopeProductPage(
   tx: RawReader,
-  { scope, shopId, paidProductIds, page, pageSize }: Readonly<{ scope: UpsellScopeFacts; shopId: number; paidProductIds: readonly string[]; page: number; pageSize: number }>,
+  { scope, shopId, paidProductIds, page, pageSize, now = new Date() }: Readonly<{ scope: UpsellScopeFacts; shopId: number; paidProductIds: readonly string[]; page: number; pageSize: number; now?: Date }>,
 ): Promise<Readonly<{ totalCount: number; productIds: readonly string[] }>> {
   const scoped = Prisma.sql`
     FROM ${upsellScopeRecordset([scope])} CROSS JOIN "ProductMirror" p
     WHERE ${upsellAddableProduct(shopId, paidProductIds)} AND ${UPSELL_PUBLICLY_LISTED} AND ${UPSELL_IN_SCOPE}`;
+  const variantStockCte = buildVariantStockCte(now);
+  const inStockRank = Prisma.sql`
+    CASE
+      WHEN EXISTS (
+        SELECT 1
+        FROM "variant_stock" vf
+        WHERE vf."productId" = p."id"
+          AND vf."sellableStock" > 0
+      ) THEN 0
+      ELSE 1
+    END`;
+  const sortPrice = Prisma.sql`
+    (
+      SELECT MIN(vf."resolvedPrice")
+      FROM "variant_stock" vf
+      WHERE vf."productId" = p."id"
+    )`;
   const [counted, rows] = await Promise.all([
     tx.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT count(*) AS "total" ${scoped}`),
     tx.$queryRaw<{ id: string }[]>(Prisma.sql`
-      SELECT p."id" ${scoped} ORDER BY p."name", p."id" LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`),
+      ${variantStockCte}
+      SELECT p."id" ${scoped}
+      ORDER BY ${inStockRank} ASC, ${sortPrice} ASC NULLS LAST, p."name" ASC, p."id" ASC
+      LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`),
   ]);
   return { totalCount: Number(counted[0]?.total ?? 0), productIds: rows.map((row) => row.id) };
 }

@@ -434,6 +434,28 @@ test("SC-08: the banner never links to an offer whose only candidate the listing
   assert.equal(lastMetric().outcome, "offered", "a listing with a product is offered");
 });
 
+test("SC-09: /offers/eligible lists in-stock before out-of-stock, and sorts price ascending", async () => {
+  // candidate (from beforeEach) is in-stock at 100,000 VND
+  // cheap-oos is cheaper (50,000 VND) but completely out of stock
+  const cheapOos = await product("cheap-oos", 50000, ["S"]);
+  await prisma.warehouseStock.updateMany({ where: { variantId: cheapOos.variants[0]!.id }, data: { quantity: 0 } });
+
+  // medium-in-stock is 150,000 VND and in stock
+  const mediumInStock = await product("medium-in-stock", 150000, ["S"]);
+
+  // expensive-in-stock is 200,000 VND and in stock
+  const expensiveInStock = await product("expensive-in-stock", 200000, ["S"]);
+
+  await prisma.giftQuantityTarget.createMany({
+    data: [cheapOos, expensiveInStock, mediumInStock].map((p) => ({ campaignId, productId: p.id, role: "INCLUDE" as const })),
+  });
+
+  const page = (await service().getScope(campaignId, 1)).page!;
+  // In-stock products must come first in ascending price order: 100k -> 150k -> 200k
+  // Out-of-stock product must be pushed to the end even though its price is lower (50k)
+  assert.deepEqual(page.productIds, [candidateProductId, mediumInStock.id, expensiveInStock.id, cheapOos.id]);
+});
+
 test("SC-03: a cart that is not one unit away from the offer, a bad id or page, a disabled feature or no cart list nothing", async () => {
   await seedBoundedCatalog(3);
   assert.deepEqual(await service().getScope("nonexistent", 1), { page: null, retryable: false });

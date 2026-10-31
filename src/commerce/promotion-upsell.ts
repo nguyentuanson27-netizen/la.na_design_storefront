@@ -257,6 +257,7 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         const { totalCount, productIds } = await listUpsellScopeProductPage(tx, {
           scope: upsellScopeFacts(entry), shopId, page, pageSize: UPSELL_SCOPE_PAGE_SIZE,
           paidProductIds: [...new Set(before.state.paidVariants.map((v) => v.productId))],
+          now,
         });
         return { offerName: entry.campaign.name, totalCount, productIds };
       }, { isolationLevel: "RepeatableRead", maxWait: 200, timeout: UPSELL_READ_TIMEOUT_MS });
