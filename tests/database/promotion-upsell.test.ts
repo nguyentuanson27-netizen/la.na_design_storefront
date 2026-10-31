@@ -420,6 +420,7 @@ test("SC-08: the banner never links to an offer whose only candidate the listing
   const candidate = await prisma.variantMirror.findFirstOrThrow({ where: { productId: candidateProductId } });
   await prisma.compositeComponentMirror.create({ data: { parentVariantId: outerSet.variants[0]!.id, componentVariantId: candidate.id, quantity: 1, syncedAt: new Date() } });
   assert.equal((await service().getScope(campaignId, 1)).page?.totalCount, 0, "the listing has nothing to show");
+  assert.equal(lastMetric().outcome, "empty", "and the metric says so, not \"offered\"");
   assert.equal((await service().getBanner(await proof()))?.offerName, null, "so the banner offers nothing that leads there");
   assert.equal((await service().get(await proof()))?.offer ?? null, null, "and neither does the full recommendation");
 
@@ -430,6 +431,7 @@ test("SC-08: the banner never links to an offer whose only candidate the listing
   assert.equal(banner?.campaignId, campaignId);
   const page = (await service().getScope(campaignId, 1)).page!;
   assert.deepEqual(page.productIds, [listed.id]);
+  assert.equal(lastMetric().outcome, "offered", "a listing with a product is offered");
 });
 
 test("SC-03: a cart that is not one unit away from the offer, a bad id or page, a disabled feature or no cart list nothing", async () => {

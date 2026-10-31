@@ -260,7 +260,8 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         });
         return { offerName: entry.campaign.name, totalCount, productIds };
       }, { isolationLevel: "RepeatableRead", maxWait: 200, timeout: UPSELL_READ_TIMEOUT_MS });
-      report({ event: "scope", outcome: result ? "offered" : "empty", durationMs: clock() - started });
+      // "offered" means a listing with something to show: a near campaign with no listed product is as empty as no campaign.
+      report({ event: "scope", outcome: result && result.totalCount > 0 ? "offered" : "empty", durationMs: clock() - started });
       return { page: result, retryable: false };
     } catch (error) {
       // A cart without a valid quote is an empty listing, not a failure to retry (retries cost rate limit).

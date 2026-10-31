@@ -44,8 +44,8 @@ export const upsellAddableProduct = (shopId: number, paidProductIds: readonly st
 
 /**
  * The rule every public listing applies by default (`buildBaseProductFilters`): a product with a variant that is a
- * component of a combo is not listed. Applied by the `/offers/eligible` listing, which is a listing; the checkout
- * banner's candidate discovery keeps its own, unchanged, rule.
+ * component of a combo is not listed. Applied by the `/offers/eligible` listing and, so that the banner never links to
+ * an empty page, by the checkout banner's candidate discovery as well.
  */
 export const UPSELL_PUBLICLY_LISTED = Prisma.sql`NOT EXISTS (
   SELECT 1 FROM "CompositeComponentMirror" ccm JOIN "VariantMirror" cv ON ccm."componentVariantId" = cv."id"

@@ -65,7 +65,7 @@ also serves `getScope`.
 
 - The page can show a product that will not unlock the offer for this cart (sold out, a stacking conflict, a
   composite sharing stock). It is a listing of the offer's scope, not a promise per product.
-- Metrics: `promotion_upsell` gains `event: "scope"` (`offered` / `empty` / `failed` / `timed_out`; quote and SQL only)
+- Metrics: `promotion_upsell` gains `event: "scope"` (`offered` / `empty` / `failed` / `timed_out`; quote and SQL only; `offered` only when the page has at least one product, so the rate is the share of listings that show something)
   and `event: "hydrate"` (`offered` / `failed`; the catalog read for the page's cards), so end-to-end latency is the sum
   of the two; the `browse` event and the `partial` / `cached` outcomes no longer exist.
 - Product-list analytics events are not emitted for this page (as before); selecting a card still opens the PDP.
