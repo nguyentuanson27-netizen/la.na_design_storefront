@@ -44,7 +44,15 @@ configuration", "Options bound exceeded"); `snapshot` re-throws them as `UpsellQ
 cart that is the empty result above. For one hypothetical +1 cart, `verifyCandidate` already skips on
 `UpsellQuoteUnavailable`, so that candidate is dropped and the loop goes on instead of discarding candidates
 already verified (BR-12). On `add`, such a +1 cart is now rejected as `QUOTE_CHANGED` (no write) rather than the
-generic `OFFER_UNAVAILABLE` failure. A failure before
+generic `OFFER_UNAVAILABLE` failure.
+
+`resolveBenefitCheckoutQuote` also turns any exception from its data reads (state, vouchers, shipping) into
+`UNAVAILABLE`, which on its own cannot tell a dropped connection from a cart that cannot be quoted. It now takes an
+optional, observation-only `onError` callback, invoked just before those `UNAVAILABLE` returns; it never changes a
+returned value, and checkout and the POS submit pass nothing. `snapshot()` uses it: a `RangeError`/`TypeError`
+(the cart's own shape) or one of the three known messages stays `UpsellQuoteUnavailable` (empty, not retryable);
+any other exception is rethrown as itself, so browse reports `retryable: true` and logs `failed`. Unknown errors
+therefore default to retryable, a bounded cost since reads are rate-limited (BR-14). A failure before
 the cache lookup is logged as `event: "browse", outcome: "failed"`, so staging logs account for every
 request. An empty result with no failure keeps the old message. Metrics gain `event: "browse"` and
 `outcome: "partial" | "cached"`, so banner and browse are separable in logs. `get` and `getBanner` are
@@ -59,8 +67,11 @@ unchanged.
     same row `add` locks), so those are a different key too.
   - The cart's gift choices do not advance `paidRevision`, yet a "+1" candidate must preserve them, so a
     short digest of `CartGiftSelection` rows is part of the key (BR-11).
-  - The banner reads the inputs inside the quote's snapshot; `getBrowse` reads them with the cart before the
-    lookup (three single-row/indexed reads). A key can only be older than the data stored under it.
+  - The banner reads the inputs inside the quote's snapshot. `getBrowse` reads them with the cart before the
+    lookup (three single-row/indexed reads), but that is a different transaction from the quote. Gift choices
+    can return to an earlier value (A→B→A), so a key that is merely older than the data is not harmless: the
+    quote's own snapshot recomputes the key, and the list is stored only if it equals the key looked up
+    (otherwise the request is still answered with the fresher list, just not cached) (BR-13).
 - Each entry also expires at the next campaign **start or end** among enabled gift/tier, flash-sale price and
   shipping campaigns (one query per computed list). Nothing is written when a scheduled campaign becomes
   active, so no revision can signal it (BR-10 asserts the start writes nothing); a list never outlives the

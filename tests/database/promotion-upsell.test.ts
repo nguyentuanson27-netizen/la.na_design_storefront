@@ -446,8 +446,8 @@ test("BR-10: a scheduled campaign that starts inside the TTL ends the cached lis
   assert.equal((await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: "current" } })).revision, revisionBefore, "the start itself wrote nothing");
 });
 
-test("BR-11: choosing or swapping an earned gift through the real selection service re-evaluates the cached listing", async () => {
-  // Campaign A is already earned by the 2 paid units (a real entitlement); campaign B (the offer) is one unit away.
+/** Campaign A is already earned by the 2 paid units (a real entitlement); campaign B (the offer) is one unit away. */
+async function earnedGiftFixture() {
   const paidProductId = (await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } })).productId;
   const gift2 = await product("gift2", 1000);
   const earned = `${PREFIX}earned`;
@@ -457,7 +457,15 @@ test("BR-11: choosing or swapping an earned gift through the real selection serv
   const revision = (await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: earned } })).revision;
   await seedBoundedCatalog();
   const gifts = createCartGiftSelectionService(prisma, store(), { shopId: SHOP, env });
-  const paidRevision = async () => (await prisma.cart.findUniqueOrThrow({ where: { id: cartId }, select: { paidRevision: true } })).paidRevision;
+  return {
+    gift2Id: gift2.variants[0]!.id,
+    choose: (variantId: string, quantity: number) => gifts.set({ campaignId: earned, variantId, quantity, campaignRevision: revision }),
+    paidRevision: async () => (await prisma.cart.findUniqueOrThrow({ where: { id: cartId }, select: { paidRevision: true } })).paidRevision,
+  };
+}
+
+test("BR-11: choosing or swapping an earned gift through the real selection service re-evaluates the cached listing", async () => {
+  const { gift2Id, choose, paidRevision } = await earnedGiftFixture();
   const outcome = () => (metrics.at(-1) as { outcome: string }).outcome;
   const cache = createUpsellBrowseCache<never>();
   const paidBefore = await paidRevision();
@@ -466,7 +474,6 @@ test("BR-11: choosing or swapping an earned gift through the real selection serv
   assert.ok((await service(cache).getBrowse(campaignId)).offer);
   assert.equal(outcome(), "cached", "no gift chosen yet: served from the banner-seeded entry");
 
-  const choose = (variantId: string, quantity: number) => gifts.set({ campaignId: earned, variantId, quantity, campaignRevision: revision });
   assert.equal((await choose(giftId, 1)).ok, true, "a valid choice of the earned gift");
   assert.equal(await paidRevision(), paidBefore, "choosing a gift never advances the paid revision");
   assert.ok((await service(cache).getBrowse(campaignId)).offer);
@@ -475,25 +482,50 @@ test("BR-11: choosing or swapping an earned gift through the real selection serv
   assert.equal(outcome(), "cached", "unchanged choice: the recomputed list is reused");
 
   assert.equal((await choose(giftId, 0)).ok, true);
-  assert.equal((await choose(gift2.variants[0]!.id, 1)).ok, true, "swap to the other gift option");
+  assert.equal((await choose(gift2Id, 1)).ok, true, "swap to the other gift option");
   assert.equal(await paidRevision(), paidBefore);
   await service(cache).getBrowse(campaignId);
   assert.notEqual(outcome(), "cached", "a swapped gift is a different key again");
 });
 
-/** Make `readCartGiftState` refuse (as it does for a cart it cannot evaluate) only when `variantId` is in the cart being priced. */
-function refusingFor(variantId: string): typeof prisma {
+test("BR-13: a list verified under gift choice B is never cached under the key read for choice A (A→B→A inside one request)", async () => {
+  const { gift2Id, choose } = await earnedGiftFixture();
+  assert.equal((await choose(giftId, 1)).ok, true, "state A");
+  const inner = createUpsellBrowseCache<never>();
+  let raced = false;
+  // The other tab acts exactly between `getBrowse`'s key lookup (state A) and its quote transaction.
+  const racing = {
+    get size() { return inner.size; },
+    set: inner.set,
+    async resolve(key: string, load: Parameters<typeof inner.resolve>[1]) {
+      if (!raced) { raced = true; assert.equal((await choose(giftId, 0)).ok, true); assert.equal((await choose(gift2Id, 1)).ok, true); }
+      return inner.resolve(key, load);
+    },
+  };
+  const first = await service(racing as never).getBrowse(campaignId);
+  assert.ok(first.offer, "this request is still answered, computed under the newer choice B");
+  assert.equal(inner.size, 0, "a list computed under B must not be stored under the key that was read for A");
+
+  assert.equal((await choose(gift2Id, 0)).ok, true);
+  assert.equal((await choose(giftId, 1)).ok, true, "back to A");
+  await service(inner as never).getBrowse(campaignId);
+  assert.notEqual((metrics.at(-1) as { outcome: string }).outcome, "cached", "A must be re-verified, not served B's list");
+});
+
+/** A client whose transactions throw `fault(model, operation, args)` instead of running that read, when it returns an Error. */
+function injectingFault(fault: (model: string, operation: string, args: unknown) => Error | null): typeof prisma {
   type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
   const guard = (tx: Tx) => new Proxy(tx, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver) as unknown;
-      if (property !== "variantMirror") return typeof value === "function" ? value.bind(target) : value;
+      if (typeof property !== "string" || property.startsWith("$") || value === null || typeof value !== "object") return typeof value === "function" ? value.bind(target) : value;
       return new Proxy(value as object, {
         get(model, operation) {
           const member = Reflect.get(model, operation) as (...args: unknown[]) => unknown;
-          if (operation !== "findMany") return member.bind(model);
-          return (args?: { where?: { id?: { in?: string[] } } }) => {
-            if (args?.where?.id?.in?.includes(variantId) && args.where.id.in.length > 1) throw new Error("Invalid gift configuration");
+          if (typeof operation !== "string" || typeof member !== "function") return member;
+          return (args?: unknown) => {
+            const error = fault(property, operation, args);
+            if (error) throw error;
             return member.call(model, args);
           };
         },
@@ -508,6 +540,10 @@ function refusingFor(variantId: string): typeof prisma {
     },
   });
 }
+/** Make `readCartGiftState` refuse (as it does for a cart it cannot evaluate) only when `variantId` is in the cart being priced. */
+const refusingFor = (variantId: string) => injectingFault((model, operation, args) =>
+  model === "variantMirror" && operation === "findMany" && (args as { where?: { id?: { in?: string[] } } })?.where?.id?.in?.includes(variantId) && (args as { where: { id: { in: string[] } } }).where.id.in.length > 1
+    ? new Error("Invalid gift configuration") : null);
 
 test("BR-12: a candidate whose hypothetical +1 cart cannot be evaluated is skipped; verified candidates are not discarded", async () => {
   // Created first, so it is the first candidate tried. The paid cart itself stays valid throughout.
@@ -526,4 +562,19 @@ test("BR-12: a candidate whose hypothetical +1 cart cannot be evaluated is skipp
   const full = await refusing().get(await proof());
   assert.ok(full?.offer, "the full model keeps the verified candidates too");
   assert.equal(full.offer.products.some((p) => p.productId === bad.id), false);
+});
+
+test("BR-14: a transient shipping read failure is retryable and logged as failed; an unquotable cart stays non-retryable", async () => {
+  const flaky = (error: Error) => createPromotionUpsellService(
+    injectingFault((model, operation) => model === "shippingPromotionCampaign" && operation === "findMany" ? error : null),
+    store(), { shopId: SHOP, secret, env, metric: (m) => metrics.push(m), browseCache: null });
+
+  // resolveBenefitCheckoutQuote swallows the exception into UNAVAILABLE; the upsell must still see that it was infrastructure.
+  assert.deepEqual(await flaky(new Error("terminating connection due to administrator command")).getBrowse(campaignId), { offer: null, retryable: true });
+  assert.equal((metrics.at(-1) as { event: string; outcome: string }).event, "browse");
+  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "failed", "not 'empty': that would hide an outage from the staging log");
+
+  // A RangeError is the cart's own shape (the shipping reader rejects it), so a retry cannot help.
+  assert.deepEqual(await flaky(new RangeError("Shipping product identity is unavailable")).getBrowse(campaignId), { offer: null, retryable: false });
+  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "empty");
 });

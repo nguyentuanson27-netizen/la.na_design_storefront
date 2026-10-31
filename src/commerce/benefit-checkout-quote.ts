@@ -116,6 +116,12 @@ type ResolveArgs = Readonly<{
    * secret only derives the attempt key that finds this cart's own holds; it is never part of any quote.
    */
   voucher?: Readonly<{ attemptSecret: string }>;
+  /**
+   * Observation only. Called with the exception just before a data read (state, vouchers, shipping) is reported as
+   * `UNAVAILABLE`, so a caller that must tell a transient infrastructure error from a cart that cannot be quoted can.
+   * It never changes what is returned: checkout and the POS submit pass nothing and behave exactly as before.
+   */
+  onError?: (error: unknown) => void;
 }>;
 
 type ResolveOutcome = BenefitCheckoutResolution | Readonly<{ kind: "VOUCHER_STALE" }>;
@@ -143,6 +149,7 @@ async function resolveOnce({
   excludeOrderHolds,
   giftState,
   voucher,
+  onError,
 }: ResolveArgs, applyVoucher: boolean): Promise<ResolveOutcome> {
   // Shipping has its own campaign authority; the gift/tier kill switch cannot enable or disable it.
   let shippingPolicy: ReturnType<typeof readGuestShippingPolicy>;
@@ -158,20 +165,21 @@ async function resolveOnce({
         try {
           const own = await createVoucherHoldService(tx as never, { attemptSecret, env }).readOwnLiveHoldFactsIn(tx as never, cartId);
           if (own.length > 0) return { kind: "VOUCHER_STALE" };
-        } catch { return { kind: "UNAVAILABLE" }; }
+        } catch (error) { onError?.(error); return { kind: "UNAVAILABLE" }; }
       }
     }
     try {
       const shippingQuote = await readShippingQuote({ client: tx, shopId, now, paidItems: lines,
         policy: shippingPolicy, hasOtherPromotions: lines.some((line) => line.price !== null && line.basePrice !== undefined && line.price < line.basePrice) });
       return { kind: "LEGACY", shippingQuote };
-    } catch { return { kind: "UNAVAILABLE" }; }
+    } catch (error) { onError?.(error); return { kind: "UNAVAILABLE" }; }
   }
 
   let state: Awaited<ReturnType<typeof readCartGiftState>>;
   try {
     state = giftState ?? await readCartGiftState(excludeOrderHolds === undefined ? tx : withoutOrderHolds(tx, excludeOrderHolds), cartId, shopId, now, env);
-  } catch {
+  } catch (error) {
+    onError?.(error);
     return { kind: "UNAVAILABLE" };
   }
   const benefits = state.quote.benefits;
@@ -187,7 +195,8 @@ async function resolveOnce({
   if (attemptSecret !== null) {
     try {
       held = await resolveHeldVoucherCheckout({ tx, cartId, shopId, now, env, attemptSecret, giftState: state });
-    } catch {
+    } catch (error) {
+      onError?.(error);
       return { kind: "UNAVAILABLE" };
     }
     if (held.kind === "STALE") return { kind: "VOUCHER_STALE" };
@@ -217,7 +226,7 @@ async function resolveOnce({
         : (lines ?? state.quote.lines),
       hasOtherPromotions: shippingHasOtherPromotions,
     });
-  } catch { return { kind: "UNAVAILABLE" }; }
+  } catch (error) { onError?.(error); return { kind: "UNAVAILABLE" }; }
   // The holds promised a specific fee before the shipping waiver; if the shipping decision moved, they no longer apply.
   if (applied !== null && shippingQuote.feeVnd !== applied.quote.shippingFeeBeforeVoucherVnd) return { kind: "VOUCHER_STALE" };
   // Shipping alone stays in the ordinary proof format and does not require POS split-price capability.

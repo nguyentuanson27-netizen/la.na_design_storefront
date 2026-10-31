@@ -33,7 +33,7 @@ export const UPSELL_BROWSE_SOFT_DEADLINE_MS = 1_300;
 const UPSELL_WRITE_TIMEOUT_MS = 5_000;
 type Env = Readonly<Record<string, string | undefined>>;
 class UpsellQuoteUnavailable extends Error {}
-type BrowseStatus = { truncated: boolean; retryable: boolean; validUntil: number | null };
+type BrowseStatus = { truncated: boolean; retryable: boolean; validUntil: number | null; txKey: string | null };
 /**
  * `readCartGiftState` refuses a cart it cannot price or evaluate with plain Errors. These three are
  * deterministic for the cart it was given (retrying cannot change them), so `snapshot` re-throws them as
@@ -42,6 +42,13 @@ type BrowseStatus = { truncated: boolean; retryable: boolean; validUntil: number
  */
 const DETERMINISTIC_QUOTE_ERRORS: ReadonlySet<string> = new Set(["Quote unavailable", "Invalid gift configuration", "Options bound exceeded"]);
 const isDeterministicQuoteFailure = (error: unknown) => error instanceof UpsellQuoteUnavailable;
+/**
+ * `resolveBenefitCheckoutQuote` reports any exception from its data reads (state, vouchers, shipping) as `UNAVAILABLE`.
+ * A RangeError/TypeError there is the cart's own shape (too many lines, unknown product) and cannot change on retry;
+ * anything else (a dropped connection, a statement timeout) is infrastructure and must stay retryable.
+ */
+const isDeterministicReadFailure = (error: unknown) => error instanceof RangeError || error instanceof TypeError ||
+  (error instanceof Error && DETERMINISTIC_QUOTE_ERRORS.has(error.message));
 // Key = paid cart (HMAC over cart + paid revision) + promotion pricing revision (any effective campaign edit,
 // enable or disable) + the cart's gift choices (they do not advance the paid revision) + campaign. Entries
 // also expire at the next campaign start/end, which advances no revision (see promotion-upsell-browse-key.ts).
@@ -75,9 +82,11 @@ async function snapshot(tx: Prisma.TransactionClient, cartId: string, shopId: nu
   try { state = await readCartGiftState(tx, cartId, shopId, now, env, items); }
   catch (error) { throw error instanceof Error && DETERMINISTIC_QUOTE_ERRORS.has(error.message) ? new UpsellQuoteUnavailable(error.message) : error; }
   if (!state.validation.ok || state.quote.lines.length === 0 || state.quote.lines.some((line) => !line.available)) throw new UpsellQuoteUnavailable("Quote unavailable");
-  const resolution = await resolveBenefitCheckoutQuote({ tx, cartId, shopId, now, env, giftState: state });
+  let readFailure: unknown;
+  const resolution = await resolveBenefitCheckoutQuote({ tx, cartId, shopId, now, env, giftState: state, onError: (error) => { readFailure ??= error; } });
   if (resolution.kind === "BENEFIT") return { state, quote: { kind: "BENEFIT", facts: resolution.facts }, totalVnd: resolution.facts.totalVnd };
-  if (resolution.kind !== "LEGACY") throw new UpsellQuoteUnavailable("Quote unavailable");
+  // A transient read failure is surfaced as itself, so the browse says "try again" and the log says failed.
+  if (resolution.kind !== "LEGACY") throw readFailure !== undefined && !isDeterministicReadFailure(readFailure) ? readFailure : new UpsellQuoteUnavailable("Quote unavailable");
   const facts = buildRenderedCheckoutQuoteFacts(state.quote.lines, { shippingQuote: resolution.shippingQuote, shippingPolicy: readGuestShippingPolicy(env) });
   if (!facts) throw new UpsellQuoteUnavailable("Quote unavailable");
   return { state, quote: { kind: "LEGACY", facts }, totalVnd: facts.totalVnd };
@@ -191,6 +200,9 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         const opportunities = findUpsellOpportunities(before.state)
           .filter((opportunity) => mode !== "browse" || opportunity.campaignId === campaignId);
         const paidCartKey = upsellPaidCartKey(cartId, cart.paidRevision, secret);
+        // The key the cache would use, read in THIS snapshot. `getBrowse` looked its key up before this transaction began;
+        // if gift choices (which can return to an earlier value) or anything else moved in between, the two differ.
+        if (mode === "browse" && status) status.txKey = browseCacheKey(paidCartKey, await readBrowseKeyInputs(tx, cartId), campaignId!);
         const fullModel = (offer: CheckoutUpsellModel["offer"]): CheckoutUpsellModel => ({
           paidCartKey,
           nextPaidCartKey: upsellPaidCartKey(cartId, cart.paidRevision + BigInt(1), secret),
@@ -308,11 +320,15 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
   async function getBrowse(campaignId: string, now = new Date()): Promise<CheckoutUpsellBrowseResult> {
     const none = { offer: null, retryable: false } as const;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId)) return none;
-    const compute = async () => {
-      const status: BrowseStatus = { truncated: false, retryable: false, validUntil: null };
+    // `expectedKey` is the key the caller looked up before this transaction. The list is stored only if the quote's own
+    // snapshot yields the same key; otherwise this request is still served the fresher list, but it is never cached under
+    // a key (for example gift choice A) that it was not computed for (it was verified under B).
+    const compute = async (expectedKey?: string) => {
+      const status: BrowseStatus = { truncated: false, retryable: false, validUntil: null, txKey: null };
       const offer = await recommend(null, now, UPSELL_BROWSE_MAX_QUOTES, "browse", campaignId, status);
       // A partial or failed run must not pin a short list for the TTL; the next visit recomputes.
-      return { value: offer, store: !status.truncated && !status.retryable, failed: status.retryable, validUntil: status.validUntil };
+      const keyMatches = expectedKey === undefined || status.txKey === expectedKey;
+      return { value: offer, store: !status.truncated && !status.retryable && keyMatches, failed: status.retryable, validUntil: status.validUntil };
     };
     if (!browseCache || !isPromotionUpsellEnabled(shopId, env)) { const r = await compute(); return { offer: r.value, retryable: r.failed }; }
     const cartId = readAnonymousCartCookie(store);
@@ -324,7 +340,8 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         readBrowseKeyInputs(client, cartId),
       ]);
       if (!cart) return none;
-      const result = await browseCache.resolve(browseCacheKey(upsellPaidCartKey(cartId, cart.paidRevision, secret), inputs, campaignId), compute);
+      const key = browseCacheKey(upsellPaidCartKey(cartId, cart.paidRevision, secret), inputs, campaignId);
+      const result = await browseCache.resolve(key, () => compute(key));
       if (result.cached) report({ event: "browse", outcome: "cached", durationMs: clock() - started, quoteAttempts: 0 });
       return { offer: result.value, retryable: result.failed };
     } catch {
