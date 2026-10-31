@@ -605,3 +605,23 @@ test("BR-15: the next campaign boundary is the same instant whatever TimeZone th
     await prisma.shippingPromotionCampaign.delete({ where: { id: shipping.id } });
   }
 });
+
+test("BR-16: a banner that found fewer products than the browse target does not pin that short list", async () => {
+  // Five sold-out candidates come first, so the banner's six quotes verify only one product; browse has the budget for three.
+  for (let n = 0; n < 5; n++) {
+    const soldOut = await product(`soldout-${n}`, 100000, ["S", "M", "L"]);
+    await prisma.warehouseStock.updateMany({ where: { variantId: { in: soldOut.variants.map((v) => v.id) } }, data: { quantity: 0 } });
+    await prisma.giftQuantityTarget.create({ data: { campaignId, productId: soldOut.id, role: "INCLUDE" } });
+  }
+  await seedBoundedCatalog();
+  const cache = createUpsellBrowseCache<never>();
+
+  const banner = await service(cache).getBanner(await proof());
+  assert.equal(banner?.campaignId, campaignId, "the banner still names the offer");
+  assert.equal(cache.size, 0, "one verified product is not enough to stand in for the browse page");
+
+  const { offer } = await service(cache).getBrowse(campaignId);
+  assert.equal(offer?.products.length, UPSELL_BROWSE_TARGET_PRODUCTS, "browse tops the list up to its target");
+  assert.equal((metrics.at(-1) as { outcome: string }).outcome, "offered");
+  assert.equal(cache.size, 1, "the complete list is what gets cached");
+});

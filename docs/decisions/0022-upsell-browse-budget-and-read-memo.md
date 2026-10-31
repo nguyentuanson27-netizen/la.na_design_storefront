@@ -72,6 +72,9 @@ unchanged.
     can return to an earlier value (A→B→A), so a key that is merely older than the data is not harmless: the
     quote's own snapshot recomputes the key, and the list is stored only if it equals the key looked up
     (otherwise the request is still answered with the fresher list, just not cached) (BR-13).
+- The banner seeds the cache only when its verified list already has the browse target (3 products). It spends 6
+  quotes where browse may spend 8, so a shorter list is not pinned for the TTL when browse could fill the row
+  (the same rule as for a partial run); the cost is a recompute on that visit, bounded by phase 1 (BR-16).
 - Each entry also expires at the next campaign **start or end** among enabled gift/tier, flash-sale price and
   shipping campaigns (one query per computed list). Nothing is written when a scheduled campaign becomes
   active, so no revision can signal it (BR-10 asserts the start writes nothing); a list never outlives the

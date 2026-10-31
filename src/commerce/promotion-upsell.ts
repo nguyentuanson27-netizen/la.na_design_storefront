@@ -276,8 +276,13 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         };
         if (mode === "banner") {
           // Same snapshot as the quote, so the key inputs cannot be newer or older than the verified products.
-          seed.key = browseCacheKey(paidCartKey, await readBrowseKeyInputs(tx, cartId), winner.campaignId);
-          seed.value = browseView(); seed.validUntil = validUntil;
+          // The banner spends 6 quotes, browse up to 8 for 3 products: seed only a list that already meets the browse
+          // target, so a short one is never pinned for the TTL when browse could find more (as for a partial run).
+          const view = browseView();
+          if (view.products.length >= UPSELL_BROWSE_TARGET_PRODUCTS) {
+            seed.key = browseCacheKey(paidCartKey, await readBrowseKeyInputs(tx, cartId), winner.campaignId);
+            seed.value = view; seed.validUntil = validUntil;
+          }
           return banner(name, winner.campaignId);
         }
         if (mode === "browse") return browseView();
