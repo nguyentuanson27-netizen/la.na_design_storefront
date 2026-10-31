@@ -31,6 +31,16 @@ Owner decision (2026-10-31): list the **whole offer scope without per-product qu
 - "In scope" is one SQL fragment (`promotion-upsell-scope.ts`) shared by this listing and the banner's candidate
   discovery, so the two cannot disagree: whole catalog, a frozen fixed set, or include/exclude/category membership
   with descendants, an explicit exclusion winning over category membership.
+- **Public-listing visibility.** The listing applies the default rule of every public listing (`buildBaseProductFilters`):
+  a product with a variant that is a component of a combo is not listed. The rule is in the count and page SQL, before the
+  page is cut, so counts, cards and pages agree. The checkout banner's candidate discovery keeps its own rule, unchanged,
+  so it may still recommend such a product; the listing will not show it.
+- **Rate limits.** Page 1 keeps the existing budgets (10 a minute browse bucket, plus the 20 a minute budget shared with the
+  banner's POST), so a GET can never exhaust the banner's POST budget. Page 2 and later use a separate bucket
+  (`checkout-upsell-page-client`, 30 a minute): paging through a large scope does not trip the first-page limit or spend the
+  banner's budget, and the quotes one client can cause per minute (10 + 30, one each) stay below what the first-page budget alone
+  allowed when a view ran up to eight (80). The trusted-request check, the cart check and the read gate apply to every page.
+  A scope beyond 30 pages (721 products) cannot be paged through in one minute; that is accepted.
 - **No per-product quote, so no budget, soft deadline, cache or cache key.** Cost is one quote plus two indexed SQL
   statements regardless of catalog size. The cards are read fresh on every request, so price and stock are as fresh
   as on any listing; the page refreshes on the catalog's own promotion window.

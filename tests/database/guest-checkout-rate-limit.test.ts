@@ -25,6 +25,8 @@ const bucketIds = [
   `checkout-upsell-client:${otherClientKey}`,
   `checkout-upsell-browse-client:${clientKey}`,
   `checkout-upsell-browse-client:${otherClientKey}`,
+  `checkout-upsell-page-client:${clientKey}`,
+  `checkout-upsell-page-client:${otherClientKey}`,
 ];
 const start = new Date("2026-08-12T05:40:00.000Z");
 
@@ -130,6 +132,25 @@ test("upsell recommendations have a separate limiter that cannot block checkout 
   assert.equal(await limiter.consumeClient({ clientKey, now: start }), true);
   assert.equal(await limiter.consumeGeoClient({ clientKey, now: start }), true);
   assert.equal(await limiter.consumeUpsellClient({ clientKey, now: new Date(start.getTime() + 60_001) }), true);
+});
+
+test("later pages of the offer listing have their own bucket: they neither spend the browse nor the POST upsell budget", async () => {
+  await cleanup();
+  const limiter = createGuestCheckoutRateLimiter(prisma, {
+    maxUpsellPageClientAttempts: 3, upsellPageClientWindowMs: 60_000,
+    maxUpsellBrowseClientAttempts: 2, maxUpsellClientAttempts: 2,
+  });
+  const attempts = await Promise.all(Array.from({ length: 5 }, () => limiter.consumeUpsellPageClient({ clientKey, now: start })));
+  assert.equal(attempts.filter(Boolean).length, 3);
+  assert.equal(await limiter.consumeUpsellBrowseClient({ clientKey, now: start }), true, "the first-page budget is untouched");
+  assert.equal(await limiter.consumeUpsellClient({ clientKey, now: start }), true, "so is the banner's POST budget");
+  assert.equal((await prisma.rateLimit.findUniqueOrThrow({ where: { id: `checkout-upsell-page-client:${clientKey}` } })).count, 4, "bounded counters cap at limit + 1");
+  assert.equal(await limiter.consumeUpsellPageClient({ clientKey, now: new Date(start.getTime() + 60_001) }), true);
+  const defaults = createGuestCheckoutRateLimiter(prisma);
+  const results = [];
+  for (let n = 0; n < 31; n++) results.push(await defaults.consumeUpsellPageClient({ clientKey: otherClientKey, now: start }));
+  assert.equal(results.slice(0, 30).every(Boolean), true, "a shopper can page through 30 pages a minute");
+  assert.equal(results[30], false);
 });
 
 test("GET browse probes have their own atomic DB bucket and do not exhaust POST upsell quota", async () => {

@@ -365,14 +365,18 @@ test("D-06: a withdrawn offer shows no invitation and leaves checkout usable", a
   await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeEnabled();
 });
 
-test("ER-UI: /offers/eligible is the storefront listing: every in-scope product, paged, in the shared chrome", async ({ page, context }) => {
-  // The listing takes an unused client key so the shared GET budget of earlier tests cannot decide this one.
-  await context.setExtraHTTPHeaders({ "x-ci-client-ip": "203.0.113.230" });
-  // 26 more products in scope: more than one 24-product page, and far more than the four a quote budget could verify.
-  for (let n = 0; n < 26; n++) {
+/** More products in the offer's scope: past one 24-product page, and far more than a quote budget could verify. */
+async function seedExtraScopeProducts(count: number) {
+  for (let n = 0; n < count; n++) {
     const extra = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: `${P}extra-${n}`, slug: `${P}extra-${n}`, name: `Áo extra ${String(n).padStart(2, "0")}`, syncedAt: new Date(), variants: { create: { pancakeVariationId: `${P}extra-${n}S`, color: "Hồng", size: "S", ...(n === 0 ? { pancakeImageUrls: ["https://content.pancake.vn/media/1/2/3/upsell-photo.jpg"] } : {}), pancakeRetailPrice: 100000, pancakeRetailPriceAfterDiscount: 100000, syncedAt: new Date(), warehouseStocks: { create: { pancakeWarehouseId: `${P}wh`, quantity: 20, syncedAt: new Date() } } } } } });
     await prisma.giftQuantityTarget.create({ data: { campaignId, productId: extra.id, role: "INCLUDE" } });
   }
+}
+
+test("ER-UI: /offers/eligible is the storefront listing: every in-scope product, paged, in the shared chrome", async ({ page, context }) => {
+  // The listing takes an unused client key so the shared GET budget of earlier tests cannot decide this one.
+  await context.setExtraHTTPHeaders({ "x-ci-client-ip": "203.0.113.230" });
+  await seedExtraScopeProducts(26);
   const path = `/offers/eligible?campaign=${encodeURIComponent(campaignId)}`;
   const url = `${BASE}${path}`;
   for (const width of [390, 1280]) {
@@ -394,4 +398,23 @@ test("ER-UI: /offers/eligible is the storefront listing: every in-scope product,
   await expect(page.locator(".listing-product-grid article")).toHaveCount(3);
   await expect(page.getByRole("link", { name: /Trang trước/ })).toHaveAttribute("href", path);
   await page.screenshot({ path: "test-results/upsell-eligible-listing.png", fullPage: true });
+});
+
+test("ER-RL: paging through the listing has its own budget: 12 page requests in a minute are served and the banner's POST budget is untouched", async ({ page }) => {
+  await seedExtraScopeProducts(26);
+  const headers = { "x-ci-client-ip": "203.0.113.231", "sec-fetch-site": "same-origin" };
+  const second = `${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}&page=2`;
+  // More than the 10 a minute a first-page view is allowed: this is what paging through a large scope looks like.
+  for (let i = 0; i < 12; i++) {
+    const response = await page.request.get(second, { headers });
+    expect(response.status(), `page request ${i + 1}`).toBe(200);
+    const text = await response.text();
+    expect(text).toContain("Áo extra");
+    expect(text).not.toContain("Gợi ý ưu đãi đang có quá nhiều lượt truy cập");
+  }
+  // The first page and the checkout banner keep their own budgets.
+  const first = await page.request.get(`${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`, { headers });
+  expect(await first.text()).not.toContain("Gợi ý ưu đãi đang có quá nhiều lượt truy cập");
+  const post = await page.request.post(`${BASE}/api/checkout/upsell`, { headers: { ...headers, origin: BASE }, data: { quoteProof: "abc.def" } });
+  expect(post.status()).toBe(200);
 });

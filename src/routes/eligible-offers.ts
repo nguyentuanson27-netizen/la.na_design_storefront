@@ -59,15 +59,17 @@ async function listForCart(campaignId: string, page: number): Promise<Loaded> {
       const clientKey = deriveGuestCheckoutClientKey(requestHeaders, auth);
       const limiter = createGuestCheckoutRateLimiter(prisma);
       // A separate DB bucket bounds even forged, well-formed cookie IDs across app instances.
-      // It cannot use up the POST banner's 20/minute budget.
-      if (!(await limiter.consumeUpsellBrowseClient({ clientKey }))) return fallback({ ...empty, limited: true });
+      // It cannot use up the POST banner's 20/minute budget. Page 2 onward has its own bucket (see the limiter), so
+      // paging through a large scope neither trips this first-page limit nor spends the banner's budget.
+      const firstPage = page === 1;
+      if (!(await (firstPage ? limiter.consumeUpsellBrowseClient({ clientKey }) : limiter.consumeUpsellPageClient({ clientKey })))) return fallback({ ...empty, limited: true });
       const cart = await prisma.cart.findFirst({
         where: { id: cartId, userId: null, expiresAt: { gt: new Date() }, items: { some: {} } },
         select: { id: true },
       });
       if (!cart) return fallback(empty);
-      // Only a confirmed, unexpired guest cart may spend the shared POST upsell budget.
-      if (!(await limiter.consumeUpsellClient({ clientKey }))) return fallback({ ...empty, limited: true });
+      // Only a confirmed, unexpired guest cart may spend the shared POST upsell budget (first page only).
+      if (firstPage && !(await limiter.consumeUpsellClient({ clientKey }))) return fallback({ ...empty, limited: true });
       const now = new Date();
       const scope = await createPromotionUpsellService(prisma, store, { shopId, secret: auth.secret }).getScope(campaignId, page, now);
       const retryHref = scope.retryable ? eligibleHref(campaignId, page) : null;

@@ -42,6 +42,15 @@ export const upsellAddableProduct = (shopId: number, paidProductIds: readonly st
   AND NOT (p."id" = ANY(${paidProductIds}::text[]))
   AND EXISTS (SELECT 1 FROM "VariantMirror" v WHERE v."productId" = p."id" AND v."isActive" AND v."isPresent")`;
 
+/**
+ * The rule every public listing applies by default (`buildBaseProductFilters`): a product with a variant that is a
+ * component of a combo is not listed. Applied by the `/offers/eligible` listing, which is a listing; the checkout
+ * banner's candidate discovery keeps its own, unchanged, rule.
+ */
+export const UPSELL_PUBLICLY_LISTED = Prisma.sql`NOT EXISTS (
+  SELECT 1 FROM "CompositeComponentMirror" ccm JOIN "VariantMirror" cv ON ccm."componentVariantId" = cv."id"
+  WHERE cv."productId" = p."id")`;
+
 /** `p` belongs to the scope `s`: whole catalog, a frozen fixed set, or include/exclude/category membership. */
 export const UPSELL_IN_SCOPE = Prisma.sql`(
   s.mode = 'GLOBAL_ALL_PAID_LINES'
@@ -57,7 +66,8 @@ export const UPSELL_IN_SCOPE = Prisma.sql`(
 type RawReader = Readonly<{ $queryRaw: <T = unknown>(query: Prisma.Sql) => Prisma.PrismaPromise<T> }>;
 
 /**
- * One page of every addable product in a campaign's scope, in the order `/shop` uses (name, then id), and the total.
+ * One page of every addable, publicly listed product in a campaign's scope, in the order `/shop` uses (name, then
+ * id), and the total.
  * No quote is run here: eligibility to unlock the offer is re-verified when the shopper adds a product.
  */
 export async function listUpsellScopeProductPage(
@@ -66,7 +76,7 @@ export async function listUpsellScopeProductPage(
 ): Promise<Readonly<{ totalCount: number; productIds: readonly string[] }>> {
   const scoped = Prisma.sql`
     FROM ${upsellScopeRecordset([scope])} CROSS JOIN "ProductMirror" p
-    WHERE ${upsellAddableProduct(shopId, paidProductIds)} AND ${UPSELL_IN_SCOPE}`;
+    WHERE ${upsellAddableProduct(shopId, paidProductIds)} AND ${UPSELL_PUBLICLY_LISTED} AND ${UPSELL_IN_SCOPE}`;
   const [counted, rows] = await Promise.all([
     tx.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT count(*) AS "total" ${scoped}`),
     tx.$queryRaw<{ id: string }[]>(Prisma.sql`

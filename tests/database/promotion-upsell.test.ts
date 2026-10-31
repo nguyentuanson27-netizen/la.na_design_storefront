@@ -394,6 +394,26 @@ test("SC-02: exclusions, inactive and absent products never appear; category mem
   assert.deepEqual((await service().getScope(campaignId, 1)).page!.productIds, [products[3]!.id], "a category member that is explicitly excluded is not offered");
 });
 
+test("SC-07: a product that is only a component of a combo stays hidden, exactly as on /shop, in the count and in every page", async () => {
+  // Enough products for two pages, so a filter applied after the page is cut would leave page 1 one card short.
+  await seedBoundedCatalog(UPSELL_SCOPE_PAGE_SIZE);
+  // A set (the parent) built from a piece (the component). /shop hides the piece unless a curated collection shows it.
+  const set = await product("combo-set", 300000, ["S"]);
+  const piece = await product("combo-piece", 100000, ["S"]);
+  await prisma.giftQuantityTarget.createMany({ data: [set, piece].map((p) => ({ campaignId, productId: p.id, role: "INCLUDE" as const })) });
+  await prisma.compositeComponentMirror.create({ data: { parentVariantId: set.variants[0]!.id, componentVariantId: piece.variants[0]!.id, quantity: 1, syncedAt: new Date() } });
+
+  const first = (await service().getScope(campaignId, 1)).page!;
+  const second = (await service().getScope(campaignId, 2)).page!;
+  const ids = [...first.productIds, ...second.productIds];
+  assert.equal(ids.includes(piece.id), false, "the component-only product is not listed on any page");
+  assert.equal(ids.includes(set.id), true, "the combo itself is");
+  // 24 bounded + the fixture's candidate + the set; the piece and the paid product are not offered.
+  assert.equal(first.totalCount, UPSELL_SCOPE_PAGE_SIZE + 2);
+  assert.equal(first.productIds.length, UPSELL_SCOPE_PAGE_SIZE, "page 1 is full: the exclusion happens in SQL before the page is cut");
+  assert.equal(second.productIds.length, 2);
+});
+
 test("SC-03: a cart that is not one unit away from the offer, a bad id or page, a disabled feature or no cart list nothing", async () => {
   await seedBoundedCatalog(3);
   assert.deepEqual(await service().getScope("nonexistent", 1), { page: null, retryable: false });
