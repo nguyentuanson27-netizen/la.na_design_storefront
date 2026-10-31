@@ -66,32 +66,34 @@ export function EligibleOffersInfiniteGrid({
       });
 
       if (!result.ok) {
-        setError(result.error ?? "Không thể tải thêm sản phẩm ưu đãi.");
-        setIsLoadingMore(false);
+        // No message means the offer is gone or the page does not exist: retrying cannot help, so stop paging.
+        if (result.error) setError(result.error);
+        else setHasNextPage(false);
         return;
       }
 
+      const existingIds = new Set(cards.map((c) => c.id));
+      const fresh = result.cards.filter((c) => !existingIds.has(c.id));
       setCards((prev) => {
-        const existingIds = new Set(prev.map((c) => c.id));
-        const fresh = result.cards.filter((c) => !existingIds.has(c.id));
-        return [...prev, ...fresh];
+        const known = new Set(prev.map((c) => c.id));
+        return [...prev, ...fresh.filter((c) => !known.has(c.id))];
       });
       setCurrentPage(result.page);
       setHasNextPage(result.hasNext);
-
-      const totalLoaded = cards.length + result.cards.length;
-      setAnnouncement(`Đã tải thêm ${result.cards.length} sản phẩm ưu đãi. Đang hiển thị ${totalLoaded} trên tổng số ${totalCount} sản phẩm.`);
+      setAnnouncement(`Đã tải thêm ${fresh.length} sản phẩm ưu đãi. Đang hiển thị ${cards.length + fresh.length} trên tổng số ${totalCount} sản phẩm.`);
     } catch {
       setError("Đã xảy ra lỗi khi tải thêm sản phẩm. Nàng thử lại nhé.");
     } finally {
       setIsLoadingMore(false);
     }
-  }, [campaignId, cards.length, currentPage, hasNextPage, isLoadingMore, totalCount]);
+  }, [campaignId, cards, currentPage, hasNextPage, isLoadingMore, totalCount]);
 
   // IntersectionObserver for auto loading when near bottom
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel || !hasNextPage || isLoadingMore) return;
+    // After a failure the sentinel is still on screen, so observing again would retry in a tight loop and burn the
+    // rate-limit budget; the shopper retries with the button instead.
+    if (!sentinel || !hasNextPage || isLoadingMore || error) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -104,7 +106,7 @@ export function EligibleOffersInfiniteGrid({
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasNextPage, isLoadingMore, loadMore]);
+  }, [error, hasNextPage, isLoadingMore, loadMore]);
 
   return (
     <div className="mt-8">
@@ -117,7 +119,7 @@ export function EligibleOffersInfiniteGrid({
       <ListingProductGrid>
         {cards.map((card, idx) => (
           <ProductCard
-            key={`${card.id}-${idx}`}
+            key={card.id}
             model={card.model}
             tone={tones[(toneOffset + idx) % tones.length]!}
             eager={idx < PRODUCT_CARD_EAGER_COUNT}
@@ -156,7 +158,7 @@ export function EligibleOffersInfiniteGrid({
       {hasNextPage ? <div ref={sentinelRef} className="h-4 w-full" /> : null}
 
       {/* Manual "Xem thêm" button */}
-      {hasNextPage && !isLoadingMore ? (
+      {hasNextPage && !isLoadingMore && !error ? (
         <div className="mt-12 text-center">
           <button
             type="button"

@@ -456,6 +456,20 @@ test("SC-09: /offers/eligible lists in-stock before out-of-stock, and sorts pric
   assert.deepEqual(page.productIds, [candidateProductId, mediumInStock.id, expensiveInStock.id, cheapOos.id]);
 });
 
+test("SC-10: /offers/eligible prices a product by its cheapest sellable variant, not by a sold-out size", async () => {
+  // mixed: S is 190,000 but sold out, M is 200,000 and in stock, so the product is bought at 200,000
+  const mixed = await product("mixed-sizes", 190000, ["S", "M"]);
+  await prisma.warehouseStock.updateMany({ where: { variantId: mixed.variants.find((v) => v.size === "S")!.id }, data: { quantity: 0 } });
+  const between = await product("between", 195000, ["S"]);
+  await prisma.giftQuantityTarget.createMany({
+    data: [mixed, between].map((p) => ({ campaignId, productId: p.id, role: "INCLUDE" as const })),
+  });
+
+  const page = (await service().getScope(campaignId, 1)).page!;
+  // A sold-out 190k size must not lift the product above the 195k one it cannot actually be bought below.
+  assert.deepEqual(page.productIds, [candidateProductId, between.id, mixed.id]);
+});
+
 test("SC-03: a cart that is not one unit away from the offer, a bad id or page, a disabled feature or no cart list nothing", async () => {
   await seedBoundedCatalog(3);
   assert.deepEqual(await service().getScope("nonexistent", 1), { page: null, retryable: false });

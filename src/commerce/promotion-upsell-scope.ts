@@ -67,40 +67,42 @@ export const UPSELL_IN_SCOPE = Prisma.sql`(
 type RawReader = Readonly<{ $queryRaw: <T = unknown>(query: Prisma.Sql) => Prisma.PrismaPromise<T> }>;
 
 /**
- * One page of every addable, publicly listed product in a campaign's scope, in the order `/shop` uses (name, then
- * id), and the total.
+ * One page of every addable, publicly listed product in a campaign's scope, and the total. Products with a sellable
+ * variant come first, then the cheapest sellable price, then name and id so that paging is stable.
  * No quote is run here: eligibility to unlock the offer is re-verified when the shopper adds a product.
  */
 export async function listUpsellScopeProductPage(
   tx: RawReader,
   { scope, shopId, paidProductIds, page, pageSize, now = new Date() }: Readonly<{ scope: UpsellScopeFacts; shopId: number; paidProductIds: readonly string[]; page: number; pageSize: number; now?: Date }>,
 ): Promise<Readonly<{ totalCount: number; productIds: readonly string[] }>> {
-  const scoped = Prisma.sql`
-    FROM ${upsellScopeRecordset([scope])} CROSS JOIN "ProductMirror" p
+  const from = Prisma.sql`FROM ${upsellScopeRecordset([scope])} CROSS JOIN "ProductMirror" p`;
+  const where = Prisma.sql`
     WHERE ${upsellAddableProduct(shopId, paidProductIds)} AND ${UPSELL_PUBLICLY_LISTED} AND ${UPSELL_IN_SCOPE}`;
-  const variantStockCte = buildVariantStockCte(now);
-  const inStockRank = Prisma.sql`
-    CASE
-      WHEN EXISTS (
-        SELECT 1
-        FROM "variant_stock" vf
-        WHERE vf."productId" = p."id"
-          AND vf."sellableStock" > 0
-      ) THEN 0
-      ELSE 1
-    END`;
-  const sortPrice = Prisma.sql`
-    (
-      SELECT MIN(vf."resolvedPrice")
-      FROM "variant_stock" vf
-      WHERE vf."productId" = p."id"
-    )`;
+  // One pass over the variant projection, joined once, instead of a correlated subquery per product (the projection is
+  // not materialized, so a per-product subquery would re-run it for every product in the scope). A product is in stock
+  // when any variant is sellable, and it is priced by its cheapest *sellable* variant: a cheap sold-out size must not
+  // pull a product up the list when the shopper can only buy its dearer sizes. A product with nothing sellable falls back
+  // to its cheapest variant, and one with no priced variant sorts last.
+  const productRank = Prisma.sql`, "upsell_product_rank" AS (
+    SELECT
+      vf."productId",
+      BOOL_OR(vf."sellableStock" > 0) AS "inStock",
+      COALESCE(
+        MIN(vf."resolvedPrice") FILTER (WHERE vf."sellableStock" > 0),
+        MIN(vf."resolvedPrice")
+      ) AS "sortPrice"
+    FROM "variant_stock" vf
+    GROUP BY vf."productId"
+  )`;
   const [counted, rows] = await Promise.all([
-    tx.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT count(*) AS "total" ${scoped}`),
+    tx.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT count(*) AS "total" ${from} ${where}`),
     tx.$queryRaw<{ id: string }[]>(Prisma.sql`
-      ${variantStockCte}
-      SELECT p."id" ${scoped}
-      ORDER BY ${inStockRank} ASC, ${sortPrice} ASC NULLS LAST, p."name" ASC, p."id" ASC
+      ${buildVariantStockCte(now)}${productRank}
+      SELECT p."id" ${from}
+      LEFT JOIN "upsell_product_rank" r ON r."productId" = p."id"
+      ${where}
+      ORDER BY CASE WHEN COALESCE(r."inStock", FALSE) THEN 0 ELSE 1 END ASC,
+        r."sortPrice" ASC NULLS LAST, p."name" ASC, p."id" ASC
       LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`),
   ]);
   return { totalCount: Number(counted[0]?.total ?? 0), productIds: rows.map((row) => row.id) };
