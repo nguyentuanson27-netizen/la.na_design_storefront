@@ -41,6 +41,7 @@ function render({ campaignId, offerName, listing, limited, retryHref }: Eligible
             initialPage={listing.page}
             campaignId={campaignId ?? ""}
             toneOffset={listing.toneOffset}
+            nextHref={listing.nextHref}
           />
         </section>
       ) : limited ? (

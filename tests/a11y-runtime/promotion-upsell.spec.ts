@@ -393,10 +393,12 @@ test("ER-UI: /offers/eligible is the storefront listing: every in-scope product,
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
   }
-  await page.getByRole("link", { name: /Trang sau/ }).click();
-  await expect(page).toHaveURL(`${url}&page=2`);
-  await expect(page.locator(".listing-product-grid article")).toHaveCount(3);
-  await expect(page.getByRole("link", { name: /Trang trước/ })).toHaveAttribute("href", path);
+  // Infinite scroll: no numbered pagination, and the rest of the scope is appended in place without leaving the page.
+  await expect(page.getByRole("navigation", { name: "Phân trang sản phẩm ưu đãi" })).toHaveCount(0);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect(page.locator(".listing-product-grid article")).toHaveCount(27);
+  await expect(page.getByRole("button", { name: /Xem thêm/ })).toHaveCount(0);
+  await expect(page).toHaveURL(url);
   await page.screenshot({ path: "test-results/upsell-eligible-listing.png", fullPage: true });
 });
 
