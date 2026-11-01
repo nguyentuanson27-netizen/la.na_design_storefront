@@ -18,6 +18,8 @@ export type EligibleOffersInfiniteGridProps = {
   initialPage: number;
   campaignId: string;
   toneOffset?: number;
+  /** The products ahead of a deep-linked page; `null` when there are too many to continue in place. */
+  precedingProductIds?: readonly string[] | null;
   /** The server-rendered next page, for shoppers and crawlers without JavaScript. */
   nextHref?: string | null;
 };
@@ -25,7 +27,7 @@ export type EligibleOffersInfiniteGridProps = {
 export function EligibleOffersInfiniteGrid({ toneOffset = 0, nextHref = null, ...options }: EligibleOffersInfiniteGridProps) {
   const { totalCount, totalPages } = options;
   const { cards, currentPage, hasNextPage, isLoadingMore, announcement, error, sentinelRef, loadMore } =
-    useEligibleOffersInfiniteGrid({ ...options, skip: toneOffset });
+    useEligibleOffersInfiniteGrid(options);
 
   return (
     <div className="mt-8">
@@ -77,6 +79,15 @@ export function EligibleOffersInfiniteGrid({ toneOffset = 0, nextHref = null, ..
           <button type="button" onClick={() => void loadMore()} className="btn btn--outline px-8">
             Xem thêm ({cards.length}/{totalCount})
           </button>
+        </div>
+      ) : null}
+
+      {/* Too far into the list to continue in place: the next page is a link. */}
+      {nextHref && options.precedingProductIds === null ? (
+        <div className="mt-8 text-center">
+          <Link href={nextHref} className="text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline">
+            Trang tiếp theo ({currentPage + 1}/{totalPages})
+          </Link>
         </div>
       ) : null}
 

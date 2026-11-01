@@ -479,7 +479,7 @@ test("SC-11: continuing from what is on screen neither repeats nor skips a produ
   const variants = await prisma.variantMirror.findMany({ where: { productId: soldOut }, select: { id: true } });
   await prisma.warehouseStock.updateMany({ where: { variantId: { in: variants.map((v) => v.id) } }, data: { quantity: 0 } });
 
-  const next = (await service().getScope(campaignId, 2, new Date(), { excludeProductIds: first.productIds, skip: 0 })).page!;
+  const next = (await service().getScope(campaignId, 2, new Date(), { excludeProductIds: first.productIds })).page!;
   const seen = [...first.productIds, ...next.productIds];
   assert.equal(new Set(seen).size, seen.length, "no product is repeated");
   assert.equal(seen.length, total + 1, "no product is skipped");
@@ -488,18 +488,27 @@ test("SC-11: continuing from what is on screen neither repeats nor skips a produ
   assert.ok((await service().getScope(campaignId, 2)).page!.productIds.includes(soldOut), "OFFSET paging repeats it");
 });
 
-test("SC-12: a listing opened at a later page continues after it: the products before it are skipped, not shown again", async () => {
-  const total = UPSELL_SCOPE_PAGE_SIZE * 2 + 5;
-  await seedBoundedCatalog(total);
-  const pages = [1, 2, 3].map(async (page) => (await service().getScope(campaignId, page)).page!.productIds);
-  const [one, two, three] = await Promise.all(pages);
-  // Opened at page 2 (24 products ahead of it): the continuation is what follows page 2.
-  const after = (await service().getScope(campaignId, 2, new Date(), { excludeProductIds: two!, skip: UPSELL_SCOPE_PAGE_SIZE })).page!;
-  assert.deepEqual(after.productIds, three);
-  assert.equal(after.totalCount - UPSELL_SCOPE_PAGE_SIZE, three!.length, "what remains after the skipped products");
-  assert.equal(one!.some((id) => after.productIds.includes(id)), false);
+test("SC-12: a listing opened at a later page carries the products ahead of it, so a stock change cannot make it skip one", async () => {
+  const total = UPSELL_SCOPE_PAGE_SIZE * 2 + 2;
+  await seedBoundedCatalog(total); // plus the fixture's candidate: 51 products
+  const page1 = (await service().getScope(campaignId, 1)).page!;
+  const page2 = (await service().getScope(campaignId, 2)).page!;
+  assert.deepEqual(page1.precedingProductIds, [], "nothing is ahead of the first page");
+  assert.deepEqual(page2.precedingProductIds, page1.productIds, "page 2 is preceded by page 1, read in the same snapshot");
+
+  // Opened at page 2; before the shopper loads more, a product from page 1 sells out and drops to the end of the order.
+  const soldOut = page2.precedingProductIds![0]!;
+  const variants = await prisma.variantMirror.findMany({ where: { productId: soldOut }, select: { id: true } });
+  await prisma.warehouseStock.updateMany({ where: { variantId: { in: variants.map((v) => v.id) } }, data: { quantity: 0 } });
+  const next = (await service().getScope(campaignId, 2, new Date(), { excludeProductIds: [...page2.precedingProductIds!, ...page2.productIds] })).page!;
+  const everything = [...page2.precedingProductIds!, ...page2.productIds, ...next.productIds];
+  assert.equal(new Set(everything).size, total + 1, "every product is accounted for once");
+  assert.equal(next.productIds.length, total + 1 - 2 * UPSELL_SCOPE_PAGE_SIZE, "the products after page 2 are all still offered");
+  // Counting past 24 products on the new order, as the OFFSET did, would have returned a different set.
+  assert.notDeepEqual((await service().getScope(campaignId, 3)).page!.productIds, next.productIds);
+
   // A cursor that is not a list of ids is refused outright.
-  assert.deepEqual(await service().getScope(campaignId, 2, new Date(), { excludeProductIds: ["bad id;"], skip: 0 }), { page: null, retryable: false });
+  assert.deepEqual(await service().getScope(campaignId, 2, new Date(), { excludeProductIds: ["bad id;"] }), { page: null, retryable: false });
 });
 
 test("SC-03: a cart that is not one unit away from the offer, a bad id or page, a disabled feature or no cart list nothing", async () => {

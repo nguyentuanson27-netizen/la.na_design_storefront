@@ -12,7 +12,7 @@ import { createStorefrontRoute } from "@/routes/factory";
 import { loadEligibleOffersRoute, type EligibleOffersRouteProps, type EligibleOffersViewModel } from "@/routes/eligible-offers";
 import { buildEligibleOffersMetadata } from "@/routes/metadata/eligible-offers";
 
-function render({ campaignId, offerName, listing, limited, retryHref }: EligibleOffersViewModel) {
+function render({ campaignId, offerName, listing, limited, retryHref, precedingProductIds }: EligibleOffersViewModel) {
   return (
     <ListingShell>
       <ListingBreadcrumbs
@@ -42,6 +42,7 @@ function render({ campaignId, offerName, listing, limited, retryHref }: Eligible
             campaignId={campaignId ?? ""}
             toneOffset={listing.toneOffset}
             nextHref={listing.nextHref}
+            precedingProductIds={precedingProductIds}
           />
         </section>
       ) : limited ? (

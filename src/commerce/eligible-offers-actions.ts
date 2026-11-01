@@ -1,13 +1,16 @@
 "use server";
 
-import { fetchEligibleOffersPage, type EligibleOffersNextPageResult } from "@/routes/eligible-offers";
+import {
+  fetchEligibleOffersCards,
+  fetchEligibleOffersPage,
+  type EligibleOffersNextPageResult,
+  type EligibleOffersRefreshedCards,
+} from "@/routes/eligible-offers";
 
 export type EligibleOffersNextPageActionInput = {
   campaignId: string;
-  /** Every product id the shopper has on screen (or was given and could not be drawn). */
+  /** Every product id the shopper has on screen, plus those a listing opened at `?page=N` starts after. */
   shownProductIds: string[];
-  /** Products ahead of the first one shown: a listing opened at `?page=N` starts after (N - 1) pages. */
-  skip: number;
 };
 
 export async function loadEligibleOffersNextPageAction(
@@ -16,6 +19,10 @@ export async function loadEligibleOffersNextPageAction(
   return fetchEligibleOffersPage({
     campaignId: input.campaignId,
     shownProductIds: input.shownProductIds,
-    skip: input.skip,
   });
+}
+
+/** Fresh card models for products already loaded, after the page was revalidated on the server. */
+export async function refreshEligibleOffersCardsAction(input: { productIds: string[] }): Promise<EligibleOffersRefreshedCards> {
+  return fetchEligibleOffersCards({ productIds: input.productIds });
 }

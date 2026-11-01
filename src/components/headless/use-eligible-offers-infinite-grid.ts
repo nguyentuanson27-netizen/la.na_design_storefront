@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { loadEligibleOffersNextPageAction } from "@/commerce/eligible-offers-actions";
+import { loadEligibleOffersNextPageAction, refreshEligibleOffersCardsAction } from "@/commerce/eligible-offers-actions";
 import type { ProductCardModel } from "./build-product-card-model";
 import { createPageRequestGuard, settleIfCurrent } from "./plp-page-request-guard";
 
@@ -17,9 +17,14 @@ export type UseEligibleOffersInfiniteGridOptions = {
   totalPages: number;
   initialPage: number;
   campaignId: string;
-  /** Products ahead of the first server-rendered card: nonzero when the listing was opened at `?page=N`. */
-  skip?: number;
+  /**
+   * The products ahead of the first server-rendered card, for a listing opened at `?page=N`. Continuing excludes them
+   * by id; `null` (too many to carry) means this listing does not continue in place and the page links onward.
+   */
+  precedingProductIds?: readonly string[] | null;
 };
+
+const REFRESH_CHUNK = 120;
 
 /**
  * Pages the `/offers/eligible` listing in place. The first page is server-rendered; later pages come from the
@@ -31,13 +36,15 @@ export function useEligibleOffersInfiniteGrid({
   totalPages,
   initialPage,
   campaignId,
-  skip = 0,
+  precedingProductIds = [],
 }: UseEligibleOffersInfiniteGridOptions) {
+  const continues = precedingProductIds !== null;
   const [cards, setCards] = useState<readonly EligibleOffersCardItem[]>([...initialCards]);
-  // Products a page covered that the catalog would not draw: still "seen", so the next request does not ask for them again.
-  const [undrawn, setUndrawn] = useState<readonly string[]>([]);
+  // Products the listing has moved past without showing them: those ahead of a deep-linked page, and any a page covered
+  // that the catalog would not draw. They are "seen", so the next request does not ask for them again.
+  const [passed, setPassed] = useState<readonly string[]>(precedingProductIds ?? []);
   const [currentPage, setCurrentPage] = useState(initialPage);
-  const [hasNextPage, setHasNextPage] = useState(initialPage < totalPages);
+  const [hasNextPage, setHasNextPage] = useState(continues && initialPage < totalPages);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -58,18 +65,47 @@ export function useEligibleOffersInfiniteGrid({
     setPrevListKey(listKey);
     setPrevInitialCards(initialCards);
     setCards([...initialCards]);
-    setUndrawn([]);
+    setPassed(precedingProductIds ?? []);
     setCurrentPage(initialPage);
-    setHasNextPage(initialPage < totalPages);
+    setHasNextPage(continues && initialPage < totalPages);
     setIsLoadingMore(false);
     setError(null);
   } else if (initialCards !== prevInitialCards) {
-    // The same listing, revalidated: take the fresh prices and stock for the cards already shown, and keep every page
-    // the shopper has loaded.
+    // The same listing, revalidated: take the fresh prices and stock for the cards on the server-rendered page, and keep
+    // every page the shopper has loaded.
     setPrevInitialCards(initialCards);
     const fresh = new Map(initialCards.map((card) => [card.id, card]));
     setCards((prev) => prev.map((card) => fresh.get(card.id) ?? card));
   }
+
+  // The server re-renders the first page only, so the cards appended since would keep the price, sale badge and stock
+  // label they were drawn with. After a revalidation they are drawn again, by id, and swapped in without moving anything.
+  const cardsRef = useRef(cards);
+  useEffect(() => {
+    cardsRef.current = cards;
+  }, [cards]);
+  const revalidatedRef = useRef(initialCards);
+  useEffect(() => {
+    if (revalidatedRef.current === initialCards) return;
+    revalidatedRef.current = initialCards;
+    const onServerPage = new Set(initialCards.map((card) => card.id));
+    const appended = cardsRef.current.map((card) => card.id).filter((id) => !onServerPage.has(id));
+    if (appended.length === 0) return;
+    const request = guardRef.current.begin();
+    void (async () => {
+      for (let at = 0; at < appended.length; at += REFRESH_CHUNK) {
+        try {
+          const redrawn = await refreshEligibleOffersCardsAction({ productIds: appended.slice(at, at + REFRESH_CHUNK) });
+          if (!request.isCurrent()) return;
+          if (!redrawn.ok) continue;
+          const fresh = new Map(redrawn.cards.map((card) => [card.id, card]));
+          setCards((prev) => prev.map((card) => fresh.get(card.id) ?? card));
+        } catch {
+          // A failed redraw leaves the cards as they were; the next revalidation tries again.
+        }
+      }
+    })();
+  }, [initialCards]);
 
   const loadMore = useCallback(async () => {
     if (isLoadingMore || !hasNextPage) return;
@@ -80,9 +116,9 @@ export function useEligibleOffersInfiniteGrid({
     setAnnouncement("");
 
     try {
-      const shownProductIds = [...cards.map((card) => card.id), ...undrawn];
+      const shownProductIds = [...cards.map((card) => card.id), ...passed];
       const outcome = await settleIfCurrent(guardRef.current, () =>
-        loadEligibleOffersNextPageAction({ campaignId, shownProductIds, skip }),
+        loadEligibleOffersNextPageAction({ campaignId, shownProductIds }),
       );
       if (outcome.stale) {
         stale = true;
@@ -104,7 +140,7 @@ export function useEligibleOffersInfiniteGrid({
         const known = new Set(prev.map((card) => card.id));
         return [...prev, ...fresh.filter((card) => !known.has(card.id))];
       });
-      setUndrawn((prev) => [...prev, ...result.consumedProductIds.filter((id) => !drawn.has(id) && !shown.has(id))]);
+      setPassed((prev) => [...prev, ...result.consumedProductIds.filter((id) => !drawn.has(id) && !shown.has(id))]);
       setCurrentPage((page) => page + 1);
       setHasNextPage(result.hasNext);
       setAnnouncement(
@@ -115,7 +151,7 @@ export function useEligibleOffersInfiniteGrid({
     } finally {
       if (!stale) setIsLoadingMore(false);
     }
-  }, [campaignId, cards, hasNextPage, isLoadingMore, skip, totalCount, undrawn]);
+  }, [campaignId, cards, hasNextPage, isLoadingMore, passed, totalCount]);
 
   // Auto-load near the bottom. Paused while an error is shown: the sentinel is still on screen after a failure, so
   // observing again would retry in a tight loop and burn the rate-limit budget; the shopper retries with the button.

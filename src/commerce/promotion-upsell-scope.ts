@@ -64,6 +64,9 @@ export const UPSELL_IN_SCOPE = Prisma.sql`(
         AND m."categoryKey" IN (SELECT jsonb_array_elements_text(s.keys)))))
 )`;
 
+/** How many products ahead of a deep-linked page are carried as ids; past it the listing continues by link, not in place. */
+export const UPSELL_SCOPE_PRECEDING_MAX = 2400;
+
 type RawReader = Readonly<{ $queryRaw: <T = unknown>(query: Prisma.Sql) => Prisma.PrismaPromise<T> }>;
 
 /**
@@ -76,18 +79,18 @@ export async function listUpsellScopeProductPage(
   { scope, shopId, paidProductIds, page, pageSize, now = new Date(), cursor }: Readonly<{
     scope: UpsellScopeFacts; shopId: number; paidProductIds: readonly string[]; page: number; pageSize: number; now?: Date;
     /**
-     * Continue a listing the shopper is already looking at: skip `excludeProductIds` (what is on screen) and the first
-     * `skip` products of what remains, instead of paging by `page`. The sort moves with stock and price, so an OFFSET
-     * computed on a later snapshot can repeat a product and skip another; excluding what was shown cannot.
+     * Continue a listing the shopper is already looking at: take the first page of what is left once
+     * `excludeProductIds` (what is on screen, and what a deep link starts after) are removed. The sort moves with stock
+     * and price, so an OFFSET computed on a later snapshot can repeat a product and skip another; excluding cannot.
      */
-    cursor?: Readonly<{ excludeProductIds: readonly string[]; skip: number }>;
+    cursor?: Readonly<{ excludeProductIds: readonly string[] }>;
   }>,
-): Promise<Readonly<{ totalCount: number; productIds: readonly string[] }>> {
+): Promise<Readonly<{ totalCount: number; productIds: readonly string[]; precedingProductIds: readonly string[] | null }>> {
   const from = Prisma.sql`FROM ${upsellScopeRecordset([scope])} CROSS JOIN "ProductMirror" p`;
   const notShown = cursor ? Prisma.sql` AND NOT (p."id" = ANY(${cursor.excludeProductIds}::text[]))` : Prisma.empty;
   const where = Prisma.sql`
     WHERE ${upsellAddableProduct(shopId, paidProductIds)} AND ${UPSELL_PUBLICLY_LISTED} AND ${UPSELL_IN_SCOPE}${notShown}`;
-  const offset = cursor ? cursor.skip : (page - 1) * pageSize;
+  const offset = cursor ? 0 : (page - 1) * pageSize;
   // One pass over the variant projection, joined once, instead of a correlated subquery per product (the projection is
   // not materialized, so a per-product subquery would re-run it for every product in the scope). A product is in stock
   // when any variant is sellable, and it is priced by its cheapest *sellable* variant: a cheap sold-out size must not
@@ -104,16 +107,27 @@ export async function listUpsellScopeProductPage(
     FROM "variant_stock" vf
     GROUP BY vf."productId"
   )`;
-  const [counted, rows] = await Promise.all([
-    tx.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT count(*) AS "total" ${from} ${where}`),
-    tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+  const ordered = (limit: number, skip: number) => tx.$queryRaw<{ id: string }[]>(Prisma.sql`
       ${buildVariantStockCte(now)}${productRank}
       SELECT p."id" ${from}
       LEFT JOIN "upsell_product_rank" r ON r."productId" = p."id"
       ${where}
       ORDER BY CASE WHEN COALESCE(r."inStock", FALSE) THEN 0 ELSE 1 END ASC,
         r."sortPrice" ASC NULLS LAST, p."name" ASC, p."id" ASC
-      LIMIT ${pageSize} OFFSET ${offset}`),
+      LIMIT ${limit} OFFSET ${skip}`);
+  // A listing opened at `?page=N` continues from the end of that page. The products before it are read in the same
+  // snapshot as the page, so the continuation can exclude them by id rather than skip a count that a stock change
+  // would shift. Too far in to carry the ids, the listing does not continue in place (null) and the page links on.
+  const precedingWanted = !cursor && offset > 0;
+  const preceding = precedingWanted && offset <= UPSELL_SCOPE_PRECEDING_MAX ? ordered(offset, 0) : null;
+  const [counted, rows, before] = await Promise.all([
+    tx.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT count(*) AS "total" ${from} ${where}`),
+    ordered(pageSize, offset),
+    preceding,
   ]);
-  return { totalCount: Number(counted[0]?.total ?? 0), productIds: rows.map((row) => row.id) };
+  return {
+    totalCount: Number(counted[0]?.total ?? 0),
+    productIds: rows.map((row) => row.id),
+    precedingProductIds: precedingWanted ? (before ? before.map((row) => row.id) : null) : [],
+  };
 }

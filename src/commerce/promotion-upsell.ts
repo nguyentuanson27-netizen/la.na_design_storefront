@@ -50,11 +50,15 @@ export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: st
  * One page of the products a campaign covers, for a cart that is one unit away from it. Product ids only: the page
  * draws them through the storefront catalog like any other listing. Nothing here is a quote; `add` re-verifies.
  */
-/** Where a scope listing continues from: what is already on screen, and how many products precede that on the first page. */
-export type UpsellScopeCursor = Readonly<{ excludeProductIds: readonly string[]; skip: number }>;
+/** Where a scope listing continues from: the products already on screen, and those a deep link starts after. */
+export type UpsellScopeCursor = Readonly<{ excludeProductIds: readonly string[] }>;
 /** A listing this long is nowhere near a real catalog; the cap keeps the id list a client can send bounded. */
 export const UPSELL_SCOPE_CURSOR_MAX_IDS = 5000;
-export type UpsellScopePage = Readonly<{ offerName: string; totalCount: number; productIds: readonly string[] }>;
+export type UpsellScopePage = Readonly<{
+  offerName: string; totalCount: number; productIds: readonly string[];
+  /** The products ahead of a page opened at `?page=N`; `null` when there are too many to carry. Empty on page 1. */
+  precedingProductIds: readonly string[] | null;
+}>;
 /** `retryable` marks a timeout or failure, so the page can say "slow, try again" instead of "offer changed". */
 export type UpsellScopeResult = Readonly<{ page: UpsellScopePage | null; retryable: boolean }>;
 export type CheckoutUpsellModel = Readonly<{
@@ -244,7 +248,7 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
   async function getScope(campaignId: string, page: number, now = new Date(), cursor?: UpsellScopeCursor): Promise<UpsellScopeResult> {
     const none = { page: null, retryable: false } as const;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId) || !Number.isSafeInteger(page) || page < 1) return none;
-    if (cursor && (!Number.isSafeInteger(cursor.skip) || cursor.skip < 0 || cursor.excludeProductIds.length > UPSELL_SCOPE_CURSOR_MAX_IDS
+    if (cursor && (cursor.excludeProductIds.length > UPSELL_SCOPE_CURSOR_MAX_IDS
       || !cursor.excludeProductIds.every((id) => /^[A-Za-z0-9_-]{1,128}$/.test(id)))) return none;
     if (!isPromotionUpsellEnabled(shopId, env)) return none;
     const cartId = readAnonymousCartCookie(store);
@@ -260,12 +264,12 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         if (!findUpsellOpportunities(before.state).some((o) => o.campaignId === campaignId)) return null;
         const entry = before.state.campaignEntries.find((e) => e.campaign.id === campaignId);
         if (!entry) return null;
-        const { totalCount, productIds } = await listUpsellScopeProductPage(tx, {
+        const { totalCount, productIds, precedingProductIds } = await listUpsellScopeProductPage(tx, {
           scope: upsellScopeFacts(entry), shopId, page, pageSize: UPSELL_SCOPE_PAGE_SIZE,
           paidProductIds: [...new Set(before.state.paidVariants.map((v) => v.productId))],
           now, cursor,
         });
-        return { offerName: entry.campaign.name, totalCount, productIds };
+        return { offerName: entry.campaign.name, totalCount, productIds, precedingProductIds };
       }, { isolationLevel: "RepeatableRead", maxWait: 200, timeout: UPSELL_READ_TIMEOUT_MS });
       // "offered" means a listing with something to show: a near campaign with no listed product is as empty as no campaign.
       report({ event: "scope", outcome: result && result.totalCount > 0 ? "offered" : "empty", durationMs: clock() - started });

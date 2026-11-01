@@ -403,12 +403,17 @@ test("ER-UI: /offers/eligible is the storefront listing: every in-scope product,
   // from the server; it must not throw away the pages already loaded or load them a second time.
   const ids = () => page.locator(".listing-product-grid article").evaluateAll((nodes) => nodes.map((node) => node.querySelector("a")?.getAttribute("href")));
   const before = await ids();
+  // A card loaded after the first page is drawn again on revalidation: change what it sells for and see it follow.
+  const tail = page.locator(".listing-product-grid article", { hasText: "Áo extra 25" });
+  const tailBefore = await tail.innerText();
+  await prisma.variantMirror.updateMany({ where: { pancakeVariationId: `${P}extra-25S` }, data: { pancakeRetailPrice: 150000, pancakeRetailPriceAfterDiscount: 150000 } });
   const revalidated = page.waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1");
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await revalidated;
   await page.waitForTimeout(500);
   await expect(page.locator(".listing-product-grid article")).toHaveCount(27);
   expect(await ids()).toEqual(before);
+  await expect.poll(() => tail.innerText(), { message: "the appended card follows the new price", timeout: 15000 }).not.toBe(tailBefore);
   expect(new Set(before).size).toBe(27);
   await page.screenshot({ path: "test-results/upsell-eligible-listing.png", fullPage: true });
 });

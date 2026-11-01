@@ -28,6 +28,8 @@ export type EligibleOffersViewModel = Readonly<{
   offerName: string | null;
   /** The scope page's product ids, drawn or not; only the continuation request reads it. */
   consumedProductIds?: readonly string[];
+  /** The products ahead of a page opened at `?page=N`, so the listing can continue after them; `null` when too many. */
+  precedingProductIds?: readonly string[] | null;
   listing: FlashSaleViewModel | null;
   limited: boolean;
   /** Set only after a timeout or failure, so the page can offer a retry instead of "offer changed". */
@@ -90,8 +92,8 @@ async function listForCart(
     }
     const retryHref = scope.retryable ? eligibleHref(campaignId, page) : null;
     if (!scope.page) return fallback({ ...empty, campaignId, retryHref });
-    // With a cursor the count is what is left after what the shopper has seen and the products before it.
-    const remaining = cursor ? Math.max(scope.page.totalCount - cursor.skip, 0) : scope.page.totalCount;
+    // With a cursor the count is what is left once what the shopper has seen is excluded.
+    const remaining = scope.page.totalCount;
     const totalPages = Math.ceil(remaining / UPSELL_SCOPE_PAGE_SIZE);
     // A page past the end is a URL that does not exist; page 1 of an empty scope is the empty state. A continuation that
     // has run out of products is simply the end of the list.
@@ -125,6 +127,7 @@ async function listForCart(
         campaignId,
         offerName: scope.page.offerName,
         consumedProductIds: scope.page.productIds,
+        precedingProductIds: scope.page.precedingProductIds,
         // The shared builder pages on `?page=`; this route also carries the campaign.
         listing: { ...listing,
           previousHref: page > 1 ? eligibleHref(campaignId, page - 1) : null,
@@ -158,20 +161,18 @@ const NEXT_PAGE_FAILED = { ok: false, cards: [], consumedProductIds: [], totalCo
 /**
  * The products after the ones the shopper already has on screen. It continues by excluding what was shown rather than
  * by page number: the order moves with stock and price, so an OFFSET taken from a later snapshot can repeat a product
- * and skip another. `skip` is the number of products ahead of the first one shown (a listing opened at `?page=N`).
+ * and skip another. A listing opened at `?page=N` passes the products ahead of it as already shown.
  */
 export async function fetchEligibleOffersPage({
   campaignId,
   shownProductIds,
-  skip,
 }: {
   campaignId: string;
   shownProductIds: readonly string[];
-  skip: number;
 }): Promise<EligibleOffersNextPageResult> {
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId) || !Array.isArray(shownProductIds) || !Number.isSafeInteger(skip) || skip < 0) return NEXT_PAGE_FAILED;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId) || !Array.isArray(shownProductIds)) return NEXT_PAGE_FAILED;
   // `page` only picks the rate-limit bucket and the retry link; a cursor request always uses the continuation budget.
-  const { view } = await listForCart(campaignId, 2, { throwOnNotFound: false, cursor: { excludeProductIds: shownProductIds, skip } });
+  const { view } = await listForCart(campaignId, 2, { throwOnNotFound: false, cursor: { excludeProductIds: shownProductIds } });
   if (view.limited) {
     return { ...NEXT_PAGE_FAILED, limited: true, error: "Gợi ý ưu đãi đang có quá nhiều lượt truy cập, nàng thử lại sau ít phút nhé." };
   }
@@ -184,6 +185,57 @@ export async function fetchEligibleOffersPage({
     totalCount: view.listing.totalCount,
     hasNext: view.listing.page < view.listing.totalPages,
   };
+}
+
+/** The most products one refresh asks for: a few pages of cards, however many the shopper has loaded. */
+const REFRESH_CARDS_MAX_IDS = 120;
+
+export type EligibleOffersRefreshedCards = Readonly<{
+  ok: boolean;
+  cards: EligibleOffersNextPageResult["cards"];
+}>;
+
+/**
+ * Fresh card models (price, sale badge, stock labels) for products the shopper has already loaded. A server refresh
+ * re-renders the first page only, so the pages appended since keep what they were drawn with until they are asked
+ * for again here. Same gates as the listing -- a guest cart, a trusted browser request and the continuation budget --
+ * and the same visibility rules, so it draws only what a listing would; nothing here is a quote.
+ */
+export async function fetchEligibleOffersCards({
+  productIds,
+}: {
+  productIds: readonly string[];
+}): Promise<EligibleOffersRefreshedCards> {
+  const none = { ok: false, cards: [] } as const;
+  if (!Array.isArray(productIds) || productIds.length === 0 || productIds.length > REFRESH_CARDS_MAX_IDS
+    || !productIds.every((id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id))) return none;
+  try {
+    const store = await cookies();
+    const cartId = readAnonymousCartCookie(store);
+    if (!cartId) return none;
+    const auth = readAuthServerConfig();
+    const requestHeaders = await headers();
+    if (!isTrustedUpsellBrowseRequest(requestHeaders, auth.baseURL)) return none;
+    const shopId = readPancakeShopId();
+    if (!isPromotionUpsellEnabled(shopId)) return none;
+    const clientKey = deriveGuestCheckoutClientKey(requestHeaders, auth);
+    if (!(await createGuestCheckoutRateLimiter(prisma).consumeUpsellPageClient({ clientKey }))) return none;
+    const now = new Date();
+    const catalog = await listConfiguredStorefrontListingProductsByIds({ ids: productIds, now });
+    const listing = buildFlashSaleViewModel({
+      basePath: "/offers/eligible",
+      products: catalog.products,
+      totalCount: catalog.products.length,
+      totalPages: 1,
+      page: 1,
+      pageSize: REFRESH_CARDS_MAX_IDS,
+      selectEventBySlug: new Map(),
+      pricingRule: catalog.pricingRule,
+    });
+    return { ok: true, cards: listing.cards };
+  } catch {
+    return none;
+  }
 }
 
 export async function loadEligibleOffersRoute({ searchParams }: EligibleOffersRouteProps): Promise<RouteHandle<EligibleOffersViewModel>> {
