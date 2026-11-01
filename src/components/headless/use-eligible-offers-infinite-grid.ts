@@ -51,9 +51,11 @@ export function useEligibleOffersInfiniteGrid({
   const [passed, setPassed] = useState<readonly string[]>(precedingProductIds ?? []);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [hasNextPage, setHasNextPage] = useState(continues && initialPage < totalPages);
-  // The size of the offer when the listing was last known to be complete. A revalidation that reports a larger offer than
-  // that, with products that are neither shown nor passed, reopens the listing; one that does not leaves it closed.
-  const [settledTotal, setSettledTotal] = useState(initialPage < totalPages ? 0 : totalCount);
+  // What the listing looked like when it was last known to be complete: the offer's size and how many products were
+  // shown or passed. A finished listing is reopened when the offer lists more than the shopper has accounted for, which
+  // covers growth and a replacement alike (a product leaves, another joins, the total is unchanged). A probe that finds
+  // nothing records this pair, so the same pair never probes twice.
+  const [drainedKey, setDrainedKey] = useState(`${totalCount}|${initialCards.length + (precedingProductIds?.length ?? 0)}`);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +79,7 @@ export function useEligibleOffersInfiniteGrid({
     setPassed(precedingProductIds ?? []);
     setCurrentPage(initialPage);
     setHasNextPage(continues && initialPage < totalPages);
-    setSettledTotal(initialPage < totalPages ? 0 : totalCount);
+    setDrainedKey(`${totalCount}|${initialCards.length + (precedingProductIds?.length ?? 0)}`);
     setIsLoadingMore(false);
     setError(null);
   } else if (initialCards !== prevInitialCards) {
@@ -88,11 +90,14 @@ export function useEligibleOffersInfiniteGrid({
     setPrevInitialCards(initialCards);
     const onServerPage = new Set(initialCards.map((card) => card.id));
     setCards((prev) => [...initialCards, ...prev.filter((card) => !onServerPage.has(card.id))]);
-    // A listing scrolled to its end has no sentinel or button. If the offer has grown since, and the new products are
-    // not among those shown or passed, it is open again; the shopper keeps their place.
-    const accounted = initialCards.length + cards.filter((card) => !onServerPage.has(card.id)).length + passed.length;
-    if (continues && !hasNextPage && totalCount > settledTotal && totalCount > accounted) setHasNextPage(true);
   }
+
+  // A listing scrolled to its end has no sentinel or button. When the offer lists more products than the shopper has
+  // accounted for (shown, or passed over) it is open again, and the shopper keeps their place. This reads the cards too,
+  // not only the total: the redraw above removes a product the offer dropped, and a replacement leaves the total as it was.
+  const accounted = cards.length + passed.length;
+  const reopened = continues && totalCount > accounted && drainedKey !== `${totalCount}|${accounted}`;
+  const canLoadMore = hasNextPage || reopened;
 
   // The server re-renders the first page only, so the cards loaded since would keep the price, sale badge and stock label
   // they were drawn with, and one the offer dropped would stay. After a revalidation they are asked for again, by id:
@@ -134,7 +139,7 @@ export function useEligibleOffersInfiniteGrid({
   }, [campaignId, initialCards]);
 
   const loadMore = useCallback(async () => {
-    if (isLoadingMore || !hasNextPage) return;
+    if (isLoadingMore || !canLoadMore) return;
 
     let stale = false;
     setIsLoadingMore(true);
@@ -157,7 +162,7 @@ export function useEligibleOffersInfiniteGrid({
         if (result.error) setError(result.error);
         else {
           setHasNextPage(false);
-          setSettledTotal(totalCount);
+          setDrainedKey(`${totalCount}|${cards.length + passed.length}`);
         }
         return;
       }
@@ -169,10 +174,11 @@ export function useEligibleOffersInfiniteGrid({
         const known = new Set(prev.map((card) => card.id));
         return [...prev, ...fresh.filter((card) => !known.has(card.id))];
       });
-      setPassed((prev) => [...prev, ...result.consumedProductIds.filter((id) => !drawn.has(id) && !shown.has(id))]);
+      const nowPassed = result.consumedProductIds.filter((id) => !drawn.has(id) && !shown.has(id));
+      setPassed((prev) => [...prev, ...nowPassed]);
       setCurrentPage((page) => page + 1);
       setHasNextPage(result.hasNext);
-      if (!result.hasNext) setSettledTotal(totalCount);
+      if (!result.hasNext) setDrainedKey(`${totalCount}|${cards.length + fresh.length + passed.length + nowPassed.length}`);
       setAnnouncement(
         `Đã tải thêm ${fresh.length} sản phẩm ưu đãi. Đang hiển thị ${cards.length + fresh.length} trên tổng số ${totalCount} sản phẩm.`,
       );
@@ -181,13 +187,13 @@ export function useEligibleOffersInfiniteGrid({
     } finally {
       if (!stale) setIsLoadingMore(false);
     }
-  }, [campaignId, cards, hasNextPage, isLoadingMore, passed, totalCount]);
+  }, [campaignId, canLoadMore, cards, isLoadingMore, passed, totalCount]);
 
   // Auto-load near the bottom. Paused while an error is shown: the sentinel is still on screen after a failure, so
   // observing again would retry in a tight loop and burn the rate-limit budget; the shopper retries with the button.
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel || !hasNextPage || isLoadingMore || error !== null) return;
+    if (!sentinel || !canLoadMore || isLoadingMore || error !== null) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -198,7 +204,7 @@ export function useEligibleOffersInfiniteGrid({
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [error, hasNextPage, isLoadingMore, loadMore]);
+  }, [canLoadMore, error, isLoadingMore, loadMore]);
 
-  return { cards, currentPage, hasNextPage, isLoadingMore, announcement, error, sentinelRef, loadMore };
+  return { cards, currentPage, hasNextPage: canLoadMore, isLoadingMore, announcement, error, sentinelRef, loadMore };
 }

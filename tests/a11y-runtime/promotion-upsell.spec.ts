@@ -428,6 +428,22 @@ test("ER-UI: /offers/eligible is the storefront listing: every in-scope product,
   }, { message: "the new product is loaded without leaving the page", timeout: 30000 }).toBe(28);
   await expect(page.locator(".listing-product-grid article", { hasText: "Áo zlate" })).toHaveCount(1);
   await expect(page).toHaveURL(url);
+
+  // A replacement leaves the total as it was: a product at the end leaves the offer and a dearer one joins. The offer still
+  // lists more than the shopper has accounted for, so the list opens again for it.
+  await prisma.productMirror.updateMany({ where: { pancakeProductId: `${P}extra-24` }, data: { isActive: false } });
+  const swapped = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: `${P}zzlate`, slug: `${P}zzlate`, name: "Áo zzlate", syncedAt: new Date(), variants: { create: { pancakeVariationId: `${P}zzlateS`, color: "Hồng", size: "S", pancakeRetailPrice: 300000, pancakeRetailPriceAfterDiscount: 300000, syncedAt: new Date(), warehouseStocks: { create: { pancakeWarehouseId: `${P}wh`, quantity: 20, syncedAt: new Date() } } } } } });
+  await prisma.giftQuantityTarget.create({ data: { campaignId, productId: swapped.id, role: "INCLUDE" } });
+  const replaced = page.waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await replaced;
+  await expect.poll(async () => {
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    return page.locator(".listing-product-grid article", { hasText: "Áo zzlate" }).count();
+  }, { message: "the replacement is loaded without leaving the page", timeout: 30000 }).toBe(1);
+  await expect(page.locator(".listing-product-grid article", { hasText: "Áo extra 24" })).toHaveCount(0);
+  await expect(page.locator(".listing-product-grid article")).toHaveCount(28);
+  await expect(page).toHaveURL(url);
   expect(new Set(before).size).toBe(27);
   await page.screenshot({ path: "test-results/upsell-eligible-listing.png", fullPage: true });
 });
