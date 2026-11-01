@@ -73,11 +73,21 @@ type RawReader = Readonly<{ $queryRaw: <T = unknown>(query: Prisma.Sql) => Prism
  */
 export async function listUpsellScopeProductPage(
   tx: RawReader,
-  { scope, shopId, paidProductIds, page, pageSize, now = new Date() }: Readonly<{ scope: UpsellScopeFacts; shopId: number; paidProductIds: readonly string[]; page: number; pageSize: number; now?: Date }>,
+  { scope, shopId, paidProductIds, page, pageSize, now = new Date(), cursor }: Readonly<{
+    scope: UpsellScopeFacts; shopId: number; paidProductIds: readonly string[]; page: number; pageSize: number; now?: Date;
+    /**
+     * Continue a listing the shopper is already looking at: skip `excludeProductIds` (what is on screen) and the first
+     * `skip` products of what remains, instead of paging by `page`. The sort moves with stock and price, so an OFFSET
+     * computed on a later snapshot can repeat a product and skip another; excluding what was shown cannot.
+     */
+    cursor?: Readonly<{ excludeProductIds: readonly string[]; skip: number }>;
+  }>,
 ): Promise<Readonly<{ totalCount: number; productIds: readonly string[] }>> {
   const from = Prisma.sql`FROM ${upsellScopeRecordset([scope])} CROSS JOIN "ProductMirror" p`;
+  const notShown = cursor ? Prisma.sql` AND NOT (p."id" = ANY(${cursor.excludeProductIds}::text[]))` : Prisma.empty;
   const where = Prisma.sql`
-    WHERE ${upsellAddableProduct(shopId, paidProductIds)} AND ${UPSELL_PUBLICLY_LISTED} AND ${UPSELL_IN_SCOPE}`;
+    WHERE ${upsellAddableProduct(shopId, paidProductIds)} AND ${UPSELL_PUBLICLY_LISTED} AND ${UPSELL_IN_SCOPE}${notShown}`;
+  const offset = cursor ? cursor.skip : (page - 1) * pageSize;
   // One pass over the variant projection, joined once, instead of a correlated subquery per product (the projection is
   // not materialized, so a per-product subquery would re-run it for every product in the scope). A product is in stock
   // when any variant is sellable, and it is priced by its cheapest *sellable* variant: a cheap sold-out size must not
@@ -103,7 +113,7 @@ export async function listUpsellScopeProductPage(
       ${where}
       ORDER BY CASE WHEN COALESCE(r."inStock", FALSE) THEN 0 ELSE 1 END ASC,
         r."sortPrice" ASC NULLS LAST, p."name" ASC, p."id" ASC
-      LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`),
+      LIMIT ${pageSize} OFFSET ${offset}`),
   ]);
   return { totalCount: Number(counted[0]?.total ?? 0), productIds: rows.map((row) => row.id) };
 }

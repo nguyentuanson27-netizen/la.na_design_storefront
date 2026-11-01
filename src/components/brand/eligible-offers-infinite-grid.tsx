@@ -25,7 +25,7 @@ export type EligibleOffersInfiniteGridProps = {
 export function EligibleOffersInfiniteGrid({ toneOffset = 0, nextHref = null, ...options }: EligibleOffersInfiniteGridProps) {
   const { totalCount, totalPages } = options;
   const { cards, currentPage, hasNextPage, isLoadingMore, announcement, error, sentinelRef, loadMore } =
-    useEligibleOffersInfiniteGrid(options);
+    useEligibleOffersInfiniteGrid({ ...options, skip: toneOffset });
 
   return (
     <div className="mt-8">

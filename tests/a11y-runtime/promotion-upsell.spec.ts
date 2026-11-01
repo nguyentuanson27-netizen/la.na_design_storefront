@@ -399,6 +399,17 @@ test("ER-UI: /offers/eligible is the storefront listing: every in-scope product,
   await expect(page.locator(".listing-product-grid article")).toHaveCount(27);
   await expect(page.getByRole("button", { name: /Xem thêm/ })).toHaveCount(0);
   await expect(page).toHaveURL(url);
+  // The promotion refresher revalidates the page on a timer and when the tab shows again. That re-renders the first page
+  // from the server; it must not throw away the pages already loaded or load them a second time.
+  const ids = () => page.locator(".listing-product-grid article").evaluateAll((nodes) => nodes.map((node) => node.querySelector("a")?.getAttribute("href")));
+  const before = await ids();
+  const revalidated = page.waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await revalidated;
+  await page.waitForTimeout(500);
+  await expect(page.locator(".listing-product-grid article")).toHaveCount(27);
+  expect(await ids()).toEqual(before);
+  expect(new Set(before).size).toBe(27);
   await page.screenshot({ path: "test-results/upsell-eligible-listing.png", fullPage: true });
 });
 

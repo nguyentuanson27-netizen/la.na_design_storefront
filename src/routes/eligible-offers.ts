@@ -8,7 +8,7 @@ import { isTrustedUpsellBrowseRequest } from "@/commerce/checkout-upsell-http";
 import { upsellReadGate } from "@/commerce/checkout-upsell-read-gate";
 import { deriveGuestCheckoutClientKey } from "@/commerce/guest-checkout-client-identity";
 import { createGuestCheckoutRateLimiter } from "@/commerce/guest-checkout-rate-limit";
-import { createPromotionUpsellService, recordUpsellMetric, UPSELL_SCOPE_PAGE_SIZE } from "@/commerce/promotion-upsell";
+import { createPromotionUpsellService, recordUpsellMetric, UPSELL_SCOPE_PAGE_SIZE, type UpsellScopeCursor } from "@/commerce/promotion-upsell";
 import { isPromotionUpsellEnabled } from "@/commerce/promotion-upsell-policy";
 import { listConfiguredStorefrontListingProductsByIds } from "@/commerce/storefront-catalog-runtime";
 import { parseStorefrontListingPage, type StorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
@@ -26,6 +26,8 @@ export type EligibleOffersRouteProps = Readonly<{ searchParams: Promise<Storefro
 export type EligibleOffersViewModel = Readonly<{
   campaignId: string | null;
   offerName: string | null;
+  /** The scope page's product ids, drawn or not; only the continuation request reads it. */
+  consumedProductIds?: readonly string[];
   listing: FlashSaleViewModel | null;
   limited: boolean;
   /** Set only after a timeout or failure, so the page can offer a retry instead of "offer changed". */
@@ -42,9 +44,10 @@ const fallback = (view: EligibleOffersViewModel): Loaded => ({ view, refreshAfte
 async function listForCart(
   campaignId: string,
   page: number,
-  options?: { throwOnNotFound?: boolean },
+  options?: { throwOnNotFound?: boolean; cursor?: UpsellScopeCursor },
 ): Promise<Loaded> {
   const throwOnNotFound = options?.throwOnNotFound ?? true;
+  const cursor = options?.cursor;
   try {
     const store = await cookies();
     const cartId = readAnonymousCartCookie(store);
@@ -71,7 +74,8 @@ async function listForCart(
       // A separate DB bucket bounds even forged, well-formed cookie IDs across app instances.
       // It cannot use up the POST banner's 20/minute budget. Page 2 onward has its own bucket (see the limiter), so
       // paging through a large scope neither trips this first-page limit nor spends the banner's budget.
-      const firstPage = page === 1;
+      // A continuation always spends the page budget, never the first-page one, whatever its `page` says.
+      const firstPage = page === 1 && !cursor;
       if (!(await (firstPage ? limiter.consumeUpsellBrowseClient({ clientKey }) : limiter.consumeUpsellPageClient({ clientKey })))) return fallback({ ...empty, campaignId, limited: true });
       const cart = await prisma.cart.findFirst({
         where: { id: cartId, userId: null, expiresAt: { gt: new Date() }, items: { some: {} } },
@@ -80,15 +84,18 @@ async function listForCart(
       if (!cart) return fallback(empty);
       // Only a confirmed, unexpired guest cart may spend the shared POST upsell budget (first page only).
       if (firstPage && !(await limiter.consumeUpsellClient({ clientKey }))) return fallback({ ...empty, campaignId, limited: true });
-      scope = await createPromotionUpsellService(prisma, store, { shopId, secret: auth.secret }).getScope(campaignId, page, now);
+      scope = await createPromotionUpsellService(prisma, store, { shopId, secret: auth.secret }).getScope(campaignId, page, now, cursor);
     } finally {
       release();
     }
     const retryHref = scope.retryable ? eligibleHref(campaignId, page) : null;
     if (!scope.page) return fallback({ ...empty, campaignId, retryHref });
-    const totalPages = Math.ceil(scope.page.totalCount / UPSELL_SCOPE_PAGE_SIZE);
-    // A page past the end is a URL that does not exist; page 1 of an empty scope is the empty state.
-    if (page > Math.max(totalPages, 1)) {
+    // With a cursor the count is what is left after what the shopper has seen and the products before it.
+    const remaining = cursor ? Math.max(scope.page.totalCount - cursor.skip, 0) : scope.page.totalCount;
+    const totalPages = Math.ceil(remaining / UPSELL_SCOPE_PAGE_SIZE);
+    // A page past the end is a URL that does not exist; page 1 of an empty scope is the empty state. A continuation that
+    // has run out of products is simply the end of the list.
+    if (!cursor && page > Math.max(totalPages, 1)) {
       if (throwOnNotFound) notFound();
       return fallback({ ...empty, campaignId, listing: null });
     }
@@ -106,9 +113,9 @@ async function listForCart(
     const listing = buildFlashSaleViewModel({
       basePath: "/offers/eligible",
       products: catalog.products,
-      totalCount: scope.page.totalCount,
+      totalCount: remaining,
       totalPages,
-      page,
+      page: cursor ? 1 : page,
       pageSize: UPSELL_SCOPE_PAGE_SIZE,
       selectEventBySlug: new Map(),
       pricingRule: catalog.pricingRule,
@@ -117,6 +124,7 @@ async function listForCart(
       view: {
         campaignId,
         offerName: scope.page.offerName,
+        consumedProductIds: scope.page.productIds,
         // The shared builder pages on `?page=`; this route also carries the campaign.
         listing: { ...listing,
           previousHref: page > 1 ? eligibleHref(campaignId, page - 1) : null,
@@ -137,56 +145,42 @@ async function listForCart(
 export type EligibleOffersNextPageResult = Readonly<{
   ok: boolean;
   cards: readonly Readonly<{ id: string; model: import("@/components/headless/build-product-card-model").ProductCardModel }>[];
-  page: number;
-  totalPages: number;
+  /** Every product the page covered, including any the catalog would not draw, so the next request skips them too. */
+  consumedProductIds: readonly string[];
   totalCount: number;
   hasNext: boolean;
   limited?: boolean;
   error?: string | null;
 }>;
 
+const NEXT_PAGE_FAILED = { ok: false, cards: [], consumedProductIds: [], totalCount: 0, hasNext: false } as const;
+
+/**
+ * The products after the ones the shopper already has on screen. It continues by excluding what was shown rather than
+ * by page number: the order moves with stock and price, so an OFFSET taken from a later snapshot can repeat a product
+ * and skip another. `skip` is the number of products ahead of the first one shown (a listing opened at `?page=N`).
+ */
 export async function fetchEligibleOffersPage({
   campaignId,
-  page,
+  shownProductIds,
+  skip,
 }: {
   campaignId: string;
-  page: number;
+  shownProductIds: readonly string[];
+  skip: number;
 }): Promise<EligibleOffersNextPageResult> {
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId) || !Number.isSafeInteger(page) || page < 1) {
-    return { ok: false, cards: [], page, totalPages: 0, totalCount: 0, hasNext: false };
-  }
-  const { view } = await listForCart(campaignId, page, { throwOnNotFound: false });
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId) || !Array.isArray(shownProductIds) || !Number.isSafeInteger(skip) || skip < 0) return NEXT_PAGE_FAILED;
+  // `page` only picks the rate-limit bucket and the retry link; a cursor request always uses the continuation budget.
+  const { view } = await listForCart(campaignId, 2, { throwOnNotFound: false, cursor: { excludeProductIds: shownProductIds, skip } });
   if (view.limited) {
-    return {
-      ok: false,
-      cards: [],
-      page,
-      totalPages: 0,
-      totalCount: 0,
-      hasNext: false,
-      limited: true,
-      error: "Gợi ý ưu đãi đang có quá nhiều lượt truy cập, nàng thử lại sau ít phút nhé.",
-    };
+    return { ...NEXT_PAGE_FAILED, limited: true, error: "Gợi ý ưu đãi đang có quá nhiều lượt truy cập, nàng thử lại sau ít phút nhé." };
   }
-  if (view.retryHref) {
-    return {
-      ok: false,
-      cards: [],
-      page,
-      totalPages: 0,
-      totalCount: 0,
-      hasNext: false,
-      error: "Đang tải chậm hơn bình thường, nàng thử lại nhé.",
-    };
-  }
-  if (!view.listing) {
-    return { ok: false, cards: [], page, totalPages: 0, totalCount: 0, hasNext: false };
-  }
+  if (view.retryHref) return { ...NEXT_PAGE_FAILED, error: "Đang tải chậm hơn bình thường, nàng thử lại nhé." };
+  if (!view.listing) return NEXT_PAGE_FAILED;
   return {
     ok: true,
     cards: view.listing.cards,
-    page: view.listing.page,
-    totalPages: view.listing.totalPages,
+    consumedProductIds: view.consumedProductIds ?? [],
     totalCount: view.listing.totalCount,
     hasNext: view.listing.page < view.listing.totalPages,
   };

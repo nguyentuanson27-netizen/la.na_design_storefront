@@ -50,6 +50,10 @@ export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: st
  * One page of the products a campaign covers, for a cart that is one unit away from it. Product ids only: the page
  * draws them through the storefront catalog like any other listing. Nothing here is a quote; `add` re-verifies.
  */
+/** Where a scope listing continues from: what is already on screen, and how many products precede that on the first page. */
+export type UpsellScopeCursor = Readonly<{ excludeProductIds: readonly string[]; skip: number }>;
+/** A listing this long is nowhere near a real catalog; the cap keeps the id list a client can send bounded. */
+export const UPSELL_SCOPE_CURSOR_MAX_IDS = 5000;
 export type UpsellScopePage = Readonly<{ offerName: string; totalCount: number; productIds: readonly string[] }>;
 /** `retryable` marks a timeout or failure, so the page can say "slow, try again" instead of "offer changed". */
 export type UpsellScopeResult = Readonly<{ page: UpsellScopePage | null; retryable: boolean }>;
@@ -237,9 +241,11 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
    * campaign) and one SQL page, never a quote per product, so its cost does not grow with the catalog. Whether adding
    * a given product really unlocks the offer is verified by `add`, which refuses and says so if it does not.
    */
-  async function getScope(campaignId: string, page: number, now = new Date()): Promise<UpsellScopeResult> {
+  async function getScope(campaignId: string, page: number, now = new Date(), cursor?: UpsellScopeCursor): Promise<UpsellScopeResult> {
     const none = { page: null, retryable: false } as const;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId) || !Number.isSafeInteger(page) || page < 1) return none;
+    if (cursor && (!Number.isSafeInteger(cursor.skip) || cursor.skip < 0 || cursor.excludeProductIds.length > UPSELL_SCOPE_CURSOR_MAX_IDS
+      || !cursor.excludeProductIds.every((id) => /^[A-Za-z0-9_-]{1,128}$/.test(id)))) return none;
     if (!isPromotionUpsellEnabled(shopId, env)) return none;
     const cartId = readAnonymousCartCookie(store);
     if (!cartId) return none;
@@ -257,7 +263,7 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         const { totalCount, productIds } = await listUpsellScopeProductPage(tx, {
           scope: upsellScopeFacts(entry), shopId, page, pageSize: UPSELL_SCOPE_PAGE_SIZE,
           paidProductIds: [...new Set(before.state.paidVariants.map((v) => v.productId))],
-          now,
+          now, cursor,
         });
         return { offerName: entry.campaign.name, totalCount, productIds };
       }, { isolationLevel: "RepeatableRead", maxWait: 200, timeout: UPSELL_READ_TIMEOUT_MS });

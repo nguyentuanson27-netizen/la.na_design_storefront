@@ -4,7 +4,10 @@ import { fetchEligibleOffersPage, type EligibleOffersNextPageResult } from "@/ro
 
 export type EligibleOffersNextPageActionInput = {
   campaignId: string;
-  page: number;
+  /** Every product id the shopper has on screen (or was given and could not be drawn). */
+  shownProductIds: string[];
+  /** Products ahead of the first one shown: a listing opened at `?page=N` starts after (N - 1) pages. */
+  skip: number;
 };
 
 export async function loadEligibleOffersNextPageAction(
@@ -12,6 +15,7 @@ export async function loadEligibleOffersNextPageAction(
 ): Promise<EligibleOffersNextPageResult> {
   return fetchEligibleOffersPage({
     campaignId: input.campaignId,
-    page: input.page,
+    shownProductIds: input.shownProductIds,
+    skip: input.skip,
   });
 }
