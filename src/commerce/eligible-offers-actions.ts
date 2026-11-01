@@ -22,7 +22,10 @@ export async function loadEligibleOffersNextPageAction(
   });
 }
 
-/** Fresh card models for products already loaded, after the page was revalidated on the server. */
-export async function refreshEligibleOffersCardsAction(input: { productIds: string[] }): Promise<EligibleOffersRefreshedCards> {
-  return fetchEligibleOffersCards({ productIds: input.productIds });
+/**
+ * Fresh card models for products already loaded, after the page was revalidated on the server, limited to the ones the
+ * offer still lists for this cart. A product missing from an `ok` answer is no longer offered.
+ */
+export async function refreshEligibleOffersCardsAction(input: { campaignId: string; productIds: string[] }): Promise<EligibleOffersRefreshedCards> {
+  return fetchEligibleOffersCards({ campaignId: input.campaignId, productIds: input.productIds });
 }

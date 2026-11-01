@@ -187,52 +187,73 @@ export async function fetchEligibleOffersPage({
   };
 }
 
-/** The most products one refresh asks for: a few pages of cards, however many the shopper has loaded. */
-const REFRESH_CARDS_MAX_IDS = 120;
+/**
+ * One refresh asks for this many products at most. The catalog reads a few dozen at a time (48), so the server walks
+ * them in that size; a single call spends a single rate-limit token however many of those reads it makes.
+ */
+const REFRESH_CARDS_MAX_IDS = 240;
+const CATALOG_READ_MAX_IDS = 48;
 
 export type EligibleOffersRefreshedCards = Readonly<{
+  /** False when nothing is known (no cart, no offer, rate limit, a failed read): the caller keeps what it holds. */
   ok: boolean;
   cards: EligibleOffersNextPageResult["cards"];
 }>;
 
 /**
- * Fresh card models (price, sale badge, stock labels) for products the shopper has already loaded. A server refresh
- * re-renders the first page only, so the pages appended since keep what they were drawn with until they are asked
- * for again here. Same gates as the listing -- a guest cart, a trusted browser request and the continuation budget --
- * and the same visibility rules, so it draws only what a listing would; nothing here is a quote.
+ * Fresh card models (price, sale badge, stock labels) for products the shopper has already loaded, and which of them the
+ * offer still lists. A server refresh re-renders the first page only, so the pages appended since keep what they were
+ * drawn with until they are asked for again here. This is a public endpoint like any server action, so it is held to the
+ * listing's own gates: a guest cart that exists and has items, a trusted browser request, the continuation budget, and
+ * only ids that the offer's scope lists for that cart (addable, publicly listed, in scope). An id outside that is
+ * not drawn and not mentioned. Nothing here is a quote.
  */
 export async function fetchEligibleOffersCards({
+  campaignId,
   productIds,
 }: {
+  campaignId: string;
   productIds: readonly string[];
 }): Promise<EligibleOffersRefreshedCards> {
   const none = { ok: false, cards: [] } as const;
-  if (!Array.isArray(productIds) || productIds.length === 0 || productIds.length > REFRESH_CARDS_MAX_IDS
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId) || !Array.isArray(productIds) || productIds.length === 0
+    || productIds.length > REFRESH_CARDS_MAX_IDS
     || !productIds.every((id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id))) return none;
   try {
     const store = await cookies();
-    const cartId = readAnonymousCartCookie(store);
-    if (!cartId) return none;
+    if (!readAnonymousCartCookie(store)) return none;
     const auth = readAuthServerConfig();
     const requestHeaders = await headers();
     if (!isTrustedUpsellBrowseRequest(requestHeaders, auth.baseURL)) return none;
     const shopId = readPancakeShopId();
     if (!isPromotionUpsellEnabled(shopId)) return none;
-    const clientKey = deriveGuestCheckoutClientKey(requestHeaders, auth);
-    if (!(await createGuestCheckoutRateLimiter(prisma).consumeUpsellPageClient({ clientKey }))) return none;
+    const release = upsellReadGate.tryAcquire();
+    if (!release) return none;
+    let allowed: readonly string[] | null;
     const now = new Date();
-    const catalog = await listConfiguredStorefrontListingProductsByIds({ ids: productIds, now });
-    const listing = buildFlashSaleViewModel({
-      basePath: "/offers/eligible",
-      products: catalog.products,
-      totalCount: catalog.products.length,
-      totalPages: 1,
-      page: 1,
-      pageSize: REFRESH_CARDS_MAX_IDS,
-      selectEventBySlug: new Map(),
-      pricingRule: catalog.pricingRule,
-    });
-    return { ok: true, cards: listing.cards };
+    try {
+      const clientKey = deriveGuestCheckoutClientKey(requestHeaders, auth);
+      if (!(await createGuestCheckoutRateLimiter(prisma).consumeUpsellPageClient({ clientKey }))) return none;
+      allowed = await createPromotionUpsellService(prisma, store, { shopId, secret: auth.secret }).getScopeMembers(campaignId, productIds, now);
+    } finally {
+      release();
+    }
+    if (allowed === null) return none;
+    const cards: EligibleOffersNextPageResult["cards"][number][] = [];
+    for (let at = 0; at < allowed.length; at += CATALOG_READ_MAX_IDS) {
+      const catalog = await listConfiguredStorefrontListingProductsByIds({ ids: allowed.slice(at, at + CATALOG_READ_MAX_IDS), now });
+      cards.push(...buildFlashSaleViewModel({
+        basePath: "/offers/eligible",
+        products: catalog.products,
+        totalCount: catalog.products.length,
+        totalPages: 1,
+        page: 1,
+        pageSize: CATALOG_READ_MAX_IDS,
+        selectEventBySlug: new Map(),
+        pricingRule: catalog.pricingRule,
+      }).cards);
+    }
+    return { ok: true, cards };
   } catch {
     return none;
   }

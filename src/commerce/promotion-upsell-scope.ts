@@ -131,3 +131,20 @@ export async function listUpsellScopeProductPage(
     precedingProductIds: precedingWanted ? (before ? before.map((row) => row.id) : null) : [],
   };
 }
+
+/**
+ * Which of the given products a campaign's scope still lists for this cart: addable, publicly listed and in scope, by
+ * the same rules as the listing itself. The answer to "may this id be drawn on the offer page", so a client that names
+ * ids learns nothing about any it is not offered. Order follows the input.
+ */
+export async function filterUpsellScopeProducts(
+  tx: RawReader,
+  { scope, shopId, paidProductIds, productIds }: Readonly<{ scope: UpsellScopeFacts; shopId: number; paidProductIds: readonly string[]; productIds: readonly string[] }>,
+): Promise<readonly string[]> {
+  const rows = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT p."id" FROM ${upsellScopeRecordset([scope])} CROSS JOIN "ProductMirror" p
+    WHERE ${upsellAddableProduct(shopId, paidProductIds)} AND ${UPSELL_PUBLICLY_LISTED} AND ${UPSELL_IN_SCOPE}
+      AND p."id" = ANY(${productIds}::text[])`);
+  const allowed = new Set(rows.map((row) => row.id));
+  return productIds.filter((id) => allowed.has(id));
+}

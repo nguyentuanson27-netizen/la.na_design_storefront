@@ -418,6 +418,38 @@ test("ER-UI: /offers/eligible is the storefront listing: every in-scope product,
   await page.screenshot({ path: "test-results/upsell-eligible-listing.png", fullPage: true });
 });
 
+test("ER-FR: a long listing stays whole and fresh across a revalidation: every loaded page is redrawn, a product the offer dropped goes, one that now ranks first is shown once", async ({ page, context }) => {
+  test.setTimeout(240_000);
+  await context.setExtraHTTPHeaders({ "x-ci-client-ip": "203.0.113.232" });
+  await seedExtraScopeProducts(80); // 81 in scope with the fixture's candidate
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`);
+  const cards = page.locator(".listing-product-grid article");
+  const card = (name: string) => page.locator(".listing-product-grid article", { hasText: name });
+  await expect(cards).toHaveCount(24);
+  // 24 server-rendered and 57 appended over three loads: more cards than one catalog read of 48 can redraw.
+  await expect.poll(async () => {
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    return cards.count();
+  }, { timeout: 90_000 }).toBe(81);
+
+  const tailBefore = await card("Áo extra 77").innerText();
+  await prisma.variantMirror.updateMany({ where: { pancakeVariationId: `${P}extra-77S` }, data: { pancakeRetailPrice: 150000, pancakeRetailPriceAfterDiscount: 150000 } });
+  await prisma.productMirror.updateMany({ where: { pancakeProductId: `${P}extra-60` }, data: { isActive: false } });
+  await prisma.variantMirror.updateMany({ where: { pancakeVariationId: `${P}extra-70S` }, data: { pancakeRetailPrice: 50000, pancakeRetailPriceAfterDiscount: 50000 } });
+  const revalidated = page.waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await revalidated;
+
+  await expect(cards).toHaveCount(80, { timeout: 30_000 });
+  await expect(card("Áo extra 60"), "a product the offer dropped is removed from the pages loaded earlier").toHaveCount(0);
+  await expect.poll(() => card("Áo extra 77").innerText(), { message: "a card far down the list follows its new price", timeout: 30_000 }).not.toBe(tailBefore);
+  await expect(cards.first(), "a product that now ranks first leads the list").toContainText("Áo extra 70");
+  await expect(card("Áo extra 70"), "and is shown once").toHaveCount(1);
+  const hrefs = await cards.evaluateAll((nodes) => nodes.map((node) => node.querySelector("a")?.getAttribute("href")));
+  expect(new Set(hrefs).size).toBe(80);
+});
+
 test("ER-RL: paging through the listing has its own budget: 12 page requests in a minute are served and the banner's POST budget is untouched", async ({ page }) => {
   await seedExtraScopeProducts(26);
   const headers = { "x-ci-client-ip": "203.0.113.231", "sec-fetch-site": "same-origin" };

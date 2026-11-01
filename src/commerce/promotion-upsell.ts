@@ -11,7 +11,7 @@ import { CATALOG_SYNC_LOCK_NAMESPACE } from "./catalog-sync-lock.ts";
 import { classifyCompositeComponentSku } from "./storefront-projection.ts";
 import { classifyCompositeSubSetShape, isThreePieceComboShape } from "./composite-subset-authority.ts";
 import { parseTrustedProductImageUrl } from "./product-media.ts";
-import { listUpsellScopeProductPage, upsellAddableProduct, upsellScopeFacts, upsellScopeRecordset, UPSELL_IN_SCOPE, UPSELL_PUBLICLY_LISTED } from "./promotion-upsell-scope.ts";
+import { filterUpsellScopeProducts, listUpsellScopeProductPage, upsellAddableProduct, upsellScopeFacts, upsellScopeRecordset, UPSELL_IN_SCOPE, UPSELL_PUBLICLY_LISTED } from "./promotion-upsell-scope.ts";
 import { memoizeTransactionReads } from "./tx-read-memo.ts";
 import { buildCartGiftPickerModel, type CartGiftPickerModel } from "../routes/cart-gift-model.ts";
 import { compareUpsellCandidates, findUpsellOpportunities, isPromotionUpsellEnabled, preservesUpsellBenefits, unlocksUpsellOpportunity, type UpsellOpportunity } from "./promotion-upsell-policy.ts";
@@ -282,6 +282,36 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
     }
   }
 
+  /**
+   * Which of `productIds` this shopper's cart may be shown on the campaign's offer page. `null` when the cart, the offer
+   * or the read is not available, which is "not known", never "none": a caller must not drop what it holds on null.
+   */
+  async function getScopeMembers(campaignId: string, productIds: readonly string[], now = new Date()): Promise<readonly string[] | null> {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(campaignId) || productIds.length > UPSELL_SCOPE_CURSOR_MAX_IDS
+      || !productIds.every((id) => /^[A-Za-z0-9_-]{1,128}$/.test(id))) return null;
+    if (!isPromotionUpsellEnabled(shopId, env)) return null;
+    const cartId = readAnonymousCartCookie(store);
+    if (!cartId) return null;
+    try {
+      return await client.$transaction(async (rawTx) => {
+        await rawTx.$executeRaw`SET LOCAL statement_timeout = '1800ms'`;
+        const tx = memoizeTransactionReads(rawTx);
+        const cart = await tx.cart.findFirst({ where: { id: cartId, userId: null, expiresAt: { gt: now }, items: { some: {} } }, select: { id: true } });
+        if (!cart) return null;
+        const before = await snapshot(tx, cartId, shopId, now, env);
+        if (!findUpsellOpportunities(before.state).some((o) => o.campaignId === campaignId)) return null;
+        const entry = before.state.campaignEntries.find((e) => e.campaign.id === campaignId);
+        if (!entry) return null;
+        return filterUpsellScopeProducts(tx, {
+          scope: upsellScopeFacts(entry), shopId, productIds,
+          paidProductIds: [...new Set(before.state.paidVariants.map((v) => v.productId))],
+        });
+      }, { isolationLevel: "RepeatableRead", maxWait: 200, timeout: UPSELL_READ_TIMEOUT_MS });
+    } catch {
+      return null;
+    }
+  }
+
   async function requote(input: unknown, now = new Date()) {
     const intent = parseUpsellIntent(input);
     if (!intent || !isPromotionUpsellEnabled(shopId, env) || !isUpsellProofCurrent(intent.issuedAt, now)) return { ok: false } as const;
@@ -352,5 +382,5 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
       return { ok: false, reason: "OFFER_UNAVAILABLE" } as const;
     }
   }
-  return { get, getBanner, getScope, requote, add };
+  return { get, getBanner, getScope, getScopeMembers, requote, add };
 }

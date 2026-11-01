@@ -24,7 +24,9 @@ export type UseEligibleOffersInfiniteGridOptions = {
   precedingProductIds?: readonly string[] | null;
 };
 
-const REFRESH_CHUNK = 120;
+/** Cards per refresh call (the server's cap), and the calls one revalidation makes, so a very long list stays cheap. */
+const REFRESH_CHUNK = 240;
+const REFRESH_MAX_CALLS = 3;
 
 /**
  * Pages the `/offers/eligible` listing in place. The first page is server-rendered; later pages come from the
@@ -71,15 +73,19 @@ export function useEligibleOffersInfiniteGrid({
     setIsLoadingMore(false);
     setError(null);
   } else if (initialCards !== prevInitialCards) {
-    // The same listing, revalidated: take the fresh prices and stock for the cards on the server-rendered page, and keep
-    // every page the shopper has loaded.
+    // The same listing, revalidated. The server-rendered page is authoritative for itself: its products, their order and
+    // their prices lead the list, so one that entered it appears and one that moved down is no longer duplicated at the
+    // top. Every page the shopper has loaded since stays after it, where the effect below redraws it and drops what the
+    // offer no longer lists.
     setPrevInitialCards(initialCards);
-    const fresh = new Map(initialCards.map((card) => [card.id, card]));
-    setCards((prev) => prev.map((card) => fresh.get(card.id) ?? card));
+    const onServerPage = new Set(initialCards.map((card) => card.id));
+    setCards((prev) => [...initialCards, ...prev.filter((card) => !onServerPage.has(card.id))]);
   }
 
-  // The server re-renders the first page only, so the cards appended since would keep the price, sale badge and stock
-  // label they were drawn with. After a revalidation they are drawn again, by id, and swapped in without moving anything.
+  // The server re-renders the first page only, so the cards loaded since would keep the price, sale badge and stock label
+  // they were drawn with, and one the offer dropped would stay. After a revalidation they are asked for again, by id:
+  // the answer replaces each card in place, and a product the offer no longer lists for this cart is removed. Only an
+  // answer that is known counts: when the cart, the offer or the read is unavailable nothing changes.
   const cardsRef = useRef(cards);
   useEffect(() => {
     cardsRef.current = cards;
@@ -93,19 +99,22 @@ export function useEligibleOffersInfiniteGrid({
     if (appended.length === 0) return;
     const request = guardRef.current.begin();
     void (async () => {
-      for (let at = 0; at < appended.length; at += REFRESH_CHUNK) {
+      for (let call = 0; call < REFRESH_MAX_CALLS && call * REFRESH_CHUNK < appended.length; call += 1) {
+        const asked = appended.slice(call * REFRESH_CHUNK, (call + 1) * REFRESH_CHUNK);
         try {
-          const redrawn = await refreshEligibleOffersCardsAction({ productIds: appended.slice(at, at + REFRESH_CHUNK) });
+          const redrawn = await refreshEligibleOffersCardsAction({ campaignId, productIds: asked });
           if (!request.isCurrent()) return;
-          if (!redrawn.ok) continue;
+          if (!redrawn.ok) return;
           const fresh = new Map(redrawn.cards.map((card) => [card.id, card]));
-          setCards((prev) => prev.map((card) => fresh.get(card.id) ?? card));
+          const askedIds = new Set(asked);
+          setCards((prev) => prev.flatMap((card) => (askedIds.has(card.id) ? (fresh.has(card.id) ? [fresh.get(card.id)!] : []) : [card])));
         } catch {
           // A failed redraw leaves the cards as they were; the next revalidation tries again.
+          return;
         }
       }
     })();
-  }, [initialCards]);
+  }, [campaignId, initialCards]);
 
   const loadMore = useCallback(async () => {
     if (isLoadingMore || !hasNextPage) return;

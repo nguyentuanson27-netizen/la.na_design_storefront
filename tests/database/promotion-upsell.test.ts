@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { prisma } from "../../src/db/prisma.ts";
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
@@ -509,6 +510,34 @@ test("SC-12: a listing opened at a later page carries the products ahead of it, 
 
   // A cursor that is not a list of ids is refused outright.
   assert.deepEqual(await service().getScope(campaignId, 2, new Date(), { excludeProductIds: ["bad id;"] }), { page: null, retryable: false });
+});
+
+test("SC-13: the offer page names only what the offer lists for this cart: forged, empty and expired carts, other offers and hidden products learn nothing", async () => {
+  const listed = await product("members-listed", 100000, ["S"]);
+  const inactive = await product("members-inactive", 100000, ["S"]);
+  const component = await product("members-component", 100000, ["S"]);
+  const outsideScope = await product("members-outside", 100000, ["S"]);
+  const outerSet = await product("members-set", 300000, ["S"]);
+  await prisma.giftQuantityTarget.createMany({ data: [listed, inactive, component].map((p) => ({ campaignId, productId: p.id, role: "INCLUDE" as const })) });
+  await prisma.productMirror.update({ where: { id: inactive.id }, data: { isActive: false } });
+  await prisma.compositeComponentMirror.create({ data: { parentVariantId: outerSet.variants[0]!.id, componentVariantId: component.variants[0]!.id, quantity: 1, syncedAt: new Date() } });
+  const paidProductId = (await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } })).productId;
+
+  const asked = [outsideScope.id, listed.id, paidProductId, inactive.id, component.id, candidateProductId, "no-such-product"];
+  assert.deepEqual(await service().getScopeMembers(campaignId, asked), [listed.id, candidateProductId], "only listed, addable, in-scope products, in the order asked");
+  assert.equal(await service().getScopeMembers("some-other-offer", asked), null, "an offer the cart is not near names nothing");
+  assert.equal(await service().getScopeMembers(campaignId, ["bad id;"]), null, "malformed ids are refused");
+
+  const forged = createPromotionUpsellService(prisma, { get: (name: string) => name === "la_cart" ? { value: randomUUID() } : undefined }, { shopId: SHOP, secret, env });
+  assert.equal(await forged.getScopeMembers(campaignId, asked), null, "a cart id that does not exist");
+  const noCookie = createPromotionUpsellService(prisma, { get: () => undefined }, { shopId: SHOP, secret, env });
+  assert.equal(await noCookie.getScopeMembers(campaignId, asked), null, "no cart at all");
+
+  await prisma.cartItem.deleteMany({ where: { cartId } });
+  assert.equal(await service().getScopeMembers(campaignId, asked), null, "an empty cart");
+  await prisma.cartItem.create({ data: { cartId, variantId: paidId, quantity: 2 } });
+  await prisma.cart.update({ where: { id: cartId }, data: { expiresAt: new Date(Date.now() - 1000) } });
+  assert.equal(await service().getScopeMembers(campaignId, asked), null, "an expired cart");
 });
 
 test("SC-03: a cart that is not one unit away from the offer, a bad id or page, a disabled feature or no cart list nothing", async () => {
