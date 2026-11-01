@@ -158,7 +158,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     </>}
     {replaced.length > 0 ? <p className="mt-3 text-sm" data-gift-replaced-notice>Đơn của nàng đã lên mốc quà cao hơn nên quà đã chọn ở mốc trước không đi kèm đơn nữa. Nàng chọn quà của mốc mới, quà cũ sẽ được thay.</p> : null}
     {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Giỏ hàng của nàng đủ điều kiện nhận quà từ nhiều chương trình, nhưng các chương trình này không được dùng cùng lúc nên một số quà chưa được tặng. Nàng điều chỉnh lại giỏ hàng hoặc liên hệ shop để được hỗ trợ nhé.</p> : null}
-    {hasChoices ? <button type="button" ref={toggleRef} className="mt-3 min-h-11 text-left text-sm font-semibold underline underline-offset-4" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
+    {hasChoices ? <button type="button" ref={toggleRef} className="mt-3 block min-h-11 text-left text-sm font-semibold underline underline-offset-4" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
       {expanded ? "Thu gọn quà tặng" : model.invalid ? "Kiểm tra quà đã chọn" : complete ? "Xem quà đã chọn" : available > 0 ? "Chọn quà ngay" : "Xem lựa chọn quà"}
     </button> : null}
     <div id={detailsId} ref={detailsRef} hidden={!expanded}>
@@ -222,7 +222,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
       </div>)}
     </div>
     {/* Outside the collapsible list: after a confirmed save collapses it, the way back to payment stays reachable. */}
-    {onReturnToPayment ? <button type="button" className="mt-4 min-h-11 text-sm underline" onClick={onReturnToPayment}>Quay lại thanh toán</button> : null}
+    {onReturnToPayment ? <button type="button" className="mt-2 block min-h-11 text-sm underline" onClick={onReturnToPayment}>Quay lại thanh toán</button> : null}
     {draftNotice ? <p className="mt-3 text-sm" data-gift-draft>{draftNotice}</p> : null}
     </> : null}
     <p className="mt-3 text-sm" role="status" aria-live="polite" aria-atomic="true">{pending ? "Đang kiểm tra và làm mới báo giá…" : message}{present && !pending && !uncertain && message && !model.invalid ? ` Còn ${unclaimed} suất chưa chọn.` : ""}</p>

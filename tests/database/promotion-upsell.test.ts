@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { prisma } from "../../src/db/prisma.ts";
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
@@ -432,6 +433,111 @@ test("SC-08: the banner never links to an offer whose only candidate the listing
   const page = (await service().getScope(campaignId, 1)).page!;
   assert.deepEqual(page.productIds, [listed.id]);
   assert.equal(lastMetric().outcome, "offered", "a listing with a product is offered");
+});
+
+test("SC-09: /offers/eligible lists in-stock before out-of-stock, and sorts price ascending", async () => {
+  // candidate (from beforeEach) is in-stock at 100,000 VND
+  // cheap-oos is cheaper (50,000 VND) but completely out of stock
+  const cheapOos = await product("cheap-oos", 50000, ["S"]);
+  await prisma.warehouseStock.updateMany({ where: { variantId: cheapOos.variants[0]!.id }, data: { quantity: 0 } });
+
+  // medium-in-stock is 150,000 VND and in stock
+  const mediumInStock = await product("medium-in-stock", 150000, ["S"]);
+
+  // expensive-in-stock is 200,000 VND and in stock
+  const expensiveInStock = await product("expensive-in-stock", 200000, ["S"]);
+
+  await prisma.giftQuantityTarget.createMany({
+    data: [cheapOos, expensiveInStock, mediumInStock].map((p) => ({ campaignId, productId: p.id, role: "INCLUDE" as const })),
+  });
+
+  const page = (await service().getScope(campaignId, 1)).page!;
+  // In-stock products must come first in ascending price order: 100k -> 150k -> 200k
+  // Out-of-stock product must be pushed to the end even though its price is lower (50k)
+  assert.deepEqual(page.productIds, [candidateProductId, mediumInStock.id, expensiveInStock.id, cheapOos.id]);
+});
+
+test("SC-10: /offers/eligible prices a product by its cheapest sellable variant, not by a sold-out size", async () => {
+  // mixed: S is 190,000 but sold out, M is 200,000 and in stock, so the product is bought at 200,000
+  const mixed = await product("mixed-sizes", 190000, ["S", "M"]);
+  await prisma.warehouseStock.updateMany({ where: { variantId: mixed.variants.find((v) => v.size === "S")!.id }, data: { quantity: 0 } });
+  const between = await product("between", 195000, ["S"]);
+  await prisma.giftQuantityTarget.createMany({
+    data: [mixed, between].map((p) => ({ campaignId, productId: p.id, role: "INCLUDE" as const })),
+  });
+
+  const page = (await service().getScope(campaignId, 1)).page!;
+  // A sold-out 190k size must not lift the product above the 195k one it cannot actually be bought below.
+  assert.deepEqual(page.productIds, [candidateProductId, between.id, mixed.id]);
+});
+
+test("SC-11: continuing from what is on screen neither repeats nor skips a product when stock changes between pages", async () => {
+  const total = UPSELL_SCOPE_PAGE_SIZE + 3;
+  await seedBoundedCatalog(total); // plus the fixture's candidate
+  const first = (await service().getScope(campaignId, 1)).page!;
+  // A product already on screen sells out before the next page is asked for: the order now puts it last.
+  const soldOut = first.productIds[0]!;
+  const variants = await prisma.variantMirror.findMany({ where: { productId: soldOut }, select: { id: true } });
+  await prisma.warehouseStock.updateMany({ where: { variantId: { in: variants.map((v) => v.id) } }, data: { quantity: 0 } });
+
+  const next = (await service().getScope(campaignId, 2, new Date(), { excludeProductIds: first.productIds })).page!;
+  const seen = [...first.productIds, ...next.productIds];
+  assert.equal(new Set(seen).size, seen.length, "no product is repeated");
+  assert.equal(seen.length, total + 1, "no product is skipped");
+  assert.equal(next.totalCount, total + 1 - UPSELL_SCOPE_PAGE_SIZE, "the count is what is left after what was shown");
+  // The scenario is real: paging by OFFSET on the new order would have repeated the sold-out product.
+  assert.ok((await service().getScope(campaignId, 2)).page!.productIds.includes(soldOut), "OFFSET paging repeats it");
+});
+
+test("SC-12: a listing opened at a later page carries the products ahead of it, so a stock change cannot make it skip one", async () => {
+  const total = UPSELL_SCOPE_PAGE_SIZE * 2 + 2;
+  await seedBoundedCatalog(total); // plus the fixture's candidate: 51 products
+  const page1 = (await service().getScope(campaignId, 1)).page!;
+  const page2 = (await service().getScope(campaignId, 2)).page!;
+  assert.deepEqual(page1.precedingProductIds, [], "nothing is ahead of the first page");
+  assert.deepEqual(page2.precedingProductIds, page1.productIds, "page 2 is preceded by page 1, read in the same snapshot");
+
+  // Opened at page 2; before the shopper loads more, a product from page 1 sells out and drops to the end of the order.
+  const soldOut = page2.precedingProductIds![0]!;
+  const variants = await prisma.variantMirror.findMany({ where: { productId: soldOut }, select: { id: true } });
+  await prisma.warehouseStock.updateMany({ where: { variantId: { in: variants.map((v) => v.id) } }, data: { quantity: 0 } });
+  const next = (await service().getScope(campaignId, 2, new Date(), { excludeProductIds: [...page2.precedingProductIds!, ...page2.productIds] })).page!;
+  const everything = [...page2.precedingProductIds!, ...page2.productIds, ...next.productIds];
+  assert.equal(new Set(everything).size, total + 1, "every product is accounted for once");
+  assert.equal(next.productIds.length, total + 1 - 2 * UPSELL_SCOPE_PAGE_SIZE, "the products after page 2 are all still offered");
+  // Counting past 24 products on the new order, as the OFFSET did, would have returned a different set.
+  assert.notDeepEqual((await service().getScope(campaignId, 3)).page!.productIds, next.productIds);
+
+  // A cursor that is not a list of ids is refused outright.
+  assert.deepEqual(await service().getScope(campaignId, 2, new Date(), { excludeProductIds: ["bad id;"] }), { page: null, retryable: false });
+});
+
+test("SC-13: the offer page names only what the offer lists for this cart: forged, empty and expired carts, other offers and hidden products learn nothing", async () => {
+  const listed = await product("members-listed", 100000, ["S"]);
+  const inactive = await product("members-inactive", 100000, ["S"]);
+  const component = await product("members-component", 100000, ["S"]);
+  const outsideScope = await product("members-outside", 100000, ["S"]);
+  const outerSet = await product("members-set", 300000, ["S"]);
+  await prisma.giftQuantityTarget.createMany({ data: [listed, inactive, component].map((p) => ({ campaignId, productId: p.id, role: "INCLUDE" as const })) });
+  await prisma.productMirror.update({ where: { id: inactive.id }, data: { isActive: false } });
+  await prisma.compositeComponentMirror.create({ data: { parentVariantId: outerSet.variants[0]!.id, componentVariantId: component.variants[0]!.id, quantity: 1, syncedAt: new Date() } });
+  const paidProductId = (await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } })).productId;
+
+  const asked = [outsideScope.id, listed.id, paidProductId, inactive.id, component.id, candidateProductId, "no-such-product"];
+  assert.deepEqual(await service().getScopeMembers(campaignId, asked), [listed.id, candidateProductId], "only listed, addable, in-scope products, in the order asked");
+  assert.equal(await service().getScopeMembers("some-other-offer", asked), null, "an offer the cart is not near names nothing");
+  assert.equal(await service().getScopeMembers(campaignId, ["bad id;"]), null, "malformed ids are refused");
+
+  const forged = createPromotionUpsellService(prisma, { get: (name: string) => name === "la_cart" ? { value: randomUUID() } : undefined }, { shopId: SHOP, secret, env });
+  assert.equal(await forged.getScopeMembers(campaignId, asked), null, "a cart id that does not exist");
+  const noCookie = createPromotionUpsellService(prisma, { get: () => undefined }, { shopId: SHOP, secret, env });
+  assert.equal(await noCookie.getScopeMembers(campaignId, asked), null, "no cart at all");
+
+  await prisma.cartItem.deleteMany({ where: { cartId } });
+  assert.equal(await service().getScopeMembers(campaignId, asked), null, "an empty cart");
+  await prisma.cartItem.create({ data: { cartId, variantId: paidId, quantity: 2 } });
+  await prisma.cart.update({ where: { id: cartId }, data: { expiresAt: new Date(Date.now() - 1000) } });
+  assert.equal(await service().getScopeMembers(campaignId, asked), null, "an expired cart");
 });
 
 test("SC-03: a cart that is not one unit away from the offer, a bad id or page, a disabled feature or no cart list nothing", async () => {

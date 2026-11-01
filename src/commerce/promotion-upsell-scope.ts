@@ -1,5 +1,6 @@
 import { Prisma } from "../generated/prisma/client.ts";
 import { expandScopeCategoryKeys } from "./gift-quantity-scope.ts";
+import { buildVariantStockCte } from "./storefront-catalog.ts";
 
 /**
  * Which products a gift campaign's scope covers, as one SQL fragment shared by the checkout banner's candidate
@@ -63,24 +64,87 @@ export const UPSELL_IN_SCOPE = Prisma.sql`(
         AND m."categoryKey" IN (SELECT jsonb_array_elements_text(s.keys)))))
 )`;
 
+/** How many products ahead of a deep-linked page are carried as ids; past it the listing continues by link, not in place. */
+export const UPSELL_SCOPE_PRECEDING_MAX = 2400;
+
 type RawReader = Readonly<{ $queryRaw: <T = unknown>(query: Prisma.Sql) => Prisma.PrismaPromise<T> }>;
 
 /**
- * One page of every addable, publicly listed product in a campaign's scope, in the order `/shop` uses (name, then
- * id), and the total.
+ * One page of every addable, publicly listed product in a campaign's scope, and the total. Products with a sellable
+ * variant come first, then the cheapest sellable price, then name and id so that paging is stable.
  * No quote is run here: eligibility to unlock the offer is re-verified when the shopper adds a product.
  */
 export async function listUpsellScopeProductPage(
   tx: RawReader,
-  { scope, shopId, paidProductIds, page, pageSize }: Readonly<{ scope: UpsellScopeFacts; shopId: number; paidProductIds: readonly string[]; page: number; pageSize: number }>,
-): Promise<Readonly<{ totalCount: number; productIds: readonly string[] }>> {
-  const scoped = Prisma.sql`
-    FROM ${upsellScopeRecordset([scope])} CROSS JOIN "ProductMirror" p
-    WHERE ${upsellAddableProduct(shopId, paidProductIds)} AND ${UPSELL_PUBLICLY_LISTED} AND ${UPSELL_IN_SCOPE}`;
-  const [counted, rows] = await Promise.all([
-    tx.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT count(*) AS "total" ${scoped}`),
-    tx.$queryRaw<{ id: string }[]>(Prisma.sql`
-      SELECT p."id" ${scoped} ORDER BY p."name", p."id" LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`),
+  { scope, shopId, paidProductIds, page, pageSize, now = new Date(), cursor }: Readonly<{
+    scope: UpsellScopeFacts; shopId: number; paidProductIds: readonly string[]; page: number; pageSize: number; now?: Date;
+    /**
+     * Continue a listing the shopper is already looking at: take the first page of what is left once
+     * `excludeProductIds` (what is on screen, and what a deep link starts after) are removed. The sort moves with stock
+     * and price, so an OFFSET computed on a later snapshot can repeat a product and skip another; excluding cannot.
+     */
+    cursor?: Readonly<{ excludeProductIds: readonly string[] }>;
+  }>,
+): Promise<Readonly<{ totalCount: number; productIds: readonly string[]; precedingProductIds: readonly string[] | null }>> {
+  const from = Prisma.sql`FROM ${upsellScopeRecordset([scope])} CROSS JOIN "ProductMirror" p`;
+  const notShown = cursor ? Prisma.sql` AND NOT (p."id" = ANY(${cursor.excludeProductIds}::text[]))` : Prisma.empty;
+  const where = Prisma.sql`
+    WHERE ${upsellAddableProduct(shopId, paidProductIds)} AND ${UPSELL_PUBLICLY_LISTED} AND ${UPSELL_IN_SCOPE}${notShown}`;
+  const offset = cursor ? 0 : (page - 1) * pageSize;
+  // One pass over the variant projection, joined once, instead of a correlated subquery per product (the projection is
+  // not materialized, so a per-product subquery would re-run it for every product in the scope). A product is in stock
+  // when any variant is sellable, and it is priced by its cheapest *sellable* variant: a cheap sold-out size must not
+  // pull a product up the list when the shopper can only buy its dearer sizes. A product with nothing sellable falls back
+  // to its cheapest variant, and one with no priced variant sorts last.
+  const productRank = Prisma.sql`, "upsell_product_rank" AS (
+    SELECT
+      vf."productId",
+      BOOL_OR(vf."sellableStock" > 0) AS "inStock",
+      COALESCE(
+        MIN(vf."resolvedPrice") FILTER (WHERE vf."sellableStock" > 0),
+        MIN(vf."resolvedPrice")
+      ) AS "sortPrice"
+    FROM "variant_stock" vf
+    GROUP BY vf."productId"
+  )`;
+  const ordered = (limit: number, skip: number) => tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+      ${buildVariantStockCte(now)}${productRank}
+      SELECT p."id" ${from}
+      LEFT JOIN "upsell_product_rank" r ON r."productId" = p."id"
+      ${where}
+      ORDER BY CASE WHEN COALESCE(r."inStock", FALSE) THEN 0 ELSE 1 END ASC,
+        r."sortPrice" ASC NULLS LAST, p."name" ASC, p."id" ASC
+      LIMIT ${limit} OFFSET ${skip}`);
+  // A listing opened at `?page=N` continues from the end of that page. The products before it are read in the same
+  // snapshot as the page, so the continuation can exclude them by id rather than skip a count that a stock change
+  // would shift. Too far in to carry the ids, the listing does not continue in place (null) and the page links on.
+  const precedingWanted = !cursor && offset > 0;
+  const preceding = precedingWanted && offset <= UPSELL_SCOPE_PRECEDING_MAX ? ordered(offset, 0) : null;
+  const [counted, rows, before] = await Promise.all([
+    tx.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT count(*) AS "total" ${from} ${where}`),
+    ordered(pageSize, offset),
+    preceding,
   ]);
-  return { totalCount: Number(counted[0]?.total ?? 0), productIds: rows.map((row) => row.id) };
+  return {
+    totalCount: Number(counted[0]?.total ?? 0),
+    productIds: rows.map((row) => row.id),
+    precedingProductIds: precedingWanted ? (before ? before.map((row) => row.id) : null) : [],
+  };
+}
+
+/**
+ * Which of the given products a campaign's scope still lists for this cart: addable, publicly listed and in scope, by
+ * the same rules as the listing itself. The answer to "may this id be drawn on the offer page", so a client that names
+ * ids learns nothing about any it is not offered. Order follows the input.
+ */
+export async function filterUpsellScopeProducts(
+  tx: RawReader,
+  { scope, shopId, paidProductIds, productIds }: Readonly<{ scope: UpsellScopeFacts; shopId: number; paidProductIds: readonly string[]; productIds: readonly string[] }>,
+): Promise<readonly string[]> {
+  const rows = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT p."id" FROM ${upsellScopeRecordset([scope])} CROSS JOIN "ProductMirror" p
+    WHERE ${upsellAddableProduct(shopId, paidProductIds)} AND ${UPSELL_PUBLICLY_LISTED} AND ${UPSELL_IN_SCOPE}
+      AND p."id" = ANY(${productIds}::text[])`);
+  const allowed = new Set(rows.map((row) => row.id));
+  return productIds.filter((id) => allowed.has(id));
 }

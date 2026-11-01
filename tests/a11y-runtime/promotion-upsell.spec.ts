@@ -393,11 +393,91 @@ test("ER-UI: /offers/eligible is the storefront listing: every in-scope product,
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
   }
-  await page.getByRole("link", { name: /Trang sau/ }).click();
-  await expect(page).toHaveURL(`${url}&page=2`);
-  await expect(page.locator(".listing-product-grid article")).toHaveCount(3);
-  await expect(page.getByRole("link", { name: /Trang trước/ })).toHaveAttribute("href", path);
+  // Infinite scroll: no numbered pagination, and the rest of the scope is appended in place without leaving the page.
+  await expect(page.getByRole("navigation", { name: "Phân trang sản phẩm ưu đãi" })).toHaveCount(0);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect(page.locator(".listing-product-grid article")).toHaveCount(27);
+  await expect(page.getByRole("button", { name: /Xem thêm/ })).toHaveCount(0);
+  await expect(page).toHaveURL(url);
+  // The promotion refresher revalidates the page on a timer and when the tab shows again. That re-renders the first page
+  // from the server; it must not throw away the pages already loaded or load them a second time.
+  const ids = () => page.locator(".listing-product-grid article").evaluateAll((nodes) => nodes.map((node) => node.querySelector("a")?.getAttribute("href")));
+  const before = await ids();
+  // A card loaded after the first page is drawn again on revalidation: change what it sells for and see it follow.
+  const tail = page.locator(".listing-product-grid article", { hasText: "Áo extra 25" });
+  const tailBefore = await tail.innerText();
+  await prisma.variantMirror.updateMany({ where: { pancakeVariationId: `${P}extra-25S` }, data: { pancakeRetailPrice: 150000, pancakeRetailPriceAfterDiscount: 150000 } });
+  const revalidated = page.waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await revalidated;
+  await page.waitForTimeout(500);
+  await expect(page.locator(".listing-product-grid article")).toHaveCount(27);
+  expect(await ids()).toEqual(before);
+  await expect.poll(() => tail.innerText(), { message: "the appended card follows the new price", timeout: 15000 }).not.toBe(tailBefore);
+
+  // The list was scrolled to its end, so it has no button or sentinel left. A product that joins the offer afterwards and
+  // ranks last (it costs the most) is on no server-rendered page the shopper holds: it must still be reachable.
+  const late = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: `${P}zlate`, slug: `${P}zlate`, name: "Áo zlate", syncedAt: new Date(), variants: { create: { pancakeVariationId: `${P}zlateS`, color: "Hồng", size: "S", pancakeRetailPrice: 200000, pancakeRetailPriceAfterDiscount: 200000, syncedAt: new Date(), warehouseStocks: { create: { pancakeWarehouseId: `${P}wh`, quantity: 20, syncedAt: new Date() } } } } } });
+  await prisma.giftQuantityTarget.create({ data: { campaignId, productId: late.id, role: "INCLUDE" } });
+  const grown = page.waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await grown;
+  await expect.poll(async () => {
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    return page.locator(".listing-product-grid article").count();
+  }, { message: "the new product is loaded without leaving the page", timeout: 30000 }).toBe(28);
+  await expect(page.locator(".listing-product-grid article", { hasText: "Áo zlate" })).toHaveCount(1);
+  await expect(page).toHaveURL(url);
+
+  // A replacement leaves the total as it was: a product at the end leaves the offer and a dearer one joins. The offer still
+  // lists more than the shopper has accounted for, so the list opens again for it.
+  await prisma.productMirror.updateMany({ where: { pancakeProductId: `${P}extra-24` }, data: { isActive: false } });
+  const swapped = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: `${P}zzlate`, slug: `${P}zzlate`, name: "Áo zzlate", syncedAt: new Date(), variants: { create: { pancakeVariationId: `${P}zzlateS`, color: "Hồng", size: "S", pancakeRetailPrice: 300000, pancakeRetailPriceAfterDiscount: 300000, syncedAt: new Date(), warehouseStocks: { create: { pancakeWarehouseId: `${P}wh`, quantity: 20, syncedAt: new Date() } } } } } });
+  await prisma.giftQuantityTarget.create({ data: { campaignId, productId: swapped.id, role: "INCLUDE" } });
+  const replaced = page.waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await replaced;
+  await expect.poll(async () => {
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    return page.locator(".listing-product-grid article", { hasText: "Áo zzlate" }).count();
+  }, { message: "the replacement is loaded without leaving the page", timeout: 30000 }).toBe(1);
+  await expect(page.locator(".listing-product-grid article", { hasText: "Áo extra 24" })).toHaveCount(0);
+  await expect(page.locator(".listing-product-grid article")).toHaveCount(28);
+  await expect(page).toHaveURL(url);
+  expect(new Set(before).size).toBe(27);
   await page.screenshot({ path: "test-results/upsell-eligible-listing.png", fullPage: true });
+});
+
+test("ER-FR: a long listing stays whole and fresh across a revalidation: every loaded page is redrawn, a product the offer dropped goes, one that now ranks first is shown once", async ({ page, context }) => {
+  test.setTimeout(240_000);
+  await context.setExtraHTTPHeaders({ "x-ci-client-ip": "203.0.113.232" });
+  await seedExtraScopeProducts(80); // 81 in scope with the fixture's candidate
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${BASE}/offers/eligible?campaign=${encodeURIComponent(campaignId)}`);
+  const cards = page.locator(".listing-product-grid article");
+  const card = (name: string) => page.locator(".listing-product-grid article", { hasText: name });
+  await expect(cards).toHaveCount(24);
+  // 24 server-rendered and 57 appended over three loads: more cards than one catalog read of 48 can redraw.
+  await expect.poll(async () => {
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    return cards.count();
+  }, { timeout: 90_000 }).toBe(81);
+
+  const tailBefore = await card("Áo extra 77").innerText();
+  await prisma.variantMirror.updateMany({ where: { pancakeVariationId: `${P}extra-77S` }, data: { pancakeRetailPrice: 150000, pancakeRetailPriceAfterDiscount: 150000 } });
+  await prisma.productMirror.updateMany({ where: { pancakeProductId: `${P}extra-60` }, data: { isActive: false } });
+  await prisma.variantMirror.updateMany({ where: { pancakeVariationId: `${P}extra-70S` }, data: { pancakeRetailPrice: 50000, pancakeRetailPriceAfterDiscount: 50000 } });
+  const revalidated = page.waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await revalidated;
+
+  await expect(cards).toHaveCount(80, { timeout: 30_000 });
+  await expect(card("Áo extra 60"), "a product the offer dropped is removed from the pages loaded earlier").toHaveCount(0);
+  await expect.poll(() => card("Áo extra 77").innerText(), { message: "a card far down the list follows its new price", timeout: 30_000 }).not.toBe(tailBefore);
+  await expect(cards.first(), "a product that now ranks first leads the list").toContainText("Áo extra 70");
+  await expect(card("Áo extra 70"), "and is shown once").toHaveCount(1);
+  const hrefs = await cards.evaluateAll((nodes) => nodes.map((node) => node.querySelector("a")?.getAttribute("href")));
+  expect(new Set(hrefs).size).toBe(80);
 });
 
 test("ER-RL: paging through the listing has its own budget: 12 page requests in a minute are served and the banner's POST budget is untouched", async ({ page }) => {
