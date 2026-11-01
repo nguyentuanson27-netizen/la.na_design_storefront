@@ -24,7 +24,11 @@ export type UseEligibleOffersInfiniteGridOptions = {
   precedingProductIds?: readonly string[] | null;
 };
 
-/** Cards per refresh call (the server's cap), and the calls one revalidation makes, so a very long list stays cheap. */
+/**
+ * Cards per refresh call (the server's cap), and the calls one revalidation makes, so a very long list stays cheap. A
+ * revalidation redraws up to 720 loaded cards; a longer list is walked round-robin, so every card is redrawn within
+ * ceil(n / 720) revalidations (a minute apart at most) and none stays stale for good.
+ */
 const REFRESH_CHUNK = 240;
 const REFRESH_MAX_CALLS = 3;
 
@@ -47,6 +51,9 @@ export function useEligibleOffersInfiniteGrid({
   const [passed, setPassed] = useState<readonly string[]>(precedingProductIds ?? []);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [hasNextPage, setHasNextPage] = useState(continues && initialPage < totalPages);
+  // The size of the offer when the listing was last known to be complete. A revalidation that reports a larger offer than
+  // that, with products that are neither shown nor passed, reopens the listing; one that does not leaves it closed.
+  const [settledTotal, setSettledTotal] = useState(initialPage < totalPages ? 0 : totalCount);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +77,7 @@ export function useEligibleOffersInfiniteGrid({
     setPassed(precedingProductIds ?? []);
     setCurrentPage(initialPage);
     setHasNextPage(continues && initialPage < totalPages);
+    setSettledTotal(initialPage < totalPages ? 0 : totalCount);
     setIsLoadingMore(false);
     setError(null);
   } else if (initialCards !== prevInitialCards) {
@@ -80,6 +88,10 @@ export function useEligibleOffersInfiniteGrid({
     setPrevInitialCards(initialCards);
     const onServerPage = new Set(initialCards.map((card) => card.id));
     setCards((prev) => [...initialCards, ...prev.filter((card) => !onServerPage.has(card.id))]);
+    // A listing scrolled to its end has no sentinel or button. If the offer has grown since, and the new products are
+    // not among those shown or passed, it is open again; the shopper keeps their place.
+    const accounted = initialCards.length + cards.filter((card) => !onServerPage.has(card.id)).length + passed.length;
+    if (continues && !hasNextPage && totalCount > settledTotal && totalCount > accounted) setHasNextPage(true);
   }
 
   // The server re-renders the first page only, so the cards loaded since would keep the price, sale badge and stock label
@@ -91,16 +103,21 @@ export function useEligibleOffersInfiniteGrid({
     cardsRef.current = cards;
   }, [cards]);
   const revalidatedRef = useRef(initialCards);
+  const refreshedUpToRef = useRef(0);
   useEffect(() => {
     if (revalidatedRef.current === initialCards) return;
     revalidatedRef.current = initialCards;
     const onServerPage = new Set(initialCards.map((card) => card.id));
     const appended = cardsRef.current.map((card) => card.id).filter((id) => !onServerPage.has(id));
     if (appended.length === 0) return;
+    // Start where the last revalidation stopped, wrapping around, so a long list is covered over several of them.
+    const start = refreshedUpToRef.current % appended.length;
+    const ordered = [...appended.slice(start), ...appended.slice(0, start)];
+    refreshedUpToRef.current = start + Math.min(ordered.length, REFRESH_CHUNK * REFRESH_MAX_CALLS);
     const request = guardRef.current.begin();
     void (async () => {
-      for (let call = 0; call < REFRESH_MAX_CALLS && call * REFRESH_CHUNK < appended.length; call += 1) {
-        const asked = appended.slice(call * REFRESH_CHUNK, (call + 1) * REFRESH_CHUNK);
+      for (let call = 0; call < REFRESH_MAX_CALLS && call * REFRESH_CHUNK < ordered.length; call += 1) {
+        const asked = ordered.slice(call * REFRESH_CHUNK, (call + 1) * REFRESH_CHUNK);
         try {
           const redrawn = await refreshEligibleOffersCardsAction({ campaignId, productIds: asked });
           if (!request.isCurrent()) return;
@@ -138,7 +155,10 @@ export function useEligibleOffersInfiniteGrid({
       if (!result.ok) {
         // No message means the offer is gone: retrying cannot help, so stop paging.
         if (result.error) setError(result.error);
-        else setHasNextPage(false);
+        else {
+          setHasNextPage(false);
+          setSettledTotal(totalCount);
+        }
         return;
       }
 
@@ -152,6 +172,7 @@ export function useEligibleOffersInfiniteGrid({
       setPassed((prev) => [...prev, ...result.consumedProductIds.filter((id) => !drawn.has(id) && !shown.has(id))]);
       setCurrentPage((page) => page + 1);
       setHasNextPage(result.hasNext);
+      if (!result.hasNext) setSettledTotal(totalCount);
       setAnnouncement(
         `Đã tải thêm ${fresh.length} sản phẩm ưu đãi. Đang hiển thị ${cards.length + fresh.length} trên tổng số ${totalCount} sản phẩm.`,
       );

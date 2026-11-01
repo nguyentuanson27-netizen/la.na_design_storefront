@@ -414,6 +414,20 @@ test("ER-UI: /offers/eligible is the storefront listing: every in-scope product,
   await expect(page.locator(".listing-product-grid article")).toHaveCount(27);
   expect(await ids()).toEqual(before);
   await expect.poll(() => tail.innerText(), { message: "the appended card follows the new price", timeout: 15000 }).not.toBe(tailBefore);
+
+  // The list was scrolled to its end, so it has no button or sentinel left. A product that joins the offer afterwards and
+  // ranks last (it costs the most) is on no server-rendered page the shopper holds: it must still be reachable.
+  const late = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: `${P}zlate`, slug: `${P}zlate`, name: "Áo zlate", syncedAt: new Date(), variants: { create: { pancakeVariationId: `${P}zlateS`, color: "Hồng", size: "S", pancakeRetailPrice: 200000, pancakeRetailPriceAfterDiscount: 200000, syncedAt: new Date(), warehouseStocks: { create: { pancakeWarehouseId: `${P}wh`, quantity: 20, syncedAt: new Date() } } } } } });
+  await prisma.giftQuantityTarget.create({ data: { campaignId, productId: late.id, role: "INCLUDE" } });
+  const grown = page.waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await grown;
+  await expect.poll(async () => {
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    return page.locator(".listing-product-grid article").count();
+  }, { message: "the new product is loaded without leaving the page", timeout: 30000 }).toBe(28);
+  await expect(page.locator(".listing-product-grid article", { hasText: "Áo zlate" })).toHaveCount(1);
+  await expect(page).toHaveURL(url);
   expect(new Set(before).size).toBe(27);
   await page.screenshot({ path: "test-results/upsell-eligible-listing.png", fullPage: true });
 });
