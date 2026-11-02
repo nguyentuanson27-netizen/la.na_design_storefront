@@ -13,6 +13,12 @@ export type SecondaryStockLookupClient = {
 export type SecondaryShopGatewayConfig = {
   client: SecondaryStockLookupClient;
   shopId: number;
+  /**
+   * Of the normalized SKUs, those that more than one primary variant carries. Their secondary stock
+   * is given to none of them, exactly as the mirror sync does. When it is configured and fails, no
+   * secondary stock is added at all: counting the same units twice is the error to avoid.
+   */
+  findAmbiguousSkus?: (primaryShopId: number, skus: readonly string[]) => Promise<ReadonlySet<string>>;
 };
 
 /** Pancake accepts up to 100 rows a page; a wide page makes a fuzzy `search` unlikely to cut off the exact SKU. */
@@ -76,8 +82,24 @@ async function lookupSecondarySku(
 export async function addSecondaryShopStock(
   variations: readonly PancakeCatalogVariation[],
   secondary: SecondaryShopGatewayConfig,
-  warn: (message: string) => void = (message) => console.warn(message),
+  {
+    primaryShopId,
+    warn = (message) => console.warn(message),
+  }: { primaryShopId: number; warn?: (message: string) => void },
 ): Promise<PancakeCatalogVariation[]> {
+  let ambiguous: ReadonlySet<string> = new Set();
+  if (secondary.findAmbiguousSkus) {
+    const skus = [
+      ...new Set(variations.flatMap((variation) => normalizeSku(variation.displayId) ?? [])),
+    ];
+    try {
+      ambiguous = await secondary.findAmbiguousSkus(primaryShopId, skus);
+    } catch {
+      warn("Secondary Pancake stock skipped: the SKU uniqueness check failed");
+      return [...variations];
+    }
+  }
+
   let failed = 0;
   let attempted = 0;
   const enriched = await mapWithConcurrency(
@@ -86,6 +108,7 @@ export async function addSecondaryShopStock(
     async (variation): Promise<PancakeCatalogVariation> => {
       const sku = normalizeSku(variation.displayId);
       if (!sku || variation.displayId === null || variation.displayId === undefined) return variation;
+      if (ambiguous.has(sku)) return variation;
       attempted += 1;
       const outcome = await lookupSecondarySku(secondary, variation.displayId, sku);
       if (outcome.kind === "failed") {

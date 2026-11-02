@@ -48,6 +48,7 @@ function page(rows: unknown[]) {
 }
 
 const shopId = 407_962_350;
+const primaryShopId = 4_741_464;
 
 test("matches the exact SKU case-insensitively and adds only stock, never price or identity", async () => {
   const queries: unknown[] = [];
@@ -63,7 +64,7 @@ test("matches the exact SKU case-insensitively and adds only stock, never price 
         },
       },
     },
-    () => assert.fail("no warning expected"),
+    { primaryShopId, warn: () => assert.fail("no warning expected") },
   );
 
   assert.deepEqual(queries, [{ page_number: 1, page_size: SECONDARY_LOOKUP_PAGE_SIZE, search: "sku-1" }]);
@@ -78,7 +79,7 @@ test("several exact matches in the secondary shop add up", async () => {
   const [result] = await addSecondaryShopStock([primary("p1", "SKU-1", 1)], {
     shopId,
     client: { getJson: async () => page([secondaryRow("s1", "SKU-1", 2, "wh_a"), secondaryRow("s2", "SKU-1", 3, "wh_b")]) },
-  });
+  }, { primaryShopId });
   assert.equal(result!.secondarySellableStock, 5);
   assert.equal(result!.sellableStock, 6);
   assert.equal(result!.warehouseStocks.length, 3);
@@ -89,7 +90,7 @@ test("no match leaves the primary variation untouched, without a warning", async
   const [result] = await addSecondaryShopStock(
     [original],
     { shopId, client: { getJson: async () => page([secondaryRow("s2", "SKU-12", 9)]) } },
-    () => assert.fail("a miss is not a failure"),
+    { primaryShopId, warn: () => assert.fail("a miss is not a failure") },
   );
   assert.equal(result, original);
 });
@@ -99,7 +100,7 @@ test("a variation without a SKU is never looked up", async () => {
   const [result] = await addSecondaryShopStock([original], {
     shopId,
     client: { getJson: async () => assert.fail("must not be called") },
-  });
+  }, { primaryShopId });
   assert.equal(result, original);
 });
 
@@ -122,7 +123,7 @@ test("failed and possibly truncated lookups fall back to primary stock and are r
         },
       },
     },
-    (message) => warnings.push(message),
+    { primaryShopId, warn: (message) => warnings.push(message) },
   );
 
   assert.equal(result[0]!.sellableStock, 2);
@@ -138,7 +139,7 @@ test("an unreadable payload counts as a failed lookup, not as stock", async () =
   const [result] = await addSecondaryShopStock(
     [primary("p1", "SKU-1", 2)],
     { shopId, client: { getJson: async () => ({ success: false }) } },
-    (message) => warnings.push(message),
+    { primaryShopId, warn: (message) => warnings.push(message) },
   );
   assert.equal(result!.sellableStock, 2);
   assert.equal(warnings.length, 1);
@@ -159,9 +160,55 @@ test("requests to the secondary shop never exceed the concurrency limit", async 
         return page([secondaryRow("s", String(query?.search), 1)]);
       },
     },
-  });
+  }, { primaryShopId });
 
   assert.equal(peak, SECONDARY_LOOKUP_CONCURRENCY);
   assert.equal(result.length, variations.length);
   assert.ok(result.every((variation, i) => variation.id === `p${i}` && variation.sellableStock === 2), "order is preserved");
+});
+
+test("a SKU shared by several primary variants is never looked up, so its units are not counted twice", async () => {
+  const asked: unknown[] = [];
+  const lookups: unknown[] = [];
+  const original = primary("p-dup", "dup-sku", 1);
+  const result = await addSecondaryShopStock(
+    [original, primary("p-ok", "SKU-OK", 1)],
+    {
+      shopId,
+      client: {
+        async getJson(_endpoint, query) {
+          lookups.push(query?.search);
+          return page([secondaryRow("s", String(query?.search), 4)]);
+        },
+      },
+      async findAmbiguousSkus(shop, skus) {
+        asked.push([shop, [...skus]]);
+        return new Set(["DUP-SKU"]);
+      },
+    },
+    { primaryShopId, warn: () => assert.fail("no warning expected") },
+  );
+
+  assert.deepEqual(asked, [[primaryShopId, ["DUP-SKU", "SKU-OK"]]]);
+  assert.deepEqual(lookups, ["SKU-OK"]);
+  assert.equal(result[0], original);
+  assert.equal(result[1]!.sellableStock, 5);
+});
+
+test("if the uniqueness check cannot run, no secondary stock is added at all", async () => {
+  const warnings: string[] = [];
+  const variations = [primary("p1", "SKU-1", 1)];
+  const result = await addSecondaryShopStock(
+    variations,
+    {
+      shopId,
+      client: { getJson: async () => assert.fail("must not be called") },
+      findAmbiguousSkus: async () => {
+        throw new Error("database down");
+      },
+    },
+    { primaryShopId, warn: (message) => warnings.push(message) },
+  );
+  assert.equal(result[0]!.sellableStock, 1);
+  assert.equal(warnings.length, 1);
 });

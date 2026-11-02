@@ -2,13 +2,33 @@ import type { PrismaClient } from "../generated/prisma/client.ts";
 import { fetchAllPancakeCatalogVariations } from "../integrations/pancake/catalog-pages.ts";
 import type { PancakeCatalogWarehouseStock } from "../integrations/pancake/catalog-contract.ts";
 import { normalizeSku } from "../integrations/pancake/sku.ts";
-import { writeObservedWarehouseStocks } from "./catalog-mirror-repository.ts";
+import {
+  observeStoredStockAvailability,
+  writeObservedWarehouseStocks,
+} from "./catalog-mirror-repository.ts";
+import { acquireCatalogSyncLock, CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS } from "./catalog-sync-lock.ts";
 import {
   SECONDARY_WAREHOUSE_KEY_PREFIX,
   secondaryShopKeyPrefix,
 } from "./warehouse-stock-scope.ts";
 
 export { normalizeSku };
+
+type SyncTransaction = Parameters<typeof observeStoredStockAvailability>[0];
+
+/** Database-side steps of a chunk, injectable so the matching logic can be tested without a database. */
+export type SecondaryInventorySyncHooks = {
+  acquireLock(tx: SyncTransaction, shopId: number): Promise<void>;
+  observeAvailability(
+    tx: SyncTransaction,
+    input: { shopId: number; variantIds: readonly string[]; observedAt: Date },
+  ): Promise<void>;
+};
+
+const DEFAULT_HOOKS: SecondaryInventorySyncHooks = {
+  acquireLock: acquireCatalogSyncLock,
+  observeAvailability: observeStoredStockAvailability,
+};
 
 export type SecondaryInventorySyncClient = {
   getJson(
@@ -43,6 +63,7 @@ export async function syncSecondaryShopInventory({
   prisma,
   clock = () => new Date(),
   warn = (message) => console.warn(message),
+  hooks = DEFAULT_HOOKS,
 }: {
   primaryShopId: number;
   secondaryShopId: number;
@@ -51,6 +72,7 @@ export async function syncSecondaryShopInventory({
   clock?: () => Date;
   /** Fixed text plus counts only: never a Pancake payload, SKU list or credential. */
   warn?: (message: string) => void;
+  hooks?: SecondaryInventorySyncHooks;
 }): Promise<SecondaryInventorySyncResult> {
   // Sampled before the read starts, like the primary sync: a stock figure is only as new as the
   // instant its read began.
@@ -77,10 +99,19 @@ export async function syncSecondaryShopInventory({
     }
   }
 
+  // A variant that lost its SKU is read too when it still carries this shop's rows: they matched
+  // the old SKU and must be cleared, not left to be counted until they go stale.
   const primaryVariants = await prisma.variantMirror.findMany({
     where: {
       product: { pancakeShopId: primaryShopId },
-      pancakeDisplayId: { not: null },
+      OR: [
+        { pancakeDisplayId: { not: null } },
+        {
+          warehouseStocks: {
+            some: { pancakeWarehouseId: { startsWith: secondaryShopKeyPrefix(secondaryShopId) } },
+          },
+        },
+      ],
     },
     select: { id: true, pancakeDisplayId: true, isPresent: true },
   });
@@ -103,7 +134,10 @@ export async function syncSecondaryShopInventory({
 
   for (const variant of primaryVariants) {
     const sku = normalizeSku(variant.pancakeDisplayId);
-    if (!sku) continue;
+    if (!sku) {
+      updates.push({ variantId: variant.id, stocks: [] });
+      continue;
+    }
     primarySkus.add(sku);
 
     const byWarehouse = secondaryBySku.get(sku);
@@ -139,16 +173,32 @@ export async function syncSecondaryShopInventory({
     );
   }
 
+  // Availability cycles are dated by the day the stock was observed, which for a figure read from
+  // Pancake is after the read finished (the primary sync does the same).
+  const availabilityObservedAt = clock();
   for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
     const chunk = updates.slice(i, i + CHUNK_SIZE);
-    await prisma.$transaction(async (tx) => {
-      for (const { variantId, stocks } of chunk) {
-        await writeObservedWarehouseStocks(tx, variantId, stocks, observedAt, {
-          kind: "secondary",
-          shopId: secondaryShopId,
+    await prisma.$transaction(
+      async (tx) => {
+        // The shop's catalog-sync lock serializes this with the primary sync and the admin policy
+        // writes that decide a preorder variant's availability cycle.
+        await hooks.acquireLock(tx, primaryShopId);
+        for (const { variantId, stocks } of chunk) {
+          await writeObservedWarehouseStocks(tx, variantId, stocks, observedAt, {
+            kind: "secondary",
+            shopId: secondaryShopId,
+          });
+        }
+        // The secondary stock just changed what these variants (and the combos built on them) can
+        // sell, so their sold-out cycles are judged again against everything now stored.
+        await hooks.observeAvailability(tx, {
+          shopId: primaryShopId,
+          variantIds: chunk.map(({ variantId }) => variantId),
+          observedAt: availabilityObservedAt,
         });
-      }
-    });
+      },
+      { timeout: CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS },
+    );
   }
 
   return {

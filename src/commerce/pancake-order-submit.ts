@@ -1,3 +1,4 @@
+import { buildSecondaryFulfillmentTag } from "./secondary-fulfillment-note.ts";
 import { readListPriceConfig } from "./list-price-config.ts";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../integrations/pancake/catalog-contract.ts";
@@ -898,31 +899,11 @@ export function createPancakeOrderSubmissionService(
     const markers = order.paymentMethod === "BANK_TRANSFER" ? `[CHUYỂN KHOẢN - chờ thanh toán] ${orderMarker}` : orderMarker;
     let noteWithMarker = order.note ? `${order.note} ${markers}` : markers;
 
-    const secondaryFulfilled = new Map<string, { sku: string; quantity: number }>();
-    for (const plan of liveCapacityPlans) {
-      for (const resource of plan.resources) {
-        const liveResource = liveByVariationId.get(resource.pancakeVariationId);
-        if (!liveResource || !liveResource.secondarySellableStock || liveResource.secondarySellableStock <= 0) continue;
-        const primaryStock = Math.max(0, liveResource.primarySellableStock ?? 0);
-        const unitsFromSecondary = Math.min(
-          Math.max(0, resource.units - primaryStock),
-          liveResource.secondarySellableStock,
-        );
-        if (unitsFromSecondary > 0) {
-          const sku = liveResource.displayId ?? resource.pancakeVariationId;
-          const current = secondaryFulfilled.get(sku);
-          if (current) {
-            current.quantity += unitsFromSecondary;
-          } else {
-            secondaryFulfilled.set(sku, { sku, quantity: unitsFromSecondary });
-          }
-        }
-      }
-    }
-    if (secondaryFulfilled.size > 0) {
-      const parts = [...secondaryFulfilled.values()].map((item) => `SKU ${item.sku} x${item.quantity}`);
-      noteWithMarker = `${noteWithMarker} [Xuất kho phụ: ${parts.join(", ")}]`;
-    }
+    const secondaryTag = buildSecondaryFulfillmentTag(
+      liveCapacityPlans.flatMap((plan) => plan.resources),
+      liveByVariationId,
+    );
+    if (secondaryTag) noteWithMarker = `${noteWithMarker} ${secondaryTag}`;
 
     const addressDetailWithMarker = `${contact.addressDetail} ${orderMarker}`;
 

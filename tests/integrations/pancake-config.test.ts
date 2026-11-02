@@ -134,3 +134,16 @@ test("reads optional secondary Pancake shop configuration and fails closed when 
     },
   );
 });
+
+test("refuses a secondary shop that is the primary shop, which would count the same stock twice", () => {
+  assert.throws(
+    () =>
+      readPancakeConfig({
+        PANCAKE_API_KEY: "primary-key",
+        PANCAKE_SHOP_ID: "4741464",
+        PANCAKE_SECONDARY_SHOP_ID: " 4741464 ",
+        PANCAKE_SECONDARY_API_KEY: "sec-key",
+      }),
+    PancakeConfigError,
+  );
+});

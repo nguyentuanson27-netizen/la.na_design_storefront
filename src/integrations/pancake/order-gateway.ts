@@ -109,7 +109,7 @@ export function createPancakeOrderGateway(
         return primaryVariations;
       }
 
-      return addSecondaryShopStock(primaryVariations, secondaryShop);
+      return addSecondaryShopStock(primaryVariations, secondaryShop, { primaryShopId: checkedShopId });
     },
 
     /**

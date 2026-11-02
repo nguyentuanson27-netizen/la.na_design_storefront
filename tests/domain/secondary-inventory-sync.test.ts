@@ -159,6 +159,9 @@ function syncHarness({
   secondary: ReturnType<typeof variationRow>[];
   primary: Array<{ id: string; pancakeDisplayId: string | null; isPresent: boolean }>;
 }) {
+  const hookCalls: string[] = [];
+  const observed: Array<{ shopId: number; variantIds: readonly string[]; observedAt: Date }> = [];
+  let findManyWhere: unknown;
   const client = {
     async getJson(endpoint: string) {
       if (endpoint !== "/shops/407962350/products/variations") throw new Error(`Unexpected endpoint: ${endpoint}`);
@@ -199,6 +202,7 @@ function syncHarness({
     variantMirror: {
       async findMany({ where }: { where: { product: { pancakeShopId: number } } }) {
         assert.equal(where.product.pancakeShopId, 4_741_464);
+        findManyWhere = where;
         return primary;
       },
     },
@@ -210,6 +214,9 @@ function syncHarness({
   return {
     writes,
     warnings,
+    hookCalls,
+    observed,
+    findManyWhere: () => findManyWhere,
     run: () =>
       syncSecondaryShopInventory({
         primaryShopId: 4_741_464,
@@ -218,6 +225,15 @@ function syncHarness({
         prisma,
         clock: () => now,
         warn: (message) => warnings.push(message),
+        hooks: {
+          async acquireLock(_tx, shopId) {
+            hookCalls.push(`lock:${shopId}`);
+          },
+          async observeAvailability(_tx, input) {
+            hookCalls.push("observe");
+            observed.push(input);
+          },
+        },
       }),
   };
 }
@@ -324,4 +340,47 @@ test("purgeSecondaryWarehouseStock selects only the rows it is asked to drop", a
     },
     { where: { pancakeWarehouseId: { startsWith: "secondary:2:" }, syncedAt: { lt: now } } },
   ]);
+});
+
+test("a variant that lost its SKU is still read and has its secondary stock cleared", async () => {
+  const harness = syncHarness({
+    secondary: [variationRow("sec_var_1", "SKU-1", [["wh_sec_1", 5]])],
+    primary: [
+      { id: "pri_no_sku", pancakeDisplayId: null, isPresent: true },
+      { id: "pri_blank_sku", pancakeDisplayId: "   ", isPresent: true },
+    ],
+  });
+
+  const result = await harness.run();
+
+  assert.equal(result.matchedCount, 0);
+  assert.deepEqual(harness.writes, [
+    { variantId: "pri_no_sku", keys: [], quantities: [] },
+    { variantId: "pri_blank_sku", keys: [], quantities: [] },
+  ]);
+  // The query must not exclude them: it also selects variants that still carry this shop's rows.
+  assert.deepEqual(harness.findManyWhere(), {
+    product: { pancakeShopId: 4_741_464 },
+    OR: [
+      { pancakeDisplayId: { not: null } },
+      { warehouseStocks: { some: { pancakeWarehouseId: { startsWith: "secondary:407962350:" } } } },
+    ],
+  });
+});
+
+test("each chunk takes the catalog lock, writes, then re-observes availability for exactly its variants", async () => {
+  const primary = Array.from({ length: 101 }, (_, i) => ({
+    id: `pri_${i}`,
+    pancakeDisplayId: `SKU-${i}`,
+    isPresent: true,
+  }));
+  const harness = syncHarness({ secondary: [variationRow("s", "SKU-0", [["wh", 1]])], primary });
+
+  await harness.run();
+
+  assert.deepEqual(harness.hookCalls, ["lock:4741464", "observe", "lock:4741464", "observe"]);
+  assert.equal(harness.observed[0]!.variantIds.length, 100);
+  assert.deepEqual(harness.observed[1]!.variantIds, ["pri_100"]);
+  assert.equal(harness.observed[0]!.shopId, 4_741_464);
+  assert.deepEqual(harness.observed[0]!.observedAt, now);
 });

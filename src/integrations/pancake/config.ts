@@ -89,9 +89,14 @@ export function readPancakeConfig(env: ServerEnvironment = process.env): Pancake
 
   const orderSourceId = readPancakeOrderSourceId(env);
   const secondaryShop = readPancakeSecondaryShopConfig(env);
+  const shopId = readPancakeShopId(env);
+  if (secondaryShop && secondaryShop.shopId === shopId) {
+    // The same shop read twice would add its stock to itself, in the mirror and at checkout alike.
+    throw new PancakeConfigError("PANCAKE_SECONDARY_SHOP_ID must differ from PANCAKE_SHOP_ID");
+  }
   return {
     apiKey,
-    shopId: readPancakeShopId(env),
+    shopId,
     ...(orderSourceId === undefined ? {} : { orderSourceId }),
     ...(secondaryShop ? { secondaryShop } : {}),
   };

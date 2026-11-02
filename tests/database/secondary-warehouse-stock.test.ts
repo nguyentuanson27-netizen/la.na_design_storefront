@@ -8,6 +8,7 @@ import {
   purgeSecondaryWarehouseStock,
   syncSecondaryShopInventory,
 } from "../../src/commerce/secondary-inventory-sync.ts";
+import { findAmbiguousPrimarySkus } from "../../src/commerce/secondary-sku-guard.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type { PancakeParsedCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
 
@@ -26,7 +27,7 @@ const t = (minute: number) => new Date(Date.UTC(2026, 10, 2, 12, minute));
 
 function primaryVariation(
   id: string,
-  displayId: string,
+  displayId: string | null,
   stocks: Array<{ warehouseId: string; remainQuantity: number }>,
 ): PancakeParsedCatalogVariation {
   return {
@@ -264,4 +265,98 @@ test("purging drops stale, orphaned or disabled secondary stock and leaves prima
   assert.equal(await purgeSecondaryWarehouseStock(prisma), 1);
   assert.deepEqual(await stockRows("v1"), [["wh-a", 3]]);
   assert.equal(await sellable("v1"), 3);
+});
+
+test("a variant whose SKU is removed loses the secondary stock it had", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(0),
+  });
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(1));
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 1]]);
+
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", null, [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(2),
+  });
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(3));
+
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
+});
+
+async function preorderCycle(variationId: string) {
+  const variant = await prisma.variantMirror.findFirstOrThrow({
+    where: { pancakeVariationId: variationId },
+    select: { id: true },
+  });
+  return prisma.variantAvailabilityCycle.findUnique({
+    where: { variantId: variant.id },
+    select: { lastStockNonPositive: true },
+  });
+}
+
+test("a preorder variant is only sold out when the primary AND the secondary shop are", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(0),
+  });
+  const product = await prisma.productMirror.findFirstOrThrow({ where: { pancakeShopId: primaryShopId } });
+  await prisma.productSellingPolicy.create({
+    data: { productId: product.id, sellingMode: "PREORDER", negativeStockLimit: -20 },
+  });
+
+  // Primary runs out: the cycle opens.
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 0 }])],
+    syncedAt: t(1),
+  });
+  assert.equal((await preorderCycle("v1"))?.lastStockNonPositive, true);
+
+  // The secondary shop holds stock: the variant is not sold out, without any primary read.
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 3]] }], t(2));
+  assert.equal((await preorderCycle("v1"))?.lastStockNonPositive, false);
+
+  // A later primary read of 0 must not reopen it while the secondary stock stands.
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 0 }])],
+    syncedAt: t(3),
+  });
+  assert.equal((await preorderCycle("v1"))?.lastStockNonPositive, false);
+
+  // The same through the targeted path that webhooks use.
+  await repository.applyVariationStocks({
+    shopId: primaryShopId,
+    observations: [{ variationId: "v1", warehouseStocks: [{ warehouseId: "wh-a", remainQuantity: 0 }] }],
+    syncedAt: t(4),
+  });
+  assert.equal((await preorderCycle("v1"))?.lastStockNonPositive, false);
+
+  // The secondary shop sells out too: now it is sold out.
+  await syncSecondary([], t(5));
+  assert.equal((await preorderCycle("v1"))?.lastStockNonPositive, true);
+});
+
+test("findAmbiguousPrimarySkus reports SKUs shared by variants still on sale, case and padding aside", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [
+      primaryVariation("v1", "DUP-1", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v2", " dup-1 ", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v3", "ONE-1", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+    ],
+    syncedAt: t(0),
+  });
+
+  const found = await findAmbiguousPrimarySkus(prisma, primaryShopId, ["DUP-1", "ONE-1", "NONE-1"]);
+  assert.deepEqual([...found], ["DUP-1"]);
+  assert.deepEqual([...(await findAmbiguousPrimarySkus(prisma, primaryShopId, []))], []);
+
+  // A retired twin no longer competes for the SKU.
+  await prisma.variantMirror.updateMany({ where: { pancakeVariationId: "v2" }, data: { isPresent: false } });
+  assert.deepEqual([...(await findAmbiguousPrimarySkus(prisma, primaryShopId, ["DUP-1"]))], []);
 });

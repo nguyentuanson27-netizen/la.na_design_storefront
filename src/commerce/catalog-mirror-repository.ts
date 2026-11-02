@@ -26,6 +26,7 @@ import {
 import { canonicalizeClothingSize } from "./clothing-size.ts";
 import {
   PRIMARY_WAREHOUSE_SCOPE,
+  SECONDARY_WAREHOUSE_KEY_PREFIX,
   secondaryShopKeyPrefix,
   warehouseStockKey,
   warehouseStockScopeFilter,
@@ -292,6 +293,23 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
+/** Stored stock the secondary shop contributes to each variant (see `warehouse-stock-scope.ts`). */
+async function readSecondaryStockByVariantId(
+  tx: Prisma.TransactionClient,
+  variantIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (variantIds.length === 0) return new Map();
+  const rows = await tx.warehouseStock.groupBy({
+    by: ["variantId"],
+    where: {
+      variantId: { in: [...variantIds] },
+      pancakeWarehouseId: { startsWith: SECONDARY_WAREHOUSE_KEY_PREFIX },
+    },
+    _sum: { quantity: true },
+  });
+  return new Map(rows.map((row) => [row.variantId, row._sum.quantity ?? 0]));
+}
+
 export type ObservedWarehouseStock = Readonly<{ warehouseId: string; remainQuantity: number }>;
 
 /**
@@ -414,6 +432,134 @@ function mapVariantOptions(fields: readonly PancakeCatalogField[]): VariantOptio
     color: mappedFieldValue(fields, "color"),
     size: rawSize !== null ? canonicalizeClothingSize(rawSize) : null,
   };
+}
+
+/**
+ * Re-observes the availability cycle of every variant whose own stock is given in
+ * `directStockByVariantId`, and of every combo parent built on one of them. A combo's readiness is
+ * derived from its components' stored stock (primary and secondary rows alike).
+ */
+async function observeAvailabilityForVariants(
+  tx: Prisma.TransactionClient,
+  safeShopId: number,
+  directStockByVariantId: ReadonlyMap<string, number>,
+  observedAt: Date,
+): Promise<void> {
+      const writtenVariantIds = [...directStockByVariantId.keys()];
+    const availabilityVariants = await tx.variantMirror.findMany({
+      where: {
+        product: { pancakeShopId: safeShopId },
+        OR: [
+          { id: { in: writtenVariantIds } },
+          {
+            compositeComponents: {
+              some: { componentVariantId: { in: writtenVariantIds } },
+            },
+          },
+        ],
+      },
+      orderBy: { id: "asc" },
+      select: {
+        id: true,
+        productId: true,
+        compositeComponents: {
+          select: {
+            quantity: true,
+            componentVariant: {
+              select: {
+                isPresent: true,
+                product: {
+                  select: {
+                    pancakeShopId: true,
+                    isPresent: true,
+                  },
+                },
+                warehouseStocks: { select: { quantity: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const storedPolicies = await tx.productSellingPolicy.findMany({
+      where: {
+        productId: {
+          in: [...new Set(availabilityVariants.map(({ productId }) => productId))],
+        },
+      },
+      select: { productId: true, sellingMode: true, negativeStockLimit: true },
+    });
+    const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
+
+    const availabilityObservations = availabilityVariants.flatMap((variant) => {
+      const policy = resolveSellingPolicy(policyByProductId.get(variant.productId) ?? null);
+      if (variant.compositeComponents.length > 0) {
+        const readiness = deriveCompositeCapacitySnapshot({
+          shopId: safeShopId,
+          components: variant.compositeComponents.map((edge) => ({
+            requiredQuantity: edge.quantity,
+            componentVariant: edge.componentVariant,
+          })),
+          sellingMode: "STANDARD",
+          negativeStockLimit: 0,
+        });
+        return [
+          {
+            variantId: variant.id,
+            stockNonPositive:
+              readiness.reason !== "invalid-stock" &&
+              readiness.reason !== "invalid-limit" &&
+              readiness.readyQuantity <= 0,
+            isPreorder: policy.sellingMode === "PREORDER",
+          },
+        ];
+      }
+
+      const direct = directStockByVariantId.get(variant.id);
+      if (direct === undefined) return [];
+      return [
+        {
+          variantId: variant.id,
+          stockNonPositive: Number.isFinite(direct) && direct <= 0,
+          isPreorder: policy.sellingMode === "PREORDER",
+        },
+      ];
+    });
+
+    // Match full reconciliation semantics, but also re-observe a composite parent whenever a
+    // component that determines its ready capacity was one of the targeted writes.
+    await observeVariantAvailabilityCycles(
+      tx,
+      availabilityObservations,
+      observedAt,
+    );
+}
+
+/**
+ * Called by the secondary-shop sync inside its own transaction, after it wrote stock: the variants'
+ * availability cycles are observed again against everything now stored for them, so a preorder
+ * variant the secondary shop restocked leaves its sold-out cycle without waiting for a primary read.
+ */
+export async function observeStoredStockAvailability(
+  tx: Prisma.TransactionClient,
+  {
+    shopId,
+    variantIds,
+    observedAt,
+  }: { shopId: number; variantIds: readonly string[]; observedAt: Date },
+): Promise<void> {
+  const ids = [...new Set(variantIds)];
+  if (ids.length === 0) return;
+  const totals = await tx.warehouseStock.groupBy({
+    by: ["variantId"],
+    where: { variantId: { in: ids } },
+    _sum: { quantity: true },
+  });
+  const totalByVariantId = new Map(totals.map((row) => [row.variantId, row._sum.quantity ?? 0]));
+  // A variant with no stock row at all has nothing in any warehouse.
+  const directStock = new Map(ids.map((id) => [id, totalByVariantId.get(id) ?? 0]));
+  await observeAvailabilityForVariants(tx, requireShopId(shopId), directStock, requireSyncedAt(observedAt));
 }
 
 export function createCatalogMirrorRepository(
@@ -878,6 +1024,9 @@ export function createCatalogMirrorRepository(
           );
         }
 
+        // The stock a variant sells from is the primary shop's plus what the secondary shop holds
+        // for it, so a variant is only "sold out" when both are.
+        const secondaryStockByVariantId = await readSecondaryStockByVariantId(tx, observedVariantIds);
         const availabilityObservations = variations.flatMap((variation) => {
           const variantId = internalVariantIds.get(variation.id);
           const productId = internalProductIds.get(variation.productId);
@@ -889,9 +1038,10 @@ export function createCatalogMirrorRepository(
           if (isCompositeParent) {
             stockNonPositive = compositeStockNonPositiveByVariantId.get(variantId) === true;
           } else {
-            const stock = sumWarehouseStocks(
-              variation.warehouseStocks.map(({ remainQuantity }) => ({ quantity: remainQuantity })),
-            );
+            const stock =
+              sumWarehouseStocks(
+                variation.warehouseStocks.map(({ remainQuantity }) => ({ quantity: remainQuantity })),
+              ) + (secondaryStockByVariantId.get(variantId) ?? 0);
             // An unreadable total is not an observation of being sold out. Treating `NaN <= 0` as a
             // sell-out would open a cycle — and publish a date — off a number the catalog could not
             // read, so it is reported as having stock and the feed's own fail-closed path handles it.
@@ -1028,96 +1178,12 @@ export function createCatalogMirrorRepository(
         }
 
         if (written.length > 0) {
-          const writtenByVariantId = new Map(written.map((row) => [row.variantId, row]));
-          const writtenVariantIds = [...writtenByVariantId.keys()];
-          const availabilityVariants = await tx.variantMirror.findMany({
-            where: {
-              product: { pancakeShopId: safeShopId },
-              OR: [
-                { id: { in: writtenVariantIds } },
-                {
-                  compositeComponents: {
-                    some: { componentVariantId: { in: writtenVariantIds } },
-                  },
-                },
-              ],
-            },
-            orderBy: { id: "asc" },
-            select: {
-              id: true,
-              productId: true,
-              compositeComponents: {
-                select: {
-                  quantity: true,
-                  componentVariant: {
-                    select: {
-                      isPresent: true,
-                      product: {
-                        select: {
-                          pancakeShopId: true,
-                          isPresent: true,
-                        },
-                      },
-                      warehouseStocks: { select: { quantity: true } },
-                    },
-                  },
-                },
-              },
-            },
-          });
-
-          const storedPolicies = await tx.productSellingPolicy.findMany({
-            where: {
-              productId: {
-                in: [...new Set(availabilityVariants.map(({ productId }) => productId))],
-              },
-            },
-            select: { productId: true, sellingMode: true, negativeStockLimit: true },
-          });
-          const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
-
-          const availabilityObservations = availabilityVariants.flatMap((variant) => {
-            const policy = resolveSellingPolicy(policyByProductId.get(variant.productId) ?? null);
-            if (variant.compositeComponents.length > 0) {
-              const readiness = deriveCompositeCapacitySnapshot({
-                shopId: safeShopId,
-                components: variant.compositeComponents.map((edge) => ({
-                  requiredQuantity: edge.quantity,
-                  componentVariant: edge.componentVariant,
-                })),
-                sellingMode: "STANDARD",
-                negativeStockLimit: 0,
-              });
-              return [
-                {
-                  variantId: variant.id,
-                  stockNonPositive:
-                    readiness.reason !== "invalid-stock" &&
-                    readiness.reason !== "invalid-limit" &&
-                    readiness.readyQuantity <= 0,
-                  isPreorder: policy.sellingMode === "PREORDER",
-                },
-              ];
-            }
-
-            const direct = writtenByVariantId.get(variant.id);
-            if (direct === undefined) return [];
-            return [
-              {
-                variantId: variant.id,
-                stockNonPositive: Number.isFinite(direct.stock) && direct.stock <= 0,
-                isPreorder: policy.sellingMode === "PREORDER",
-              },
-            ];
-          });
-
-          // Match full reconciliation semantics, but also re-observe a composite parent whenever a
-          // component that determines its ready capacity was one of the targeted writes.
-          await observeVariantAvailabilityCycles(
-            tx,
-            availabilityObservations,
-            safeAvailabilityObservedAt,
-          );
+          const directStock = new Map(written.map((row) => [row.variantId, row.stock]));
+          const secondaryStock = await readSecondaryStockByVariantId(tx, [...directStock.keys()]);
+          for (const [variantId, stock] of directStock) {
+            directStock.set(variantId, stock + (secondaryStock.get(variantId) ?? 0));
+          }
+          await observeAvailabilityForVariants(tx, safeShopId, directStock, safeAvailabilityObservedAt);
         }
 
         const capacityHandedOff =
