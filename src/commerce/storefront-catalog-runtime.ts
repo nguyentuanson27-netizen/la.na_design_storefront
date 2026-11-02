@@ -127,8 +127,8 @@ const readSharedPricingGeneration = createPricingGenerationReader((at) =>
  *
  * Like `/sale`, the key carries the durable promotion pricing revision and the next campaign
  * boundary, so a published promotion edit or a window opening or closing is a different key and is
- * read fresh instead of being served for up to the cache's maximum age. Concurrent requests share
- * one read of that generation. What counts down from the instant the listing was read -- its own
+ * read fresh instead of being served for up to the cache's maximum age. A burst of requests shares
+ * reads of that generation without any of them using one older than its own arrival. What counts down from the instant the listing was read -- its own
  * `refreshAfterMs` and each product's Flash `remainingMs` -- is shortened by the time since.
  */
 async function readPricingScopedListing<T>(

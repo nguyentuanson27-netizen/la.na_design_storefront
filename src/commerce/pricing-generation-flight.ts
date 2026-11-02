@@ -1,38 +1,61 @@
 /**
- * Lets concurrent requests share one read of the promotion pricing generation.
+ * Lets a burst of requests share reads of the promotion pricing generation.
  *
  * A listing's cache key carries the durable promotion pricing revision and the next campaign boundary
  * (see `readPricingGeneration`), so every request has to read them before it can look its listing up.
- * Without sharing, a burst of N requests for one URL costs N generation reads even when the heavy
- * listing read behind them is coalesced. Sharing adds no lifetime: a request joins only a read that is
- * still in flight, so what it learns is at most as old as that read's duration, the same bound a
- * request that had issued the read itself has.
+ * Without sharing, N requests for one URL cost N generation reads even when the heavy listing read
+ * behind them is coalesced.
  *
- * A joiner whose instant is at or past the boundary the shared read found does not use it: the
- * boundary is the first instant the answer can change, so that request reads for itself.
+ * A request must see every promotion publish committed before it arrived. A read that was already
+ * running when it arrived may have read the revision before such a commit, so a request never joins
+ * a running read. It joins the one read that starts after the running one ends: every request that
+ * arrived meanwhile waits for that same read, which began after all of them arrived. A burst therefore
+ * costs two reads however large it is, and the shared answer is never older than the request's own
+ * arrival. Nothing is held past the read: the next request that finds no read running starts its own.
  */
 export type PricingGeneration = Readonly<{ key: string; nextBoundaryAt: Date | null }>;
+
+type Waiting = {
+  nowMs: number;
+  promise: Promise<PricingGeneration>;
+  resolve: (value: PricingGeneration) => void;
+  reject: (error: unknown) => void;
+};
 
 export function createPricingGenerationReader(
   read: (now: Date) => Promise<PricingGeneration>,
 ): (now: Date) => Promise<PricingGeneration> {
-  let flight: Readonly<{ promise: Promise<PricingGeneration> }> | null = null;
+  let running: Promise<PricingGeneration> | null = null;
+  let waiting: Waiting | null = null;
 
-  return async function readGeneration(now: Date): Promise<PricingGeneration> {
-    const joined = flight;
-    if (joined) {
-      const shared = await joined.promise;
-      if (shared.nextBoundaryAt === null || now.getTime() < shared.nextBoundaryAt.getTime()) {
-        return shared;
-      }
-    }
-
-    const own = Object.freeze({ promise: read(now) });
-    flight = own;
-    const release = () => {
-      if (flight === own) flight = null;
+  function start(now: Date): Promise<PricingGeneration> {
+    const promise = (async () => read(now))();
+    running = promise;
+    const finish = () => {
+      if (running === promise) running = null;
+      const batch = waiting;
+      if (batch === null) return;
+      waiting = null;
+      // Read at the latest instant of the batch: its boundary is then ahead of every waiter's own.
+      start(new Date(batch.nowMs)).then(batch.resolve, batch.reject);
     };
-    own.promise.then(release, release);
-    return own.promise;
+    promise.then(finish, finish);
+    return promise;
+  }
+
+  return function readGeneration(now: Date): Promise<PricingGeneration> {
+    if (running === null) return start(now);
+    if (waiting === null) {
+      let resolve!: Waiting["resolve"];
+      let reject!: Waiting["reject"];
+      const promise = new Promise<PricingGeneration>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      waiting = { nowMs: now.getTime(), promise, resolve, reject };
+    } else {
+      waiting.nowMs = Math.max(waiting.nowMs, now.getTime());
+    }
+    return waiting.promise;
   };
 }
