@@ -146,3 +146,24 @@ export function withListingFlashSale<
     }),
   }));
 }
+
+/**
+ * Shortens each product's Flash countdown by the time a cached listing has been held, so a hit shows
+ * what is left now rather than what was left when the entry was read. Products without a Flash Sale
+ * are returned as they are.
+ */
+export function rebaseListingFlashSaleRemaining<
+  P extends Readonly<{ flashSale?: StorefrontListingFlashSale | undefined }>,
+>(products: readonly P[], elapsedMs: number): P[] {
+  return products.map((product) =>
+    product.flashSale === undefined || elapsedMs <= 0
+      ? product
+      : {
+          ...product,
+          flashSale: {
+            ...product.flashSale,
+            remainingMs: Math.max(0, product.flashSale.remainingMs - elapsedMs),
+          },
+        },
+  );
+}

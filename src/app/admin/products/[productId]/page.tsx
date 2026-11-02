@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { readAuthServerConfig } from "@/auth/config";
 import { requireCurrentAdmin, requireCurrentAdminPage } from "@/auth/current-admin";
+import { clearStorefrontRuntimeCaches } from "@/commerce/storefront-catalog-runtime";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import {
   createProductContentAdminService,
@@ -148,6 +149,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
 
     revalidatePath(editorPath);
     revalidatePath("/admin");
+    clearStorefrontRuntimeCaches();
     revalidatePath("/shop");
     redirect(`${editorPath}?saved=1`);
   }
@@ -195,6 +197,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
 
     revalidatePath(editorPath);
     revalidatePath("/admin");
+    clearStorefrontRuntimeCaches();
     revalidatePath("/shop");
     revalidatePath(`/shop/${persistedProductSlug}`);
     redirect(`${editorPath}?variantSaved=1`);
@@ -238,6 +241,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
       if (result.ok) {
         revalidatePath(editorPath);
         revalidatePath("/admin");
+        clearStorefrontRuntimeCaches();
         revalidatePath("/shop");
         revalidatePath(`/shop/${persistedProductSlug}`);
         return { kind: "success", operation: "catalog-enable" };
@@ -268,6 +272,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
       }
       revalidatePath(editorPath);
       revalidatePath("/admin");
+      clearStorefrontRuntimeCaches();
       revalidatePath("/shop");
       revalidatePath(`/shop/${persistedProductSlug}`);
       return { kind: "success", operation: "catalog-disable" };
@@ -288,6 +293,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
       }
       revalidatePath(editorPath);
       revalidatePath("/admin");
+      clearStorefrontRuntimeCaches();
       revalidatePath("/shop");
       revalidatePath(`/shop/${persistedProductSlug}`);
       return {

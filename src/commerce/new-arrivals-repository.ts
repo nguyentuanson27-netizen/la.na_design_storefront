@@ -78,6 +78,11 @@ export function createNewArrivalsRepository(client: PrismaClient) {
       throw new RangeError("Invalid new arrivals page");
     }
 
+    // Two reads on purpose, not one RepeatableRead transaction: that held a pooled connection through
+    // both and queued behind other transactions under a traffic spike (P2028). The cost is that an
+    // admin edit landing between them can make `totalPages` disagree with this page's rows for that
+    // one response. It is never stored: the admin action drops the in-process cache after it commits,
+    // and a read still in flight at that moment no longer publishes (see `sale-listing-cache.ts`).
     const where = { pancakeShopId: safeShopId, product: visibleProduct(safeShopId) };
     const [totalProducts, entries] = await Promise.all([
       client.newArrivalProduct.count({ where }),
