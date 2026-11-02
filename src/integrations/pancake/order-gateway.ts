@@ -1,4 +1,5 @@
 import type { PancakeCatalogVariation } from "./catalog-contract.ts";
+import { addSecondaryShopStock, type SecondaryShopGatewayConfig } from "./secondary-stock-lookup.ts";
 import { fetchAllPancakeCatalogVariations } from "./catalog-pages.ts";
 import {
   fetchPancakeVariationsByIds,
@@ -54,10 +55,13 @@ function requireOrderId(value: string): string {
   return value;
 }
 
+export type { SecondaryShopGatewayConfig };
+
 export function createPancakeOrderGateway(
   client: PancakeOrderGatewayClient,
   fetchCompleteCatalog: FetchCompleteCatalog = fetchAllPancakeCatalogVariations,
   fetchVariationsByIds: FetchVariationsByIds = fetchPancakeVariationsByIds,
+  secondaryShop?: SecondaryShopGatewayConfig,
 ) {
   return {
     async fetchCompleteCatalog(shopId: number): Promise<readonly PancakeCatalogVariation[]> {
@@ -86,19 +90,26 @@ export function createPancakeOrderGateway(
       for (let start = 0; start < requested.length; start += MAX_VARIATIONS_PER_READ) {
         chunks.push(requested.slice(start, start + MAX_VARIATIONS_PER_READ));
       }
+      let primaryVariations: PancakeCatalogVariation[];
       try {
         const pages = await Promise.all(
           chunks.map((chunk) =>
             fetchVariationsByIds({ client, shopId: checkedShopId, variationIds: chunk }),
           ),
         );
-        return pages.flat();
+        primaryVariations = pages.flat();
       } catch (error) {
         if (!(error instanceof PancakeVariationFilterMismatchError)) throw error;
+        const wanted = new Set(requested);
+        const catalog = await fetchCompleteCatalog({ client, shopId: checkedShopId });
+        primaryVariations = catalog.filter((variation) => wanted.has(variation.id));
       }
-      const wanted = new Set(requested);
-      const catalog = await fetchCompleteCatalog({ client, shopId: checkedShopId });
-      return catalog.filter((variation) => wanted.has(variation.id));
+
+      if (!secondaryShop) {
+        return primaryVariations;
+      }
+
+      return addSecondaryShopStock(primaryVariations, secondaryShop, { primaryShopId: checkedShopId });
     },
 
     /**

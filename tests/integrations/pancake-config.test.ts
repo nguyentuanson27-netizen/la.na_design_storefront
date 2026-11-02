@@ -5,6 +5,7 @@ import {
   PancakeConfigError,
   readPancakeConfig,
   readPancakeOrderSourceId,
+  readPancakeSecondaryShopConfig,
   readPancakeShopId,
 } from "../../src/integrations/pancake/config.ts";
 
@@ -72,5 +73,77 @@ test("reads the optional POS order source ID and fails closed when it is malform
       PANCAKE_ORDER_SOURCE_ID: "922027175",
     }),
     { apiKey: "k", shopId: 6036602, orderSourceId: 922027175 },
+  );
+});
+
+test("reads optional secondary Pancake shop configuration and fails closed when malformed", () => {
+  assert.equal(readPancakeSecondaryShopConfig({}), null);
+  assert.equal(
+    readPancakeSecondaryShopConfig({
+      PANCAKE_SECONDARY_SHOP_ID: "  ",
+      PANCAKE_SECONDARY_API_KEY: "",
+    }),
+    null,
+  );
+
+  assert.deepEqual(
+    readPancakeSecondaryShopConfig({
+      PANCAKE_SECONDARY_SHOP_ID: " 407962350 ",
+      PANCAKE_SECONDARY_API_KEY: " test-secondary-api-key ",
+    }),
+    { shopId: 407962350, apiKey: "test-secondary-api-key" },
+  );
+
+  // Missing one part
+  assert.throws(
+    () => readPancakeSecondaryShopConfig({ PANCAKE_SECONDARY_SHOP_ID: "407962350" }),
+    PancakeConfigError,
+  );
+  assert.throws(
+    () => readPancakeSecondaryShopConfig({ PANCAKE_SECONDARY_API_KEY: "key" }),
+    PancakeConfigError,
+  );
+
+  // Malformed shop ID
+  for (const bad of ["abc", "0", "-1", "1.5", "99999999999999999999"]) {
+    assert.throws(
+      () =>
+        readPancakeSecondaryShopConfig({
+          PANCAKE_SECONDARY_SHOP_ID: bad,
+          PANCAKE_SECONDARY_API_KEY: "key",
+        }),
+      PancakeConfigError,
+    );
+  }
+
+  // Included in readPancakeConfig
+  assert.deepEqual(
+    readPancakeConfig({
+      PANCAKE_API_KEY: "primary-key",
+      PANCAKE_SHOP_ID: "4741464",
+      PANCAKE_SECONDARY_SHOP_ID: "407962350",
+      PANCAKE_SECONDARY_API_KEY: "sec-key",
+    }),
+    {
+      apiKey: "primary-key",
+      shopId: 4741464,
+      secondaryShop: {
+        apiKey: "sec-key",
+        shopId: 407962350,
+      },
+    },
+  );
+});
+
+test("refuses a secondary shop that is the primary shop, which would count the same stock twice", () => {
+  assert.throws(
+    () =>
+      readPancakeConfig({
+        PANCAKE_API_KEY: "primary-key",
+        PANCAKE_SHOP_ID: "4741464",
+        PANCAKE_SECONDARY_SHOP_ID: " 4741464 ",
+        PANCAKE_SECONDARY_API_KEY: "sec-key",
+      }),
+    PancakeConfigError,
   );
 });

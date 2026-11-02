@@ -21,6 +21,7 @@
  * would count the units nowhere.
  */
 
+import { PRIMARY_WAREHOUSE_SCOPE, warehouseStockScopeFilter } from "./warehouse-stock-scope.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { reservationHoldsCapacity } from "./capacity-policy.ts";
 import { CATALOG_SYNC_TRANSACTION_TIMEOUT_MS } from "./catalog-sync-lock.ts";
@@ -80,8 +81,15 @@ export async function handOffMirroredCapacity(
     });
     if (candidates.length === 0) continue;
 
+    // Only the primary shop's rows are evidence: orders are created in the primary POS, so only a
+    // primary read that began after the commit can show that POS's decrement. A secondary row is
+    // read independently, on its own schedule, and an older one must not keep a hold alive that the
+    // primary shop has already settled.
     const stocks = await tx.warehouseStock.findMany({
-      where: { variantId: { in: [...new Set(candidates.map(({ variantId }) => variantId))] } },
+      where: {
+        variantId: { in: [...new Set(candidates.map(({ variantId }) => variantId))] },
+        ...warehouseStockScopeFilter(PRIMARY_WAREHOUSE_SCOPE),
+      },
       select: { variantId: true, syncedAt: true },
     });
     const stocksByVariantId = new Map<string, { syncedAt: Date }[]>();

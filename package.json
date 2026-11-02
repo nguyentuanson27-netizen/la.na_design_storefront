@@ -33,6 +33,7 @@
     "voucher:convergence:live": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/voucher-convergence-live.ts",
     "voucher:refund:admin-cancel": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/voucher-admin-cancel.ts",
     "voucher:refund:sweep": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/voucher-refund-sweep.ts",
+    "pancake:secondary:teardown": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-secondary-teardown.ts",
     "capacity:handoff:reconcile": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/capacity-handoff-reconcile.ts",
     "pancake:composite:discover": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-composite-discover.ts",
     "pancake:composite:invariants": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-composite-invariants.ts",

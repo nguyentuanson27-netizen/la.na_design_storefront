@@ -1,4 +1,4 @@
-import type { Prisma } from "../generated/prisma/client.ts";
+import { Prisma } from "../generated/prisma/client.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 
@@ -27,4 +27,24 @@ export async function acquireCatalogSyncLock(
 ): Promise<void> {
   const safeShopId = requireCatalogLockShopId(shopId);
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CATALOG_SYNC_LOCK_NAMESPACE}, ${safeShopId})`;
+}
+
+/**
+ * Locks the given `VariantMirror` rows in a stable order, the same rows `reserveOrderCapacity()`
+ * locks before it reads a variant's stock. A writer of `WarehouseStock` takes these locks first, so
+ * a reservation either reads the stock before the write or waits for it; it can never read a figure
+ * the write is about to replace and still commit on it.
+ */
+export async function lockVariantMirrorRows(
+  tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  variantIds: readonly string[],
+): Promise<void> {
+  const ids = [...new Set(variantIds)].sort();
+  if (ids.length === 0) return;
+  await tx.$queryRaw(Prisma.sql`
+    SELECT "id" FROM "VariantMirror"
+    WHERE "id" IN (${Prisma.join(ids)})
+    ORDER BY "id"
+    FOR UPDATE
+  `);
 }

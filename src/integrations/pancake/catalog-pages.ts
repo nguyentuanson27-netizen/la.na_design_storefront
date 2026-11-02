@@ -1,5 +1,5 @@
-import type { PancakeParsedCatalogVariation } from "./catalog-contract.ts";
-import { parsePancakeCatalogVariations } from "./catalog-contract.ts";
+import type { PancakeParsedCatalogVariation, PancakeWarehouse } from "./catalog-contract.ts";
+import { parsePancakeCatalogVariations, parsePancakeWarehouses } from "./catalog-contract.ts";
 
 const CATALOG_PAGE_SIZE = 100;
 const MAX_CATALOG_PAGES = 500;
@@ -67,4 +67,16 @@ export async function fetchAllPancakeCatalogVariations({
   }
 
   return variations;
+}
+
+export async function fetchPancakeWarehouses({
+  client,
+  shopId,
+}: {
+  client: CatalogClient;
+  shopId: number;
+}): Promise<PancakeWarehouse[]> {
+  const safeShopId = requireShopId(shopId);
+  const payload = await client.getJson(`/shops/${safeShopId}/warehouses`);
+  return parsePancakeWarehouses(payload);
 }

@@ -24,6 +24,15 @@ import {
   PRODUCT_SLUG_LOCK_NAMESPACE,
 } from "./product-slug.ts";
 import { canonicalizeClothingSize } from "./clothing-size.ts";
+import { normalizedSkuSql } from "./sku-sql.ts";
+import {
+  PRIMARY_WAREHOUSE_SCOPE,
+  SECONDARY_WAREHOUSE_KEY_PREFIX,
+  secondaryShopKeyPrefix,
+  warehouseStockKey,
+  warehouseStockScopeFilter,
+  type WarehouseStockScope,
+} from "./warehouse-stock-scope.ts";
 
 const MAX_READ_PRODUCTS = 100;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
@@ -285,7 +294,58 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
-type ObservedWarehouseStock = Readonly<{ warehouseId: string; remainQuantity: number }>;
+/**
+ * Deletes the secondary-shop stock rows of `shopId` that no longer belong to the variant they sit
+ * on: the variant now carries another SKU (or none), was retired, or shares the SKU they were
+ * attributed to with another variant still on sale. Run by the primary sync in its own transaction,
+ * right after it rewrote the variants, so a rename never leaves one article's secondary stock on
+ * another until the secondary shop's API next answers. Returns how many rows went.
+ */
+async function dropMisattributedSecondaryStock(
+  tx: Prisma.TransactionClient,
+  shopId: number,
+): Promise<number> {
+  return tx.$executeRaw(Prisma.sql`
+    DELETE FROM "WarehouseStock" ws
+    USING "VariantMirror" v, "ProductMirror" vp
+    WHERE ws."variantId" = v."id"
+      AND vp."id" = v."productId"
+      AND vp."pancakeShopId" = ${shopId}
+      AND ws."pancakeWarehouseId" LIKE ${SECONDARY_WAREHOUSE_KEY_PREFIX + "%"}
+      AND (
+        NOT v."isPresent"
+        OR ws."secondarySku" IS DISTINCT FROM ${normalizedSkuSql(Prisma.sql`v."pancakeDisplayId"`)}
+        OR EXISTS (
+          SELECT 1
+          FROM "VariantMirror" other
+          JOIN "ProductMirror" op ON op."id" = other."productId"
+          WHERE op."pancakeShopId" = vp."pancakeShopId"
+            AND other."isPresent"
+            AND other."id" <> v."id"
+            AND ${normalizedSkuSql(Prisma.sql`other."pancakeDisplayId"`)} = ws."secondarySku"
+        )
+      )
+  `);
+}
+
+/** Stored stock the secondary shop contributes to each variant (see `warehouse-stock-scope.ts`). */
+async function readSecondaryStockByVariantId(
+  tx: Prisma.TransactionClient,
+  variantIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (variantIds.length === 0) return new Map();
+  const rows = await tx.warehouseStock.groupBy({
+    by: ["variantId"],
+    where: {
+      variantId: { in: [...variantIds] },
+      pancakeWarehouseId: { startsWith: SECONDARY_WAREHOUSE_KEY_PREFIX },
+    },
+    _sum: { quantity: true },
+  });
+  return new Map(rows.map((row) => [row.variantId, row._sum.quantity ?? 0]));
+}
+
+export type ObservedWarehouseStock = Readonly<{ warehouseId: string; remainQuantity: number }>;
 
 /**
  * Writes one variant's complete warehouse set from a stock read that began at `observedAt` — the
@@ -299,46 +359,76 @@ type ObservedWarehouseStock = Readonly<{ warehouseId: string; remainQuantity: nu
  * neither side (ADR 0014 §4.1). Every write covers the whole variant, so the variant is the exact
  * granularity: a newer read already stated all of its warehouses. Returns whether it was written.
  */
-async function writeObservedWarehouseStocks(
+export async function writeObservedWarehouseStocks(
   tx: Prisma.TransactionClient,
   variantId: string,
   stocks: readonly ObservedWarehouseStock[],
   observedAt: Date,
+  scope: WarehouseStockScope = PRIMARY_WAREHOUSE_SCOPE,
 ): Promise<boolean> {
+  // A secondary contributor owns only its namespaced rows and its own marker; it neither reads nor
+  // moves the primary read's `stockObservedAt`.
+  const rowScope = warehouseStockScopeFilter(scope);
+  const keyed = stocks.map(({ warehouseId, remainQuantity }) => ({
+    key: warehouseStockKey(scope, warehouseId),
+    remainQuantity,
+  }));
+
   // Rows a release without the watermark wrote (after a rollback) still count as observations.
   const newer = await tx.warehouseStock.count({
-    where: { variantId, syncedAt: { gt: observedAt } },
+    where: { variantId, syncedAt: { gt: observedAt }, ...rowScope },
   });
   if (newer > 0) return false;
-  // The watermark survives an empty warehouse set, which leaves no row to carry the read's start.
+
+  // Each shop's reads are ordered by their own durable marker, which survives a read that observed
+  // no warehouse row at all (it leaves no row to carry the read's start).
   const stamped = await tx.variantMirror.updateMany({
-    where: {
-      id: variantId,
-      OR: [{ stockObservedAt: null }, { stockObservedAt: { lte: observedAt } }],
-    },
-    data: { stockObservedAt: observedAt },
+    where:
+      scope.kind === "primary"
+        ? {
+            id: variantId,
+            OR: [{ stockObservedAt: null }, { stockObservedAt: { lte: observedAt } }],
+          }
+        : {
+            id: variantId,
+            OR: [{ secondaryStockObservedAt: null }, { secondaryStockObservedAt: { lte: observedAt } }],
+          },
+    data: scope.kind === "primary" ? { stockObservedAt: observedAt } : { secondaryStockObservedAt: observedAt },
   });
   if (stamped.count === 0) return false;
 
-  const currentWarehouseIds = stocks.map(({ warehouseId }) => warehouseId);
+  const secondarySku = scope.kind === "secondary" ? { secondarySku: scope.sku ?? null } : {};
+  const currentKeys = keyed.map(({ key }) => key);
   await tx.warehouseStock.deleteMany({
-    where: {
-      variantId,
-      ...(currentWarehouseIds.length > 0 ? { pancakeWarehouseId: { notIn: currentWarehouseIds } } : {}),
-    },
+    where:
+      scope.kind === "secondary"
+        ? {
+            variantId,
+            pancakeWarehouseId: {
+              startsWith: secondaryShopKeyPrefix(scope.shopId),
+              ...(currentKeys.length > 0 ? { notIn: currentKeys } : {}),
+            },
+          }
+        : {
+            variantId,
+            ...rowScope,
+            ...(currentKeys.length > 0 ? { pancakeWarehouseId: { notIn: currentKeys } } : {}),
+          },
   });
-  for (const stock of stocks) {
+
+  for (const stock of keyed) {
     await tx.warehouseStock.upsert({
       where: {
-        variantId_pancakeWarehouseId: { variantId, pancakeWarehouseId: stock.warehouseId },
+        variantId_pancakeWarehouseId: { variantId, pancakeWarehouseId: stock.key },
       },
       create: {
         variantId,
-        pancakeWarehouseId: stock.warehouseId,
+        pancakeWarehouseId: stock.key,
         quantity: stock.remainQuantity,
         syncedAt: observedAt,
+        ...secondarySku,
       },
-      update: { quantity: stock.remainQuantity, syncedAt: observedAt },
+      update: { quantity: stock.remainQuantity, syncedAt: observedAt, ...secondarySku },
     });
   }
   return true;
@@ -384,6 +474,134 @@ function mapVariantOptions(fields: readonly PancakeCatalogField[]): VariantOptio
     color: mappedFieldValue(fields, "color"),
     size: rawSize !== null ? canonicalizeClothingSize(rawSize) : null,
   };
+}
+
+/**
+ * Re-observes the availability cycle of every variant whose own stock is given in
+ * `directStockByVariantId`, and of every combo parent built on one of them. A combo's readiness is
+ * derived from its components' stored stock (primary and secondary rows alike).
+ */
+async function observeAvailabilityForVariants(
+  tx: Prisma.TransactionClient,
+  safeShopId: number,
+  directStockByVariantId: ReadonlyMap<string, number>,
+  observedAt: Date,
+): Promise<void> {
+      const writtenVariantIds = [...directStockByVariantId.keys()];
+    const availabilityVariants = await tx.variantMirror.findMany({
+      where: {
+        product: { pancakeShopId: safeShopId },
+        OR: [
+          { id: { in: writtenVariantIds } },
+          {
+            compositeComponents: {
+              some: { componentVariantId: { in: writtenVariantIds } },
+            },
+          },
+        ],
+      },
+      orderBy: { id: "asc" },
+      select: {
+        id: true,
+        productId: true,
+        compositeComponents: {
+          select: {
+            quantity: true,
+            componentVariant: {
+              select: {
+                isPresent: true,
+                product: {
+                  select: {
+                    pancakeShopId: true,
+                    isPresent: true,
+                  },
+                },
+                warehouseStocks: { select: { quantity: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const storedPolicies = await tx.productSellingPolicy.findMany({
+      where: {
+        productId: {
+          in: [...new Set(availabilityVariants.map(({ productId }) => productId))],
+        },
+      },
+      select: { productId: true, sellingMode: true, negativeStockLimit: true },
+    });
+    const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
+
+    const availabilityObservations = availabilityVariants.flatMap((variant) => {
+      const policy = resolveSellingPolicy(policyByProductId.get(variant.productId) ?? null);
+      if (variant.compositeComponents.length > 0) {
+        const readiness = deriveCompositeCapacitySnapshot({
+          shopId: safeShopId,
+          components: variant.compositeComponents.map((edge) => ({
+            requiredQuantity: edge.quantity,
+            componentVariant: edge.componentVariant,
+          })),
+          sellingMode: "STANDARD",
+          negativeStockLimit: 0,
+        });
+        return [
+          {
+            variantId: variant.id,
+            stockNonPositive:
+              readiness.reason !== "invalid-stock" &&
+              readiness.reason !== "invalid-limit" &&
+              readiness.readyQuantity <= 0,
+            isPreorder: policy.sellingMode === "PREORDER",
+          },
+        ];
+      }
+
+      const direct = directStockByVariantId.get(variant.id);
+      if (direct === undefined) return [];
+      return [
+        {
+          variantId: variant.id,
+          stockNonPositive: Number.isFinite(direct) && direct <= 0,
+          isPreorder: policy.sellingMode === "PREORDER",
+        },
+      ];
+    });
+
+    // Match full reconciliation semantics, but also re-observe a composite parent whenever a
+    // component that determines its ready capacity was one of the targeted writes.
+    await observeVariantAvailabilityCycles(
+      tx,
+      availabilityObservations,
+      observedAt,
+    );
+}
+
+/**
+ * Called by the secondary-shop sync inside its own transaction, after it wrote stock: the variants'
+ * availability cycles are observed again against everything now stored for them, so a preorder
+ * variant the secondary shop restocked leaves its sold-out cycle without waiting for a primary read.
+ */
+export async function observeStoredStockAvailability(
+  tx: Prisma.TransactionClient,
+  {
+    shopId,
+    variantIds,
+    observedAt,
+  }: { shopId: number; variantIds: readonly string[]; observedAt: Date },
+): Promise<void> {
+  const ids = [...new Set(variantIds)];
+  if (ids.length === 0) return;
+  const totals = await tx.warehouseStock.groupBy({
+    by: ["variantId"],
+    where: { variantId: { in: ids } },
+    _sum: { quantity: true },
+  });
+  const totalByVariantId = new Map(totals.map((row) => [row.variantId, row._sum.quantity ?? 0]));
+  // A variant with no stock row at all has nothing in any warehouse.
+  const directStock = new Map(ids.map((id) => [id, totalByVariantId.get(id) ?? 0]));
+  await observeAvailabilityForVariants(tx, requireShopId(shopId), directStock, requireSyncedAt(observedAt));
 }
 
 export function createCatalogMirrorRepository(
@@ -796,6 +1014,13 @@ export function createCatalogMirrorRepository(
             : [];
         const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
 
+        // A variant that was renamed, retired, or now shares its SKU stops receiving the secondary
+        // stock that was attributed to its old identity, here and now: this must not wait for the
+        // secondary shop's API, which may be down. It runs before ANYTHING below reads stored stock
+        // (a combo's readiness is derived from its components' stored rows, direct variants' totals
+        // from the same table), so every availability observation sees the cleaned figures.
+        await dropMisattributedSecondaryStock(tx, safeShopId);
+
         const observedVariantIds = variations.flatMap((variation) => {
           const variantId = internalVariantIds.get(variation.id);
           return variantId === undefined ? [] : [variantId];
@@ -848,6 +1073,9 @@ export function createCatalogMirrorRepository(
           );
         }
 
+        // The stock a variant sells from is the primary shop's plus what the secondary shop holds
+        // for it, so a variant is only "sold out" when both are.
+        const secondaryStockByVariantId = await readSecondaryStockByVariantId(tx, observedVariantIds);
         const availabilityObservations = variations.flatMap((variation) => {
           const variantId = internalVariantIds.get(variation.id);
           const productId = internalProductIds.get(variation.productId);
@@ -859,9 +1087,10 @@ export function createCatalogMirrorRepository(
           if (isCompositeParent) {
             stockNonPositive = compositeStockNonPositiveByVariantId.get(variantId) === true;
           } else {
-            const stock = sumWarehouseStocks(
-              variation.warehouseStocks.map(({ remainQuantity }) => ({ quantity: remainQuantity })),
-            );
+            const stock =
+              sumWarehouseStocks(
+                variation.warehouseStocks.map(({ remainQuantity }) => ({ quantity: remainQuantity })),
+              ) + (secondaryStockByVariantId.get(variantId) ?? 0);
             // An unreadable total is not an observation of being sold out. Treating `NaN <= 0` as a
             // sell-out would open a cycle — and publish a date — off a number the catalog could not
             // read, so it is reported as having stock and the feed's own fail-closed path handles it.
@@ -998,96 +1227,12 @@ export function createCatalogMirrorRepository(
         }
 
         if (written.length > 0) {
-          const writtenByVariantId = new Map(written.map((row) => [row.variantId, row]));
-          const writtenVariantIds = [...writtenByVariantId.keys()];
-          const availabilityVariants = await tx.variantMirror.findMany({
-            where: {
-              product: { pancakeShopId: safeShopId },
-              OR: [
-                { id: { in: writtenVariantIds } },
-                {
-                  compositeComponents: {
-                    some: { componentVariantId: { in: writtenVariantIds } },
-                  },
-                },
-              ],
-            },
-            orderBy: { id: "asc" },
-            select: {
-              id: true,
-              productId: true,
-              compositeComponents: {
-                select: {
-                  quantity: true,
-                  componentVariant: {
-                    select: {
-                      isPresent: true,
-                      product: {
-                        select: {
-                          pancakeShopId: true,
-                          isPresent: true,
-                        },
-                      },
-                      warehouseStocks: { select: { quantity: true } },
-                    },
-                  },
-                },
-              },
-            },
-          });
-
-          const storedPolicies = await tx.productSellingPolicy.findMany({
-            where: {
-              productId: {
-                in: [...new Set(availabilityVariants.map(({ productId }) => productId))],
-              },
-            },
-            select: { productId: true, sellingMode: true, negativeStockLimit: true },
-          });
-          const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
-
-          const availabilityObservations = availabilityVariants.flatMap((variant) => {
-            const policy = resolveSellingPolicy(policyByProductId.get(variant.productId) ?? null);
-            if (variant.compositeComponents.length > 0) {
-              const readiness = deriveCompositeCapacitySnapshot({
-                shopId: safeShopId,
-                components: variant.compositeComponents.map((edge) => ({
-                  requiredQuantity: edge.quantity,
-                  componentVariant: edge.componentVariant,
-                })),
-                sellingMode: "STANDARD",
-                negativeStockLimit: 0,
-              });
-              return [
-                {
-                  variantId: variant.id,
-                  stockNonPositive:
-                    readiness.reason !== "invalid-stock" &&
-                    readiness.reason !== "invalid-limit" &&
-                    readiness.readyQuantity <= 0,
-                  isPreorder: policy.sellingMode === "PREORDER",
-                },
-              ];
-            }
-
-            const direct = writtenByVariantId.get(variant.id);
-            if (direct === undefined) return [];
-            return [
-              {
-                variantId: variant.id,
-                stockNonPositive: Number.isFinite(direct.stock) && direct.stock <= 0,
-                isPreorder: policy.sellingMode === "PREORDER",
-              },
-            ];
-          });
-
-          // Match full reconciliation semantics, but also re-observe a composite parent whenever a
-          // component that determines its ready capacity was one of the targeted writes.
-          await observeVariantAvailabilityCycles(
-            tx,
-            availabilityObservations,
-            safeAvailabilityObservedAt,
-          );
+          const directStock = new Map(written.map((row) => [row.variantId, row.stock]));
+          const secondaryStock = await readSecondaryStockByVariantId(tx, [...directStock.keys()]);
+          for (const [variantId, stock] of directStock) {
+            directStock.set(variantId, stock + (secondaryStock.get(variantId) ?? 0));
+          }
+          await observeAvailabilityForVariants(tx, safeShopId, directStock, safeAvailabilityObservedAt);
         }
 
         const capacityHandedOff =

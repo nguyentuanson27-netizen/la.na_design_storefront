@@ -4,6 +4,7 @@ import { scheduleMetaPurchaseSafely } from "./meta-request-context.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig, type PancakeConfig } from "../integrations/pancake/config.ts";
 import { createPancakeOrderGateway } from "../integrations/pancake/order-gateway.ts";
+import { findUnsafePrimarySkus } from "./secondary-sku-guard.ts";
 import { createVoucherOrderAcceptance } from "./voucher-order-acceptance.ts";
 import { createVoucherRedemptionService } from "./voucher-redemption-service.ts";
 import {
@@ -15,9 +16,29 @@ function writePancakeOrderSubmissionEvent(event: PancakeOrderSubmissionEvent): v
   process.stdout.write(`${JSON.stringify(event)}\n`);
 }
 
+/**
+ * The secondary shop only adds stock to a checkout that is waiting on the buyer, so it gets a far
+ * shorter leash than the primary shop's 10 s: past this, the lookup counts as failed and the order
+ * is judged on primary stock alone.
+ */
+const SECONDARY_SHOP_TIMEOUT_MS = 3_000;
+
 export function createPancakeOrderSubmissionRuntime(config: PancakeConfig) {
   const client = new PancakeClient({ apiKey: config.apiKey });
-  const gateway = createPancakeOrderGateway(client);
+  const secondaryConfig = config.secondaryShop
+    ? {
+        client: new PancakeClient({ apiKey: config.secondaryShop.apiKey, timeoutMs: SECONDARY_SHOP_TIMEOUT_MS }),
+        shopId: config.secondaryShop.shopId,
+        findUnsafeSkus: (primaryShopId: number, entries: readonly { variationId: string; sku: string }[]) =>
+          findUnsafePrimarySkus(prisma, primaryShopId, entries),
+      }
+    : undefined;
+  const gateway = createPancakeOrderGateway(
+    client,
+    undefined,
+    undefined,
+    secondaryConfig,
+  );
   // V13: voucher acceptance runs in the write-boundary transaction. It is a settle path, so it never reads the
   // feature flag or the verified-shop list; an order with no bound hold passes through without writing.
   const voucherAcceptance = createVoucherOrderAcceptance({ readAttemptSecret: () => readAuthServerConfig().secret });

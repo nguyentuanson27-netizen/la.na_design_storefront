@@ -1,3 +1,4 @@
+import { buildSecondaryFulfillmentTag } from "./secondary-fulfillment-note.ts";
 import { readListPriceConfig } from "./list-price-config.ts";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../integrations/pancake/catalog-contract.ts";
@@ -896,7 +897,14 @@ export function createPancakeOrderSubmissionService(
     const orderMarker = `[ORDER:${order.publicCode}]`;
     // Staff read the note, not a payment field, to know an order is waiting on a transfer.
     const markers = order.paymentMethod === "BANK_TRANSFER" ? `[CHUYỂN KHOẢN - chờ thanh toán] ${orderMarker}` : orderMarker;
-    const noteWithMarker = order.note ? `${order.note} ${markers}` : markers;
+    let noteWithMarker = order.note ? `${order.note} ${markers}` : markers;
+
+    const secondaryTag = buildSecondaryFulfillmentTag(
+      liveCapacityPlans.flatMap((plan) => plan.resources),
+      liveByVariationId,
+    );
+    if (secondaryTag) noteWithMarker = `${noteWithMarker} ${secondaryTag}`;
+
     const addressDetailWithMarker = `${contact.addressDetail} ${orderMarker}`;
 
     let geoNames: { provinceName: string; communeName: string } | undefined;
