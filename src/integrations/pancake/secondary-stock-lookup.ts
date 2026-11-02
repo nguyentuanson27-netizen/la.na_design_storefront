@@ -59,6 +59,7 @@ async function lookupSecondarySku(
   secondary: SecondaryShopGatewayConfig,
   displayId: string,
   sku: string,
+  shouldStop: () => boolean,
 ): Promise<LookupOutcome> {
   try {
     // The exact SKU may sit on any page of a fuzzy search, and the mirror sync adds every row that
@@ -70,6 +71,9 @@ async function lookupSecondarySku(
     let first: { totalPages: number; totalEntries: number } | undefined;
     let rowsRead = 0;
     for (let pageNumber = 1; pageNumber <= (first?.totalPages ?? 1); pageNumber += 1) {
+      // Checked before EVERY page request, not only before a new SKU: once the buyer's deadline has
+      // passed the answer is thrown away, so no further page is worth asking the secondary shop for.
+      if (shouldStop()) return { kind: "failed" };
       const payload = await secondary.client.getJson(`/shops/${secondary.shopId}/products/variations`, {
         page_number: pageNumber,
         page_size: SECONDARY_LOOKUP_PAGE_SIZE,
@@ -159,7 +163,7 @@ export async function addSecondaryShopStock(
       const sku = normalizeSku(variation.displayId);
       if (!sku || variation.displayId === null || variation.displayId === undefined) return;
       if (unsafe.has(sku)) return;
-      const outcome = await lookupSecondarySku(secondary, variation.displayId, sku);
+      const outcome = await lookupSecondarySku(secondary, variation.displayId, sku, () => expired);
       if (expired || outcome.kind === "failed") return;
       conclusive += 1;
       if (outcome.kind === "none") return;

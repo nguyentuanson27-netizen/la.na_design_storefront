@@ -437,3 +437,26 @@ test("no new lookup starts after the deadline", async () => {
   assert.equal(calls, callsAtDeadline, "the walk stopped starting lookups once time was up");
   assert.ok(callsAtDeadline < 40);
 });
+
+test("a lookup that is mid-walk when the deadline passes asks for no further page", async () => {
+  const requested: number[] = [];
+  const [result] = await addSecondaryShopStock(
+    [primary("p1", "SKU-1", 1)],
+    {
+      shopId,
+      client: {
+        async getJson(_endpoint, query) {
+          const n = Number(query?.page_number);
+          requested.push(n);
+          // Page 1 is quick; page 2 only completes after the deadline; pages 3-5 must never be asked for.
+          return n === 1 ? page([secondaryRow("s1", "SKU-1", 1)], 1, 5, 5) : delay(120, page([secondaryRow(`s${n}`, "SKU-1", 1)], n, 5, 5));
+        },
+      },
+    },
+    { primaryShopId, deadlineMs: 60, warn: () => undefined },
+  );
+  await delay(400, undefined);
+
+  assert.deepEqual(requested, [1, 2], "nothing past the page that was in flight at the deadline");
+  assert.equal(result!.sellableStock, 1, "and the buyer got the primary stock");
+});
