@@ -1,10 +1,14 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
-import {
-  fetchAllPancakeCatalogVariations,
-  fetchPancakeWarehouses,
-} from "../integrations/pancake/catalog-pages.ts";
+import { fetchAllPancakeCatalogVariations } from "../integrations/pancake/catalog-pages.ts";
 import type { PancakeCatalogWarehouseStock } from "../integrations/pancake/catalog-contract.ts";
+import { normalizeSku } from "../integrations/pancake/sku.ts";
 import { writeObservedWarehouseStocks } from "./catalog-mirror-repository.ts";
+import {
+  SECONDARY_WAREHOUSE_KEY_PREFIX,
+  secondaryShopKeyPrefix,
+} from "./warehouse-stock-scope.ts";
+
+export { normalizeSku };
 
 export type SecondaryInventorySyncClient = {
   getJson(
@@ -16,17 +20,19 @@ export type SecondaryInventorySyncClient = {
 export type SecondaryInventorySyncResult = {
   secondaryShopId: number;
   totalSecondaryVariations: number;
+  /** Primary variants that received secondary stock. */
   matchedCount: number;
+  /** Secondary SKUs with no primary variant; ignored. */
   unmatchedCount: number;
+  /**
+   * SKUs shared by more than one present primary variant. Which of them the secondary stock belongs
+   * to is unknowable, and giving it to all of them would count the same units several times, so none
+   * of them receives any.
+   */
+  ambiguousCount: number;
   totalStockAggregated: number;
   warehouseCount: number;
 };
-
-export function normalizeSku(sku: string | null | undefined): string | null {
-  if (!sku) return null;
-  const trimmed = sku.trim().toUpperCase();
-  return trimmed.length > 0 ? trimmed : null;
-}
 
 const CHUNK_SIZE = 100;
 
@@ -36,115 +42,110 @@ export async function syncSecondaryShopInventory({
   secondaryClient,
   prisma,
   clock = () => new Date(),
+  warn = (message) => console.warn(message),
 }: {
   primaryShopId: number;
   secondaryShopId: number;
   secondaryClient: SecondaryInventorySyncClient;
   prisma: PrismaClient;
   clock?: () => Date;
+  /** Fixed text plus counts only: never a Pancake payload, SKU list or credential. */
+  warn?: (message: string) => void;
 }): Promise<SecondaryInventorySyncResult> {
+  // Sampled before the read starts, like the primary sync: a stock figure is only as new as the
+  // instant its read began.
   const observedAt = clock();
 
-  // 1. Fetch warehouses of the secondary shop to establish scope
-  const secondaryWarehouses = await fetchPancakeWarehouses({
-    client: secondaryClient,
-    shopId: secondaryShopId,
-  });
-  const secondaryWarehouseIds = secondaryWarehouses.map((w) => w.id);
-  if (secondaryWarehouseIds.length === 0) {
-    return {
-      secondaryShopId,
-      totalSecondaryVariations: 0,
-      matchedCount: 0,
-      unmatchedCount: 0,
-      totalStockAggregated: 0,
-      warehouseCount: 0,
-    };
-  }
-
-  // 2. Fetch all variations from secondary shop
   const secondaryVariations = await fetchAllPancakeCatalogVariations({
     client: secondaryClient,
     shopId: secondaryShopId,
   });
 
-  // 3. Group secondary variations by normalized SKU
-  const secondaryStocksBySku = new Map<string, PancakeCatalogWarehouseStock[]>();
+  // Secondary stock per normalized SKU and warehouse. A SKU repeated inside the secondary shop is
+  // summed per warehouse: they are the same article held in the same place.
+  const secondaryBySku = new Map<string, Map<string, number>>();
   for (const variation of secondaryVariations) {
     const sku = normalizeSku(variation.displayId);
     if (!sku) continue;
-
-    const existing = secondaryStocksBySku.get(sku);
-    if (!existing) {
-      secondaryStocksBySku.set(sku, [...variation.warehouseStocks]);
-    } else {
-      const byWh = new Map<string, number>();
-      for (const s of existing) {
-        byWh.set(s.warehouseId, (byWh.get(s.warehouseId) ?? 0) + s.remainQuantity);
-      }
-      for (const s of variation.warehouseStocks) {
-        byWh.set(s.warehouseId, (byWh.get(s.warehouseId) ?? 0) + s.remainQuantity);
-      }
-      secondaryStocksBySku.set(
-        sku,
-        [...byWh.entries()].map(([warehouseId, remainQuantity]) => ({
-          warehouseId,
-          remainQuantity,
-        })),
-      );
+    let byWarehouse = secondaryBySku.get(sku);
+    if (!byWarehouse) {
+      byWarehouse = new Map();
+      secondaryBySku.set(sku, byWarehouse);
+    }
+    for (const { warehouseId, remainQuantity } of variation.warehouseStocks) {
+      byWarehouse.set(warehouseId, (byWarehouse.get(warehouseId) ?? 0) + remainQuantity);
     }
   }
 
-  // 4. Query primary shop variants from the database
   const primaryVariants = await prisma.variantMirror.findMany({
     where: {
       product: { pancakeShopId: primaryShopId },
       pancakeDisplayId: { not: null },
     },
-    select: {
-      id: true,
-      pancakeDisplayId: true,
-    },
+    select: { id: true, pancakeDisplayId: true, isPresent: true },
   });
+
+  // Only variants still on sale compete for a SKU; a retired variant keeping the code of its
+  // replacement must not make the replacement ambiguous.
+  const presentVariantsBySku = new Map<string, number>();
+  for (const variant of primaryVariants) {
+    const sku = normalizeSku(variant.pancakeDisplayId);
+    if (!sku || !variant.isPresent) continue;
+    presentVariantsBySku.set(sku, (presentVariantsBySku.get(sku) ?? 0) + 1);
+  }
 
   let matchedCount = 0;
   let totalStockAggregated = 0;
-  const updates: Array<{ variantId: string; stocks: PancakeCatalogWarehouseStock[] }> = [];
+  const seenWarehouseIds = new Set<string>();
   const primarySkus = new Set<string>();
+  const ambiguousSkus = new Set<string>();
+  const updates: Array<{ variantId: string; stocks: PancakeCatalogWarehouseStock[] }> = [];
 
   for (const variant of primaryVariants) {
     const sku = normalizeSku(variant.pancakeDisplayId);
     if (!sku) continue;
     primarySkus.add(sku);
 
-    const secondaryStocks = secondaryStocksBySku.get(sku);
-    if (secondaryStocks && secondaryStocks.length > 0) {
-      matchedCount += 1;
-      const stockSum = secondaryStocks.reduce((sum, s) => sum + s.remainQuantity, 0);
-      totalStockAggregated += stockSum;
-      updates.push({ variantId: variant.id, stocks: secondaryStocks });
-    } else {
-      // If variant has no stock in secondary shop, supply empty array so any
-      // previous secondary warehouse rows in this scope are cleared.
+    const byWarehouse = secondaryBySku.get(sku);
+    const ambiguous = (presentVariantsBySku.get(sku) ?? 0) > 1;
+    if (ambiguous) ambiguousSkus.add(sku);
+
+    // Empty stocks clear whatever this shop contributed before: an unmatched, retired or ambiguous
+    // variant must not keep a stale figure.
+    if (!byWarehouse || !variant.isPresent || ambiguous) {
       updates.push({ variantId: variant.id, stocks: [] });
+      continue;
     }
+    const stocks = [...byWarehouse].map(([warehouseId, remainQuantity]) => ({
+      warehouseId,
+      remainQuantity,
+    }));
+    matchedCount += 1;
+    for (const { warehouseId, remainQuantity } of stocks) {
+      totalStockAggregated += remainQuantity;
+      seenWarehouseIds.add(warehouseId);
+    }
+    updates.push({ variantId: variant.id, stocks });
   }
 
   let unmatchedCount = 0;
-  for (const sku of secondaryStocksBySku.keys()) {
-    if (!primarySkus.has(sku)) {
-      unmatchedCount += 1;
-    }
+  for (const sku of secondaryBySku.keys()) {
+    if (!primarySkus.has(sku)) unmatchedCount += 1;
   }
 
-  // 5. Apply warehouse stocks in transactions chunked by CHUNK_SIZE
+  if (ambiguousSkus.size > 0) {
+    warn(
+      `Secondary Pancake inventory sync skipped ${ambiguousSkus.size} SKU(s) shared by several primary variants`,
+    );
+  }
+
   for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
     const chunk = updates.slice(i, i + CHUNK_SIZE);
     await prisma.$transaction(async (tx) => {
       for (const { variantId, stocks } of chunk) {
         await writeObservedWarehouseStocks(tx, variantId, stocks, observedAt, {
-          scopeWarehouseIds: secondaryWarehouseIds,
-          stampVariantWatermark: false,
+          kind: "secondary",
+          shopId: secondaryShopId,
         });
       }
     });
@@ -155,7 +156,39 @@ export async function syncSecondaryShopInventory({
     totalSecondaryVariations: secondaryVariations.length,
     matchedCount,
     unmatchedCount,
+    ambiguousCount: ambiguousSkus.size,
     totalStockAggregated,
-    warehouseCount: secondaryWarehouseIds.length,
+    warehouseCount: seenWarehouseIds.size,
   };
+}
+
+/**
+ * Removes secondary-shop stock that must no longer be trusted, and returns how many rows went.
+ * Removing is the safe direction: the storefront then sells on primary stock alone and the checkout
+ * live read still adds whatever the secondary shop really has.
+ *
+ * - `exceptShopId`: keep that shop's rows, remove every other secondary shop's (the configured
+ *   shop id changed).
+ * - `shopId` + `syncedBefore`: remove that shop's rows last written before the instant (its sync
+ *   has been failing).
+ * - neither: remove every secondary row (the feature was switched off).
+ */
+export async function purgeSecondaryWarehouseStock(
+  prisma: Pick<PrismaClient, "warehouseStock">,
+  options: { exceptShopId?: number; shopId?: number; syncedBefore?: Date } = {},
+): Promise<number> {
+  const { exceptShopId, shopId, syncedBefore } = options;
+  const result = await prisma.warehouseStock.deleteMany({
+    where: {
+      pancakeWarehouseId: {
+        startsWith:
+          shopId === undefined ? SECONDARY_WAREHOUSE_KEY_PREFIX : secondaryShopKeyPrefix(shopId),
+      },
+      ...(exceptShopId === undefined
+        ? {}
+        : { NOT: { pancakeWarehouseId: { startsWith: secondaryShopKeyPrefix(exceptShopId) } } }),
+      ...(syncedBefore === undefined ? {} : { syncedAt: { lt: syncedBefore } }),
+    },
+  });
+  return result.count;
 }

@@ -1,7 +1,5 @@
-import {
-  parsePancakeCatalogVariations,
-  type PancakeCatalogVariation,
-} from "./catalog-contract.ts";
+import type { PancakeCatalogVariation } from "./catalog-contract.ts";
+import { addSecondaryShopStock, type SecondaryShopGatewayConfig } from "./secondary-stock-lookup.ts";
 import { fetchAllPancakeCatalogVariations } from "./catalog-pages.ts";
 import {
   fetchPancakeVariationsByIds,
@@ -57,10 +55,7 @@ function requireOrderId(value: string): string {
   return value;
 }
 
-export type SecondaryShopGatewayConfig = {
-  client: PancakeOrderGatewayClient;
-  shopId: number;
-};
+export type { SecondaryShopGatewayConfig };
 
 export function createPancakeOrderGateway(
   client: PancakeOrderGatewayClient,
@@ -114,46 +109,7 @@ export function createPancakeOrderGateway(
         return primaryVariations;
       }
 
-      // Query secondary shop concurrently for variations that have displayId
-      const variationsWithSecondaryStock = await Promise.all(
-        primaryVariations.map(async (variation) => {
-          if (!variation.displayId) return variation;
-          const normalizedSku = variation.displayId.trim().toUpperCase();
-          try {
-            const payload = await secondaryShop.client.getJson(
-              `/shops/${secondaryShop.shopId}/products/variations`,
-              {
-                page_number: 1,
-                page_size: 30,
-                search: variation.displayId.trim(),
-              },
-            );
-            const parsed = parsePancakeCatalogVariations(payload);
-            const match = parsed.variations.find(
-              (v) => v.displayId?.trim().toUpperCase() === normalizedSku,
-            );
-            if (!match) return variation;
-
-            const primarySellableStock = variation.sellableStock;
-            const secondarySellableStock = match.sellableStock;
-            const combinedWarehouses = [
-              ...variation.warehouseStocks,
-              ...match.warehouseStocks,
-            ];
-            return {
-              ...variation,
-              warehouseStocks: combinedWarehouses,
-              sellableStock: primarySellableStock + secondarySellableStock,
-              primarySellableStock,
-              secondarySellableStock,
-            };
-          } catch {
-            return variation;
-          }
-        }),
-      );
-
-      return variationsWithSecondaryStock;
+      return addSecondaryShopStock(primaryVariations, secondaryShop);
     },
 
     /**

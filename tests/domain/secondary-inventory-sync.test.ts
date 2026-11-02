@@ -3,9 +3,14 @@ import test from "node:test";
 
 import {
   normalizeSku,
+  purgeSecondaryWarehouseStock,
   syncSecondaryShopInventory,
 } from "../../src/commerce/secondary-inventory-sync.ts";
 import { writeObservedWarehouseStocks } from "../../src/commerce/catalog-mirror-repository.ts";
+import {
+  secondaryWarehouseKey,
+  warehouseStockKey,
+} from "../../src/commerce/warehouse-stock-scope.ts";
 import type { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 test("normalizeSku trims whitespace and converts to uppercase", () => {
@@ -15,206 +20,308 @@ test("normalizeSku trims whitespace and converts to uppercase", () => {
   assert.equal(normalizeSku("   "), null);
   assert.equal(normalizeSku(null), null);
   assert.equal(normalizeSku(undefined), null);
+  // Inner characters are significant: different codes must never be folded together.
+  assert.notEqual(normalizeSku("AO-XL"), normalizeSku("AO XL"));
 });
 
-test("writeObservedWarehouseStocks scopes warehouse deletion when scopeWarehouseIds is provided", async () => {
-  const operations: Array<{ op: string; args: unknown }> = [];
+test("warehouse keys namespace secondary warehouses and refuse a colliding primary id", () => {
+  assert.equal(secondaryWarehouseKey(407962350, "wh-1"), "secondary:407962350:wh-1");
+  assert.equal(warehouseStockKey({ kind: "primary" }, "wh-1"), "wh-1");
+  assert.equal(
+    warehouseStockKey({ kind: "secondary", shopId: 407962350 }, "wh-1"),
+    "secondary:407962350:wh-1",
+  );
+  assert.throws(() => warehouseStockKey({ kind: "primary" }, "secondary:1:wh-1"));
+  assert.throws(() => secondaryWarehouseKey(0, "wh-1"));
+});
 
+function recordingTx(options: { newerCount?: number } = {}) {
+  type RecordedArgs = {
+    create?: { pancakeWarehouseId?: string };
+  } & Record<string, unknown>;
+  const operations: Array<{ op: string; args: RecordedArgs }> = [];
   const tx = {
     warehouseStock: {
-      async count(args: unknown) {
+      async count(args: RecordedArgs) {
         operations.push({ op: "count", args });
-        return 0;
+        return options.newerCount ?? 0;
       },
-      async deleteMany(args: unknown) {
+      async deleteMany(args: RecordedArgs) {
         operations.push({ op: "deleteMany", args });
         return { count: 1 };
       },
-      async upsert(args: unknown) {
+      async upsert(args: RecordedArgs) {
         operations.push({ op: "upsert", args });
         return {};
       },
     },
     variantMirror: {
-      async updateMany(args: unknown) {
+      async updateMany(args: RecordedArgs) {
         operations.push({ op: "updateMany", args });
         return { count: 1 };
       },
     },
   } as unknown as Parameters<typeof writeObservedWarehouseStocks>[0];
+  return { tx, operations };
+}
 
-  const now = new Date("2026-11-02T12:00:00Z");
-  const secondaryWarehouses = ["wh_sec_1", "wh_sec_2"];
+const now = new Date("2026-11-02T12:00:00Z");
 
-  // Variant has stock in wh_sec_1, none in wh_sec_2
+test("a secondary write is confined to its own namespace and never touches the primary watermark", async () => {
+  const { tx, operations } = recordingTx();
   const written = await writeObservedWarehouseStocks(
     tx,
     "variant-001",
     [{ warehouseId: "wh_sec_1", remainQuantity: 5 }],
     now,
-    { scopeWarehouseIds: secondaryWarehouses, stampVariantWatermark: false },
+    { kind: "secondary", shopId: 407962350 },
   );
-
   assert.equal(written, true);
 
-  // Verify count only scoped to secondaryWarehouses
-  const countOp = operations.find((o) => o.op === "count");
-  assert.deepEqual(countOp?.args, {
+  assert.deepEqual(operations.find((o) => o.op === "count")?.args, {
     where: {
       variantId: "variant-001",
       syncedAt: { gt: now },
-      pancakeWarehouseId: { in: secondaryWarehouses },
+      pancakeWarehouseId: { startsWith: "secondary:407962350:" },
     },
   });
-
-  // Verify deleteMany only deleted warehouses in secondaryWarehouses NOT in current (i.e. wh_sec_2)
-  const deleteOp = operations.find((o) => o.op === "deleteMany");
-  assert.deepEqual(deleteOp?.args, {
+  assert.deepEqual(operations.find((o) => o.op === "deleteMany")?.args, {
     where: {
       variantId: "variant-001",
       pancakeWarehouseId: {
-        in: secondaryWarehouses,
-        notIn: ["wh_sec_1"],
+        startsWith: "secondary:407962350:",
+        notIn: ["secondary:407962350:wh_sec_1"],
       },
     },
   });
-
-  // Verify upsert wrote wh_sec_1
-  const upsertOp = operations.find((o) => o.op === "upsert");
-  assert.deepEqual(upsertOp?.args, {
-    where: {
-      variantId_pancakeWarehouseId: { variantId: "variant-001", pancakeWarehouseId: "wh_sec_1" },
-    },
-    create: {
-      variantId: "variant-001",
-      pancakeWarehouseId: "wh_sec_1",
-      quantity: 5,
-      syncedAt: now,
-    },
-    update: {
-      quantity: 5,
-      syncedAt: now,
-    },
-  });
-
-  // Verify stampVariantWatermark was false, so variantMirror was NOT updated
-  const updateManyOp = operations.find((o) => o.op === "updateMany");
-  assert.equal(updateManyOp, undefined);
+  assert.equal(operations.find((o) => o.op === "upsert")?.args.create?.pancakeWarehouseId, "secondary:407962350:wh_sec_1");
+  assert.equal(operations.find((o) => o.op === "updateMany"), undefined);
 });
 
-test("syncSecondaryShopInventory matches SKUs, aggregates stock, and ignores unmatched", async () => {
-  const secondaryWarehouses = [
-    { id: "wh_sec_1", name: "Kho Taobao", allow_create_order: true },
-    { id: "wh_sec_2", name: "Kho Cong So", allow_create_order: true },
-  ];
+test("a secondary write with no stock clears only its own namespace", async () => {
+  const { tx, operations } = recordingTx();
+  await writeObservedWarehouseStocks(tx, "variant-001", [], now, { kind: "secondary", shopId: 407962350 });
+  assert.deepEqual(operations.find((o) => o.op === "deleteMany")?.args, {
+    where: { variantId: "variant-001", pancakeWarehouseId: { startsWith: "secondary:407962350:" } },
+  });
+});
 
-  const secondaryVariationsData = [
-    {
-      id: "sec_var_1",
-      product_id: "sec_prod_1",
-      display_id: "SVD468-AO-XL",
-      barcode: "BC-1",
-      fields: [],
-      images: [],
-      is_hidden: false,
-      is_locked: false,
-      retail_price: 200_000,
-      retail_price_after_discount: 200_000,
-      product: { id: "sec_prod_1", name: "ÁO SVD468" },
-      variations_warehouses: [
-        { warehouse_id: "wh_sec_1", remain_quantity: 8 },
-        { warehouse_id: "wh_sec_2", remain_quantity: 0 },
-      ],
-    },
-    {
-      id: "sec_var_2",
-      product_id: "sec_prod_2",
-      display_id: "UNMATCHED-SKU-999",
-      barcode: "BC-2",
-      fields: [],
-      images: [],
-      is_hidden: false,
-      is_locked: false,
-      retail_price: 300_000,
-      retail_price_after_discount: 300_000,
-      product: { id: "sec_prod_2", name: "SẢN PHẨM RIÊNG" },
-      variations_warehouses: [
-        { warehouse_id: "wh_sec_1", remain_quantity: 10 },
-      ],
-    },
-  ];
+test("a primary write stamps the watermark and leaves every secondary row alone", async () => {
+  const { tx, operations } = recordingTx();
+  await writeObservedWarehouseStocks(tx, "variant-001", [{ warehouseId: "wh_pri_1", remainQuantity: 2 }], now);
 
-  const mockClient = {
-    async getJson(endpoint: string, query?: Readonly<Record<string, unknown>>) {
-      if (endpoint === "/shops/407962350/warehouses") {
-        return { success: true, data: secondaryWarehouses };
-      }
-      if (endpoint === "/shops/407962350/products/variations") {
-        return {
-          success: true,
-          page_number: 1,
-          page_size: 100,
-          total_entries: secondaryVariationsData.length,
-          total_pages: 1,
-          data: secondaryVariationsData,
-        };
-      }
-      throw new Error(`Unexpected endpoint: ${endpoint}`);
+  const notSecondary = { NOT: { pancakeWarehouseId: { startsWith: "secondary:" } } };
+  assert.deepEqual(operations.find((o) => o.op === "count")?.args, {
+    where: { variantId: "variant-001", syncedAt: { gt: now }, ...notSecondary },
+  });
+  assert.deepEqual(operations.find((o) => o.op === "deleteMany")?.args, {
+    where: {
+      variantId: "variant-001",
+      ...notSecondary,
+      pancakeWarehouseId: { notIn: ["wh_pri_1"] },
+    },
+  });
+  assert.ok(operations.find((o) => o.op === "updateMany"), "primary writes stamp stockObservedAt");
+});
+
+test("a primary write with no stock still never matches a secondary row", async () => {
+  const { tx, operations } = recordingTx();
+  await writeObservedWarehouseStocks(tx, "variant-001", [], now);
+  assert.deepEqual(operations.find((o) => o.op === "deleteMany")?.args, {
+    where: {
+      variantId: "variant-001",
+      NOT: { pancakeWarehouseId: { startsWith: "secondary:" } },
+    },
+  });
+});
+
+function variationRow(id: string, displayId: string | null, stocks: Array<[string, number]>) {
+  return {
+    id,
+    product_id: `${id}-product`,
+    display_id: displayId,
+    barcode: `BC-${id}`,
+    fields: [],
+    images: [],
+    is_hidden: false,
+    is_locked: false,
+    retail_price: 200_000,
+    retail_price_after_discount: 200_000,
+    product: { id: `${id}-product`, name: id },
+    variations_warehouses: stocks.map(([warehouse_id, remain_quantity]) => ({ warehouse_id, remain_quantity })),
+  };
+}
+
+function syncHarness({
+  secondary,
+  primary,
+}: {
+  secondary: ReturnType<typeof variationRow>[];
+  primary: Array<{ id: string; pancakeDisplayId: string | null; isPresent: boolean }>;
+}) {
+  const client = {
+    async getJson(endpoint: string) {
+      if (endpoint !== "/shops/407962350/products/variations") throw new Error(`Unexpected endpoint: ${endpoint}`);
+      return {
+        success: true,
+        page_number: 1,
+        page_size: 100,
+        total_entries: secondary.length,
+        total_pages: 1,
+        data: secondary,
+      };
     },
   };
-
-  const writtenStocks: Array<{ variantId: string; stocks: unknown[]; scopeWarehouseIds?: unknown }> = [];
-
-  const mockTx = {
+  const writes: Array<{ variantId: string; keys: string[]; quantities: number[] }> = [];
+  const tx = {
     warehouseStock: {
       async count() {
         return 0;
       },
-      async deleteMany() {
+      async deleteMany(args: { where: { variantId: string } }) {
+        writes.push({ variantId: args.where.variantId, keys: [], quantities: [] });
         return { count: 0 };
       },
-      async upsert({ where, create }: { where: unknown; create: unknown }) {
+      async upsert({ create }: { create: { variantId: string; pancakeWarehouseId: string; quantity: number } }) {
+        const current = writes.findLast((w) => w.variantId === create.variantId)!;
+        current.keys.push(create.pancakeWarehouseId);
+        current.quantities.push(create.quantity);
         return {};
       },
     },
     variantMirror: {
       async updateMany() {
-        return { count: 1 };
+        throw new Error("a secondary sync must not stamp the primary watermark");
       },
     },
   };
-
-  const mockPrisma = {
+  const prisma = {
     variantMirror: {
       async findMany({ where }: { where: { product: { pancakeShopId: number } } }) {
         assert.equal(where.product.pancakeShopId, 4_741_464);
-        return [
-          { id: "pri_var_1", pancakeDisplayId: "SVD468-AO-XL" },
-          { id: "pri_var_2", pancakeDisplayId: "OTHER-SKU-NO-STOCK" },
-        ];
+        return primary;
       },
     },
-    async $transaction<T>(fn: (tx: typeof mockTx) => Promise<T>): Promise<T> {
-      return fn(mockTx);
+    async $transaction<T>(fn: (t: typeof tx) => Promise<T>): Promise<T> {
+      return fn(tx);
     },
   } as unknown as PrismaClient;
+  const warnings: string[] = [];
+  return {
+    writes,
+    warnings,
+    run: () =>
+      syncSecondaryShopInventory({
+        primaryShopId: 4_741_464,
+        secondaryShopId: 407_962_350,
+        secondaryClient: client,
+        prisma,
+        clock: () => now,
+        warn: (message) => warnings.push(message),
+      }),
+  };
+}
 
-  const fixedClock = () => new Date("2026-11-02T12:00:00Z");
-
-  const result = await syncSecondaryShopInventory({
-    primaryShopId: 4_741_464,
-    secondaryShopId: 407_962_350,
-    secondaryClient: mockClient,
-    prisma: mockPrisma,
-    clock: fixedClock,
+test("syncSecondaryShopInventory matches SKUs, aggregates stock, and ignores unmatched", async () => {
+  const harness = syncHarness({
+    secondary: [
+      variationRow("sec_var_1", "svd468-ao-xl ", [["wh_sec_1", 8], ["wh_sec_2", 0]]),
+      variationRow("sec_var_2", "UNMATCHED-SKU-999", [["wh_sec_1", 10]]),
+      variationRow("sec_var_3", null, [["wh_sec_1", 99]]),
+    ],
+    primary: [
+      { id: "pri_var_1", pancakeDisplayId: "SVD468-AO-XL", isPresent: true },
+      { id: "pri_var_2", pancakeDisplayId: "OTHER-SKU-NO-STOCK", isPresent: true },
+    ],
   });
+
+  const result = await harness.run();
 
   assert.deepEqual(result, {
     secondaryShopId: 407_962_350,
-    totalSecondaryVariations: 2,
+    totalSecondaryVariations: 3,
     matchedCount: 1,
     unmatchedCount: 1,
+    ambiguousCount: 0,
     totalStockAggregated: 8,
     warehouseCount: 2,
   });
+  assert.deepEqual(harness.writes, [
+    {
+      variantId: "pri_var_1",
+      keys: ["secondary:407962350:wh_sec_1", "secondary:407962350:wh_sec_2"],
+      quantities: [8, 0],
+    },
+    { variantId: "pri_var_2", keys: [], quantities: [] },
+  ]);
+  assert.deepEqual(harness.warnings, []);
+});
+
+test("a SKU shared by several present primary variants gets no secondary stock, so it is never counted twice", async () => {
+  const harness = syncHarness({
+    secondary: [variationRow("sec_var_1", "DUP-SKU", [["wh_sec_1", 5]])],
+    primary: [
+      { id: "pri_a", pancakeDisplayId: "DUP-SKU", isPresent: true },
+      { id: "pri_b", pancakeDisplayId: " dup-sku", isPresent: true },
+    ],
+  });
+
+  const result = await harness.run();
+
+  assert.equal(result.matchedCount, 0);
+  assert.equal(result.ambiguousCount, 1);
+  assert.equal(result.totalStockAggregated, 0);
+  // Both are cleared, so stock a previous run may have given them does not linger.
+  assert.deepEqual(harness.writes, [
+    { variantId: "pri_a", keys: [], quantities: [] },
+    { variantId: "pri_b", keys: [], quantities: [] },
+  ]);
+  assert.equal(harness.warnings.length, 1);
+  assert.ok(!harness.warnings[0]!.includes("DUP-SKU"), "the warning must not carry the SKU");
+});
+
+test("a retired variant sharing a SKU does not make the live one ambiguous, and gets no stock itself", async () => {
+  const harness = syncHarness({
+    secondary: [variationRow("sec_var_1", "SKU-1", [["wh_sec_1", 5]])],
+    primary: [
+      { id: "pri_live", pancakeDisplayId: "SKU-1", isPresent: true },
+      { id: "pri_retired", pancakeDisplayId: "SKU-1", isPresent: false },
+    ],
+  });
+
+  const result = await harness.run();
+
+  assert.equal(result.ambiguousCount, 0);
+  assert.equal(result.matchedCount, 1);
+  assert.deepEqual(harness.writes, [
+    { variantId: "pri_live", keys: ["secondary:407962350:wh_sec_1"], quantities: [5] },
+    { variantId: "pri_retired", keys: [], quantities: [] },
+  ]);
+});
+
+test("purgeSecondaryWarehouseStock selects only the rows it is asked to drop", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    warehouseStock: {
+      async deleteMany(args: unknown) {
+        calls.push(args);
+        return { count: 3 };
+      },
+    },
+  } as unknown as PrismaClient;
+
+  assert.equal(await purgeSecondaryWarehouseStock(prisma), 3);
+  assert.equal(await purgeSecondaryWarehouseStock(prisma, { exceptShopId: 2 }), 3);
+  assert.equal(await purgeSecondaryWarehouseStock(prisma, { shopId: 2, syncedBefore: now }), 3);
+
+  assert.deepEqual(calls, [
+    { where: { pancakeWarehouseId: { startsWith: "secondary:" } } },
+    {
+      where: {
+        pancakeWarehouseId: { startsWith: "secondary:" },
+        NOT: { pancakeWarehouseId: { startsWith: "secondary:2:" } },
+      },
+    },
+    { where: { pancakeWarehouseId: { startsWith: "secondary:2:" }, syncedAt: { lt: now } } },
+  ]);
 });

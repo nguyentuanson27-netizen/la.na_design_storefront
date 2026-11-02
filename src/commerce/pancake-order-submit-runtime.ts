@@ -15,11 +15,18 @@ function writePancakeOrderSubmissionEvent(event: PancakeOrderSubmissionEvent): v
   process.stdout.write(`${JSON.stringify(event)}\n`);
 }
 
+/**
+ * The secondary shop only adds stock to a checkout that is waiting on the buyer, so it gets a far
+ * shorter leash than the primary shop's 10 s: past this, the lookup counts as failed and the order
+ * is judged on primary stock alone.
+ */
+const SECONDARY_SHOP_TIMEOUT_MS = 3_000;
+
 export function createPancakeOrderSubmissionRuntime(config: PancakeConfig) {
   const client = new PancakeClient({ apiKey: config.apiKey });
   const secondaryConfig = config.secondaryShop
     ? {
-        client: new PancakeClient({ apiKey: config.secondaryShop.apiKey }),
+        client: new PancakeClient({ apiKey: config.secondaryShop.apiKey, timeoutMs: SECONDARY_SHOP_TIMEOUT_MS }),
         shopId: config.secondaryShop.shopId,
       }
     : undefined;

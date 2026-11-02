@@ -24,6 +24,13 @@ import {
   PRODUCT_SLUG_LOCK_NAMESPACE,
 } from "./product-slug.ts";
 import { canonicalizeClothingSize } from "./clothing-size.ts";
+import {
+  PRIMARY_WAREHOUSE_SCOPE,
+  secondaryShopKeyPrefix,
+  warehouseStockKey,
+  warehouseStockScopeFilter,
+  type WarehouseStockScope,
+} from "./warehouse-stock-scope.ts";
 
 const MAX_READ_PRODUCTS = 100;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
@@ -287,11 +294,6 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
 
 export type ObservedWarehouseStock = Readonly<{ warehouseId: string; remainQuantity: number }>;
 
-export type WriteObservedWarehouseStocksOptions = Readonly<{
-  scopeWarehouseIds?: readonly string[];
-  stampVariantWatermark?: boolean;
-}>;
-
 /**
  * Writes one variant's complete warehouse set from a stock read that began at `observedAt` — the
  * only way `WarehouseStock` is written, by the full reconciliation and the targeted batch alike.
@@ -309,23 +311,23 @@ export async function writeObservedWarehouseStocks(
   variantId: string,
   stocks: readonly ObservedWarehouseStock[],
   observedAt: Date,
-  options?: WriteObservedWarehouseStocksOptions,
+  scope: WarehouseStockScope = PRIMARY_WAREHOUSE_SCOPE,
 ): Promise<boolean> {
-  const scopeIds = options?.scopeWarehouseIds;
-  const hasScope = scopeIds !== undefined && scopeIds.length > 0;
+  // The primary shop owns the variant-level watermark; a secondary contributor only owns its own
+  // namespaced rows, so it neither reads nor moves the primary read's marker.
+  const rowScope = warehouseStockScopeFilter(scope);
+  const keyed = stocks.map(({ warehouseId, remainQuantity }) => ({
+    key: warehouseStockKey(scope, warehouseId),
+    remainQuantity,
+  }));
 
   // Rows a release without the watermark wrote (after a rollback) still count as observations.
   const newer = await tx.warehouseStock.count({
-    where: {
-      variantId,
-      syncedAt: { gt: observedAt },
-      ...(hasScope ? { pancakeWarehouseId: { in: [...scopeIds] } } : {}),
-    },
+    where: { variantId, syncedAt: { gt: observedAt }, ...rowScope },
   });
   if (newer > 0) return false;
 
-  const shouldStamp = options?.stampVariantWatermark ?? !hasScope;
-  if (shouldStamp) {
+  if (scope.kind === "primary") {
     // The watermark survives an empty warehouse set, which leaves no row to carry the read's start.
     const stamped = await tx.variantMirror.updateMany({
       where: {
@@ -337,34 +339,32 @@ export async function writeObservedWarehouseStocks(
     if (stamped.count === 0) return false;
   }
 
-  const currentWarehouseIds = stocks.map(({ warehouseId }) => warehouseId);
-  if (hasScope) {
-    await tx.warehouseStock.deleteMany({
-      where: {
-        variantId,
-        pancakeWarehouseId: {
-          in: [...scopeIds],
-          ...(currentWarehouseIds.length > 0 ? { notIn: currentWarehouseIds } : {}),
-        },
-      },
-    });
-  } else {
-    await tx.warehouseStock.deleteMany({
-      where: {
-        variantId,
-        ...(currentWarehouseIds.length > 0 ? { pancakeWarehouseId: { notIn: currentWarehouseIds } } : {}),
-      },
-    });
-  }
+  const currentKeys = keyed.map(({ key }) => key);
+  await tx.warehouseStock.deleteMany({
+    where:
+      scope.kind === "secondary"
+        ? {
+            variantId,
+            pancakeWarehouseId: {
+              startsWith: secondaryShopKeyPrefix(scope.shopId),
+              ...(currentKeys.length > 0 ? { notIn: currentKeys } : {}),
+            },
+          }
+        : {
+            variantId,
+            ...rowScope,
+            ...(currentKeys.length > 0 ? { pancakeWarehouseId: { notIn: currentKeys } } : {}),
+          },
+  });
 
-  for (const stock of stocks) {
+  for (const stock of keyed) {
     await tx.warehouseStock.upsert({
       where: {
-        variantId_pancakeWarehouseId: { variantId, pancakeWarehouseId: stock.warehouseId },
+        variantId_pancakeWarehouseId: { variantId, pancakeWarehouseId: stock.key },
       },
       create: {
         variantId,
-        pancakeWarehouseId: stock.warehouseId,
+        pancakeWarehouseId: stock.key,
         quantity: stock.remainQuantity,
         syncedAt: observedAt,
       },
@@ -653,9 +653,6 @@ export function createCatalogMirrorRepository(
         }
 
         const internalVariantIds = new Map<string, string>();
-        const snapshotWarehouseIds = [
-          ...new Set(variations.flatMap((v) => v.warehouseStocks.map((s) => s.warehouseId))),
-        ];
         // Variants whose stock a later targeted read already wrote; this snapshot's older numbers
         // for them are not observations of the current state (see `writeObservedWarehouseStocks`).
         const newerStockVariationIds = new Set<string>();
@@ -709,9 +706,6 @@ export function createCatalogMirrorRepository(
             mirrored.id,
             variation.warehouseStocks,
             safeSyncedAt,
-            snapshotWarehouseIds.length > 0
-              ? { scopeWarehouseIds: snapshotWarehouseIds, stampVariantWatermark: true }
-              : undefined,
           );
           if (!written) newerStockVariationIds.add(variation.id);
         }
@@ -1010,9 +1004,6 @@ export function createCatalogMirrorRepository(
         }
 
         const written: { variantId: string; productId: string; stock: number }[] = [];
-        const observationWarehouseIds = [
-          ...new Set(observations.flatMap((o) => o.warehouseStocks.map((s) => s.warehouseId))),
-        ];
         let superseded = 0;
         for (const observation of observations) {
           const variant = variantByVariationId.get(observation.variationId);
@@ -1022,9 +1013,6 @@ export function createCatalogMirrorRepository(
             variant.id,
             observation.warehouseStocks,
             safeSyncedAt,
-            observationWarehouseIds.length > 0
-              ? { scopeWarehouseIds: observationWarehouseIds, stampVariantWatermark: true }
-              : undefined,
           );
           if (!wrote) {
             superseded += 1;

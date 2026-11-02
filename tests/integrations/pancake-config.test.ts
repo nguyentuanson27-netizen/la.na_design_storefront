@@ -89,9 +89,9 @@ test("reads optional secondary Pancake shop configuration and fails closed when 
   assert.deepEqual(
     readPancakeSecondaryShopConfig({
       PANCAKE_SECONDARY_SHOP_ID: " 407962350 ",
-      PANCAKE_SECONDARY_API_KEY: " 4d2efde3a9354cac8d7e64ae42f5b256 ",
+      PANCAKE_SECONDARY_API_KEY: " test-secondary-api-key ",
     }),
-    { shopId: 407962350, apiKey: "4d2efde3a9354cac8d7e64ae42f5b256" },
+    { shopId: 407962350, apiKey: "test-secondary-api-key" },
   );
 
   // Missing one part
