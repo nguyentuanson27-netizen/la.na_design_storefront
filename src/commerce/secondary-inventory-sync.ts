@@ -305,7 +305,7 @@ export async function purgeSecondaryWarehouseStock(
     exceptShopId,
     shopId,
     syncedBefore,
-    fence = false,
+    fence,
     observedAt = new Date(),
     hooks = DEFAULT_HOOKS,
   }: {
@@ -314,12 +314,16 @@ export async function purgeSecondaryWarehouseStock(
     shopId?: number;
     syncedBefore?: Date;
     /**
-     * For purges caused by a configuration change (feature off, shop replaced): also discard every
-     * secondary read that began before this instant (the shop's `secondaryFenceAt`, one row). Without
-     * it a sync that was already running under the old configuration would write its stock back
-     * right after the purge.
+     * For purges caused by a configuration change: also discard every secondary read that began
+     * before this instant (the shop's `secondaryFenceAt`, one row). Without it a sync that was
+     * already running under the old configuration would write its stock back right after the purge.
+     *
+     * - `"always"`: fence on every call. For the feature being switched off, where there is nothing
+     *   else to tell a transition from a steady state.
+     * - `"whenRemoving"`: fence only when there is stock to remove. For a replaced shop: a normal
+     *   cycle with the right shop configured finds nothing foreign and must leave the fence alone.
      */
-    fence?: boolean;
+    fence?: "always" | "whenRemoving";
     observedAt?: Date;
     hooks?: SecondaryInventorySyncHooks;
   },
@@ -339,7 +343,7 @@ export async function purgeSecondaryWarehouseStock(
     async (tx) => {
       await hooks.acquireLock(tx, primaryShopId);
       // Under the shop lock, before anything is removed, so no read can slip in between.
-      if (fence) await hooks.fenceReads(tx, primaryShopId, observedAt);
+      if (fence === "always") await hooks.fenceReads(tx, primaryShopId, observedAt);
       const affected = await tx.warehouseStock.findMany({
         where,
         select: { variantId: true },
@@ -349,6 +353,8 @@ export async function purgeSecondaryWarehouseStock(
       const variantIds = affected.map(({ variantId }) => variantId);
       if (variantIds.length === 0) return 0;
 
+      // Still under the shop lock, so the fence and the removal commit together.
+      if (fence === "whenRemoving") await hooks.fenceReads(tx, primaryShopId, observedAt);
       await hooks.lockVariants(tx, variantIds);
       const result = await tx.warehouseStock.deleteMany({ where: { ...where, variantId: { in: variantIds } } });
       await hooks.observeAvailability(tx, { shopId: primaryShopId, variantIds, observedAt });

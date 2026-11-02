@@ -61,7 +61,7 @@ async function refreshSecondaryInventory(
   try {
     if (!config.secondaryShop) {
       // Feature switched off: nothing will refresh these rows again, so they must not linger.
-      const removed = await purgeSecondaryWarehouseStock(prisma, { primaryShopId: config.shopId, fence: true });
+      const removed = await purgeSecondaryWarehouseStock(prisma, { primaryShopId: config.shopId, fence: "always" });
       if (removed > 0) console.warn(`Removed ${removed} secondary warehouse stock row(s): feature is disabled`);
       return;
     }
@@ -70,7 +70,7 @@ async function refreshSecondaryInventory(
     const removedOtherShops = await purgeSecondaryWarehouseStock(prisma, {
       primaryShopId: config.shopId,
       exceptShopId: shopId,
-      fence: true,
+      fence: "whenRemoving",
     });
     if (removedOtherShops > 0) {
       console.warn(`Removed ${removedOtherShops} warehouse stock row(s) of a previously configured secondary shop`);

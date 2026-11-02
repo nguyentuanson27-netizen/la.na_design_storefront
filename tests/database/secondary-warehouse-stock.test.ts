@@ -790,7 +790,7 @@ test("a secondary read that began before a configuration-change purge cannot wri
     await purgeSecondaryWarehouseStock(prisma, {
       primaryShopId,
       exceptShopId: secondaryShopId,
-      fence: true,
+      fence: "whenRemoving",
       observedAt: t(20),
     });
   });
@@ -823,7 +823,7 @@ test("disabling the feature fences the reads that were already running", async (
   const inFlight = racingPrisma(async () => {
     if (purged) return;
     purged = true;
-    assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: true, observedAt: t(20) }), 0);
+    assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: "always", observedAt: t(20) }), 0);
   });
   await syncSecondaryShopInventory({
     primaryShopId,
@@ -935,7 +935,7 @@ test("fencing takes no lock on any variant row: a purge does not wait for a rese
   try {
     // Nothing stored, so the purge removes nothing: only the fence is written, and it must not queue
     // behind the row lock (the former per-variant UPDATE did).
-    const purge = purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: true, observedAt: t(20) });
+    const purge = purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: "always", observedAt: t(20) });
     const outcome = await Promise.race([
       purge.then(() => "finished" as const),
       new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 1500)),
@@ -956,9 +956,43 @@ test("the fence never moves backwards", async () => {
     variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
     syncedAt: t(0),
   });
-  await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: true, observedAt: t(40) });
-  await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: true, observedAt: t(30) });
+  await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: "always", observedAt: t(40) });
+  await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: "always", observedAt: t(30) });
 
   const state = await prisma.catalogSyncState.findUniqueOrThrow({ where: { pancakeShopId: primaryShopId } });
   assert.deepEqual(state.secondaryFenceAt, t(40));
+});
+
+test("a normal cycle with the right shop configured leaves the fence alone; a real shop change moves it", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(0),
+  });
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(1));
+  const fenceAt = async () =>
+    (await prisma.catalogSyncState.findUniqueOrThrow({ where: { pancakeShopId: primaryShopId } })).secondaryFenceAt;
+
+  // What the runtime does on every cycle: drop other shops' rows, fencing only if there are any.
+  for (const minute of [10, 20, 30]) {
+    const removed = await purgeSecondaryWarehouseStock(prisma, {
+      primaryShopId,
+      exceptShopId: secondaryShopId,
+      fence: "whenRemoving",
+      observedAt: t(minute),
+    });
+    assert.equal(removed, 0);
+  }
+  assert.equal(await fenceAt(), null, "steady state never fences");
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 1]]);
+
+  // The configured shop is replaced: the old shop's rows go and the fence moves with them.
+  const removed = await purgeSecondaryWarehouseStock(prisma, {
+    primaryShopId,
+    exceptShopId: otherSecondaryShopId,
+    fence: "whenRemoving",
+    observedAt: t(40),
+  });
+  assert.equal(removed, 1);
+  assert.deepEqual(await fenceAt(), t(40));
 });

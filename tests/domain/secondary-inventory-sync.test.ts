@@ -463,11 +463,23 @@ test("purgeSecondaryWarehouseStock deletes under the shop lock, locks the rows, 
 
   // A configuration-change purge raises the read marker first, under the lock, before removing anything.
   steps.length = 0;
-  await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 4_741_464, fence: true, observedAt: now, hooks });
+  await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 4_741_464, fence: "always", observedAt: now, hooks });
   assert.deepEqual(steps, [
     "lock:4741464",
     `fence:4741464:${now.toISOString()}`,
     "find",
+    "lockRows:v1,v2",
+    "delete",
+    "observe",
+  ]);
+
+  // "whenRemoving" fences only once it has found stock to remove, still under the lock, before the delete.
+  steps.length = 0;
+  await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 4_741_464, exceptShopId: 2, fence: "whenRemoving", observedAt: now, hooks });
+  assert.deepEqual(steps, [
+    "lock:4741464",
+    "find",
+    `fence:4741464:${now.toISOString()}`,
     "lockRows:v1,v2",
     "delete",
     "observe",
