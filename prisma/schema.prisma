@@ -729,9 +729,9 @@ model CatalogSyncState {
   listPriceAuditSummary Json?
   pancakeShopId Int      @id
   syncedAt      DateTime
-  /// A secondary-shop stock read that began before this instant is discarded (see purge in
-  /// `secondary-inventory-sync.ts`): set by a configuration change, never moved backwards.
-  secondaryFenceAt DateTime?
+  /// The secondary shop the deployment is configured with (null: none), set under the shop's
+  /// catalog-sync lock. A secondary sync writes only while this is its own shop.
+  secondaryShopId Int?
   updatedAt     DateTime @updatedAt
 }
 

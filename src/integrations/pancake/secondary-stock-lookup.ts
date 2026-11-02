@@ -127,6 +127,18 @@ export async function addSecondaryShopStock(
     warn = (message) => console.warn(message),
   }: { primaryShopId: number; deadlineMs?: number; warn?: (message: string) => void },
 ): Promise<PancakeCatalogVariation[]> {
+  // One budget for everything below, the SKU safety check included: a guard that hangs must not hold
+  // the buyer any longer than a slow secondary shop would.
+  let expired = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<"expired">((resolve) => {
+    timer = setTimeout(() => resolve("expired"), deadlineMs);
+  });
+  const finish = () => {
+    expired = true;
+    if (timer !== undefined) clearTimeout(timer);
+  };
+
   const entries = variations.flatMap((variation) => {
     const sku = normalizeSku(variation.displayId);
     return sku === null ? [] : [{ variationId: variation.id, sku }];
@@ -143,18 +155,27 @@ export async function addSecondaryShopStock(
   for (const [sku, ids] of variationIdsBySku) if (ids.size > 1) unsafe.add(sku);
 
   if (secondary.findUnsafeSkus) {
-    try {
-      for (const sku of await secondary.findUnsafeSkus(primaryShopId, entries)) unsafe.add(sku);
-    } catch {
-      warn("Secondary Pancake stock skipped: the SKU uniqueness check failed");
+    // Not concluded in time (or failed) means nothing is known about which SKUs are safe: no lookup
+    // is started and every variation keeps its primary figure.
+    const guard = secondary
+      .findUnsafeSkus(primaryShopId, entries)
+      .then((skus) => ({ skus }), () => "failed" as const);
+    const verdict = await Promise.race([guard, deadline]);
+    if (verdict === "expired" || verdict === "failed") {
+      finish();
+      warn(
+        verdict === "expired"
+          ? `Secondary Pancake stock skipped: the SKU uniqueness check passed the ${deadlineMs} ms deadline`
+          : "Secondary Pancake stock skipped: the SKU uniqueness check failed",
+      );
       return [...variations];
     }
+    for (const sku of verdict.skus) unsafe.add(sku);
   }
 
   // Each answered lookup writes into `results`; a variation nobody answered for keeps its primary
   // figure. Once the deadline passes nothing more is started and nothing more is accepted.
   const results: PancakeCatalogVariation[] = [...variations];
-  let expired = false;
   let conclusive = 0;
   const work = mapWithConcurrency(
     variations,
@@ -188,13 +209,8 @@ export async function addSecondaryShopStock(
     () => expired,
   );
 
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, deadlineMs);
-  });
   await Promise.race([work, deadline]);
-  expired = true;
-  if (timer !== undefined) clearTimeout(timer);
+  finish();
 
   // Lookups that never started count as unanswered too, so the figure is every eligible variation
   // minus those that got a conclusive answer in time.

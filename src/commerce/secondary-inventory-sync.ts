@@ -31,12 +31,14 @@ export type SecondaryInventorySyncHooks = {
     variantIds: readonly string[],
   ): Promise<ReadonlyArray<{ id: string; pancakeDisplayId: string | null; isPresent: boolean }>>;
   /**
-   * The instant before which a secondary read must be discarded, or null. One row per shop, read
-   * (and written by `fenceReads`) under the shop's catalog-sync lock; it takes no variant row lock.
+   * The secondary shop the deployment is configured with, as stored under the shop's catalog-sync
+   * lock; `present: false` when the shop has no catalog state yet (nothing has been synced).
    */
-  readFence(tx: SyncTransaction, shopId: number): Promise<Date | null>;
-  /** Raises the shop's fence to `observedAt`; it only ever moves forward. */
-  fenceReads(tx: SyncTransaction, shopId: number, observedAt: Date): Promise<void>;
+  readActiveShop(
+    tx: SyncTransaction,
+    shopId: number,
+  ): Promise<Readonly<{ present: boolean; shopId: number | null }>>;
+  setActiveShop(tx: SyncTransaction, shopId: number, activeShopId: number | null): Promise<void>;
   /** Of the normalized SKUs, those more than one present primary variant carries (read under the lock). */
   findAmbiguousSkus(
     tx: SyncTransaction,
@@ -59,21 +61,18 @@ const DEFAULT_HOOKS: SecondaryInventorySyncHooks = {
       orderBy: { id: "asc" },
     }),
   findAmbiguousSkus: (tx, primaryShopId, skus) => findAmbiguousPrimarySkus(tx, primaryShopId, skus),
-  async readFence(tx, shopId) {
+  async readActiveShop(tx, shopId) {
     const row = await tx.catalogSyncState.findUnique({
       where: { pancakeShopId: shopId },
-      select: { secondaryFenceAt: true },
+      select: { secondaryShopId: true },
     });
-    return row?.secondaryFenceAt ?? null;
+    return { present: row !== null, shopId: row?.secondaryShopId ?? null };
   },
-  async fenceReads(tx, shopId, observedAt) {
-    // A bare UPDATE of the one column on the one row (no INSERT: before the first catalog sync there
-    // is nothing to write), so `updatedAt` is untouched and no variant row is locked.
-    await tx.$executeRaw(Prisma.sql`
-      UPDATE "CatalogSyncState"
-      SET "secondaryFenceAt" = GREATEST(COALESCE("secondaryFenceAt", ${observedAt}), ${observedAt})
-      WHERE "pancakeShopId" = ${shopId}
-    `);
+  async setActiveShop(tx, shopId, activeShopId) {
+    await tx.catalogSyncState.updateMany({
+      where: { pancakeShopId: shopId },
+      data: { secondaryShopId: activeShopId },
+    });
   },
   observeAvailability: observeStoredStockAvailability,
 };
@@ -98,8 +97,8 @@ export type SecondaryInventorySyncResult = {
    * of them receives any.
    */
   ambiguousCount: number;
-  /** True when a configuration change after the read began made the sync discard its figures. */
-  fenced: boolean;
+  /** True when the configured secondary shop is no longer this one: the sync wrote nothing. */
+  discarded: boolean;
   totalStockAggregated: number;
   warehouseCount: number;
 };
@@ -180,7 +179,7 @@ export async function syncSecondaryShopInventory({
   });
   const candidateIds = candidates.map(({ id }) => id);
 
-  let fenced = false;
+  let discarded = false;
   let matchedCount = 0;
   let totalStockAggregated = 0;
   const seenWarehouseIds = new Set<string>();
@@ -197,11 +196,12 @@ export async function syncSecondaryShopInventory({
         // The shop's catalog-sync lock serializes this with the primary sync and the admin policy
         // writes that decide a preorder variant's availability cycle.
         await hooks.acquireLock(tx, primaryShopId);
-        // A configuration change (feature off, shop replaced) after this read began: its figures
-        // belong to a configuration that no longer applies.
-        const fenceAt = await hooks.readFence(tx, primaryShopId);
-        if (fenceAt !== null && observedAt.getTime() < fenceAt.getTime()) {
-          fenced = true;
+        // Under the lock, the shop the deployment is configured with must be this one. A worker
+        // started under an earlier configuration (feature off, shop replaced) finds another value
+        // here and writes nothing, whether or not it had anything stored and whenever it began.
+        const active = await hooks.readActiveShop(tx, primaryShopId);
+        if (active.shopId !== secondaryShopId) {
+          discarded = true;
           return;
         }
         // The rows `reserveOrderCapacity()` locks before it reads stock, in the same order, so a
@@ -262,8 +262,8 @@ export async function syncSecondaryShopInventory({
   for (const sku of secondaryBySku.keys()) {
     if (!primarySkus.has(sku)) unmatchedCount += 1;
   }
-  if (fenced) {
-    warn("Secondary Pancake inventory sync discarded: the configuration changed after its read began");
+  if (discarded) {
+    warn("Secondary Pancake inventory sync discarded: this is no longer the configured secondary shop");
   }
   if (ambiguousSkus.size > 0) {
     warn(
@@ -277,56 +277,29 @@ export async function syncSecondaryShopInventory({
     matchedCount,
     unmatchedCount,
     ambiguousCount: ambiguousSkus.size,
-    fenced,
+    discarded,
     totalStockAggregated,
     warehouseCount: seenWarehouseIds.size,
   };
 }
 
+type PurgeOptions = {
+  primaryShopId: number;
+  exceptShopId?: number;
+  shopId?: number;
+  syncedBefore?: Date;
+  observedAt?: Date;
+  hooks?: SecondaryInventorySyncHooks;
+};
+
 /**
- * Removes secondary-shop stock that must no longer be trusted, and returns how many rows went.
- * Removing is the safe direction: the storefront then sells on primary stock alone and the checkout
- * live read still adds whatever the secondary shop really has.
- *
- * Done like every other stock write: under the shop's catalog-sync lock, with the affected variant
- * rows locked, and followed by a fresh availability observation of those variants (and the combos
- * built on them) so a preorder cycle never keeps describing stock that is no longer there.
- *
- * - `exceptShopId`: keep that shop's rows, remove every other secondary shop's (the configured
- *   shop id changed).
- * - `shopId` + `syncedBefore`: remove that shop's rows last written before the instant (its sync
- *   has been failing).
- * - neither: remove every secondary row (the feature was switched off).
+ * The body of a purge, for a caller that already holds the shop's catalog-sync lock inside its own
+ * transaction: select the variants holding rows to remove, lock them, remove the rows, and observe
+ * those variants' (and their combos') availability again. See `purgeSecondaryWarehouseStock`.
  */
-export async function purgeSecondaryWarehouseStock(
-  prisma: Pick<PrismaClient, "$transaction">,
-  {
-    primaryShopId,
-    exceptShopId,
-    shopId,
-    syncedBefore,
-    fence,
-    observedAt = new Date(),
-    hooks = DEFAULT_HOOKS,
-  }: {
-    primaryShopId: number;
-    exceptShopId?: number;
-    shopId?: number;
-    syncedBefore?: Date;
-    /**
-     * For purges caused by a configuration change: also discard every secondary read that began
-     * before this instant (the shop's `secondaryFenceAt`, one row). Without it a sync that was
-     * already running under the old configuration would write its stock back right after the purge.
-     *
-     * - `"always"`: fence on every call. For the feature being switched off, where there is nothing
-     *   else to tell a transition from a steady state.
-     * - `"whenRemoving"`: fence only when there is stock to remove. For a replaced shop: a normal
-     *   cycle with the right shop configured finds nothing foreign and must leave the fence alone.
-     */
-    fence?: "always" | "whenRemoving";
-    observedAt?: Date;
-    hooks?: SecondaryInventorySyncHooks;
-  },
+async function purgeWithinTransaction(
+  tx: SyncTransaction,
+  { primaryShopId, exceptShopId, shopId, syncedBefore, observedAt = new Date(), hooks = DEFAULT_HOOKS }: PurgeOptions,
 ): Promise<number> {
   const where = {
     pancakeWarehouseId: {
@@ -339,26 +312,91 @@ export async function purgeSecondaryWarehouseStock(
     ...(syncedBefore === undefined ? {} : { syncedAt: { lt: syncedBefore } }),
   };
 
+  const affected = await tx.warehouseStock.findMany({
+    where,
+    select: { variantId: true },
+    distinct: ["variantId"],
+    orderBy: { variantId: "asc" },
+  });
+  const variantIds = affected.map(({ variantId }) => variantId);
+  if (variantIds.length === 0) return 0;
+
+  await hooks.lockVariants(tx, variantIds);
+  const result = await tx.warehouseStock.deleteMany({ where: { ...where, variantId: { in: variantIds } } });
+  await hooks.observeAvailability(tx, { shopId: primaryShopId, variantIds, observedAt });
+  return result.count;
+}
+
+/**
+ * Removes secondary-shop stock that must no longer be trusted, and returns how many rows went.
+ * Removing is the safe direction: the storefront then sells on primary stock alone and the checkout
+ * live read still adds whatever the secondary shop really has.
+ *
+ * Done like every other stock write: under the shop's catalog-sync lock, with the affected variant
+ * rows locked, and followed by a fresh availability observation of those variants (and the combos
+ * built on them) so a preorder cycle never keeps describing stock that is no longer there.
+ *
+ * - `exceptShopId`: keep that shop's rows, remove every other secondary shop's.
+ * - `shopId` + `syncedBefore`: remove that shop's rows last written before the instant (its sync
+ *   has been failing).
+ * - neither: remove every secondary row.
+ */
+export async function purgeSecondaryWarehouseStock(
+  prisma: Pick<PrismaClient, "$transaction">,
+  options: PurgeOptions,
+): Promise<number> {
+  const hooks = options.hooks ?? DEFAULT_HOOKS;
+  return prisma.$transaction(
+    async (tx) => {
+      await hooks.acquireLock(tx, options.primaryShopId);
+      return purgeWithinTransaction(tx, options);
+    },
+    { timeout: CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS },
+  );
+}
+
+/**
+ * Makes `secondaryShopId` (null: none) the secondary shop the deployment is configured with, and
+ * removes whatever stock belongs to any other, in one transaction under the shop's catalog-sync lock.
+ *
+ * The stored value is what lets a worker started under an earlier configuration be refused: its
+ * chunk takes the same lock and writes only while its own shop is the stored one. That holds even if
+ * the earlier shop never stored anything, which is where a timestamp could not help. It depends on
+ * nothing outside the database, so it can (and should) run whether or not the primary catalog read
+ * succeeds. Before the first catalog sync there is no state row to store it in, and nothing to
+ * remove: the call does nothing, and is repeated once the row exists.
+ */
+export async function configureSecondaryShop(
+  prisma: Pick<PrismaClient, "$transaction">,
+  {
+    primaryShopId,
+    secondaryShopId,
+    observedAt = new Date(),
+    hooks = DEFAULT_HOOKS,
+  }: {
+    primaryShopId: number;
+    secondaryShopId: number | null;
+    observedAt?: Date;
+    hooks?: SecondaryInventorySyncHooks;
+  },
+): Promise<{ changed: boolean; removed: number }> {
   return prisma.$transaction(
     async (tx) => {
       await hooks.acquireLock(tx, primaryShopId);
-      // Under the shop lock, before anything is removed, so no read can slip in between.
-      if (fence === "always") await hooks.fenceReads(tx, primaryShopId, observedAt);
-      const affected = await tx.warehouseStock.findMany({
-        where,
-        select: { variantId: true },
-        distinct: ["variantId"],
-        orderBy: { variantId: "asc" },
-      });
-      const variantIds = affected.map(({ variantId }) => variantId);
-      if (variantIds.length === 0) return 0;
+      const state = await hooks.readActiveShop(tx, primaryShopId);
+      if (!state.present) return { changed: false, removed: 0 };
 
-      // Still under the shop lock, so the fence and the removal commit together.
-      if (fence === "whenRemoving") await hooks.fenceReads(tx, primaryShopId, observedAt);
-      await hooks.lockVariants(tx, variantIds);
-      const result = await tx.warehouseStock.deleteMany({ where: { ...where, variantId: { in: variantIds } } });
-      await hooks.observeAvailability(tx, { shopId: primaryShopId, variantIds, observedAt });
-      return result.count;
+      const changed = state.shopId !== secondaryShopId;
+      if (changed) await hooks.setActiveShop(tx, primaryShopId, secondaryShopId);
+      // Anything that does not belong to the configured shop goes. In a steady state this finds
+      // nothing and costs one query.
+      const removed = await purgeWithinTransaction(tx, {
+        primaryShopId,
+        ...(secondaryShopId === null ? {} : { exceptShopId: secondaryShopId }),
+        observedAt,
+        hooks,
+      });
+      return { changed, removed };
     },
     { timeout: CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS },
   );

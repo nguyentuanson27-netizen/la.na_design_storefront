@@ -460,3 +460,43 @@ test("a lookup that is mid-walk when the deadline passes asks for no further pag
   assert.deepEqual(requested, [1, 2], "nothing past the page that was in flight at the deadline");
   assert.equal(result!.sellableStock, 1, "and the buyer got the primary stock");
 });
+
+test("a uniqueness check that never concludes cannot hold the buyer: primary stock, no secondary lookup", async () => {
+  const warnings: string[] = [];
+  let lookups = 0;
+  const variations = [primary("p1", "SKU-1", 1), primary("p2", "SKU-2", 2)];
+  const started = Date.now();
+  const result = await addSecondaryShopStock(
+    variations,
+    {
+      shopId,
+      client: {
+        async getJson() {
+          lookups += 1;
+          return page([]);
+        },
+      },
+      findUnsafeSkus: () => never(),
+    },
+    { primaryShopId, deadlineMs: 60, warn: (message) => warnings.push(message) },
+  );
+
+  assert.ok(Date.now() - started < 600);
+  assert.equal(lookups, 0, "no lookup starts on an unproven mapping");
+  assert.deepEqual(result.map((v) => v.sellableStock), [1, 2]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /deadline/);
+});
+
+test("the guard and the lookups share one budget, not one each", async () => {
+  const [result] = await addSecondaryShopStock(
+    [primary("p1", "SKU-1", 1)],
+    {
+      shopId,
+      client: { getJson: () => delay(60, page([secondaryRow("s1", "SKU-1", 5)])) },
+      findUnsafeSkus: () => delay(50, new Set<string>()),
+    },
+    { primaryShopId, deadlineMs: 80, warn: () => undefined },
+  );
+  assert.equal(result!.sellableStock, 1, "50 ms of guard leave too little of the 80 ms for a 60 ms lookup");
+});

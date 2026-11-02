@@ -5,9 +5,12 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createCatalogMirrorRepository } from "../../src/commerce/catalog-mirror-repository.ts";
 import {
+  configureSecondaryShop,
   purgeSecondaryWarehouseStock,
   syncSecondaryShopInventory,
 } from "../../src/commerce/secondary-inventory-sync.ts";
+import { syncConfiguredPancakeCatalog } from "../../src/commerce/catalog-sync-runtime.ts";
+import { prisma as runtimePrisma } from "../../src/db/prisma.ts";
 import { normalizedSkuSql } from "../../src/commerce/sku-sql.ts";
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
 import { findAmbiguousPrimarySkus, findUnsafePrimarySkus } from "../../src/commerce/secondary-sku-guard.ts";
@@ -82,11 +85,20 @@ function secondaryClient(rows: Array<{ displayId: string; stocks: Array<[string,
   };
 }
 
-function syncSecondary(
+/** What the runtime does before any secondary sync: the shop is stored as the configured one. */
+async function activate(shopId = secondaryShopId) {
+  await prisma.catalogSyncState.updateMany({
+    where: { pancakeShopId: primaryShopId },
+    data: { secondaryShopId: shopId },
+  });
+}
+
+async function syncSecondary(
   rows: Array<{ displayId: string; stocks: Array<[string, number]> }>,
   at: Date,
   shopId = secondaryShopId,
 ) {
+  await activate(shopId);
   return syncSecondaryShopInventory({
     primaryShopId,
     secondaryShopId: shopId,
@@ -144,6 +156,7 @@ test.beforeEach(cleanup);
 test.afterEach(cleanup);
 test.after(async () => {
   await prisma.$disconnect();
+  await runtimePrisma.$disconnect();
 });
 
 test("primary and secondary syncs each rewrite only their own warehouses, whatever order they run in", async () => {
@@ -585,6 +598,7 @@ test("a primary sync that commits between the candidate read and the lock cannot
 
   // The secondary sync has read its shop and the candidate variants. Before it takes the lock, a
   // primary sync renames v1 to SKU-B and gives v2 the SKU-A.
+  await activate();
   let raced = false;
   const racing = racingPrisma(async () => {
     if (!raced) {
@@ -627,6 +641,7 @@ test("a SKU that became shared between the candidate read and the lock gets no s
     syncedAt: t(0),
   });
 
+  await activate();
   let raced = false;
   const racing = racingPrisma(async () => {
     if (!raced) {
@@ -772,70 +787,6 @@ test("a PREORDER combo is judged on its component's stock AFTER a rename removes
   assert.equal((await preorderCycle("set-m"))?.lastStockNonPositive, true);
 });
 
-test("a secondary read that began before a configuration-change purge cannot write its stock back afterwards", async () => {
-  await repository.syncSnapshot({
-    shopId: primaryShopId,
-    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
-    syncedAt: t(0),
-  });
-  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(5));
-  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(6), otherSecondaryShopId);
-
-  // A read begins at t(10) under the old configuration and pauses. The shop is replaced: the purge
-  // runs at t(20). Only afterwards does the paused sync reach the database.
-  let purged = false;
-  const inFlight = racingPrisma(async () => {
-    if (purged) return;
-    purged = true;
-    await purgeSecondaryWarehouseStock(prisma, {
-      primaryShopId,
-      exceptShopId: secondaryShopId,
-      fence: "whenRemoving",
-      observedAt: t(20),
-    });
-  });
-  await syncSecondaryShopInventory({
-    primaryShopId,
-    secondaryShopId: otherSecondaryShopId,
-    secondaryClient: secondaryClient([{ displayId: "SKU-1", stocks: [["wh-s9", 7]] }]),
-    prisma: inFlight,
-    clock: () => t(10),
-    warn: () => undefined,
-  });
-
-  assert.equal(purged, true);
-  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 1]], "only the configured shop's stock stands");
-
-  // A read that begins after the purge is a different matter: it applies.
-  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 6]] }], t(30));
-  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 6], ["wh-a", 1]]);
-});
-
-test("disabling the feature fences the reads that were already running", async () => {
-  await repository.syncSnapshot({
-    shopId: primaryShopId,
-    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
-    syncedAt: t(0),
-  });
-
-  // Nothing is stored yet, so there is nothing for the purge to delete: only the fence can stop the read.
-  let purged = false;
-  const inFlight = racingPrisma(async () => {
-    if (purged) return;
-    purged = true;
-    assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: "always", observedAt: t(20) }), 0);
-  });
-  await syncSecondaryShopInventory({
-    primaryShopId,
-    secondaryShopId,
-    secondaryClient: secondaryClient([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }]),
-    prisma: inFlight,
-    clock: () => t(10),
-    warn: () => undefined,
-  });
-
-  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
-});
 
 test("a COMMITTED hold is handed off once the PRIMARY shop observed after the commit, whatever the age of the secondary rows", async () => {
   const mirror = createCatalogMirrorRepository(prisma, { clock: () => t(59) });
@@ -909,94 +860,6 @@ test("a hold is still kept while the primary shop has not been read since the co
   assert.equal(resource.mirroredAt, null);
 });
 
-test("fencing takes no lock on any variant row: a purge does not wait for a reservation holding one", async () => {
-  await repository.syncSnapshot({
-    shopId: primaryShopId,
-    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
-    syncedAt: t(0),
-  });
-  const variant = await prisma.variantMirror.findFirstOrThrow({ where: { pancakeVariationId: "v1" }, select: { id: true } });
-
-  let release!: () => void;
-  const mayFinish = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let locked!: () => void;
-  const lockTaken = new Promise<void>((resolve) => {
-    locked = resolve;
-  });
-  const holder = prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT "id" FROM "VariantMirror" WHERE "id" = ${variant.id} FOR UPDATE`;
-    locked();
-    await mayFinish;
-  });
-  await lockTaken;
-
-  try {
-    // Nothing stored, so the purge removes nothing: only the fence is written, and it must not queue
-    // behind the row lock (the former per-variant UPDATE did).
-    const purge = purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: "always", observedAt: t(20) });
-    const outcome = await Promise.race([
-      purge.then(() => "finished" as const),
-      new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 1500)),
-    ]);
-    assert.equal(outcome, "finished");
-  } finally {
-    release();
-    await holder;
-  }
-
-  const state = await prisma.catalogSyncState.findUniqueOrThrow({ where: { pancakeShopId: primaryShopId } });
-  assert.deepEqual(state.secondaryFenceAt, t(20));
-});
-
-test("the fence never moves backwards", async () => {
-  await repository.syncSnapshot({
-    shopId: primaryShopId,
-    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
-    syncedAt: t(0),
-  });
-  await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: "always", observedAt: t(40) });
-  await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: "always", observedAt: t(30) });
-
-  const state = await prisma.catalogSyncState.findUniqueOrThrow({ where: { pancakeShopId: primaryShopId } });
-  assert.deepEqual(state.secondaryFenceAt, t(40));
-});
-
-test("a normal cycle with the right shop configured leaves the fence alone; a real shop change moves it", async () => {
-  await repository.syncSnapshot({
-    shopId: primaryShopId,
-    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
-    syncedAt: t(0),
-  });
-  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(1));
-  const fenceAt = async () =>
-    (await prisma.catalogSyncState.findUniqueOrThrow({ where: { pancakeShopId: primaryShopId } })).secondaryFenceAt;
-
-  // What the runtime does on every cycle: drop other shops' rows, fencing only if there are any.
-  for (const minute of [10, 20, 30]) {
-    const removed = await purgeSecondaryWarehouseStock(prisma, {
-      primaryShopId,
-      exceptShopId: secondaryShopId,
-      fence: "whenRemoving",
-      observedAt: t(minute),
-    });
-    assert.equal(removed, 0);
-  }
-  assert.equal(await fenceAt(), null, "steady state never fences");
-  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 1]]);
-
-  // The configured shop is replaced: the old shop's rows go and the fence moves with them.
-  const removed = await purgeSecondaryWarehouseStock(prisma, {
-    primaryShopId,
-    exceptShopId: otherSecondaryShopId,
-    fence: "whenRemoving",
-    observedAt: t(40),
-  });
-  assert.equal(removed, 1);
-  assert.deepEqual(await fenceAt(), t(40));
-});
-
 test("a live read the mirror disagrees with is unsafe: renamed, unknown or retired variants lose their SKU's secondary stock", async () => {
   await repository.syncSnapshot({
     shopId: primaryShopId,
@@ -1035,4 +898,243 @@ test("a live read the mirror disagrees with is unsafe: renamed, unknown or retir
     syncedAt: t(1),
   });
   assert.deepEqual(await unsafe([["v1", "SKU-A"]]), ["SKU-A"]);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Which secondary shop the deployment is configured with, stored under the shop's lock.
+// ---------------------------------------------------------------------------------------------
+
+async function activeShop() {
+  return (await prisma.catalogSyncState.findUniqueOrThrow({ where: { pancakeShopId: primaryShopId } })).secondaryShopId;
+}
+
+async function seedPrimary() {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(0),
+  });
+}
+
+/** An in-flight sync of `shopId`: it has read its shop and its candidates and is about to take the lock. */
+function inFlightSync(shopId: number, beforeLock: () => Promise<void>, rows: Array<{ displayId: string; stocks: Array<[string, number]> }>, at: Date) {
+  let ran = false;
+  return syncSecondaryShopInventory({
+    primaryShopId,
+    secondaryShopId: shopId,
+    secondaryClient: secondaryClient(rows),
+    prisma: racingPrisma(async () => {
+      if (ran) return;
+      ran = true;
+      await beforeLock();
+    }),
+    clock: () => at,
+    warn: () => undefined,
+  });
+}
+
+test("a worker of the previous shop cannot write after the shop was replaced, even though rows of it were stored", async () => {
+  await seedPrimary();
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(5)); // shop A is active, A rows stored
+
+  const result = await inFlightSync(
+    secondaryShopId,
+    async () => {
+      const outcome = await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId: otherSecondaryShopId, observedAt: t(20) });
+      assert.deepEqual(outcome, { changed: true, removed: 1 });
+    },
+    [{ displayId: "SKU-1", stocks: [["wh-s1", 9]] }],
+    t(10),
+  );
+
+  assert.equal(result.discarded, true);
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]], "A's old rows went with the change and A wrote nothing back");
+
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s9", 7]] }], t(30), otherSecondaryShopId);
+  assert.deepEqual(await stockRows("v1"), [["secondary:920240:wh-s9", 7], ["wh-a", 1]], "only B counts");
+});
+
+test("replacing the shop when the old one had stored NOTHING still stops the old worker: old read, change, old write, new write", async () => {
+  await seedPrimary();
+  await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId }); // A is configured; no A rows exist
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
+
+  const old = await inFlightSync(
+    secondaryShopId,
+    async () => {
+      const outcome = await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId: otherSecondaryShopId, observedAt: t(20) });
+      assert.deepEqual(outcome, { changed: true, removed: 0 }, "nothing to purge: the stored shop is all that stops the old worker");
+    },
+    [{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }],
+    t(10),
+  );
+  assert.equal(old.discarded, true);
+
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s9", 7]] }], t(30), otherSecondaryShopId);
+
+  assert.deepEqual(await stockRows("v1"), [["secondary:920240:wh-s9", 7], ["wh-a", 1]], "A + B is never what counts");
+});
+
+test("switching the feature off stops a worker that was already running, and its stock never appears", async () => {
+  await seedPrimary();
+  await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId });
+
+  const result = await inFlightSync(
+    secondaryShopId,
+    async () => {
+      await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId: null, observedAt: t(20) });
+    },
+    [{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }],
+    t(10),
+  );
+
+  assert.equal(result.discarded, true);
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
+  assert.equal(await activeShop(), null);
+});
+
+test("a sync with no secondary shop configured at all writes nothing", async () => {
+  await seedPrimary();
+  const result = await syncSecondaryShopInventory({
+    primaryShopId,
+    secondaryShopId,
+    secondaryClient: secondaryClient([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }]),
+    prisma,
+    clock: () => t(5),
+    warn: () => undefined,
+  });
+  assert.equal(result.discarded, true);
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
+});
+
+test("configuring is idempotent: only the first call changes anything, and a steady state touches no stock", async () => {
+  await seedPrimary();
+  const first = await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId });
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(5));
+  const again = await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId, observedAt: t(10) });
+  const thrice = await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId, observedAt: t(20) });
+
+  assert.deepEqual([first.changed, again.changed, thrice.changed], [true, false, false]);
+  assert.deepEqual([again.removed, thrice.removed], [0, 0]);
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 1]]);
+  assert.equal(await activeShop(), secondaryShopId);
+});
+
+test("before the first catalog sync there is nothing to store the shop in: configuring does nothing", async () => {
+  const result = await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId });
+  assert.deepEqual(result, { changed: false, removed: 0 });
+});
+
+test("changing the configured shop takes no lock on any variant row when it has nothing to remove", async () => {
+  await seedPrimary();
+  await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId });
+  const variant = await prisma.variantMirror.findFirstOrThrow({ where: { pancakeVariationId: "v1" }, select: { id: true } });
+
+  let release!: () => void;
+  const mayFinish = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let locked!: () => void;
+  const lockTaken = new Promise<void>((resolve) => {
+    locked = resolve;
+  });
+  const holder = prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "VariantMirror" WHERE "id" = ${variant.id} FOR UPDATE`;
+    locked();
+    await mayFinish;
+  });
+  await lockTaken;
+
+  try {
+    const change = configureSecondaryShop(prisma, { primaryShopId, secondaryShopId: null, observedAt: t(20) });
+    const outcome = await Promise.race([
+      change.then(() => "finished" as const),
+      new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 1500)),
+    ]);
+    assert.equal(outcome, "finished", "a reservation holding a variant row does not hold up a configuration change");
+  } finally {
+    release();
+    await holder;
+  }
+  assert.equal(await activeShop(), null);
+});
+
+test("the stale-stock purge drops a failing shop's old rows and leaves fresher ones", async () => {
+  await seedPrimary();
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(10));
+
+  assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId, shopId: secondaryShopId, syncedBefore: t(5) }), 0);
+  assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId, shopId: secondaryShopId, syncedBefore: t(15) }), 1);
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The runtime, with the primary Pancake API failing.
+// ---------------------------------------------------------------------------------------------
+
+async function withEnvironment<T>(env: Record<string, string | undefined>, run: () => Promise<T>): Promise<T> {
+  const saved = new Map(Object.keys(env).map((key) => [key, process.env[key]]));
+  const savedFetch = globalThis.fetch;
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  globalThis.fetch = (async () => {
+    throw new TypeError("network down");
+  }) as typeof fetch;
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = savedFetch;
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+const primaryOnlyEnv = { PANCAKE_API_KEY: "test-primary-key", PANCAKE_SHOP_ID: String(primaryShopId) };
+
+test("a primary outage cannot leave a switched-off secondary shop's stock counting", async () => {
+  await seedPrimary();
+  const product = await prisma.productMirror.findFirstOrThrow({ where: { pancakeShopId: primaryShopId } });
+  await prisma.productSellingPolicy.create({ data: { productId: product.id, sellingMode: "PREORDER", negativeStockLimit: -20 } });
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 0 }])],
+    syncedAt: t(1),
+  });
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(2));
+  assert.equal((await preorderCycle("v1"))?.lastStockNonPositive, false);
+
+  // The deployment now has no PANCAKE_SECONDARY_* and the primary API is down.
+  await withEnvironment(
+    { ...primaryOnlyEnv, PANCAKE_SECONDARY_SHOP_ID: undefined, PANCAKE_SECONDARY_API_KEY: undefined },
+    async () => {
+      await assert.rejects(() => syncConfiguredPancakeCatalog({ clock: () => t(10) }));
+    },
+  );
+
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 0]], "the old shop's stock is gone although the primary read failed");
+  assert.equal((await preorderCycle("v1"))?.lastStockNonPositive, true, "and the preorder cycle was observed again");
+  assert.equal(await activeShop(), null);
+});
+
+test("a primary outage cannot leave a replaced secondary shop's stock counting either", async () => {
+  await seedPrimary();
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(2)); // shop A
+
+  await withEnvironment(
+    {
+      ...primaryOnlyEnv,
+      PANCAKE_SECONDARY_SHOP_ID: String(otherSecondaryShopId),
+      PANCAKE_SECONDARY_API_KEY: "test-secondary-key",
+    },
+    async () => {
+      await assert.rejects(() => syncConfiguredPancakeCatalog({ clock: () => t(10) }));
+    },
+  );
+
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]], "A's stock is gone");
+  assert.equal(await activeShop(), otherSecondaryShopId, "and B is recorded as the configured shop");
 });

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  configureSecondaryShop,
   normalizeSku,
   purgeSecondaryWarehouseStock,
   syncSecondaryShopInventory,
@@ -200,7 +201,7 @@ function syncHarness({
   secondary,
   primary,
   primaryAtLockTime = primary,
-  fenceAt = null,
+  activeShop = 407_962_350 as number | null,
   pages,
 }: {
   secondary: ReturnType<typeof variationRow>[];
@@ -208,8 +209,8 @@ function syncHarness({
   primary: PrimaryRow[];
   /** What the mapping really is once the lock is held (a primary sync may have committed in between). */
   primaryAtLockTime?: PrimaryRow[];
-  /** The shop's secondary fence as stored when the chunk takes the lock. */
-  fenceAt?: Date | null;
+  /** The secondary shop stored as configured when the chunk takes the lock. */
+  activeShop?: number | null;
   /** Serve the secondary catalog in these pages instead of one (to test repeated rows). */
   pages?: ReturnType<typeof variationRow>[][];
 }) {
@@ -296,11 +297,11 @@ function syncHarness({
             hookCalls.push("mapping");
             return primaryAtLockTime.filter(({ id }) => variantIds.includes(id));
           },
-          async readFence() {
-            hookCalls.push("readFence");
-            return fenceAt;
+          async readActiveShop() {
+            hookCalls.push("readActive");
+            return { present: true, shopId: activeShop };
           },
-          async fenceReads() {},
+          async setActiveShop() {},
           async findAmbiguousSkus(_tx, _shop, skus) {
             const counts = new Map<string, number>();
             for (const row of primaryAtLockTime) {
@@ -339,7 +340,7 @@ test("syncSecondaryShopInventory matches SKUs, aggregates stock, and ignores unm
     matchedCount: 1,
     unmatchedCount: 1,
     ambiguousCount: 0,
-    fenced: false,
+    discarded: false,
     totalStockAggregated: 8,
     warehouseCount: 2,
   });
@@ -396,7 +397,9 @@ test("a retired variant sharing a SKU does not make the live one ambiguous, and 
   ]);
 });
 
-test("purgeSecondaryWarehouseStock deletes under the shop lock, locks the rows, and re-observes what it changed", async () => {
+function purgeHarness(options: { present?: boolean; activeShop?: number | null; affected?: string[] } = {}) {
+  const { present = true, affected = ["v1", "v2"] } = options;
+  let activeShop = options.activeShop ?? null;
   const steps: string[] = [];
   const wheres: unknown[] = [];
   const tx = {
@@ -404,12 +407,12 @@ test("purgeSecondaryWarehouseStock deletes under the shop lock, locks the rows, 
       async findMany(args: { where: unknown }) {
         steps.push("find");
         wheres.push(args.where);
-        return [{ variantId: "v1" }, { variantId: "v2" }];
+        return affected.map((variantId) => ({ variantId }));
       },
       async deleteMany(args: { where: unknown }) {
         steps.push("delete");
         wheres.push(args.where);
-        return { count: 3 };
+        return { count: affected.length * 3 };
       },
     },
   };
@@ -431,11 +434,13 @@ test("purgeSecondaryWarehouseStock deletes under the shop lock, locks the rows, 
     async findAmbiguousSkus() {
       return new Set<string>();
     },
-    async readFence() {
-      return null;
+    async readActiveShop() {
+      steps.push("readActive");
+      return { present, shopId: activeShop };
     },
-    async fenceReads(_tx: unknown, shopId: number, at: Date) {
-      steps.push(`fence:${shopId}:${at.toISOString()}`);
+    async setActiveShop(_tx: unknown, _shop: number, value: number | null) {
+      steps.push(`setActive:${value}`);
+      activeShop = value;
     },
   };
   const prisma = {
@@ -443,89 +448,73 @@ test("purgeSecondaryWarehouseStock deletes under the shop lock, locks the rows, 
       return fn(tx);
     },
   } as unknown as PrismaClient;
+  return { steps, wheres, observed, hooks, prisma, activeShop: () => activeShop };
+}
 
-  const removed = await purgeSecondaryWarehouseStock(prisma, {
+test("purgeSecondaryWarehouseStock deletes under the shop lock, locks the rows, and re-observes what it changed", async () => {
+  const h = purgeHarness();
+
+  const removed = await purgeSecondaryWarehouseStock(h.prisma, {
     primaryShopId: 4_741_464,
     shopId: 2,
     syncedBefore: now,
     observedAt: now,
-    hooks,
+    hooks: h.hooks,
   });
 
-  assert.equal(removed, 3);
-  assert.deepEqual(steps, ["lock:4741464", "find", "lockRows:v1,v2", "delete", "observe"], "a stale purge does not fence");
-
-  assert.deepEqual(wheres, [
+  assert.equal(removed, 6);
+  assert.deepEqual(h.steps, ["lock:4741464", "find", "lockRows:v1,v2", "delete", "observe"]);
+  assert.deepEqual(h.wheres, [
     { pancakeWarehouseId: { startsWith: "secondary:2:" }, syncedAt: { lt: now } },
     { pancakeWarehouseId: { startsWith: "secondary:2:" }, syncedAt: { lt: now }, variantId: { in: ["v1", "v2"] } },
   ]);
-  assert.deepEqual(observed, [{ shopId: 4_741_464, variantIds: ["v1", "v2"], observedAt: now }]);
-
-  // A configuration-change purge raises the read marker first, under the lock, before removing anything.
-  steps.length = 0;
-  await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 4_741_464, fence: "always", observedAt: now, hooks });
-  assert.deepEqual(steps, [
-    "lock:4741464",
-    `fence:4741464:${now.toISOString()}`,
-    "find",
-    "lockRows:v1,v2",
-    "delete",
-    "observe",
-  ]);
-
-  // "whenRemoving" fences only once it has found stock to remove, still under the lock, before the delete.
-  steps.length = 0;
-  await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 4_741_464, exceptShopId: 2, fence: "whenRemoving", observedAt: now, hooks });
-  assert.deepEqual(steps, [
-    "lock:4741464",
-    "find",
-    `fence:4741464:${now.toISOString()}`,
-    "lockRows:v1,v2",
-    "delete",
-    "observe",
-  ]);
+  assert.deepEqual(h.observed, [{ shopId: 4_741_464, variantIds: ["v1", "v2"], observedAt: now }]);
 });
 
-test("purge scopes: everything when disabled, every other shop when the shop changed", async () => {
-  const wheres: unknown[] = [];
-  const tx = {
-    warehouseStock: {
-      async findMany(args: { where: unknown }) {
-        wheres.push(args.where);
-        return [];
-      },
-    },
-  };
-  const prisma = {
-    async $transaction<T>(fn: (t: typeof tx) => Promise<T>): Promise<T> {
-      return fn(tx);
-    },
-  } as unknown as PrismaClient;
-  const hooks = {
-    async acquireLock() {},
-    async lockVariants() {},
-    async observeAvailability() {},
-    async readMapping() {
-      return [];
-    },
-    async findAmbiguousSkus() {
-      return new Set<string>();
-    },
-    async readFence() {
-      return null;
-    },
-    async fenceReads() {},
-  };
+test("a purge that finds nothing locks no variant and observes nothing", async () => {
+  const h = purgeHarness({ affected: [] });
+  assert.equal(await purgeSecondaryWarehouseStock(h.prisma, { primaryShopId: 1, hooks: h.hooks }), 0);
+  assert.deepEqual(h.steps, ["lock:1", "find"]);
+});
 
-  assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 1, hooks }), 0);
-  assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 1, exceptShopId: 2, hooks }), 0);
-  assert.deepEqual(wheres, [
-    { pancakeWarehouseId: { startsWith: "secondary:" } },
-    {
-      pancakeWarehouseId: { startsWith: "secondary:" },
-      NOT: { pancakeWarehouseId: { startsWith: "secondary:2:" } },
-    },
-  ]);
+test("configuring a different secondary shop stores it and removes every other shop's stock, under one lock", async () => {
+  const h = purgeHarness({ activeShop: 1 });
+
+  const result = await configureSecondaryShop(h.prisma, {
+    primaryShopId: 4_741_464,
+    secondaryShopId: 2,
+    observedAt: now,
+    hooks: h.hooks,
+  });
+
+  assert.deepEqual(result, { changed: true, removed: 6 });
+  assert.deepEqual(h.steps, ["lock:4741464", "readActive", "setActive:2", "find", "lockRows:v1,v2", "delete", "observe"]);
+  assert.deepEqual(h.wheres[0], {
+    pancakeWarehouseId: { startsWith: "secondary:" },
+    NOT: { pancakeWarehouseId: { startsWith: "secondary:2:" } },
+  });
+});
+
+test("switching the feature off stores none and removes every secondary row", async () => {
+  const h = purgeHarness({ activeShop: 2 });
+  const result = await configureSecondaryShop(h.prisma, { primaryShopId: 1, secondaryShopId: null, observedAt: now, hooks: h.hooks });
+  assert.deepEqual(result, { changed: true, removed: 6 });
+  assert.equal(h.activeShop(), null);
+  assert.deepEqual(h.wheres[0], { pancakeWarehouseId: { startsWith: "secondary:" } });
+});
+
+test("a steady-state configure changes nothing and only looks for strays", async () => {
+  const h = purgeHarness({ activeShop: 2, affected: [] });
+  const result = await configureSecondaryShop(h.prisma, { primaryShopId: 1, secondaryShopId: 2, observedAt: now, hooks: h.hooks });
+  assert.deepEqual(result, { changed: false, removed: 0 });
+  assert.deepEqual(h.steps, ["lock:1", "readActive", "find"], "nothing stored, nothing observed");
+});
+
+test("before the first catalog sync there is no state to configure: nothing happens", async () => {
+  const h = purgeHarness({ present: false });
+  const result = await configureSecondaryShop(h.prisma, { primaryShopId: 1, secondaryShopId: 2, observedAt: now, hooks: h.hooks });
+  assert.deepEqual(result, { changed: false, removed: 0 });
+  assert.deepEqual(h.steps, ["lock:1", "readActive"]);
 });
 
 test("the SKU mapping that decides the writes is the one read under the lock, not the candidate read", async () => {
@@ -591,31 +580,39 @@ test("a variant that lost its SKU or was retired after the candidate read is cle
   ]);
 });
 
-test("a sync whose read began before the shop's fence discards everything and says so", async () => {
+test("a sync for a shop that is no longer the configured one discards everything and says so", async () => {
   const harness = syncHarness({
     secondary: [variationRow("sec_a", "SKU-A", [["wh", 5]])],
     primary: [{ id: "v1", pancakeDisplayId: "SKU-A", isPresent: true }],
-    fenceAt: new Date(now.getTime() + 1),
+    activeShop: 999,
   });
 
   const result = await harness.run();
 
-  assert.equal(result.fenced, true);
+  assert.equal(result.discarded, true);
   assert.deepEqual(harness.writes, []);
-  assert.deepEqual(harness.hookCalls, ["lock:4741464", "readFence"], "nothing is locked, read or written after the fence");
+  assert.deepEqual(harness.hookCalls, ["lock:4741464", "readActive"], "nothing is locked, read or written after that");
   assert.equal(harness.warnings.length, 1);
 });
 
-test("a read that began at or after the fence is applied", async () => {
+test("with no secondary shop configured at all, a sync writes nothing", async () => {
   const harness = syncHarness({
     secondary: [variationRow("sec_a", "SKU-A", [["wh", 5]])],
     primary: [{ id: "v1", pancakeDisplayId: "SKU-A", isPresent: true }],
-    fenceAt: now,
+    activeShop: null,
   });
+  assert.equal((await harness.run()).discarded, true);
+  assert.deepEqual(harness.writes, []);
+});
 
+test("a sync for the configured shop is applied", async () => {
+  const harness = syncHarness({
+    secondary: [variationRow("sec_a", "SKU-A", [["wh", 5]])],
+    primary: [{ id: "v1", pancakeDisplayId: "SKU-A", isPresent: true }],
+    activeShop: 407_962_350,
+  });
   const result = await harness.run();
-
-  assert.equal(result.fenced, false);
+  assert.equal(result.discarded, false);
   assert.equal(harness.writes.length, 1);
 });
 
