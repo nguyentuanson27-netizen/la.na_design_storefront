@@ -34,6 +34,8 @@ case "$args" in
   *" up -d --no-build "*) for service in \${args##* --no-build }; do touch "$FAKE_STATE/$service-running"; done ;;
   *" pnpm prisma:migrate:deploy "*) exit "\${FAKE_MIGRATE_EXIT:-0}" ;;
   *" pnpm capacity:handoff:reconcile "*) exit "\${FAKE_RECONCILE_EXIT:-0}" ;;
+  *" pnpm pancake:secondary:teardown "*) exit "\${FAKE_TEARDOWN_EXIT:-0}" ;;
+  *" ops node -e "*) exit "\${FAKE_TEARDOWN_SCRIPT_EXIT:-0}" ;;
   *" exec -T postgres "*) echo fake-dump ;;
   *" --entrypoint /opt/google/chrome/chrome "*) echo "\${FAKE_CHROME:-}" ;;
 esac
@@ -51,6 +53,12 @@ type ScriptRun = {
   envLines?: readonly string[];
   /** What the fake Flow worker image's `chrome --version` prints. */
   chrome?: string;
+  /** Exit code of the secondary-stock teardown the rollback runs (default 0). */
+  teardownExit?: number;
+  /** Whether the release being left ships the teardown script (default true). */
+  teardownScript?: boolean;
+  /** Whether the release being left has an ops image (default true). */
+  currentOpsImage?: boolean;
 };
 
 function runDeploy(options: ScriptRun): Run {
@@ -67,7 +75,18 @@ function runRollback(options: ScriptRun): Run {
 function runScript(
   script: "deploy.sh" | "rollback.sh",
   args: readonly string[],
-  { running, migrateExit = 0, reconcileExit = 0, syncHealth = "healthy", images = [], envLines = [], chrome = "" }: ScriptRun,
+  {
+    running,
+    migrateExit = 0,
+    reconcileExit = 0,
+    syncHealth = "healthy",
+    images = [],
+    envLines = [],
+    chrome = "",
+    teardownExit = 0,
+    teardownScript = true,
+    currentOpsImage = true,
+  }: ScriptRun,
 ): Run {
   const root = mkdtempSync(join(tmpdir(), "deploy-sequence-"));
   try {
@@ -99,6 +118,8 @@ function runScript(
       `DEPLOY_TARGET=production\nRELEASE_SHA=${git("rev-parse", "HEAD")}\n${envLines.map((line) => `${line}\n`).join("")}`,
     );
 
+    const headSha = git("rev-parse", "HEAD");
+    const knownImages = [...images, ...(currentOpsImage ? [`${PROJECT_SLUG}-ops:${headSha}`] : [])];
     writeFileSync(join(bin, "docker"), FAKE_DOCKER);
     chmodSync(join(bin, "docker"), 0o755);
     for (const service of running) writeFileSync(join(state, `${service}-running`), "");
@@ -116,7 +137,9 @@ function runScript(
         FAKE_MIGRATE_EXIT: String(migrateExit),
         FAKE_RECONCILE_EXIT: String(reconcileExit),
         FAKE_SYNC_HEALTH: syncHealth,
-        FAKE_IMAGES: images.join(" "),
+        FAKE_IMAGES: knownImages.join(" "),
+        FAKE_TEARDOWN_EXIT: String(teardownExit),
+        FAKE_TEARDOWN_SCRIPT_EXIT: teardownScript ? "0" : "1",
         FAKE_CHROME: chrome,
         BACKUP_DIR: join(root, "backups"),
       },
@@ -225,6 +248,55 @@ test("rollback quiesces the current catalog sync before the previous app starts,
   const sync = position(run.calls, ROLLBACK_SYNC);
   assert.ok(stop >= 0 && app > stop, "no window where the older app runs beside the newer sync");
   assert.ok(sync > app, "the previous release's own sync starts after its app");
+});
+
+const TEARDOWN = "run --rm ops pnpm pancake:secondary:teardown";
+
+test("rollback removes the secondary shop's stock after the writers are quiet and before the previous app serves", () => {
+  const run = runRollback({
+    running: ["app", "catalog-sync"],
+    images: [`${PROJECT_SLUG}:${PREVIOUS_SHA}`, `${PROJECT_SLUG}-ops:${PREVIOUS_SHA}`],
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const stop = position(run.calls, STOP_SYNC);
+  const teardown = position(run.calls, TEARDOWN);
+  const app = position(run.calls, ROLLBACK_APP);
+  assert.ok(stop >= 0 && teardown > stop, "the current sync is stopped first, so nothing writes while the rows go");
+  assert.ok(app > teardown, "the previous release takes traffic only after the rows are gone");
+});
+
+test("a failed teardown stops the rollback before the previous app starts and puts the current sync back", () => {
+  const run = runRollback({
+    running: ["app", "catalog-sync"],
+    images: [`${PROJECT_SLUG}:${PREVIOUS_SHA}`, `${PROJECT_SLUG}-ops:${PREVIOUS_SHA}`],
+    teardownExit: 1,
+  });
+  assert.notEqual(run.status, 0);
+  assert.equal(position(run.calls, ROLLBACK_APP), -1, "the previous release never starts over rows it would miscount");
+  assert.ok(run.calls.some((call) => call === "start catalog-sync"), "the writer that was stopped is restored");
+  assert.match(run.stderr, /was NOT started/);
+});
+
+test("rollback from a release that ships no teardown has no secondary stock to remove and carries on", () => {
+  const run = runRollback({
+    running: ["app", "catalog-sync"],
+    images: [`${PROJECT_SLUG}:${PREVIOUS_SHA}`, `${PROJECT_SLUG}-ops:${PREVIOUS_SHA}`],
+    teardownScript: false,
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(position(run.calls, TEARDOWN), -1);
+  assert.ok(position(run.calls, ROLLBACK_APP) >= 0);
+  assert.match(run.stdout, /no secondary-stock teardown/);
+});
+
+test("rollback from a release with no ops image skips the teardown too", () => {
+  const run = runRollback({
+    running: ["app", "catalog-sync"],
+    images: [`${PROJECT_SLUG}:${PREVIOUS_SHA}`],
+    currentOpsImage: false,
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(position(run.calls, TEARDOWN), -1);
 });
 
 test("rollback to a release without a catalog-sync image leaves sync stopped and warns", () => {

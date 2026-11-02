@@ -10,6 +10,9 @@ import {
   syncSecondaryShopInventory,
 } from "../../src/commerce/secondary-inventory-sync.ts";
 import { syncConfiguredPancakeCatalog } from "../../src/commerce/catalog-sync-runtime.ts";
+import { SecondaryConfigurationError } from "../../src/commerce/secondary-inventory-sync.ts";
+import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
 import { prisma as runtimePrisma } from "../../src/db/prisma.ts";
 import { normalizedSkuSql } from "../../src/commerce/sku-sql.ts";
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
@@ -1137,4 +1140,115 @@ test("a primary outage cannot leave a replaced secondary shop's stock counting e
 
   assert.deepEqual(await stockRows("v1"), [["wh-a", 1]], "A's stock is gone");
   assert.equal(await activeShop(), otherSecondaryShopId, "and B is recorded as the configured shop");
+});
+
+test("a cycle whose configuration could not be applied still syncs the primary shop, but ends in an error and reads no secondary stock", async () => {
+  await seedPrimary();
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(2)); // shop A stored
+
+  let primarySynced = 0;
+  let fetched = 0;
+  const outcome = await withEnvironment(
+    { ...primaryOnlyEnv, PANCAKE_SECONDARY_SHOP_ID: undefined, PANCAKE_SECONDARY_API_KEY: undefined },
+    async () => {
+      globalThis.fetch = (async () => {
+        fetched += 1;
+        throw new TypeError("must not be reached");
+      }) as typeof fetch;
+      return syncConfiguredPancakeCatalog({
+        clock: () => t(10),
+        seams: {
+          // The configuration transaction fails (lock timeout, say) ...
+          configureSecondary: async () => {
+            throw new Error("lock timeout");
+          },
+          // ... but the primary catalog read itself succeeds.
+          syncCatalog: (async () => {
+            primarySynced += 1;
+            return { products: 1, variations: 1 };
+          }) as never,
+        },
+      }).then(
+        () => "healthy" as const,
+        (error: unknown) => error,
+      );
+    },
+  );
+
+  assert.ok(outcome instanceof SecondaryConfigurationError, "the cycle is reported as failed, not healthy");
+  assert.equal(primarySynced, 1, "the primary catalog was still refreshed");
+  assert.equal(fetched, 0, "and no secondary read was attempted");
+  // The old shop's rows are still there because the change could not be applied: that is exactly why
+  // the cycle must not be reported healthy.
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 1]]);
+});
+
+test("a cycle whose configuration was applied and whose primary sync succeeds is healthy", async () => {
+  await seedPrimary();
+  const result = await withEnvironment(
+    { ...primaryOnlyEnv, PANCAKE_SECONDARY_SHOP_ID: undefined, PANCAKE_SECONDARY_API_KEY: undefined },
+    () =>
+      syncConfiguredPancakeCatalog({
+        clock: () => t(10),
+        seams: { syncCatalog: (async () => ({ products: 1, variations: 1 })) as never },
+      }),
+  );
+  assert.deepEqual(result, { products: 1, variations: 1 });
+});
+
+test("the rollback teardown leaves the mirror such that a release that adds up every row sees primary stock only", async () => {
+  await seedPrimary();
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(2));
+  const everyRow = async () =>
+    (await prisma.warehouseStock.findMany({ where: { variant: { pancakeVariationId: "v1" } }, select: { quantity: true } }))
+      .reduce((total, row) => total + row.quantity, 0);
+  assert.equal(await everyRow(), 6, "what the release being restored would add up before the teardown");
+
+  const run = spawnSync(process.execPath, ["--experimental-strip-types", "scripts/pancake-secondary-teardown.ts"], {
+    cwd: resolve(import.meta.dirname, "../.."),
+    env: { ...process.env, PANCAKE_SHOP_ID: String(primaryShopId) },
+    encoding: "utf8",
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /secondary stock removed: 1 warehouse rows/);
+  assert.equal(await everyRow(), 1, "and after it: the primary stock alone");
+  assert.equal(await activeShop(), null);
+});
+
+test("the rollback teardown re-observes availability, and is idempotent", async () => {
+  await seedPrimary();
+  const product = await prisma.productMirror.findFirstOrThrow({ where: { pancakeShopId: primaryShopId } });
+  await prisma.productSellingPolicy.create({ data: { productId: product.id, sellingMode: "PREORDER", negativeStockLimit: -20 } });
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 0 }])],
+    syncedAt: t(1),
+  });
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(2));
+  assert.equal((await preorderCycle("v1"))?.lastStockNonPositive, false);
+
+  const teardown = () =>
+    spawnSync(process.execPath, ["--experimental-strip-types", "scripts/pancake-secondary-teardown.ts"], {
+      cwd: resolve(import.meta.dirname, "../.."),
+      env: { ...process.env, PANCAKE_SHOP_ID: String(primaryShopId) },
+      encoding: "utf8",
+    });
+  const first = teardown();
+  const second = teardown();
+
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(second.status, 0, second.stderr);
+  assert.match(second.stdout, /secondary stock removed: 0 warehouse rows/);
+  assert.equal((await preorderCycle("v1"))?.lastStockNonPositive, true, "the preorder cycle no longer describes stock that is gone");
+});
+
+test("the rollback teardown refuses to run without a valid PANCAKE_SHOP_ID", () => {
+  const run = spawnSync(process.execPath, ["--experimental-strip-types", "scripts/pancake-secondary-teardown.ts"], {
+    cwd: resolve(import.meta.dirname, "../.."),
+    env: { ...process.env, PANCAKE_SHOP_ID: "not-a-number" },
+    encoding: "utf8",
+  });
+  assert.notEqual(run.status, 0);
+  assert.match(run.stderr, /teardown failed/);
 });

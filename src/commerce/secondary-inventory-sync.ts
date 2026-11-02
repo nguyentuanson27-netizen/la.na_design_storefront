@@ -283,6 +283,18 @@ export async function syncSecondaryShopInventory({
   };
 }
 
+/**
+ * The configured secondary shop could not be applied to the database (the transaction failed or timed
+ * out). Until it is, stock of a shop the deployment no longer uses may still be counting, so a sync
+ * cycle that ends with this outstanding must not be reported healthy.
+ */
+export class SecondaryConfigurationError extends Error {
+  constructor() {
+    super("The configured secondary Pancake shop could not be applied");
+    this.name = "SecondaryConfigurationError";
+  }
+}
+
 type PurgeOptions = {
   primaryShopId: number;
   exceptShopId?: number;

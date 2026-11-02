@@ -10,6 +10,7 @@ import { createInventorySignalRepository } from "./pancake-inventory-signals.ts"
 import {
   configureSecondaryShop,
   purgeSecondaryWarehouseStock,
+  SecondaryConfigurationError,
   syncSecondaryShopInventory,
 } from "./secondary-inventory-sync.ts";
 import { parseCatalogSyncIntervalSeconds } from "../operations/catalog-sync-loop.ts";
@@ -27,75 +28,104 @@ const SECONDARY_STOCK_MAX_AGE_INTERVALS = 3;
  */
 export async function syncConfiguredPancakeCatalog({
   clock,
+  seams = {},
 }: {
   clock?: () => Date;
+  /** Test seams for the two steps whose failure the cycle must tell apart. */
+  seams?: Readonly<{
+    syncCatalog?: typeof syncPancakeCatalog;
+    configureSecondary?: typeof configureSecondaryShop;
+  }>;
 } = {}) {
   const config = readPancakeConfig();
   const client = new PancakeClient({ apiKey: config.apiKey });
   const repository = createCatalogMirrorRepository(prisma);
+  const syncCatalog = seams.syncCatalog ?? syncPancakeCatalog;
+  const configureSecondary = seams.configureSecondary ?? configureSecondaryShop;
 
   // Before the primary read, and whatever it turns out to do: what the configuration says about the
   // secondary shop (off, or another shop) is applied from the database alone. A primary outage must
   // not leave a switched-off or replaced shop's stock counting on the storefront; the primary error
   // below still propagates so the loop retries it.
-  await reconcileSecondaryConfiguration(config, clock);
+  //
+  // If applying it fails, the primary sync still runs (the catalog must not go stale for that), but
+  // the cycle ends in an error: it is not healthy while stock of a shop the deployment no longer
+  // uses may still be counting, and the loop retries the whole cycle.
+  let configurationApplied = true;
+  try {
+    await applySecondaryConfiguration(config, configureSecondary, clock);
+  } catch {
+    configurationApplied = false;
+    console.error("Secondary Pancake shop configuration could not be applied; this sync cycle will be reported as failed");
+  }
+  await dropStaleSecondaryStock(config, clock);
 
-  const result = await syncPancakeCatalog({
+  const result = await syncCatalog({
     client,
     repository,
     shopId: config.shopId,
     ...(clock ? { clock } : {}),
   });
 
-  await refreshSecondaryInventory(config, clock);
+  // Reading the secondary shop's stock is only meaningful once the configuration is in force.
+  if (configurationApplied) await refreshSecondaryInventory(config, configureSecondary, clock);
 
   try {
     await auditListPrices({ client: prisma, shopId: config.shopId, now: new Date() });
   } catch {
     // Durable retry; the completed catalog transaction stays successful.
   }
+  if (!configurationApplied) throw new SecondaryConfigurationError();
   return result;
 }
 
 /**
  * Applies the configured secondary shop (or its absence) to the database: stores which shop is
- * configured, removes the stock of any other, and drops this shop's stock once its sync has been
- * failing for too long. Needs the database only, never the network.
+ * configured and removes the stock of any other. Needs the database only, never the network.
  *
- * Never throws: it is housekeeping and must not stand in the way of the catalog sync.
+ * Throws on failure: a configuration that could not be applied must not pass for applied.
  */
-async function reconcileSecondaryConfiguration(
+async function applySecondaryConfiguration(
+  config: ReturnType<typeof readPancakeConfig>,
+  configureSecondary: typeof configureSecondaryShop,
+  clock?: () => Date,
+): Promise<void> {
+  const { removed } = await configureSecondary(prisma, {
+    primaryShopId: config.shopId,
+    secondaryShopId: config.secondaryShop?.shopId ?? null,
+    observedAt: clock ? clock() : new Date(),
+  });
+  if (removed > 0) {
+    console.warn(`Removed ${removed} secondary warehouse stock row(s) that do not belong to the configured secondary shop`);
+  }
+}
+
+/**
+ * Drops this shop's stock once its sync has been failing for too long. Best-effort and never
+ * throws: unlike the configuration it only limits how stale a figure can get.
+ */
+async function dropStaleSecondaryStock(
   config: ReturnType<typeof readPancakeConfig>,
   clock?: () => Date,
 ): Promise<void> {
+  if (!config.secondaryShop) return;
   try {
-    const observedAt = clock ? clock() : new Date();
-    const { removed } = await configureSecondaryShop(prisma, {
+    const now = clock ? clock() : new Date();
+    const maxAgeMs =
+      SECONDARY_STOCK_MAX_AGE_INTERVALS *
+      parseCatalogSyncIntervalSeconds(process.env.CATALOG_SYNC_INTERVAL_SECONDS) *
+      1000;
+    const removedStale = await purgeSecondaryWarehouseStock(prisma, {
       primaryShopId: config.shopId,
-      secondaryShopId: config.secondaryShop?.shopId ?? null,
-      observedAt,
+      shopId: config.secondaryShop.shopId,
+      syncedBefore: new Date(now.getTime() - maxAgeMs),
+      observedAt: now,
     });
-    if (removed > 0) {
-      console.warn(`Removed ${removed} secondary warehouse stock row(s) that do not belong to the configured secondary shop`);
-    }
-
-    if (config.secondaryShop) {
-      const maxAgeMs =
-        SECONDARY_STOCK_MAX_AGE_INTERVALS *
-        parseCatalogSyncIntervalSeconds(process.env.CATALOG_SYNC_INTERVAL_SECONDS) *
-        1000;
-      const removedStale = await purgeSecondaryWarehouseStock(prisma, {
-        primaryShopId: config.shopId,
-        shopId: config.secondaryShop.shopId,
-        syncedBefore: new Date(observedAt.getTime() - maxAgeMs),
-        observedAt,
-      });
-      if (removedStale > 0) {
-        console.error(`Dropped ${removedStale} stale secondary warehouse stock row(s): secondary sync is failing`);
-      }
+    if (removedStale > 0) {
+      console.error(`Dropped ${removedStale} stale secondary warehouse stock row(s): secondary sync is failing`);
     }
   } catch {
-    console.error("Secondary Pancake shop configuration maintenance failed");
+    console.error("Stale secondary stock could not be dropped");
   }
 }
 
@@ -105,6 +135,7 @@ async function reconcileSecondaryConfiguration(
  */
 async function refreshSecondaryInventory(
   config: ReturnType<typeof readPancakeConfig>,
+  configureSecondary: typeof configureSecondaryShop,
   clock?: () => Date,
 ): Promise<void> {
   if (!config.secondaryShop) return;
@@ -112,7 +143,7 @@ async function refreshSecondaryInventory(
   try {
     // Before the first catalog sync there was no state row to store the configured shop in; now
     // there is. A no-op on every later cycle.
-    await configureSecondaryShop(prisma, {
+    await configureSecondary(prisma, {
       primaryShopId: config.shopId,
       secondaryShopId: shopId,
       observedAt: clock ? clock() : new Date(),

@@ -45,6 +45,27 @@ compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 # while newer sync code is still writing; `stop` waits out an in-flight sync (90s grace).
 "${compose[@]}" stop catalog-sync
 
+# The release being left may have added a second Pancake shop's stock to the mirror (WarehouseStock
+# rows keyed `secondary:*`). The release being restored adds up EVERY warehouse row it finds and does
+# not know that key, so until its own sync removed them those units would count as primary stock on
+# the storefront and in capacity reservations, while its checkout reads the primary POS alone. So
+# they are removed -- and the availability they affected observed again -- while the writers are
+# quiet and before the previous app takes traffic. It runs from the release being left (the one in
+# the env file), the only one that knows the rows; a release without the script predates the feature
+# and has nothing to remove. Idempotent.
+CURRENT_SHA="$(grep -E '^RELEASE_SHA=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+if [[ -n "$CURRENT_SHA" ]] && docker image inspect "$PROJECT_SLUG-ops:$CURRENT_SHA" >/dev/null 2>&1 \
+  && "${compose[@]}" run --rm --no-deps ops node -e "process.exit(require('node:fs').existsSync('scripts/pancake-secondary-teardown.ts') ? 0 : 1)" >/dev/null 2>&1; then
+  if ! "${compose[@]}" run --rm ops pnpm pancake:secondary:teardown; then
+    # Nothing was started: put the current writer back exactly as it was, and stop here.
+    "${compose[@]}" start catalog-sync >/dev/null 2>&1 || true
+    echo "Could not remove the secondary shop's stock from the mirror; $PREVIOUS_SHA was NOT started. Fix the database access and retry the rollback." >&2
+    exit 1
+  fi
+else
+  echo "Note: the release being left has no secondary-stock teardown, so there is no secondary stock to remove."
+fi
+
 RELEASE_SHA="$PREVIOUS_SHA" "${compose[@]}" up -d --no-build app caddy
 
 # wait_healthy SERVICE ATTEMPTS DELAY: succeeds once Docker reports SERVICE healthy.
