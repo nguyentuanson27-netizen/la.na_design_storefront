@@ -4,9 +4,9 @@ Official B2C storefront for **La.na Design**, a Vietnamese women’s fashion bra
 
 ## Stack
 
-- Next.js 16.2.11 / React 19.2 / TypeScript
+- Next.js 16.4.1 / React 19.2 / TypeScript
 - Tailwind CSS v4
-- PostgreSQL + Prisma 7.9.1
+- PostgreSQL + Prisma 7.10.1
 - Better Auth
 - Pancake POS adapter under `src/integrations/pancake/`
 - pnpm 11.4.0 on Node.js 22+

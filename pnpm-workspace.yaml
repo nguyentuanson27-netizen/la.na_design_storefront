@@ -1,7 +1,12 @@
+# Dependency build scripts are opt-in under pnpm 11. The placeholder values pnpm writes
+# ("set this to true or false") are not an answer, and while they stand `pnpm install` exits 1
+# ("Ignored build scripts"), which fails every `pnpm <script>` on a fresh checkout. CI and the
+# Dockerfile install with `--ignore-scripts` and run `prisma generate` themselves, so none of these
+# needs its install script; stating that makes a local install behave the same way.
 allowBuilds:
-  '@prisma/engines': set this to true or false
-  prisma: set this to true or false
-  unrs-resolver: set this to true or false
+  '@prisma/engines': false
+  prisma: false
+  unrs-resolver: false
 
 # Security patch floors for transitive dependencies that upstream pins below the fix.
 # next's postcss pulls source-map-js@1.2.1 (GHSA-68fv-2mgg-jv7q); prisma@7.10.1's dev tooling pulls
