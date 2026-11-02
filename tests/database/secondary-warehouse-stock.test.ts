@@ -93,6 +93,24 @@ function syncSecondary(
   });
 }
 
+/**
+ * A client that runs `beforeFirstTransaction` right before its first transaction opens: after the
+ * secondary sync has read its shop and its candidate variants, before it takes the catalog lock.
+ */
+function racingPrisma(beforeFirstTransaction: () => Promise<void>): PrismaClient {
+  let first = true;
+  return {
+    variantMirror: prisma.variantMirror,
+    async $transaction(fn: unknown, options: unknown) {
+      if (first) {
+        first = false;
+        await beforeFirstTransaction();
+      }
+      return (prisma.$transaction as (f: unknown, o: unknown) => Promise<unknown>).call(prisma, fn, options);
+    },
+  } as unknown as PrismaClient;
+}
+
 async function stockRows(variationId: string) {
   const rows = await prisma.warehouseStock.findMany({
     where: { variant: { pancakeVariationId: variationId } },
@@ -473,4 +491,159 @@ test("purging secondary stock (disabled, stale, or shop changed) re-observes a p
 
   // Nothing to purge: no observation, no error.
   assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId, observedAt: t(62) }), 0);
+});
+
+test("renaming a primary SKU takes the old SKU's secondary stock off the variant even if the secondary API never answers", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-A", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(0),
+  });
+  await syncSecondary([{ displayId: "SKU-A", stocks: [["wh-s1", 5]] }], t(1));
+  assert.equal(await sellable("v1"), 6);
+
+  // The primary sync renames v1 to SKU-B; the secondary sync that would follow fails, so it never runs.
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-B", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(2),
+  });
+
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
+  assert.equal(await sellable("v1"), 1, "B does not carry A's stock");
+});
+
+test("a primary sync that removes a SKU, retires the variant, or makes the SKU shared drops the secondary stock at once", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [
+      primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v2", "SKU-2", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v3", "SKU-3", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+    ],
+    syncedAt: t(0),
+  });
+  await syncSecondary(
+    [
+      { displayId: "SKU-1", stocks: [["wh-s1", 5]] },
+      { displayId: "SKU-2", stocks: [["wh-s1", 5]] },
+      { displayId: "SKU-3", stocks: [["wh-s1", 5]] },
+    ],
+    t(1),
+  );
+  assert.equal((await stockRows("v1")).length, 2);
+
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [
+      primaryVariation("v1", null, [{ warehouseId: "wh-a", remainQuantity: 1 }]), // SKU removed
+      primaryVariation("v3", "sku-2", [{ warehouseId: "wh-a", remainQuantity: 1 }]), // now shares v2's SKU
+      // v2 is absent from the snapshot: retired.
+    ],
+    syncedAt: t(2),
+  });
+
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
+  assert.deepEqual(await stockRows("v2"), [], "retired variant keeps nothing");
+  assert.deepEqual(await stockRows("v3"), [["wh-a", 1]], "SKU now shared with another variant on sale");
+});
+
+test("a primary sync leaves a correctly attributed secondary contribution alone", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-A", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(0),
+  });
+  await syncSecondary([{ displayId: "SKU-A", stocks: [["wh-s1", 5]] }], t(1));
+
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", " sku-a ", [{ warehouseId: "wh-a", remainQuantity: 2 }])],
+    syncedAt: t(2),
+  });
+
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 2]]);
+});
+
+test("a primary sync that commits between the candidate read and the lock cannot receive the old SKU's stock", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [
+      primaryVariation("v1", "SKU-A", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v2", "SKU-C", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+    ],
+    syncedAt: t(0),
+  });
+
+  // The secondary sync has read its shop and the candidate variants. Before it takes the lock, a
+  // primary sync renames v1 to SKU-B and gives v2 the SKU-A.
+  let raced = false;
+  const racing = racingPrisma(async () => {
+    if (!raced) {
+      raced = true;
+      await repository.syncSnapshot({
+        shopId: primaryShopId,
+        variations: [
+          primaryVariation("v1", "SKU-B", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+          primaryVariation("v2", "SKU-A", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+        ],
+        syncedAt: t(1),
+      });
+    }
+  });
+
+  await syncSecondaryShopInventory({
+    primaryShopId,
+    secondaryShopId,
+    secondaryClient: secondaryClient([
+      { displayId: "SKU-A", stocks: [["wh-s1", 5]] },
+      { displayId: "SKU-B", stocks: [["wh-s1", 2]] },
+    ]),
+    prisma: racing,
+    clock: () => t(2),
+    warn: () => undefined,
+  });
+
+  assert.equal(raced, true);
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 2], ["wh-a", 1]], "v1 is SKU-B now");
+  assert.deepEqual(await stockRows("v2"), [["secondary:920239:wh-s1", 5], ["wh-a", 1]], "v2 is SKU-A now");
+});
+
+test("a SKU that became shared between the candidate read and the lock gets no secondary stock", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [
+      primaryVariation("v1", "SKU-A", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v2", "SKU-C", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+    ],
+    syncedAt: t(0),
+  });
+
+  let raced = false;
+  const racing = racingPrisma(async () => {
+    if (!raced) {
+      raced = true;
+      await repository.syncSnapshot({
+        shopId: primaryShopId,
+        variations: [
+          primaryVariation("v1", "SKU-A", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+          primaryVariation("v2", "SKU-A", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+        ],
+        syncedAt: t(1),
+      });
+    }
+  });
+
+  const result = await syncSecondaryShopInventory({
+    primaryShopId,
+    secondaryShopId,
+    secondaryClient: secondaryClient([{ displayId: "SKU-A", stocks: [["wh-s1", 5]] }]),
+    prisma: racing,
+    clock: () => t(2),
+    warn: () => undefined,
+  });
+
+  assert.equal(result.ambiguousCount, 1);
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
+  assert.deepEqual(await stockRows("v2"), [["wh-a", 1]]);
 });

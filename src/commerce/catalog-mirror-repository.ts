@@ -293,6 +293,40 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
+/**
+ * Deletes the secondary-shop stock rows of `shopId` that no longer belong to the variant they sit
+ * on: the variant now carries another SKU (or none), was retired, or shares the SKU they were
+ * attributed to with another variant still on sale. Run by the primary sync in its own transaction,
+ * right after it rewrote the variants, so a rename never leaves one article's secondary stock on
+ * another until the secondary shop's API next answers. Returns how many rows went.
+ */
+async function dropMisattributedSecondaryStock(
+  tx: Prisma.TransactionClient,
+  shopId: number,
+): Promise<number> {
+  return tx.$executeRaw(Prisma.sql`
+    DELETE FROM "WarehouseStock" ws
+    USING "VariantMirror" v, "ProductMirror" vp
+    WHERE ws."variantId" = v."id"
+      AND vp."id" = v."productId"
+      AND vp."pancakeShopId" = ${shopId}
+      AND ws."pancakeWarehouseId" LIKE ${SECONDARY_WAREHOUSE_KEY_PREFIX + "%"}
+      AND (
+        NOT v."isPresent"
+        OR ws."secondarySku" IS DISTINCT FROM NULLIF(upper(btrim(v."pancakeDisplayId")), '')
+        OR EXISTS (
+          SELECT 1
+          FROM "VariantMirror" other
+          JOIN "ProductMirror" op ON op."id" = other."productId"
+          WHERE op."pancakeShopId" = vp."pancakeShopId"
+            AND other."isPresent"
+            AND other."id" <> v."id"
+            AND upper(btrim(other."pancakeDisplayId")) = ws."secondarySku"
+        )
+      )
+  `);
+}
+
 /** Stored stock the secondary shop contributes to each variant (see `warehouse-stock-scope.ts`). */
 async function readSecondaryStockByVariantId(
   tx: Prisma.TransactionClient,
@@ -362,6 +396,7 @@ export async function writeObservedWarehouseStocks(
   });
   if (stamped.count === 0) return false;
 
+  const secondarySku = scope.kind === "secondary" ? { secondarySku: scope.sku ?? null } : {};
   const currentKeys = keyed.map(({ key }) => key);
   await tx.warehouseStock.deleteMany({
     where:
@@ -390,8 +425,9 @@ export async function writeObservedWarehouseStocks(
         pancakeWarehouseId: stock.key,
         quantity: stock.remainQuantity,
         syncedAt: observedAt,
+        ...secondarySku,
       },
-      update: { quantity: stock.remainQuantity, syncedAt: observedAt },
+      update: { quantity: stock.remainQuantity, syncedAt: observedAt, ...secondarySku },
     });
   }
   return true;
@@ -1028,6 +1064,11 @@ export function createCatalogMirrorRepository(
               readiness.readyQuantity <= 0,
           );
         }
+
+        // A variant that was renamed, retired, or now shares its SKU stops receiving the secondary
+        // stock that was attributed to its old identity, here and now: this must not wait for the
+        // secondary shop's API, which may be down. Done before the observation below reads the totals.
+        await dropMisattributedSecondaryStock(tx, safeShopId);
 
         // The stock a variant sells from is the primary shop's plus what the secondary shop holds
         // for it, so a variant is only "sold out" when both are.

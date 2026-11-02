@@ -59,20 +59,35 @@ async function lookupSecondarySku(
 ): Promise<LookupOutcome> {
   try {
     // The exact SKU may sit on any page of a fuzzy search, and the mirror sync adds every row that
-    // carries it, so all pages are read; if they cannot all be, nothing is known about its stock.
+    // carries it, so all pages are read. Like the full catalog traversal, anything that does not
+    // look like one consistent walk of the same result set is rejected: a page that answers for a
+    // different page number (or a repeated row) would otherwise add the same units twice.
     const matches: PancakeCatalogVariation[] = [];
-    let totalPages = 1;
-    for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+    const seenIds = new Set<string>();
+    let first: { totalPages: number; totalEntries: number } | undefined;
+    let rowsRead = 0;
+    for (let pageNumber = 1; pageNumber <= (first?.totalPages ?? 1); pageNumber += 1) {
       const payload = await secondary.client.getJson(`/shops/${secondary.shopId}/products/variations`, {
         page_number: pageNumber,
         page_size: SECONDARY_LOOKUP_PAGE_SIZE,
         search: displayId.trim(),
       });
       const page = parsePancakeCatalogVariations(payload);
-      totalPages = page.totalPages;
-      if (totalPages > SECONDARY_LOOKUP_MAX_PAGES) return { kind: "failed" };
-      matches.push(...page.variations.filter((variation) => normalizeSku(variation.displayId) === sku));
+      if (page.pageNumber !== pageNumber) return { kind: "failed" };
+      if (first === undefined) {
+        first = { totalPages: page.totalPages, totalEntries: page.totalEntries };
+        if (first.totalPages > SECONDARY_LOOKUP_MAX_PAGES) return { kind: "failed" };
+      } else if (page.totalPages !== first.totalPages || page.totalEntries !== first.totalEntries) {
+        return { kind: "failed" };
+      }
+      for (const variation of page.variations) {
+        if (seenIds.has(variation.id)) return { kind: "failed" };
+        seenIds.add(variation.id);
+        if (normalizeSku(variation.displayId) === sku) matches.push(variation);
+      }
+      rowsRead += page.variations.length;
     }
+    if (first !== undefined && rowsRead !== first.totalEntries) return { kind: "failed" };
     return matches.length > 0 ? { kind: "found", matches } : { kind: "none" };
   } catch {
     return { kind: "failed" };

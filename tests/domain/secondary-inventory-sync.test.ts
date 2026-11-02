@@ -194,12 +194,18 @@ function variationRow(id: string, displayId: string | null, stocks: Array<[strin
   };
 }
 
+type PrimaryRow = { id: string; pancakeDisplayId: string | null; isPresent: boolean };
+
 function syncHarness({
   secondary,
   primary,
+  primaryAtLockTime = primary,
 }: {
   secondary: ReturnType<typeof variationRow>[];
-  primary: Array<{ id: string; pancakeDisplayId: string | null; isPresent: boolean }>;
+  /** What the candidate read sees. */
+  primary: PrimaryRow[];
+  /** What the mapping really is once the lock is held (a primary sync may have committed in between). */
+  primaryAtLockTime?: PrimaryRow[];
 }) {
   const hookCalls: string[] = [];
   const locked: Array<readonly string[]> = [];
@@ -247,7 +253,7 @@ function syncHarness({
       async findMany({ where }: { where: { product: { pancakeShopId: number } } }) {
         assert.equal(where.product.pancakeShopId, 4_741_464);
         findManyWhere = where;
-        return primary;
+        return primary.map(({ id }) => ({ id }));
       },
     },
     async $transaction<T>(fn: (t: typeof tx) => Promise<T>): Promise<T> {
@@ -277,6 +283,18 @@ function syncHarness({
           async lockVariants(_tx, variantIds) {
             hookCalls.push("lockRows");
             locked.push(variantIds);
+          },
+          async readMapping(_tx, variantIds) {
+            hookCalls.push("mapping");
+            return primaryAtLockTime.filter(({ id }) => variantIds.includes(id));
+          },
+          async findAmbiguousSkus(_tx, _shop, skus) {
+            const counts = new Map<string, number>();
+            for (const row of primaryAtLockTime) {
+              const sku = normalizeSku(row.pancakeDisplayId);
+              if (sku && row.isPresent) counts.set(sku, (counts.get(sku) ?? 0) + 1);
+            }
+            return new Set(skus.filter((sku) => (counts.get(sku) ?? 0) > 1));
           },
           async observeAvailability(_tx, input) {
             hookCalls.push("observe");
@@ -393,6 +411,12 @@ test("purgeSecondaryWarehouseStock deletes under the shop lock, locks the rows, 
       steps.push("observe");
       observed.push(input);
     },
+    async readMapping() {
+      return [];
+    },
+    async findAmbiguousSkus() {
+      return new Set<string>();
+    },
   };
   const prisma = {
     async $transaction<T>(fn: (t: typeof tx) => Promise<T>): Promise<T> {
@@ -436,6 +460,12 @@ test("purge scopes: everything when disabled, every other shop when the shop cha
     async acquireLock() {},
     async lockVariants() {},
     async observeAvailability() {},
+    async readMapping() {
+      return [];
+    },
+    async findAmbiguousSkus() {
+      return new Set<string>();
+    },
   };
 
   assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 1, hooks }), 0);
@@ -446,5 +476,68 @@ test("purge scopes: everything when disabled, every other shop when the shop cha
       pancakeWarehouseId: { startsWith: "secondary:" },
       NOT: { pancakeWarehouseId: { startsWith: "secondary:2:" } },
     },
+  ]);
+});
+
+test("the SKU mapping that decides the writes is the one read under the lock, not the candidate read", async () => {
+  // The candidate read saw v1 as SKU-A; a primary sync that committed before the lock renamed it
+  // to SKU-B, and made v2 (SKU-A) a second owner of nothing. SKU-A's 5 units must not land on v1.
+  const harness = syncHarness({
+    secondary: [
+      variationRow("sec_a", "SKU-A", [["wh", 5]]),
+      variationRow("sec_b", "SKU-B", [["wh", 2]]),
+    ],
+    primary: [
+      { id: "v1", pancakeDisplayId: "SKU-A", isPresent: true },
+      { id: "v2", pancakeDisplayId: "SKU-C", isPresent: true },
+    ],
+    primaryAtLockTime: [
+      { id: "v1", pancakeDisplayId: "SKU-B", isPresent: true },
+      { id: "v2", pancakeDisplayId: "SKU-A", isPresent: true },
+    ],
+  });
+
+  await harness.run();
+
+  assert.deepEqual(harness.writes, [
+    { variantId: "v1", keys: ["secondary:407962350:wh"], quantities: [2] },
+    { variantId: "v2", keys: ["secondary:407962350:wh"], quantities: [5] },
+  ]);
+});
+
+test("a SKU that became shared after the candidate read gets no stock", async () => {
+  const harness = syncHarness({
+    secondary: [variationRow("sec_a", "SKU-A", [["wh", 5]])],
+    primary: [{ id: "v1", pancakeDisplayId: "SKU-A", isPresent: true }],
+    primaryAtLockTime: [
+      { id: "v1", pancakeDisplayId: "SKU-A", isPresent: true },
+      { id: "v1b", pancakeDisplayId: "sku-a", isPresent: true },
+    ],
+  });
+
+  const result = await harness.run();
+
+  assert.equal(result.ambiguousCount, 1);
+  assert.deepEqual(harness.writes, [{ variantId: "v1", keys: [], quantities: [] }]);
+});
+
+test("a variant that lost its SKU or was retired after the candidate read is cleared", async () => {
+  const harness = syncHarness({
+    secondary: [variationRow("sec_a", "SKU-A", [["wh", 5]])],
+    primary: [
+      { id: "v1", pancakeDisplayId: "SKU-A", isPresent: true },
+      { id: "v2", pancakeDisplayId: "SKU-A", isPresent: true },
+    ],
+    primaryAtLockTime: [
+      { id: "v1", pancakeDisplayId: null, isPresent: true },
+      { id: "v2", pancakeDisplayId: "SKU-A", isPresent: false },
+    ],
+  });
+
+  await harness.run();
+
+  assert.deepEqual(harness.writes, [
+    { variantId: "v1", keys: [], quantities: [] },
+    { variantId: "v2", keys: [], quantities: [] },
   ]);
 });

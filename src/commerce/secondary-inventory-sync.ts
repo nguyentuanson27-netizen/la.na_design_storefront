@@ -6,6 +6,7 @@ import {
   observeStoredStockAvailability,
   writeObservedWarehouseStocks,
 } from "./catalog-mirror-repository.ts";
+import { findAmbiguousPrimarySkus } from "./secondary-sku-guard.ts";
 import {
   acquireCatalogSyncLock,
   CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS,
@@ -24,6 +25,17 @@ type SyncTransaction = Parameters<typeof observeStoredStockAvailability>[0];
 export type SecondaryInventorySyncHooks = {
   acquireLock(tx: SyncTransaction, shopId: number): Promise<void>;
   lockVariants(tx: SyncTransaction, variantIds: readonly string[]): Promise<void>;
+  /** The variants' CURRENT SKU and presence, read while holding the lock. */
+  readMapping(
+    tx: SyncTransaction,
+    variantIds: readonly string[],
+  ): Promise<ReadonlyArray<{ id: string; pancakeDisplayId: string | null; isPresent: boolean }>>;
+  /** Of the normalized SKUs, those more than one present primary variant carries (read under the lock). */
+  findAmbiguousSkus(
+    tx: SyncTransaction,
+    primaryShopId: number,
+    skus: readonly string[],
+  ): Promise<ReadonlySet<string>>;
   observeAvailability(
     tx: SyncTransaction,
     input: { shopId: number; variantIds: readonly string[]; observedAt: Date },
@@ -33,6 +45,13 @@ export type SecondaryInventorySyncHooks = {
 const DEFAULT_HOOKS: SecondaryInventorySyncHooks = {
   acquireLock: acquireCatalogSyncLock,
   lockVariants: lockVariantMirrorRows,
+  readMapping: (tx, variantIds) =>
+    tx.variantMirror.findMany({
+      where: { id: { in: [...variantIds] } },
+      select: { id: true, pancakeDisplayId: true, isPresent: true },
+      orderBy: { id: "asc" },
+    }),
+  findAmbiguousSkus: (tx, primaryShopId, skus) => findAmbiguousPrimarySkus(tx, primaryShopId, skus),
   observeAvailability: observeStoredStockAvailability,
 };
 
@@ -105,9 +124,10 @@ export async function syncSecondaryShopInventory({
     }
   }
 
-  // A variant that lost its SKU is read too when it still carries this shop's rows: they matched
-  // the old SKU and must be cleared, not left to be counted until they go stale.
-  const primaryVariants = await prisma.variantMirror.findMany({
+  // Which variants to visit: those with a SKU, and those still carrying this shop's rows (a variant
+  // that lost its SKU must have them cleared). This is only a candidate list. What each variant's
+  // SKU IS, and which SKUs are shared, is read again inside the lock, per chunk, below.
+  const candidates = await prisma.variantMirror.findMany({
     where: {
       product: { pancakeShopId: primaryShopId },
       OR: [
@@ -119,71 +139,22 @@ export async function syncSecondaryShopInventory({
         },
       ],
     },
-    select: { id: true, pancakeDisplayId: true, isPresent: true },
+    select: { id: true },
+    orderBy: { id: "asc" },
   });
-
-  // Only variants still on sale compete for a SKU; a retired variant keeping the code of its
-  // replacement must not make the replacement ambiguous.
-  const presentVariantsBySku = new Map<string, number>();
-  for (const variant of primaryVariants) {
-    const sku = normalizeSku(variant.pancakeDisplayId);
-    if (!sku || !variant.isPresent) continue;
-    presentVariantsBySku.set(sku, (presentVariantsBySku.get(sku) ?? 0) + 1);
-  }
+  const candidateIds = candidates.map(({ id }) => id);
 
   let matchedCount = 0;
   let totalStockAggregated = 0;
   const seenWarehouseIds = new Set<string>();
   const primarySkus = new Set<string>();
   const ambiguousSkus = new Set<string>();
-  const updates: Array<{ variantId: string; stocks: PancakeCatalogWarehouseStock[] }> = [];
-
-  for (const variant of primaryVariants) {
-    const sku = normalizeSku(variant.pancakeDisplayId);
-    if (!sku) {
-      updates.push({ variantId: variant.id, stocks: [] });
-      continue;
-    }
-    primarySkus.add(sku);
-
-    const byWarehouse = secondaryBySku.get(sku);
-    const ambiguous = (presentVariantsBySku.get(sku) ?? 0) > 1;
-    if (ambiguous) ambiguousSkus.add(sku);
-
-    // Empty stocks clear whatever this shop contributed before: an unmatched, retired or ambiguous
-    // variant must not keep a stale figure.
-    if (!byWarehouse || !variant.isPresent || ambiguous) {
-      updates.push({ variantId: variant.id, stocks: [] });
-      continue;
-    }
-    const stocks = [...byWarehouse].map(([warehouseId, remainQuantity]) => ({
-      warehouseId,
-      remainQuantity,
-    }));
-    matchedCount += 1;
-    for (const { warehouseId, remainQuantity } of stocks) {
-      totalStockAggregated += remainQuantity;
-      seenWarehouseIds.add(warehouseId);
-    }
-    updates.push({ variantId: variant.id, stocks });
-  }
-
-  let unmatchedCount = 0;
-  for (const sku of secondaryBySku.keys()) {
-    if (!primarySkus.has(sku)) unmatchedCount += 1;
-  }
-
-  if (ambiguousSkus.size > 0) {
-    warn(
-      `Secondary Pancake inventory sync skipped ${ambiguousSkus.size} SKU(s) shared by several primary variants`,
-    );
-  }
 
   // Availability cycles are dated by the day the stock was observed, which for a figure read from
   // Pancake is after the read finished (the primary sync does the same).
   const availabilityObservedAt = clock();
-  for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
-    const chunk = updates.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < candidateIds.length; i += CHUNK_SIZE) {
+    const chunkIds = candidateIds.slice(i, i + CHUNK_SIZE);
     await prisma.$transaction(
       async (tx) => {
         // The shop's catalog-sync lock serializes this with the primary sync and the admin policy
@@ -191,22 +162,65 @@ export async function syncSecondaryShopInventory({
         await hooks.acquireLock(tx, primaryShopId);
         // The rows `reserveOrderCapacity()` locks before it reads stock, in the same order, so a
         // reservation never commits on a figure this chunk is replacing.
-        await hooks.lockVariants(tx, chunk.map(({ variantId }) => variantId));
-        for (const { variantId, stocks } of chunk) {
-          await writeObservedWarehouseStocks(tx, variantId, stocks, observedAt, {
+        await hooks.lockVariants(tx, chunkIds);
+
+        // Only now, holding the lock, is the SKU-to-variant mapping decided: a primary sync that
+        // committed between the candidate read and this lock may have renamed a variant or made its
+        // SKU shared, and stock attributed to the old mapping must not be written.
+        const current = await hooks.readMapping(tx, chunkIds);
+        const currentSkus = [
+          ...new Set(
+            current.flatMap(({ pancakeDisplayId, isPresent }) =>
+              isPresent ? (normalizeSku(pancakeDisplayId) ?? []) : [],
+            ),
+          ),
+        ];
+        const ambiguousHere = await hooks.findAmbiguousSkus(tx, primaryShopId, currentSkus);
+
+        for (const variant of current) {
+          const sku = normalizeSku(variant.pancakeDisplayId);
+          if (sku) primarySkus.add(sku);
+          const byWarehouse = sku ? secondaryBySku.get(sku) : undefined;
+          const ambiguous = sku !== null && variant.isPresent && ambiguousHere.has(sku);
+          if (ambiguous && sku) ambiguousSkus.add(sku);
+
+          // Empty stocks clear whatever this shop contributed before: an unmatched, retired,
+          // SKU-less or ambiguous variant must not keep a stale figure.
+          const stocks =
+            sku && byWarehouse && variant.isPresent && !ambiguous
+              ? [...byWarehouse].map(([warehouseId, remainQuantity]) => ({ warehouseId, remainQuantity }))
+              : [];
+          if (stocks.length > 0) {
+            matchedCount += 1;
+            for (const { warehouseId, remainQuantity } of stocks) {
+              totalStockAggregated += remainQuantity;
+              seenWarehouseIds.add(warehouseId);
+            }
+          }
+          await writeObservedWarehouseStocks(tx, variant.id, stocks, observedAt, {
             kind: "secondary",
             shopId: secondaryShopId,
+            sku: stocks.length > 0 ? sku : null,
           });
         }
-        // The secondary stock just changed what these variants (and the combos built on them) can
-        // sell, so their sold-out cycles are judged again against everything now stored.
+        // Candidates that no longer exist have nothing to write; the rest are re-observed below.
         await hooks.observeAvailability(tx, {
           shopId: primaryShopId,
-          variantIds: chunk.map(({ variantId }) => variantId),
+          variantIds: current.map(({ id }) => id),
           observedAt: availabilityObservedAt,
         });
       },
       { timeout: CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS },
+    );
+  }
+
+  let unmatchedCount = 0;
+  for (const sku of secondaryBySku.keys()) {
+    if (!primarySkus.has(sku)) unmatchedCount += 1;
+  }
+  if (ambiguousSkus.size > 0) {
+    warn(
+      `Secondary Pancake inventory sync skipped ${ambiguousSkus.size} SKU(s) shared by several primary variants`,
     );
   }
 

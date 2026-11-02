@@ -12,7 +12,12 @@ export const SECONDARY_WAREHOUSE_KEY_PREFIX = "secondary:";
 
 export type WarehouseStockScope =
   | Readonly<{ kind: "primary" }>
-  | Readonly<{ kind: "secondary"; shopId: number }>;
+  | Readonly<{
+      kind: "secondary";
+      shopId: number;
+      /** The normalized SKU the written rows are attributed to (recorded in `secondarySku`). */
+      sku?: string | null;
+    }>;
 
 export const PRIMARY_WAREHOUSE_SCOPE: WarehouseStockScope = { kind: "primary" };
 

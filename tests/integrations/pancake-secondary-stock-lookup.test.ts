@@ -44,12 +44,12 @@ function secondaryRow(id: string, displayId: string, stock: number, warehouse = 
   };
 }
 
-function page(rows: unknown[], pageNumber = 1, totalPages = 1) {
+function page(rows: unknown[], pageNumber = 1, totalPages = 1, totalEntries = rows.length * totalPages) {
   return {
     success: true,
     page_number: pageNumber,
     page_size: SECONDARY_LOOKUP_PAGE_SIZE,
-    total_entries: rows.length * totalPages,
+    total_entries: totalEntries,
     total_pages: totalPages,
     data: rows,
   };
@@ -150,8 +150,8 @@ test("an exact SKU spread over several pages of a fuzzy search is added up acros
           requested.push(query?.page_number);
           const pageNumber = Number(query?.page_number);
           return pageNumber === 1
-            ? page([secondaryRow("s1", "SKU-1", 2, "wh_a"), secondaryRow("s9", "SKU-10", 50)], 1, 2)
-            : page([secondaryRow("s2", "SKU-1", 3, "wh_b")], 2, 2);
+            ? page([secondaryRow("s1", "SKU-1", 2, "wh_a"), secondaryRow("s9", "SKU-10", 50)], 1, 2, 3)
+            : page([secondaryRow("s2", "SKU-1", 3, "wh_b")], 2, 2, 3);
         },
       },
     },
@@ -171,8 +171,8 @@ test("a match missing from page 1 but present on a later page is still found", a
       client: {
         async getJson(_endpoint, query) {
           return Number(query?.page_number) === 1
-            ? page([secondaryRow("s9", "SKU-10", 50)], 1, 2)
-            : page([secondaryRow("s1", "SKU-1", 4)], 2, 2);
+            ? page([secondaryRow("s9", "SKU-10", 50)], 1, 2, 2)
+            : page([secondaryRow("s1", "SKU-1", 4)], 2, 2, 2);
         },
       },
     },
@@ -258,4 +258,51 @@ test("if the uniqueness check cannot run, no secondary stock is added at all", a
   );
   assert.equal(result[0]!.sellableStock, 1);
   assert.equal(warnings.length, 1);
+});
+
+async function lookupWithPages(pages: (pageNumber: number) => unknown) {
+  const warnings: string[] = [];
+  const [result] = await addSecondaryShopStock(
+    [primary("p1", "SKU-1", 1)],
+    { shopId, client: { getJson: async (_endpoint, query) => pages(Number(query?.page_number)) } },
+    { primaryShopId, warn: (message) => warnings.push(message) },
+  );
+  return { result: result!, warnings };
+}
+
+test("a proxy that ignores page_number and repeats page 1 cannot add the same units twice", async () => {
+  const { result, warnings } = await lookupWithPages(() => page([secondaryRow("s1", "SKU-1", 5)], 1, 2, 2));
+  assert.equal(result.sellableStock, 1, "inconclusive: primary stock only");
+  assert.equal(result.secondarySellableStock, undefined);
+  assert.equal(warnings.length, 1);
+});
+
+test("a repeated variation across pages is inconclusive even when the page number is right", async () => {
+  const { result } = await lookupWithPages((n) => page([secondaryRow("same-id", "SKU-1", 5)], n, 2, 2));
+  assert.equal(result.sellableStock, 1);
+});
+
+test("pagination metadata that changes during the walk is inconclusive", async () => {
+  const changedTotals = await lookupWithPages((n) =>
+    n === 1 ? page([secondaryRow("s1", "SKU-1", 5)], 1, 2, 2) : page([secondaryRow("s2", "SKU-1", 5)], 2, 2, 9),
+  );
+  assert.equal(changedTotals.result.sellableStock, 1);
+
+  const changedPages = await lookupWithPages((n) =>
+    n === 1 ? page([secondaryRow("s1", "SKU-1", 5)], 1, 2, 2) : page([secondaryRow("s2", "SKU-1", 5)], 2, 3, 2),
+  );
+  assert.equal(changedPages.result.sellableStock, 1);
+});
+
+test("fewer rows than the reported total is inconclusive", async () => {
+  const { result } = await lookupWithPages((n) => page([secondaryRow(`s${n}`, "SKU-1", 5)], n, 2, 5));
+  assert.equal(result.sellableStock, 1);
+});
+
+test("a consistent two-page walk is still added up", async () => {
+  const { result, warnings } = await lookupWithPages((n) =>
+    page([secondaryRow(`s${n}`, "SKU-1", n === 1 ? 2 : 3)], n, 2, 2),
+  );
+  assert.equal(result.secondarySellableStock, 5);
+  assert.deepEqual(warnings, []);
 });
