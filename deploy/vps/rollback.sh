@@ -49,21 +49,45 @@ compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 # rows keyed `secondary:*`). The release being restored adds up EVERY warehouse row it finds and does
 # not know that key, so until its own sync removed them those units would count as primary stock on
 # the storefront and in capacity reservations, while its checkout reads the primary POS alone. So
-# they are removed -- and the availability they affected observed again -- while the writers are
-# quiet and before the previous app takes traffic. It runs from the release being left (the one in
-# the env file), the only one that knows the rows; a release without the script predates the feature
-# and has nothing to remove. Idempotent.
-CURRENT_SHA="$(grep -E '^RELEASE_SHA=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
-if [[ -n "$CURRENT_SHA" ]] && docker image inspect "$PROJECT_SLUG-ops:$CURRENT_SHA" >/dev/null 2>&1 \
-  && "${compose[@]}" run --rm --no-deps ops node -e "process.exit(require('node:fs').existsSync('scripts/pancake-secondary-teardown.ts') ? 0 : 1)" >/dev/null 2>&1; then
-  if ! "${compose[@]}" run --rm ops pnpm pancake:secondary:teardown; then
-    # Nothing was started: put the current writer back exactly as it was, and stop here.
-    "${compose[@]}" start catalog-sync >/dev/null 2>&1 || true
-    echo "Could not remove the secondary shop's stock from the mirror; $PREVIOUS_SHA was NOT started. Fix the database access and retry the rollback." >&2
-    exit 1
+# they must be gone -- and the availability they affected observed again -- while the writers are
+# quiet and before the previous app takes traffic.
+#
+# This fails closed. What decides whether the previous app may start is the DATABASE, read through the
+# postgres container (which needs no application image), never an assumption about the release being
+# left: a pruned or missing ops image, a probe that errors, or a teardown that does not finish must
+# stop the rollback, not wave it through. The removal itself runs from the release being left (the
+# one in the env file), the only one that knows the rows.
+secondary_row_count() {
+  printf '%s\n' "SELECT count(*) FROM \"WarehouseStock\" WHERE \"pancakeWarehouseId\" LIKE 'secondary:%';" \
+    | "${compose[@]}" exec -T postgres sh -ec 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tA'
+}
+
+refuse_rollback() {
+  # Nothing was started: put the current writer back exactly as it was, and stop here.
+  "${compose[@]}" start catalog-sync >/dev/null 2>&1 || true
+  echo "$1; $PREVIOUS_SHA was NOT started. Fix it and retry the rollback." >&2
+  exit 1
+}
+
+secondary_rows="$(secondary_row_count 2>/dev/null)" || secondary_rows=""
+if ! [[ "$secondary_rows" =~ ^[0-9]+$ ]]; then
+  refuse_rollback "Could not read whether the mirror holds secondary-shop stock"
+fi
+
+if [[ "$secondary_rows" != "0" ]]; then
+  CURRENT_SHA="$(grep -E '^RELEASE_SHA=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+  if [[ -z "$CURRENT_SHA" ]] || ! docker image inspect "$PROJECT_SLUG-ops:$CURRENT_SHA" >/dev/null 2>&1; then
+    refuse_rollback "The mirror holds $secondary_rows secondary-shop stock row(s) and the ops image of the release being left is not available to remove them"
   fi
-else
-  echo "Note: the release being left has no secondary-stock teardown, so there is no secondary stock to remove."
+  if ! "${compose[@]}" run --rm ops pnpm pancake:secondary:teardown; then
+    refuse_rollback "Could not remove the secondary shop's stock from the mirror"
+  fi
+  # Trust the database, not the exit code: the previous release starts only over a mirror that no
+  # longer holds a single secondary row.
+  secondary_rows="$(secondary_row_count 2>/dev/null)" || secondary_rows=""
+  if [[ "$secondary_rows" != "0" ]]; then
+    refuse_rollback "The mirror still holds secondary-shop stock after the teardown"
+  fi
 fi
 
 RELEASE_SHA="$PREVIOUS_SHA" "${compose[@]}" up -d --no-build app caddy

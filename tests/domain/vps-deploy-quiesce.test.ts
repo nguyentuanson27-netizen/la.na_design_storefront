@@ -34,8 +34,12 @@ case "$args" in
   *" up -d --no-build "*) for service in \${args##* --no-build }; do touch "$FAKE_STATE/$service-running"; done ;;
   *" pnpm prisma:migrate:deploy "*) exit "\${FAKE_MIGRATE_EXIT:-0}" ;;
   *" pnpm capacity:handoff:reconcile "*) exit "\${FAKE_RECONCILE_EXIT:-0}" ;;
-  *" pnpm pancake:secondary:teardown "*) exit "\${FAKE_TEARDOWN_EXIT:-0}" ;;
-  *" ops node -e "*) exit "\${FAKE_TEARDOWN_SCRIPT_EXIT:-0}" ;;
+  *" pnpm pancake:secondary:teardown "*)
+    if [[ "\${FAKE_TEARDOWN_EXIT:-0}" == "0" && "\${FAKE_TEARDOWN_KEEPS_ROWS:-0}" != "1" ]]; then echo 0 > "$FAKE_STATE/secondary-rows"; fi
+    exit "\${FAKE_TEARDOWN_EXIT:-0}" ;;
+  *" exec -T postgres sh -ec psql "*)
+    if [[ "\${FAKE_PSQL_EXIT:-0}" != "0" ]]; then exit "$FAKE_PSQL_EXIT"; fi
+    cat "$FAKE_STATE/secondary-rows" ;;
   *" exec -T postgres "*) echo fake-dump ;;
   *" --entrypoint /opt/google/chrome/chrome "*) echo "\${FAKE_CHROME:-}" ;;
 esac
@@ -53,10 +57,14 @@ type ScriptRun = {
   envLines?: readonly string[];
   /** What the fake Flow worker image's `chrome --version` prints. */
   chrome?: string;
+  /** Secondary-shop WarehouseStock rows the mirror holds when the rollback starts (default 0). */
+  secondaryRows?: number;
   /** Exit code of the secondary-stock teardown the rollback runs (default 0). */
   teardownExit?: number;
-  /** Whether the release being left ships the teardown script (default true). */
-  teardownScript?: boolean;
+  /** The teardown exits 0 yet leaves its rows behind (default false). */
+  teardownKeepsRows?: boolean;
+  /** Exit code of the rollback's own database probe (default 0). */
+  psqlExit?: number;
   /** Whether the release being left has an ops image (default true). */
   currentOpsImage?: boolean;
 };
@@ -83,8 +91,10 @@ function runScript(
     images = [],
     envLines = [],
     chrome = "",
+    secondaryRows = 0,
     teardownExit = 0,
-    teardownScript = true,
+    teardownKeepsRows = false,
+    psqlExit = 0,
     currentOpsImage = true,
   }: ScriptRun,
 ): Run {
@@ -123,6 +133,7 @@ function runScript(
     writeFileSync(join(bin, "docker"), FAKE_DOCKER);
     chmodSync(join(bin, "docker"), 0o755);
     for (const service of running) writeFileSync(join(state, `${service}-running`), "");
+    writeFileSync(join(state, "secondary-rows"), `${secondaryRows}\n`);
     const callLog = join(root, "calls.log");
     writeFileSync(callLog, "");
 
@@ -139,7 +150,8 @@ function runScript(
         FAKE_SYNC_HEALTH: syncHealth,
         FAKE_IMAGES: knownImages.join(" "),
         FAKE_TEARDOWN_EXIT: String(teardownExit),
-        FAKE_TEARDOWN_SCRIPT_EXIT: teardownScript ? "0" : "1",
+        FAKE_TEARDOWN_KEEPS_ROWS: teardownKeepsRows ? "1" : "0",
+        FAKE_PSQL_EXIT: String(psqlExit),
         FAKE_CHROME: chrome,
         BACKUP_DIR: join(root, "backups"),
       },
@@ -252,50 +264,76 @@ test("rollback quiesces the current catalog sync before the previous app starts,
 
 const TEARDOWN = "run --rm ops pnpm pancake:secondary:teardown";
 
+const PROBE = "exec -T postgres sh -ec psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -v ON_ERROR_STOP=1 -tA";
+const PREVIOUS_IMAGES = [`${PROJECT_SLUG}:${PREVIOUS_SHA}`, `${PROJECT_SLUG}-ops:${PREVIOUS_SHA}`];
+
+function assertRefused(run: Run, message: RegExp) {
+  assert.notEqual(run.status, 0);
+  assert.equal(position(run.calls, ROLLBACK_APP), -1, "the previous release never starts over rows it would miscount");
+  assert.ok(run.calls.some((call) => call === "start catalog-sync"), "the writer that was stopped is restored");
+  assert.match(run.stderr, message);
+}
+
 test("rollback removes the secondary shop's stock after the writers are quiet and before the previous app serves", () => {
-  const run = runRollback({
-    running: ["app", "catalog-sync"],
-    images: [`${PROJECT_SLUG}:${PREVIOUS_SHA}`, `${PROJECT_SLUG}-ops:${PREVIOUS_SHA}`],
-  });
+  const run = runRollback({ running: ["app", "catalog-sync"], images: PREVIOUS_IMAGES, secondaryRows: 3 });
   assert.equal(run.status, 0, run.stderr);
   const stop = position(run.calls, STOP_SYNC);
   const teardown = position(run.calls, TEARDOWN);
   const app = position(run.calls, ROLLBACK_APP);
   assert.ok(stop >= 0 && teardown > stop, "the current sync is stopped first, so nothing writes while the rows go");
   assert.ok(app > teardown, "the previous release takes traffic only after the rows are gone");
+  const probes = run.calls.flatMap((call, index) => (call === PROBE ? [index] : []));
+  assert.equal(probes.length, 2, "the database is read before the teardown and again after it");
+  assert.ok(probes[0]! < teardown && probes[1]! > teardown && probes[1]! < app);
 });
 
-test("a failed teardown stops the rollback before the previous app starts and puts the current sync back", () => {
-  const run = runRollback({
-    running: ["app", "catalog-sync"],
-    images: [`${PROJECT_SLUG}:${PREVIOUS_SHA}`, `${PROJECT_SLUG}-ops:${PREVIOUS_SHA}`],
-    teardownExit: 1,
-  });
-  assert.notEqual(run.status, 0);
-  assert.equal(position(run.calls, ROLLBACK_APP), -1, "the previous release never starts over rows it would miscount");
-  assert.ok(run.calls.some((call) => call === "start catalog-sync"), "the writer that was stopped is restored");
-  assert.match(run.stderr, /was NOT started/);
-});
-
-test("rollback from a release that ships no teardown has no secondary stock to remove and carries on", () => {
-  const run = runRollback({
-    running: ["app", "catalog-sync"],
-    images: [`${PROJECT_SLUG}:${PREVIOUS_SHA}`, `${PROJECT_SLUG}-ops:${PREVIOUS_SHA}`],
-    teardownScript: false,
-  });
+test("rollback leaves the teardown alone when the mirror holds no secondary stock", () => {
+  const run = runRollback({ running: ["app", "catalog-sync"], images: PREVIOUS_IMAGES, secondaryRows: 0 });
   assert.equal(run.status, 0, run.stderr);
   assert.equal(position(run.calls, TEARDOWN), -1);
-  assert.ok(position(run.calls, ROLLBACK_APP) >= 0);
-  assert.match(run.stdout, /no secondary-stock teardown/);
+  assert.ok(position(run.calls, ROLLBACK_APP) > position(run.calls, PROBE));
 });
 
-test("rollback from a release with no ops image skips the teardown too", () => {
+test("rollback from a release with no ops image still passes when the database proves there is nothing to remove", () => {
   const run = runRollback({
     running: ["app", "catalog-sync"],
     images: [`${PROJECT_SLUG}:${PREVIOUS_SHA}`],
     currentOpsImage: false,
+    secondaryRows: 0,
   });
   assert.equal(run.status, 0, run.stderr);
+  assert.equal(position(run.calls, TEARDOWN), -1);
+});
+
+test("a failed teardown stops the rollback before the previous app starts and puts the current sync back", () => {
+  const run = runRollback({ running: ["app", "catalog-sync"], images: PREVIOUS_IMAGES, secondaryRows: 3, teardownExit: 1 });
+  assertRefused(run, /Could not remove the secondary shop's stock.*was NOT started/);
+});
+
+test("rows left behind by a teardown that exits 0 still stop the rollback", () => {
+  const run = runRollback({
+    running: ["app", "catalog-sync"],
+    images: PREVIOUS_IMAGES,
+    secondaryRows: 3,
+    teardownKeepsRows: true,
+  });
+  assertRefused(run, /still holds secondary-shop stock/);
+});
+
+test("secondary rows with no ops image of the release being left to remove them stop the rollback", () => {
+  const run = runRollback({
+    running: ["app", "catalog-sync"],
+    images: [`${PROJECT_SLUG}:${PREVIOUS_SHA}`],
+    currentOpsImage: false,
+    secondaryRows: 3,
+  });
+  assertRefused(run, /ops image of the release being left is not available/);
+  assert.equal(position(run.calls, TEARDOWN), -1);
+});
+
+test("a database probe that fails stops the rollback instead of assuming there is nothing to remove", () => {
+  const run = runRollback({ running: ["app", "catalog-sync"], images: PREVIOUS_IMAGES, secondaryRows: 3, psqlExit: 2 });
+  assertRefused(run, /Could not read whether the mirror holds secondary-shop stock/);
   assert.equal(position(run.calls, TEARDOWN), -1);
 });
 

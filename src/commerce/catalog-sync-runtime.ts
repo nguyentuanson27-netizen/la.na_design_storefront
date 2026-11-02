@@ -35,6 +35,7 @@ export async function syncConfiguredPancakeCatalog({
   seams?: Readonly<{
     syncCatalog?: typeof syncPancakeCatalog;
     configureSecondary?: typeof configureSecondaryShop;
+    withdrawSecondary?: typeof purgeSecondaryWarehouseStock;
   }>;
 } = {}) {
   const config = readPancakeConfig();
@@ -42,21 +43,27 @@ export async function syncConfiguredPancakeCatalog({
   const repository = createCatalogMirrorRepository(prisma);
   const syncCatalog = seams.syncCatalog ?? syncPancakeCatalog;
   const configureSecondary = seams.configureSecondary ?? configureSecondaryShop;
+  const withdrawSecondary = seams.withdrawSecondary ?? purgeSecondaryWarehouseStock;
 
   // Before the primary read, and whatever it turns out to do: what the configuration says about the
   // secondary shop (off, or another shop) is applied from the database alone. A primary outage must
   // not leave a switched-off or replaced shop's stock counting on the storefront; the primary error
   // below still propagates so the loop retries it.
   //
-  // If applying it fails, the primary sync still runs (the catalog must not go stale for that), but
-  // the cycle ends in an error: it is not healthy while stock of a shop the deployment no longer
-  // uses may still be counting, and the loop retries the whole cycle.
+  // If applying it fails, nothing is known about which shop's rows may count, so ALL secondary
+  // stock is withdrawn before anything is served on it (a separate, plain purge: it does not depend
+  // on the step that just failed), and the storefront falls back to primary stock alone -- the safe
+  // direction, as the checkout's live read still adds what the secondary shop really has. The primary
+  // sync still runs (the catalog must not go stale for that), and the cycle ends in an error so the
+  // loop retries the whole configuration. Only if the withdrawal fails too can old rows keep
+  // counting; the cycle is an error then as well, and the next one tries both again.
   let configurationApplied = true;
   try {
     await applySecondaryConfiguration(config, configureSecondary, clock);
   } catch {
     configurationApplied = false;
     console.error("Secondary Pancake shop configuration could not be applied; this sync cycle will be reported as failed");
+    await withdrawAllSecondaryStock(config, withdrawSecondary, clock);
   }
   await dropStaleSecondaryStock(config, clock);
 
@@ -97,6 +104,27 @@ async function applySecondaryConfiguration(
   });
   if (removed > 0) {
     console.warn(`Removed ${removed} secondary warehouse stock row(s) that do not belong to the configured secondary shop`);
+  }
+}
+
+/**
+ * Removes every secondary row, whatever shop it belongs to. Used when the configuration could not be
+ * applied, so which rows belong to the deployment is unknown. Never throws: the cycle is already
+ * ending in an error.
+ */
+async function withdrawAllSecondaryStock(
+  config: ReturnType<typeof readPancakeConfig>,
+  withdraw: typeof purgeSecondaryWarehouseStock,
+  clock?: () => Date,
+): Promise<void> {
+  try {
+    const removed = await withdraw(prisma, {
+      primaryShopId: config.shopId,
+      observedAt: clock ? clock() : new Date(),
+    });
+    if (removed > 0) console.warn(`Withdrew ${removed} secondary warehouse stock row(s) until the configuration can be applied`);
+  } catch {
+    console.error("Secondary warehouse stock could not be withdrawn; it may still be counting");
   }
 }
 

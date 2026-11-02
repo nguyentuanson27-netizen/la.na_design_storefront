@@ -1142,10 +1142,7 @@ test("a primary outage cannot leave a replaced secondary shop's stock counting e
   assert.equal(await activeShop(), otherSecondaryShopId, "and B is recorded as the configured shop");
 });
 
-test("a cycle whose configuration could not be applied still syncs the primary shop, but ends in an error and reads no secondary stock", async () => {
-  await seedPrimary();
-  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(2)); // shop A stored
-
+async function failedConfigurationCycle(withdrawSecondary?: () => Promise<number>) {
   let primarySynced = 0;
   let fetched = 0;
   const outcome = await withEnvironment(
@@ -1162,6 +1159,7 @@ test("a cycle whose configuration could not be applied still syncs the primary s
           configureSecondary: async () => {
             throw new Error("lock timeout");
           },
+          ...(withdrawSecondary ? { withdrawSecondary: withdrawSecondary as never } : {}),
           // ... but the primary catalog read itself succeeds.
           syncCatalog: (async () => {
             primarySynced += 1;
@@ -1174,13 +1172,37 @@ test("a cycle whose configuration could not be applied still syncs the primary s
       );
     },
   );
+  return { outcome, primarySynced, fetched };
+}
+
+test("a cycle whose configuration could not be applied still syncs the primary shop, ends in an error, reads no secondary stock and serves none", async () => {
+  await seedPrimary();
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(2)); // shop A stored
+
+  const { outcome, primarySynced, fetched } = await failedConfigurationCycle();
 
   assert.ok(outcome instanceof SecondaryConfigurationError, "the cycle is reported as failed, not healthy");
   assert.equal(primarySynced, 1, "the primary catalog was still refreshed");
   assert.equal(fetched, 0, "and no secondary read was attempted");
-  // The old shop's rows are still there because the change could not be applied: that is exactly why
-  // the cycle must not be reported healthy.
-  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 1]]);
+  // Which shop's rows belong to the deployment is unknown, so none count: not the stored sum ...
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
+  // ... and not what the storefront reads either.
+  assert.equal(await sellable("v1"), 1);
+});
+
+test("when the withdrawal fails as well the cycle is still an error, and the next cycle removes the rows", async () => {
+  await seedPrimary();
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(2));
+
+  const { outcome } = await failedConfigurationCycle(async () => {
+    throw new Error("still down");
+  });
+  assert.ok(outcome instanceof SecondaryConfigurationError);
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 1]], "nothing could be removed");
+
+  const { outcome: next } = await failedConfigurationCycle();
+  assert.ok(next instanceof SecondaryConfigurationError);
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]], "the retry withdraws them");
 });
 
 test("a cycle whose configuration was applied and whose primary sync succeeds is healthy", async () => {
