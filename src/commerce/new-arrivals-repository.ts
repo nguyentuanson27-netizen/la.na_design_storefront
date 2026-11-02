@@ -78,24 +78,24 @@ export function createNewArrivalsRepository(client: PrismaClient) {
       throw new RangeError("Invalid new arrivals page");
     }
 
-    const result = await client.$transaction(async (tx) => {
-      const where = { pancakeShopId: safeShopId, product: visibleProduct(safeShopId) };
-      const totalProducts = await tx.newArrivalProduct.count({ where });
-      const entries = await tx.newArrivalProduct.findMany({
+    const where = { pancakeShopId: safeShopId, product: visibleProduct(safeShopId) };
+    const [totalProducts, entries] = await Promise.all([
+      client.newArrivalProduct.count({ where }),
+      client.newArrivalProduct.findMany({
         where,
         orderBy: [{ position: "asc" }],
         skip: offset,
         take: pageSize,
         select: { productId: true },
-      });
-      return { totalProducts, ids: entries.map((entry) => entry.productId) };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+      }),
+    ]);
 
     return {
-      ...result,
+      totalProducts,
+      ids: entries.map((entry) => entry.productId),
       page,
       pageSize,
-      totalPages: Math.ceil(result.totalProducts / pageSize),
+      totalPages: Math.ceil(totalProducts / pageSize),
     };
   }
 

@@ -1,7 +1,7 @@
 import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
 import { createFlashSaleCatalogRepository, type SaleIdPage } from "./flash-sale-catalog.ts";
-import { createSaleListingCache } from "./sale-listing-cache.ts";
+import { createSaleListingCache, createStorefrontListingCache } from "./sale-listing-cache.ts";
 import { createStorefrontCatalogRepository } from "./storefront-catalog.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 import { createStorefrontProductDetailRepository } from "./storefront-product-detail.ts";
@@ -17,7 +17,10 @@ import {
   type CategoryKey,
 } from "./category-taxonomy.ts";
 import { withListingFlashSale } from "./storefront-listing-flash-sale.ts";
-import { createStorefrontProductSlugResolver } from "./storefront-product-slug-resolution.ts";
+import {
+  createStorefrontProductSlugResolver,
+  type StorefrontProductSlugResolution,
+} from "./storefront-product-slug-resolution.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import { resolveStorefrontPromotionRefreshFromCampaigns } from "./storefront-promotion-freshness.ts";
 import type { ApplicablePromotionCampaign, PromotionCampaignKind } from "./promotion-pricing.ts";
@@ -31,6 +34,62 @@ type StorefrontPromotionProduct = Readonly<{
   variants: readonly Readonly<{ id: string }>[];
   projection?: Readonly<{ options: readonly Readonly<{ id: string }>[] }>;
 }>;
+
+type DiscoveryPageResult = Awaited<
+  ReturnType<ReturnType<typeof createStorefrontCatalogRepository>["listDiscoveryPage"]>
+>;
+type ScopedFacetsResult = Awaited<
+  ReturnType<ReturnType<typeof createStorefrontCatalogRepository>["listScopedDiscoveryFacets"]>
+>;
+type StorefrontProductsResult = Awaited<
+  ReturnType<ReturnType<typeof createStorefrontCatalogRepository>["listProductsByIds"]>
+>;
+type PdpProductResult = Awaited<
+  ReturnType<ReturnType<typeof createStorefrontProductDetailRepository>["getProductBySlug"]>
+>;
+
+type StorefrontProductWithFlashSale = ReturnType<
+  typeof withListingFlashSale<StorefrontProductsResult[number]>
+>;
+
+type ManualNewArrivalsPageResult = Readonly<{
+  totalProducts: number;
+  ids: readonly string[];
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  products: StorefrontProductWithFlashSale;
+  pricingRule: StorefrontPricingRule;
+  refreshAfterMs: number;
+}>;
+
+type HomepageFeaturedResult = Readonly<{
+  products: StorefrontProductWithFlashSale;
+  pricingRule: StorefrontPricingRule;
+  refreshAfterMs: number;
+}>;
+
+type HomepageNewArrivalsResult = Readonly<{
+  products: Awaited<ReturnType<ReturnType<typeof createStorefrontCatalogRepository>["listNewestProducts"]>>;
+  pricingRule: StorefrontPricingRule;
+  refreshAfterMs: number;
+}>;
+
+/** One per server process: `/sale` and its sub-listings share their heavy page read across requests. */
+const saleIdPageCache = createSaleListingCache<SaleIdPage>();
+
+const categoryDiscoveryPageCache = createStorefrontListingCache<DiscoveryPageResult>();
+const categoryDiscoveryFacetsCache = createStorefrontListingCache<ScopedFacetsResult>();
+const storefrontDiscoveryPageCache = createStorefrontListingCache<DiscoveryPageResult>();
+const collectionDiscoveryFacetsCache = createStorefrontListingCache<ScopedFacetsResult>();
+const manualNewArrivalsCache = createStorefrontListingCache<ManualNewArrivalsPageResult>();
+const homepageFeaturedCache = createStorefrontListingCache<HomepageFeaturedResult>();
+const homepageNewArrivalsCache = createStorefrontListingCache<HomepageNewArrivalsResult>();
+const productSlugCache = createStorefrontListingCache<StorefrontProductSlugResolution>();
+const pdpProductCache = createStorefrontListingCache<PdpProductResult>();
+const relatedProductsCache = createStorefrontListingCache<StorefrontProductsResult>();
+const categoryMegaMediaCache = createStorefrontListingCache<readonly CategoryMegaMediaFacts[]>();
+const categoryHeroMediaCache = createStorefrontListingCache<ReadonlyMap<string, string>>();
 
 export async function resolveStorefrontPromotionForProducts({
   products,
@@ -98,6 +157,37 @@ export async function listConfiguredStorefrontProductPage({
   return createStorefrontCatalogRepository(prisma).listProductPage({ shopId, page, pageSize });
 }
 
+async function loadManualNewArrivalsPage({
+  shopId,
+  page,
+  pageSize,
+  now,
+}: {
+  shopId: number;
+  page: number;
+  pageSize: number;
+  now?: Date;
+}): Promise<ManualNewArrivalsPageResult> {
+  const selected = await createNewArrivalsRepository(prisma).listVisiblePage({
+    shopId,
+    page,
+    pageSize,
+  });
+  const products = await createStorefrontCatalogRepository(prisma).listProductsByIds({
+    shopId,
+    ids: selected.ids,
+  });
+  const at = now ?? new Date();
+  const { pricingRule, refreshAfterMs, campaignsByVariantId } =
+    await resolveStorefrontPromotionForProducts({ products, now: at });
+  return Object.freeze({
+    ...selected,
+    products: withListingFlashSale(products, campaignsByVariantId, at),
+    pricingRule,
+    refreshAfterMs,
+  });
+}
+
 /**
  * One page of `/new-arrivals`: admin-selected order, with the pricing rule its cards need and the window
  * that pricing is valid for.
@@ -115,24 +205,11 @@ export async function listConfiguredManualNewArrivalsPage({
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
-  const selected = await createNewArrivalsRepository(prisma).listVisiblePage({
-    shopId,
-    page,
-    pageSize,
-  });
-  const products = await createStorefrontCatalogRepository(prisma).listProductsByIds({
-    shopId,
-    ids: selected.ids,
-  });
-  const at = now ?? new Date();
-  const { pricingRule, refreshAfterMs, campaignsByVariantId } =
-    await resolveStorefrontPromotionForProducts({ products, now: at });
-  return {
-    ...selected,
-    products: withListingFlashSale(products, campaignsByVariantId, at),
-    pricingRule,
-    refreshAfterMs,
-  };
+  const cacheKey = ["manual-new-arrivals", shopId, page, pageSize].join(":");
+  const read = await manualNewArrivalsCache.read(cacheKey, () =>
+    loadManualNewArrivalsPage({ shopId, page, pageSize, now }),
+  );
+  return read.value;
 }
 
 /**
@@ -173,14 +250,34 @@ export async function listConfiguredStorefrontDiscoveryPage({
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
-  return createStorefrontCatalogRepository(prisma).listDiscoveryPage({
+  const cacheKey = [
+    "disc-page",
     shopId,
-    discovery,
+    discovery.sort,
+    discovery.page,
     pageSize,
-    allowCuratedComponents,
-    inStockFirst,
-    now,
-  });
+    allowCuratedComponents ? "1" : "0",
+    inStockFirst ? "1" : "0",
+    discovery.size ?? "",
+    discovery.color ?? "",
+    discovery.availability ?? "",
+    discovery.minPriceVnd ?? "",
+    discovery.maxPriceVnd ?? "",
+    discovery.sale ? "1" : "0",
+    discovery.collection ?? "",
+    discovery.query ?? "",
+  ].join(":");
+  const read = await storefrontDiscoveryPageCache.read(cacheKey, () =>
+    createStorefrontCatalogRepository(prisma).listDiscoveryPage({
+      shopId,
+      discovery,
+      pageSize,
+      allowCuratedComponents,
+      inStockFirst,
+      now,
+    }),
+  );
+  return read.value;
 }
 
 export async function listConfiguredFlashSalePage({
@@ -200,9 +297,6 @@ export async function listConfiguredFlashSalePage({
     now,
   });
 }
-
-/** One per server process: `/sale` and its sub-listings share their heavy page read across requests. */
-const saleIdPageCache = createSaleListingCache<SaleIdPage>();
 
 export async function listConfiguredSalePage({
   discovery,
@@ -249,16 +343,34 @@ export async function listConfiguredCategoryDiscoveryPage({
 }) {
   const shopId = readPancakeShopId();
   const listingKeys = categoryListingKeys(categoryKey as CategoryKey);
-  return createStorefrontCatalogRepository(prisma).listDiscoveryPage({
+  const cacheKey = [
+    "cat-page",
     shopId,
-    discovery: {
-      ...discovery,
-      categoryKey,
-      categoryListingKeys: listingKeys,
-    },
+    categoryKey,
+    discovery.sort,
+    discovery.page,
     pageSize,
-    now,
-  });
+    discovery.size ?? "",
+    discovery.color ?? "",
+    discovery.availability ?? "",
+    discovery.minPriceVnd ?? "",
+    discovery.maxPriceVnd ?? "",
+    discovery.sale ? "1" : "0",
+    discovery.query ?? "",
+  ].join(":");
+  const read = await categoryDiscoveryPageCache.read(cacheKey, () =>
+    createStorefrontCatalogRepository(prisma).listDiscoveryPage({
+      shopId,
+      discovery: {
+        ...discovery,
+        categoryKey,
+        categoryListingKeys: listingKeys,
+      },
+      pageSize,
+      now,
+    }),
+  );
+  return read.value;
 }
 
 export async function listConfiguredCategoryDiscoveryFacets({
@@ -272,15 +384,31 @@ export async function listConfiguredCategoryDiscoveryFacets({
 }) {
   const shopId = readPancakeShopId();
   const listingKeys = categoryListingKeys(categoryKey as CategoryKey);
-  return createStorefrontCatalogRepository(prisma).listScopedDiscoveryFacets({
+  const cacheKey = [
+    "cat-facets",
     shopId,
-    discovery: {
-      ...discovery,
-      categoryKey,
-      categoryListingKeys: listingKeys,
-    },
-    now,
-  });
+    categoryKey,
+    discovery?.sort ?? "",
+    discovery?.size ?? "",
+    discovery?.color ?? "",
+    discovery?.availability ?? "",
+    discovery?.minPriceVnd ?? "",
+    discovery?.maxPriceVnd ?? "",
+    discovery?.sale ? "1" : "0",
+    discovery?.query ?? "",
+  ].join(":");
+  const read = await categoryDiscoveryFacetsCache.read(cacheKey, () =>
+    createStorefrontCatalogRepository(prisma).listScopedDiscoveryFacets({
+      shopId,
+      discovery: {
+        ...discovery,
+        categoryKey,
+        categoryListingKeys: listingKeys,
+      },
+      now,
+    }),
+  );
+  return read.value;
 }
 
 /** The size chips and Sale toggle of `/collections/[slug]`, narrowed by its other filters. */
@@ -292,13 +420,28 @@ export async function listConfiguredCollectionDiscoveryFacets({
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
-  return createStorefrontCatalogRepository(prisma).listScopedDiscoveryFacets({
+  const cacheKey = [
+    "col-facets",
     shopId,
-    discovery,
-    allowCuratedComponents: true,
-    withSale: false,
-    now,
-  });
+    discovery?.sort ?? "",
+    discovery?.size ?? "",
+    discovery?.color ?? "",
+    discovery?.availability ?? "",
+    discovery?.minPriceVnd ?? "",
+    discovery?.maxPriceVnd ?? "",
+    discovery?.collection ?? "",
+    discovery?.query ?? "",
+  ].join(":");
+  const read = await collectionDiscoveryFacetsCache.read(cacheKey, () =>
+    createStorefrontCatalogRepository(prisma).listScopedDiscoveryFacets({
+      shopId,
+      discovery,
+      allowCuratedComponents: true,
+      withSale: false,
+      now,
+    }),
+  );
+  return read.value;
 }
 
 export async function listConfiguredStorefrontDiscoveryFacets({
@@ -310,7 +453,11 @@ export async function listConfiguredStorefrontDiscoveryFacets({
 
 export async function getConfiguredStorefrontProductBySlug(slug: string, now?: Date) {
   const shopId = readPancakeShopId();
-  return createStorefrontProductDetailRepository(prisma).getProductBySlug({ shopId, slug, now });
+  const cacheKey = ["pdp-product", shopId, slug].join(":");
+  const read = await pdpProductCache.read(cacheKey, () =>
+    createStorefrontProductDetailRepository(prisma).getProductBySlug({ shopId, slug, now }),
+  );
+  return read.value;
 }
 
 /**
@@ -334,24 +481,28 @@ export async function listConfiguredRelatedStorefrontProducts(
   currentProduct: Readonly<{ id: string }>,
 ) {
   const shopId = readPancakeShopId();
-  const catalog = createStorefrontCatalogRepository(prisma);
-  const merchandising = createMerchandisingRepository(prisma);
+  const cacheKey = ["related-products", shopId, currentProduct.id].join(":");
+  const read = await relatedProductsCache.read(cacheKey, async () => {
+    const catalog = createStorefrontCatalogRepository(prisma);
+    const merchandising = createMerchandisingRepository(prisma);
 
-  const categoryKeys = await merchandising.readCategoryMembership(currentProduct.id);
+    const categoryKeys = await merchandising.readCategoryMembership(currentProduct.id);
 
-  const ordered = await listRelatedStorefrontProducts({
-    currentProduct: { id: currentProduct.id, categoryKeys },
-    loadManualOverrides: () =>
-      merchandising.listRelatedProductOverrides({ shopId, productId: currentProduct.id }),
-    loadCategoryCandidates: (categoryKey) =>
-      merchandising.listCategoryRelatedCandidates({
-        shopId,
-        categoryKey,
-        limit: RELATED_CANDIDATES_PER_CATEGORY,
-      }),
+    const ordered = await listRelatedStorefrontProducts({
+      currentProduct: { id: currentProduct.id, categoryKeys },
+      loadManualOverrides: () =>
+        merchandising.listRelatedProductOverrides({ shopId, productId: currentProduct.id }),
+      loadCategoryCandidates: (categoryKey) =>
+        merchandising.listCategoryRelatedCandidates({
+          shopId,
+          categoryKey,
+          limit: RELATED_CANDIDATES_PER_CATEGORY,
+        }),
+    });
+
+    return catalog.listProductsByIds({ shopId, ids: ordered.map((product) => product.id) });
   });
-
-  return catalog.listProductsByIds({ shopId, ids: ordered.map((product) => product.id) });
+  return read.value;
 }
 
 /** One category's PLP, membership-selected and merchandiser-ordered (ADR 0013 §4.7, §5). */
@@ -387,16 +538,20 @@ export async function listConfiguredHomepageFeaturedProducts() {
  */
 export async function listConfiguredHomepageNewArrivals(limit: number, now?: Date) {
   const shopId = readPancakeShopId();
-  const products = await createStorefrontCatalogRepository(prisma).listNewestProducts({
-    shopId,
-    limit,
-  });
+  const cacheKey = ["home-new-arrivals", shopId, limit].join(":");
+  const read = await homepageNewArrivalsCache.read(cacheKey, async () => {
+    const products = await createStorefrontCatalogRepository(prisma).listNewestProducts({
+      shopId,
+      limit,
+    });
 
-  const { pricingRule, refreshAfterMs } = await resolveStorefrontPromotionForProducts({
-    products,
-    now,
+    const { pricingRule, refreshAfterMs } = await resolveStorefrontPromotionForProducts({
+      products,
+      now,
+    });
+    return { products, pricingRule, refreshAfterMs };
   });
-  return { products, pricingRule, refreshAfterMs };
+  return read.value;
 }
 
 /**
@@ -412,20 +567,29 @@ export async function listConfiguredHomepageNewArrivals(limit: number, now?: Dat
  * with a window it was never handed.
  */
 export async function listConfiguredHomepageFeaturedWithPricing(now?: Date) {
-  const products = await listConfiguredHomepageFeaturedProducts();
-  const at = now ?? new Date();
-  const { pricingRule, refreshAfterMs, campaignsByVariantId } =
-    await resolveStorefrontPromotionForProducts({ products, now: at });
-  return {
-    products: withListingFlashSale(products, campaignsByVariantId, at),
-    pricingRule,
-    refreshAfterMs,
-  };
+  const shopId = readPancakeShopId();
+  const cacheKey = ["home-featured", shopId].join(":");
+  const read = await homepageFeaturedCache.read(cacheKey, async () => {
+    const products = await listConfiguredHomepageFeaturedProducts();
+    const at = now ?? new Date();
+    const { pricingRule, refreshAfterMs, campaignsByVariantId } =
+      await resolveStorefrontPromotionForProducts({ products, now: at });
+    return {
+      products: withListingFlashSale(products, campaignsByVariantId, at),
+      pricingRule,
+      refreshAfterMs,
+    };
+  });
+  return read.value;
 }
 
 export async function resolveConfiguredStorefrontProductSlug(slug: string) {
   const shopId = readPancakeShopId();
-  return createStorefrontProductSlugResolver(prisma)({ shopId, slug });
+  const cacheKey = ["slug-resolve", shopId, slug].join(":");
+  const read = await productSlugCache.read(cacheKey, () =>
+    createStorefrontProductSlugResolver(prisma)({ shopId, slug }),
+  );
+  return read.value;
 }
 
 export type CategoryMegaMediaFacts = Readonly<{
@@ -436,21 +600,24 @@ export type CategoryMegaMediaFacts = Readonly<{
 
 /** The mega-menu image of every top-level category that has one configured, in navigation order. */
 export async function readConfiguredCategoryMegaMedia(): Promise<readonly CategoryMegaMediaFacts[]> {
-  try {
-    const merchandising = createMerchandisingRepository(prisma);
-    const rows = await Promise.all(
-      TOP_LEVEL_CATEGORY_KEYS.map((categoryKey) => merchandising.readCategoryEditorialMedia(categoryKey)),
-    );
-    const items: CategoryMegaMediaFacts[] = [];
-    for (const row of rows) {
-      if (row?.megaMenuImageUrl) {
-        items.push({ categoryKey: row.categoryKey, imageUrl: row.megaMenuImageUrl, altText: null });
+  const read = await categoryMegaMediaCache.read("mega-media", async () => {
+    try {
+      const merchandising = createMerchandisingRepository(prisma);
+      const rows = await Promise.all(
+        TOP_LEVEL_CATEGORY_KEYS.map((categoryKey) => merchandising.readCategoryEditorialMedia(categoryKey)),
+      );
+      const items: CategoryMegaMediaFacts[] = [];
+      for (const row of rows) {
+        if (row?.megaMenuImageUrl) {
+          items.push({ categoryKey: row.categoryKey, imageUrl: row.megaMenuImageUrl, altText: null });
+        }
       }
+      return Object.freeze(items);
+    } catch {
+      return Object.freeze([]);
     }
-    return Object.freeze(items);
-  } catch {
-    return Object.freeze([]);
-  }
+  });
+  return read.value;
 }
 
 /**
@@ -465,14 +632,35 @@ export async function readConfiguredCategoryMegaMedia(): Promise<readonly Catego
 export async function readConfiguredCategoryHeroMedia(
   categoryKeys: readonly CategoryKey[],
 ): Promise<ReadonlyMap<string, string>> {
-  const merchandising = createMerchandisingRepository(prisma);
-  const rows = await Promise.all(
-    categoryKeys.map((categoryKey) => merchandising.readCategoryEditorialMedia(categoryKey)),
-  );
+  const cacheKey = ["hero-media", categoryKeys.join(",")].join(":");
+  const read = await categoryHeroMediaCache.read(cacheKey, async () => {
+    const merchandising = createMerchandisingRepository(prisma);
+    const rows = await Promise.all(
+      categoryKeys.map((categoryKey) => merchandising.readCategoryEditorialMedia(categoryKey)),
+    );
 
-  const media = new Map<string, string>();
-  for (const row of rows) {
-    if (row?.heroImageUrl) media.set(row.categoryKey, row.heroImageUrl);
-  }
-  return media;
+    const media = new Map<string, string>();
+    for (const row of rows) {
+      if (row?.heroImageUrl) media.set(row.categoryKey, row.heroImageUrl);
+    }
+    return media;
+  });
+  return read.value;
+}
+
+/** Clear all in-process runtime storefront caches (e.g. after admin catalog updates or tests). */
+export function clearStorefrontRuntimeCaches(): void {
+  saleIdPageCache.clear();
+  categoryDiscoveryPageCache.clear();
+  categoryDiscoveryFacetsCache.clear();
+  storefrontDiscoveryPageCache.clear();
+  collectionDiscoveryFacetsCache.clear();
+  manualNewArrivalsCache.clear();
+  homepageFeaturedCache.clear();
+  homepageNewArrivalsCache.clear();
+  productSlugCache.clear();
+  pdpProductCache.clear();
+  relatedProductsCache.clear();
+  categoryMegaMediaCache.clear();
+  categoryHeroMediaCache.clear();
 }
