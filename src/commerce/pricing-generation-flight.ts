@@ -15,21 +15,27 @@
  */
 export type PricingGeneration = Readonly<{ key: string; nextBoundaryAt: Date | null }>;
 
+/**
+ * A generation with the instant it was read at. Whatever is cached under its key must be computed at
+ * that instant: a waiter's own earlier `now` can sit on the other side of a campaign boundary.
+ */
+export type PricingGenerationRead = PricingGeneration & Readonly<{ readAt: Date }>;
+
 type Waiting = {
   nowMs: number;
-  promise: Promise<PricingGeneration>;
-  resolve: (value: PricingGeneration) => void;
+  promise: Promise<PricingGenerationRead>;
+  resolve: (value: PricingGenerationRead) => void;
   reject: (error: unknown) => void;
 };
 
 export function createPricingGenerationReader(
   read: (now: Date) => Promise<PricingGeneration>,
-): (now: Date) => Promise<PricingGeneration> {
-  let running: Promise<PricingGeneration> | null = null;
+): (now: Date) => Promise<PricingGenerationRead> {
+  let running: Promise<PricingGenerationRead> | null = null;
   let waiting: Waiting | null = null;
 
-  function start(now: Date): Promise<PricingGeneration> {
-    const promise = (async () => read(now))();
+  function start(now: Date): Promise<PricingGenerationRead> {
+    const promise = (async () => Object.freeze({ ...(await read(now)), readAt: now }))();
     running = promise;
     const finish = () => {
       if (running === promise) running = null;
@@ -43,12 +49,12 @@ export function createPricingGenerationReader(
     return promise;
   }
 
-  return function readGeneration(now: Date): Promise<PricingGeneration> {
+  return function readGeneration(now: Date): Promise<PricingGenerationRead> {
     if (running === null) return start(now);
     if (waiting === null) {
       let resolve!: Waiting["resolve"];
       let reject!: Waiting["reject"];
-      const promise = new Promise<PricingGeneration>((res, rej) => {
+      const promise = new Promise<PricingGenerationRead>((res, rej) => {
         resolve = res;
         reject = rej;
       });

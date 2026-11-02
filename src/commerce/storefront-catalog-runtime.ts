@@ -27,6 +27,10 @@ import {
 import { storefrontCacheKey } from "./storefront-cache-key.ts";
 import { createPricingGenerationReader } from "./pricing-generation-flight.ts";
 import {
+  createPricingScopedListingReader,
+  type PricingStamped,
+} from "./pricing-scoped-listing.ts";
+import {
   createStorefrontProductSlugResolver,
   type StorefrontProductSlugResolution,
 } from "./storefront-product-slug-resolution.ts";
@@ -98,9 +102,6 @@ const relatedProductsCache = createStorefrontListingCache<StorefrontProductsResu
 const categoryMegaMediaCache = createStorefrontListingCache<readonly CategoryMegaMediaFacts[]>();
 const categoryHeroMediaCache = createStorefrontListingCache<ReadonlyMap<string, string>>();
 
-/** A cached listing with the request instant it was read at, which its countdowns count from. */
-type PricingStamped<T> = Readonly<{ value: T; loadedAtMs: number }>;
-
 /**
  * `STOREFRONT_RUNTIME_CACHE=off` serves every read from the database. The browser specs rewrite rows
  * directly and reload, which a cache that only the admin actions invalidate cannot see.
@@ -118,44 +119,12 @@ async function cachedRead<T>(
   return (await cache.read(key, load)).value;
 }
 
-const readSharedPricingGeneration = createPricingGenerationReader((at) =>
-  createFlashSaleCatalogRepository(prisma).readPricingGeneration(at),
-);
-
-/**
- * Reads a listing whose prices depend on promotions through an in-process cache.
- *
- * Like `/sale`, the key carries the durable promotion pricing revision and the next campaign
- * boundary, so a published promotion edit or a window opening or closing is a different key and is
- * read fresh instead of being served for up to the cache's maximum age. A burst of requests shares
- * reads of that generation without any of them using one older than its own arrival. What counts down from the instant the listing was read -- its own
- * `refreshAfterMs` and each product's Flash `remainingMs` -- is shortened by the time since.
- */
-async function readPricingScopedListing<T>(
-  cache: StorefrontListingCache<PricingStamped<T>>,
-  baseKey: string,
-  now: Date | undefined,
-  load: () => Promise<T>,
-): Promise<T> {
-  const at = now ?? new Date();
-  if (!runtimeCacheEnabled()) return load();
-  const generation = await readSharedPricingGeneration(at);
-  const stamped = await cachedRead(cache, storefrontCacheKey([baseKey, generation.key]), async () =>
-    Object.freeze({ value: await load(), loadedAtMs: at.getTime() }),
-  );
-  const { value } = stamped;
-  const elapsedMs = at.getTime() - stamped.loadedAtMs;
-  if (elapsedMs <= 0 || typeof value !== "object" || value === null) return value;
-
-  let rebased = { ...(value as Record<string, unknown>) };
-  if ("refreshAfterMs" in value && typeof value.refreshAfterMs === "number") {
-    rebased = { ...rebased, refreshAfterMs: Math.max(0, value.refreshAfterMs - elapsedMs) };
-  }
-  if ("products" in value && Array.isArray(value.products)) {
-    rebased = { ...rebased, products: rebaseListingFlashSaleRemaining(value.products, elapsedMs) };
-  }
-  return rebased as T;
-}
+const readPricingScopedListing = createPricingScopedListingReader({
+  enabled: runtimeCacheEnabled,
+  readGeneration: createPricingGenerationReader((at) =>
+    createFlashSaleCatalogRepository(prisma).readPricingGeneration(at),
+  ),
+});
 
 export async function resolveStorefrontPromotionForProducts({
   products,
@@ -272,8 +241,8 @@ export async function listConfiguredManualNewArrivalsPage({
 }) {
   const shopId = readPancakeShopId();
   const cacheKey = storefrontCacheKey(["manual-new-arrivals", shopId, page, pageSize]);
-  return readPricingScopedListing(manualNewArrivalsCache, cacheKey, now, () =>
-    loadManualNewArrivalsPage({ shopId, page, pageSize, now }),
+  return readPricingScopedListing(manualNewArrivalsCache, cacheKey, now, (readAt) =>
+    loadManualNewArrivalsPage({ shopId, page, pageSize, now: readAt }),
   );
 }
 
@@ -332,14 +301,14 @@ export async function listConfiguredStorefrontDiscoveryPage({
     discovery.collection ?? "",
     discovery.query ?? "",
   ]);
-  return readPricingScopedListing(storefrontDiscoveryPageCache, cacheKey, now, () =>
+  return readPricingScopedListing(storefrontDiscoveryPageCache, cacheKey, now, (readAt) =>
     createStorefrontCatalogRepository(prisma).listDiscoveryPage({
       shopId,
       discovery,
       pageSize,
       allowCuratedComponents,
       inStockFirst,
-      now,
+      now: readAt,
     }),
   );
 }
@@ -422,7 +391,7 @@ export async function listConfiguredCategoryDiscoveryPage({
     discovery.sale ? "1" : "0",
     discovery.query ?? "",
   ]);
-  return readPricingScopedListing(categoryDiscoveryPageCache, cacheKey, now, () =>
+  return readPricingScopedListing(categoryDiscoveryPageCache, cacheKey, now, (readAt) =>
     createStorefrontCatalogRepository(prisma).listDiscoveryPage({
       shopId,
       discovery: {
@@ -431,7 +400,7 @@ export async function listConfiguredCategoryDiscoveryPage({
         categoryListingKeys: listingKeys,
       },
       pageSize,
-      now,
+      now: readAt,
     }),
   );
 }
@@ -460,7 +429,7 @@ export async function listConfiguredCategoryDiscoveryFacets({
     discovery?.sale ? "1" : "0",
     discovery?.query ?? "",
   ]);
-  return readPricingScopedListing(categoryDiscoveryFacetsCache, cacheKey, now, () =>
+  return readPricingScopedListing(categoryDiscoveryFacetsCache, cacheKey, now, (readAt) =>
     createStorefrontCatalogRepository(prisma).listScopedDiscoveryFacets({
       shopId,
       discovery: {
@@ -468,7 +437,7 @@ export async function listConfiguredCategoryDiscoveryFacets({
         categoryKey,
         categoryListingKeys: listingKeys,
       },
-      now,
+      now: readAt,
     }),
   );
 }
@@ -494,13 +463,13 @@ export async function listConfiguredCollectionDiscoveryFacets({
     discovery?.collection ?? "",
     discovery?.query ?? "",
   ]);
-  return readPricingScopedListing(collectionDiscoveryFacetsCache, cacheKey, now, () =>
+  return readPricingScopedListing(collectionDiscoveryFacetsCache, cacheKey, now, (readAt) =>
     createStorefrontCatalogRepository(prisma).listScopedDiscoveryFacets({
       shopId,
       discovery,
       allowCuratedComponents: true,
       withSale: false,
-      now,
+      now: readAt,
     }),
   );
 }
@@ -599,7 +568,7 @@ export async function listConfiguredHomepageFeaturedProducts() {
 export async function listConfiguredHomepageNewArrivals(limit: number, now?: Date) {
   const shopId = readPancakeShopId();
   const cacheKey = storefrontCacheKey(["home-new-arrivals", shopId, limit]);
-  return readPricingScopedListing(homepageNewArrivalsCache, cacheKey, now, async () => {
+  return readPricingScopedListing(homepageNewArrivalsCache, cacheKey, now, async (readAt) => {
     const products = await createStorefrontCatalogRepository(prisma).listNewestProducts({
       shopId,
       limit,
@@ -607,7 +576,7 @@ export async function listConfiguredHomepageNewArrivals(limit: number, now?: Dat
 
     const { pricingRule, refreshAfterMs } = await resolveStorefrontPromotionForProducts({
       products,
-      now,
+      now: readAt,
     });
     return { products, pricingRule, refreshAfterMs };
   });
@@ -628,9 +597,9 @@ export async function listConfiguredHomepageNewArrivals(limit: number, now?: Dat
 export async function listConfiguredHomepageFeaturedWithPricing(now?: Date) {
   const shopId = readPancakeShopId();
   const cacheKey = storefrontCacheKey(["home-featured", shopId]);
-  return readPricingScopedListing(homepageFeaturedCache, cacheKey, now, async () => {
+  return readPricingScopedListing(homepageFeaturedCache, cacheKey, now, async (readAt) => {
     const products = await listConfiguredHomepageFeaturedProducts();
-    const at = now ?? new Date();
+    const at = readAt;
     const { pricingRule, refreshAfterMs, campaignsByVariantId } =
       await resolveStorefrontPromotionForProducts({ products, now: at });
     return {
