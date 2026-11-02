@@ -24,6 +24,7 @@ import {
   PRODUCT_SLUG_LOCK_NAMESPACE,
 } from "./product-slug.ts";
 import { canonicalizeClothingSize } from "./clothing-size.ts";
+import { normalizedSkuSql } from "./sku-sql.ts";
 import {
   PRIMARY_WAREHOUSE_SCOPE,
   SECONDARY_WAREHOUSE_KEY_PREFIX,
@@ -313,7 +314,7 @@ async function dropMisattributedSecondaryStock(
       AND ws."pancakeWarehouseId" LIKE ${SECONDARY_WAREHOUSE_KEY_PREFIX + "%"}
       AND (
         NOT v."isPresent"
-        OR ws."secondarySku" IS DISTINCT FROM NULLIF(upper(btrim(v."pancakeDisplayId")), '')
+        OR ws."secondarySku" IS DISTINCT FROM ${normalizedSkuSql(Prisma.sql`v."pancakeDisplayId"`)}
         OR EXISTS (
           SELECT 1
           FROM "VariantMirror" other
@@ -321,7 +322,7 @@ async function dropMisattributedSecondaryStock(
           WHERE op."pancakeShopId" = vp."pancakeShopId"
             AND other."isPresent"
             AND other."id" <> v."id"
-            AND upper(btrim(other."pancakeDisplayId")) = ws."secondarySku"
+            AND ${normalizedSkuSql(Prisma.sql`other."pancakeDisplayId"`)} = ws."secondarySku"
         )
       )
   `);
@@ -1013,6 +1014,13 @@ export function createCatalogMirrorRepository(
             : [];
         const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
 
+        // A variant that was renamed, retired, or now shares its SKU stops receiving the secondary
+        // stock that was attributed to its old identity, here and now: this must not wait for the
+        // secondary shop's API, which may be down. It runs before ANYTHING below reads stored stock
+        // (a combo's readiness is derived from its components' stored rows, direct variants' totals
+        // from the same table), so every availability observation sees the cleaned figures.
+        await dropMisattributedSecondaryStock(tx, safeShopId);
+
         const observedVariantIds = variations.flatMap((variation) => {
           const variantId = internalVariantIds.get(variation.id);
           return variantId === undefined ? [] : [variantId];
@@ -1064,11 +1072,6 @@ export function createCatalogMirrorRepository(
               readiness.readyQuantity <= 0,
           );
         }
-
-        // A variant that was renamed, retired, or now shares its SKU stops receiving the secondary
-        // stock that was attributed to its old identity, here and now: this must not wait for the
-        // secondary shop's API, which may be down. Done before the observation below reads the totals.
-        await dropMisattributedSecondaryStock(tx, safeShopId);
 
         // The stock a variant sells from is the primary shop's plus what the secondary shop holds
         // for it, so a variant is only "sold out" when both are.

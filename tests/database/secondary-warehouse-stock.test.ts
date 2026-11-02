@@ -8,8 +8,11 @@ import {
   purgeSecondaryWarehouseStock,
   syncSecondaryShopInventory,
 } from "../../src/commerce/secondary-inventory-sync.ts";
+import { normalizedSkuSql } from "../../src/commerce/sku-sql.ts";
 import { findAmbiguousPrimarySkus } from "../../src/commerce/secondary-sku-guard.ts";
-import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import { normalizeSku } from "../../src/integrations/pancake/sku.ts";
+import type { PancakeCompositeSnapshot } from "../../src/integrations/pancake/composite-contract.ts";
+import { Prisma, PrismaClient } from "../../src/generated/prisma/client.ts";
 import type { PancakeParsedCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -646,4 +649,185 @@ test("a SKU that became shared between the candidate read and the lock gets no s
   assert.equal(result.ambiguousCount, 1);
   assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
   assert.deepEqual(await stockRows("v2"), [["wh-a", 1]]);
+});
+
+test("the SQL normalization equals normalizeSku() for every BMP character at the ends of a SKU", async () => {
+  const samples: string[] = [];
+  for (let code = 1; code <= 0xffff; code += 1) {
+    if (code >= 0xd800 && code <= 0xdfff) continue; // lone surrogates cannot be stored
+    const char = String.fromCharCode(code);
+    samples.push(`${char}a-1${char}`);
+  }
+  samples.push("", "SKU-A", "sku-a", "\tSKU-A", "\u00a0sku-a\u3000", "stra\u00dfe", "AO XL", "  ");
+
+  const rows = await prisma.$queryRaw<Array<{ input: string; normalized: string | null }>>(Prisma.sql`
+    SELECT s.input AS input, ${normalizedSkuSql(Prisma.sql`s.input`)} AS normalized
+    FROM unnest(${samples}::text[]) AS s(input)
+  `);
+
+  assert.equal(rows.length, samples.length);
+  const mismatches = rows
+    .filter((row) => row.normalized !== normalizeSku(row.input))
+    .map((row) => JSON.stringify(row.input));
+  assert.deepEqual(mismatches, []);
+});
+
+test("SKUs that differ only by tab or no-break space are one SKU: shared, so none gets secondary stock", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [
+      primaryVariation("v1", "\tSKU-A", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v2", "SKU-A", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v3", "\u00a0sku-b\u00a0", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v4", "SKU-B", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+    ],
+    syncedAt: t(0),
+  });
+
+  const found = await findAmbiguousPrimarySkus(prisma, primaryShopId, ["SKU-A", "SKU-B", "SKU-C"]);
+  assert.deepEqual([...found].sort(), ["SKU-A", "SKU-B"], "the checkout guard sees them");
+
+  const result = await syncSecondary(
+    [
+      { displayId: "SKU-A", stocks: [["wh-s1", 5]] },
+      { displayId: "SKU-B", stocks: [["wh-s1", 5]] },
+    ],
+    t(1),
+  );
+  assert.equal(result.ambiguousCount, 2);
+  for (const id of ["v1", "v2", "v3", "v4"]) {
+    assert.deepEqual(await stockRows(id), [["wh-a", 1]], `${id} received nothing`);
+  }
+});
+
+test("a primary sync keeps a valid contribution for a SKU written with a tab or no-break space", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "\u00a0SKU-A\t", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(0),
+  });
+  await syncSecondary([{ displayId: "sku-a", stocks: [["wh-s1", 5]] }], t(1));
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 1]]);
+
+  // The cleanup that runs inside every primary sync must not mistake it for a renamed SKU.
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "\u00a0SKU-A\t", [{ warehouseId: "wh-a", remainQuantity: 2 }])],
+    syncedAt: t(2),
+  });
+
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 2]]);
+});
+
+function comboVariation(id: string, productId: string, displayId: string | null, stock: number) {
+  return {
+    ...primaryVariation(id, displayId, [{ warehouseId: "wh-a", remainQuantity: stock }]),
+    productId,
+    product: { id: productId, name: productId, sourceDescription: null, primaryImageUrl: null },
+  };
+}
+
+const comboSnapshot: PancakeCompositeSnapshot = {
+  parentVariationIds: ["set-m"],
+  componentVariationIds: ["shirt-m"],
+  parentIdentities: [{ variationId: "set-m", productId: "set-product" }],
+  componentIdentities: [{ variationId: "shirt-m", productId: "shirt-product" }],
+  edges: [{ parentVariationId: "set-m", componentVariationId: "shirt-m", quantity: 1 }],
+};
+
+test("a PREORDER combo is judged on its component's stock AFTER a rename removes the old SKU's secondary stock", async () => {
+  const sync = (shirtSku: string, shirtStock: number, minute: number) =>
+    repository.syncSnapshot({
+      shopId: primaryShopId,
+      variations: [
+        comboVariation("set-m", "set-product", null, 0),
+        comboVariation("shirt-m", "shirt-product", shirtSku, shirtStock),
+      ],
+      compositeSnapshot: comboSnapshot,
+      syncedAt: t(minute),
+    });
+
+  await sync("SKU-A", 0, 0);
+  const setProduct = await prisma.productMirror.findFirstOrThrow({
+    where: { pancakeShopId: primaryShopId, pancakeProductId: "set-product" },
+  });
+  await prisma.productSellingPolicy.create({
+    data: { productId: setProduct.id, sellingMode: "PREORDER", negativeStockLimit: -20 },
+  });
+
+  // The secondary shop holds 5 of the shirt: the combo can be made.
+  await syncSecondary([{ displayId: "SKU-A", stocks: [["wh-s1", 5]] }], t(1));
+  assert.equal((await preorderCycle("set-m"))?.lastStockNonPositive, false);
+
+  // The primary sync renames the shirt to SKU-B and the secondary API never answers. The 5 units
+  // belonged to SKU-A: after the commit the combo has no capacity and its cycle must say so.
+  await sync("SKU-B", 0, 2);
+
+  assert.deepEqual(await stockRows("shirt-m"), [["wh-a", 0]]);
+  assert.equal((await preorderCycle("set-m"))?.lastStockNonPositive, true);
+});
+
+test("a secondary read that began before a configuration-change purge cannot write its stock back afterwards", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(0),
+  });
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(5));
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(6), otherSecondaryShopId);
+
+  // A read begins at t(10) under the old configuration and pauses. The shop is replaced: the purge
+  // runs at t(20). Only afterwards does the paused sync reach the database.
+  let purged = false;
+  const inFlight = racingPrisma(async () => {
+    if (purged) return;
+    purged = true;
+    await purgeSecondaryWarehouseStock(prisma, {
+      primaryShopId,
+      exceptShopId: secondaryShopId,
+      fence: true,
+      observedAt: t(20),
+    });
+  });
+  await syncSecondaryShopInventory({
+    primaryShopId,
+    secondaryShopId: otherSecondaryShopId,
+    secondaryClient: secondaryClient([{ displayId: "SKU-1", stocks: [["wh-s9", 7]] }]),
+    prisma: inFlight,
+    clock: () => t(10),
+    warn: () => undefined,
+  });
+
+  assert.equal(purged, true);
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 5], ["wh-a", 1]], "only the configured shop's stock stands");
+
+  // A read that begins after the purge is a different matter: it applies.
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 6]] }], t(30));
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 6], ["wh-a", 1]]);
+});
+
+test("disabling the feature fences the reads that were already running", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(0),
+  });
+
+  // Nothing is stored yet, so there is nothing for the purge to delete: only the fence can stop the read.
+  let purged = false;
+  const inFlight = racingPrisma(async () => {
+    if (purged) return;
+    purged = true;
+    assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: true, observedAt: t(20) }), 0);
+  });
+  await syncSecondaryShopInventory({
+    primaryShopId,
+    secondaryShopId,
+    secondaryClient: secondaryClient([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }]),
+    prisma: inFlight,
+    clock: () => t(10),
+    warn: () => undefined,
+  });
+
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
 });

@@ -1,4 +1,4 @@
-import type { PrismaClient } from "../generated/prisma/client.ts";
+import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { fetchAllPancakeCatalogVariations } from "../integrations/pancake/catalog-pages.ts";
 import type { PancakeCatalogWarehouseStock } from "../integrations/pancake/catalog-contract.ts";
 import { normalizeSku } from "../integrations/pancake/sku.ts";
@@ -30,6 +30,11 @@ export type SecondaryInventorySyncHooks = {
     tx: SyncTransaction,
     variantIds: readonly string[],
   ): Promise<ReadonlyArray<{ id: string; pancakeDisplayId: string | null; isPresent: boolean }>>;
+  /**
+   * Raises every primary variant's secondary-read marker to `observedAt`, so a read that began
+   * before it can no longer be applied (the marker only ever moves forward).
+   */
+  fenceReads(tx: SyncTransaction, shopId: number, observedAt: Date): Promise<void>;
   /** Of the normalized SKUs, those more than one present primary variant carries (read under the lock). */
   findAmbiguousSkus(
     tx: SyncTransaction,
@@ -52,6 +57,17 @@ const DEFAULT_HOOKS: SecondaryInventorySyncHooks = {
       orderBy: { id: "asc" },
     }),
   findAmbiguousSkus: (tx, primaryShopId, skus) => findAmbiguousPrimarySkus(tx, primaryShopId, skus),
+  async fenceReads(tx, shopId, observedAt) {
+    // A bare UPDATE of the marker alone: it must not touch `updatedAt`, which other readers use.
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "VariantMirror" v
+      SET "secondaryStockObservedAt" = ${observedAt}
+      FROM "ProductMirror" p
+      WHERE p."id" = v."productId"
+        AND p."pancakeShopId" = ${shopId}
+        AND (v."secondaryStockObservedAt" IS NULL OR v."secondaryStockObservedAt" < ${observedAt})
+    `);
+  },
   observeAvailability: observeStoredStockAvailability,
 };
 
@@ -257,6 +273,7 @@ export async function purgeSecondaryWarehouseStock(
     exceptShopId,
     shopId,
     syncedBefore,
+    fence = false,
     observedAt = new Date(),
     hooks = DEFAULT_HOOKS,
   }: {
@@ -264,6 +281,12 @@ export async function purgeSecondaryWarehouseStock(
     exceptShopId?: number;
     shopId?: number;
     syncedBefore?: Date;
+    /**
+     * For purges caused by a configuration change (feature off, shop replaced): also refuse every
+     * secondary read that began before this instant. Without it a sync that was already running
+     * under the old configuration would write its stock back right after the purge.
+     */
+    fence?: boolean;
     observedAt?: Date;
     hooks?: SecondaryInventorySyncHooks;
   },
@@ -282,6 +305,8 @@ export async function purgeSecondaryWarehouseStock(
   return prisma.$transaction(
     async (tx) => {
       await hooks.acquireLock(tx, primaryShopId);
+      // Under the shop lock, before anything is removed, so no read can slip in between.
+      if (fence) await hooks.fenceReads(tx, primaryShopId, observedAt);
       const affected = await tx.warehouseStock.findMany({
         where,
         select: { variantId: true },

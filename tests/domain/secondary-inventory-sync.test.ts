@@ -288,6 +288,7 @@ function syncHarness({
             hookCalls.push("mapping");
             return primaryAtLockTime.filter(({ id }) => variantIds.includes(id));
           },
+          async fenceReads() {},
           async findAmbiguousSkus(_tx, _shop, skus) {
             const counts = new Map<string, number>();
             for (const row of primaryAtLockTime) {
@@ -417,6 +418,9 @@ test("purgeSecondaryWarehouseStock deletes under the shop lock, locks the rows, 
     async findAmbiguousSkus() {
       return new Set<string>();
     },
+    async fenceReads(_tx: unknown, shopId: number, at: Date) {
+      steps.push(`fence:${shopId}:${at.toISOString()}`);
+    },
   };
   const prisma = {
     async $transaction<T>(fn: (t: typeof tx) => Promise<T>): Promise<T> {
@@ -433,12 +437,25 @@ test("purgeSecondaryWarehouseStock deletes under the shop lock, locks the rows, 
   });
 
   assert.equal(removed, 3);
-  assert.deepEqual(steps, ["lock:4741464", "find", "lockRows:v1,v2", "delete", "observe"]);
+  assert.deepEqual(steps, ["lock:4741464", "find", "lockRows:v1,v2", "delete", "observe"], "a stale purge does not fence");
+
   assert.deepEqual(wheres, [
     { pancakeWarehouseId: { startsWith: "secondary:2:" }, syncedAt: { lt: now } },
     { pancakeWarehouseId: { startsWith: "secondary:2:" }, syncedAt: { lt: now }, variantId: { in: ["v1", "v2"] } },
   ]);
   assert.deepEqual(observed, [{ shopId: 4_741_464, variantIds: ["v1", "v2"], observedAt: now }]);
+
+  // A configuration-change purge raises the read marker first, under the lock, before removing anything.
+  steps.length = 0;
+  await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 4_741_464, fence: true, observedAt: now, hooks });
+  assert.deepEqual(steps, [
+    "lock:4741464",
+    `fence:4741464:${now.toISOString()}`,
+    "find",
+    "lockRows:v1,v2",
+    "delete",
+    "observe",
+  ]);
 });
 
 test("purge scopes: everything when disabled, every other shop when the shop changed", async () => {
@@ -466,6 +483,7 @@ test("purge scopes: everything when disabled, every other shop when the shop cha
     async findAmbiguousSkus() {
       return new Set<string>();
     },
+    async fenceReads() {},
   };
 
   assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 1, hooks }), 0);
