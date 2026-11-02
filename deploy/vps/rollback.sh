@@ -43,6 +43,14 @@ compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 # App and catalog-sync are both database writers and must belong to the same release. Quiesce the
 # current sync *before* the previous app starts, so there is no window where the older app serves
 # while newer sync code is still writing; `stop` waits out an in-flight sync (90s grace).
+#
+# Whether it was running is recorded first: a refused rollback puts back only what this script stopped,
+# never a worker an operator had deliberately switched off (the same rule as `stopped_writers` in
+# deploy.sh).
+sync_was_running=false
+if [[ -n "$("${compose[@]}" ps -q catalog-sync)" ]]; then
+  sync_was_running=true
+fi
 "${compose[@]}" stop catalog-sync
 
 # The release being left may have added a second Pancake shop's stock to the mirror (WarehouseStock
@@ -63,8 +71,11 @@ secondary_row_count() {
 }
 
 refuse_rollback() {
-  # Nothing was started: put the current writer back exactly as it was, and stop here.
-  "${compose[@]}" start catalog-sync >/dev/null 2>&1 || true
+  # Nothing was started: put the current writer back exactly as it was -- running only if it was
+  # running before this script stopped it -- and stop here.
+  if [[ "$sync_was_running" == "true" ]]; then
+    "${compose[@]}" start catalog-sync >/dev/null 2>&1 || true
+  fi
   echo "$1; $PREVIOUS_SHA was NOT started. Fix it and retry the rollback." >&2
   exit 1
 }

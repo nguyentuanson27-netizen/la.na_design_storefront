@@ -310,6 +310,14 @@ test("a failed teardown stops the rollback before the previous app starts and pu
   assertRefused(run, /Could not remove the secondary shop's stock.*was NOT started/);
 });
 
+test("a refused rollback does not start a catalog sync that was stopped before it began", () => {
+  const run = runRollback({ running: ["app"], images: PREVIOUS_IMAGES, secondaryRows: 3, psqlExit: 2 });
+  assert.notEqual(run.status, 0);
+  assert.equal(position(run.calls, ROLLBACK_APP), -1);
+  assert.equal(position(run.calls, RESTART_SYNC), -1, "the operator's deliberately stopped worker stays stopped");
+  assert.match(run.stderr, /was NOT started/);
+});
+
 test("rows left behind by a teardown that exits 0 still stop the rollback", () => {
   const run = runRollback({
     running: ["app", "catalog-sync"],
