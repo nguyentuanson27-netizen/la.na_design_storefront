@@ -18,7 +18,7 @@ function render() {
           className="min-w-0 flex-1 bg-transparent py-4 font-display text-xl text-[#2A1810] outline-none placeholder:text-[#3B2219]/40 focus-visible:outline-2 focus-visible:outline-offset-4 md:text-2xl"
           id="site-search"
           name="q"
-          placeholder="Sơ mi, quần, áo khoác…"
+          placeholder="Nhập tên hoặc mã sản phẩm…"
           type="search"
         />
         <button className="px-4 text-xs font-semibold uppercase tracking-[0.14em]" type="submit">

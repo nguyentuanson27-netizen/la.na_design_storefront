@@ -5,6 +5,7 @@ import { resolveStorefrontPromotionRefresh } from "./storefront-promotion-freshn
 import { withListingFlashSale } from "./storefront-listing-flash-sale.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
+import { FOLD_FROM, FOLD_TO, escapeLikeTerm, searchTerms } from "./search-fold.ts";
 import { isCollectionDefaultSort } from "./collection-discovery-url.ts";
 import { toStorefrontCollectionTitle } from "./collection-definition.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
@@ -93,6 +94,7 @@ const productSelection = {
   pancakeProductId: true,
   slug: true,
   name: true,
+  productCode: true,
   primaryImageUrl: true,
   content: {
     select: {
@@ -229,6 +231,9 @@ export function toStorefrontProduct(
     pancakeProductId: product.pancakeProductId,
     slug: product.slug,
     name: product.name,
+    // The Pancake code ("SV605"): what the product page's search title uses to tell two products
+    // apart. Null for a product Pancake gave none.
+    productCode: product.productCode,
     media,
     editorialDescription: publishedContent?.editorialDescription ?? null,
     material: publishedContent?.material ?? null,
@@ -567,20 +572,24 @@ function buildBaseProductFilters(shopId: number, discovery: StorefrontDiscoveryQ
   }
 
   if (discovery.query) {
-    // The mirrored name drops the Pancake product code ("SV605"), so the code and the variant
-    // display ids are searched too.
-    filters.push(Prisma.sql`(
-      POSITION(LOWER(${discovery.query}) IN LOWER(p."name")) > 0
-      OR POSITION(LOWER(${discovery.query}) IN LOWER(COALESCE(p."productCode", ''))) > 0
-      OR EXISTS (
-        SELECT 1
-        FROM "VariantMirror" vm
-        WHERE vm."productId" = p."id"
-          AND vm."isPresent" = TRUE
-          AND vm."isActive" = TRUE
-          AND POSITION(LOWER(${discovery.query}) IN LOWER(COALESCE(vm."pancakeDisplayId", ''))) > 0
-      )
-    )`);
+    // Every word of the query must appear, in any order, ignoring Vietnamese marks and case, so
+    // "ao dai" and "váy hoa sen" both find what a shopper means. The mirrored name drops the
+    // Pancake product code ("SV605"), so the code and the variant display ids are searched too.
+    for (const term of searchTerms(discovery.query)) {
+      const pattern = `%${escapeLikeTerm(term)}%`;
+      filters.push(Prisma.sql`(
+        LOWER(translate(p."name", ${FOLD_FROM}, ${FOLD_TO})) LIKE ${pattern} ESCAPE '\\'
+        OR LOWER(translate(COALESCE(p."productCode", ''), ${FOLD_FROM}, ${FOLD_TO})) LIKE ${pattern} ESCAPE '\\'
+        OR EXISTS (
+          SELECT 1
+          FROM "VariantMirror" vm
+          WHERE vm."productId" = p."id"
+            AND vm."isPresent" = TRUE
+            AND vm."isActive" = TRUE
+            AND LOWER(COALESCE(vm."pancakeDisplayId", '')) LIKE ${pattern} ESCAPE '\\'
+        )
+      )`);
+    }
   }
   if (discovery.categoryListingKeys && discovery.categoryListingKeys.length > 0) {
     filters.push(Prisma.sql`
