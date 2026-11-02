@@ -8,6 +8,7 @@ import { requireCurrentAdmin, requireCurrentAdminPage } from "@/auth/current-adm
 import { createNewArrivalsAdminService } from "@/commerce/new-arrivals-admin";
 import { createNewArrivalsRepository } from "@/commerce/new-arrivals-repository";
 import { MAX_NEW_ARRIVAL_PRODUCTS } from "@/commerce/new-arrivals-selection";
+import { clearStorefrontRuntimeCaches } from "@/commerce/storefront-catalog-runtime";
 import { prisma } from "@/db/prisma";
 import { readPancakeShopId } from "@/integrations/pancake/config";
 
@@ -58,6 +59,7 @@ async function changeSelection(formData: FormData) {
     operation: formData.get("operation"),
     productId: formData.get("productId"),
   });
+  clearStorefrontRuntimeCaches();
   revalidatePath("/new-arrivals");
   revalidatePath("/admin/new-arrivals");
   // A stale click (double submit, another admin changed the list) is an expected outcome, not a crash.

@@ -18,6 +18,15 @@ const prebuiltDistDir = process.env.LA_E2E_PREBUILT_DIST_DIR?.trim() || null;
 export const NEXT_SERVER_COMMAND = prebuiltDistDir ? "start" : "dev";
 
 /** The server's build directory: the shared production build in CI, the spec's own otherwise. */
-export function nextServerEnv(devDistDir: string): { NEXT_DIST_DIR: string; NODE_ENV?: "production" } {
-  return prebuiltDistDir ? { NEXT_DIST_DIR: prebuiltDistDir, NODE_ENV: "production" } : { NEXT_DIST_DIR: devDistDir };
+export function nextServerEnv(devDistDir: string): {
+  NEXT_DIST_DIR: string;
+  NODE_ENV?: "production";
+  STOREFRONT_RUNTIME_CACHE: "off";
+} {
+  // The specs rewrite rows directly and reload; the in-process listing cache only drops on an admin
+  // action, so it is off here and every read is the database's.
+  const cache = { STOREFRONT_RUNTIME_CACHE: "off" } as const;
+  return prebuiltDistDir
+    ? { NEXT_DIST_DIR: prebuiltDistDir, NODE_ENV: "production", ...cache }
+    : { NEXT_DIST_DIR: devDistDir, ...cache };
 }

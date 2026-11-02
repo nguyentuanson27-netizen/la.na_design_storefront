@@ -11,6 +11,7 @@ import {
 } from "@/commerce/collection-definition";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import { createProductContentRepository } from "@/commerce/product-content-repository";
+import { clearStorefrontRuntimeCaches } from "@/commerce/storefront-catalog-runtime";
 import { CollectionAdminStatus } from "@/components/admin/collection-admin-status";
 import { prisma } from "@/db/prisma";
 
@@ -51,6 +52,7 @@ function finishCollectionMutation(result: { ok: boolean }) {
     redirect("/admin/collections?error=invalid");
   }
 
+  clearStorefrontRuntimeCaches();
   revalidatePath("/");
   revalidatePath("/admin/collections");
   revalidatePath("/admin");

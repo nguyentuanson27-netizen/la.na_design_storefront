@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { ApplicablePromotionCampaign } from "../../src/commerce/promotion-pricing.ts";
 import {
+  rebaseListingFlashSaleRemaining,
   resolveStorefrontListingFlashSale,
   withListingFlashSale,
 } from "../../src/commerce/storefront-listing-flash-sale.ts";
@@ -192,4 +193,21 @@ test("an OVERSELL variant at zero or below neither badges nor represents the car
       undefined,
     );
   }
+});
+
+test("a cached Flash countdown is shortened by the time the entry has been held, and never goes negative", () => {
+  const flash = (remainingMs: number) => ({
+    representativeVariantId: "v",
+    basePriceVnd: 100,
+    effectivePriceVnd: 80,
+    hasCheaperCurrentVariant: false,
+    remainingMs,
+  });
+  const products = [{ id: "a", flashSale: flash(90_000) }, { id: "b", flashSale: undefined }];
+  const rebased = rebaseListingFlashSaleRemaining(products, 45_000);
+  assert.equal(rebased[0]?.flashSale?.remainingMs, 45_000);
+  assert.equal(rebased[1], products[1]);
+  assert.equal(rebaseListingFlashSaleRemaining(products, 120_000)[0]?.flashSale?.remainingMs, 0);
+  assert.equal(products[0]?.flashSale?.remainingMs, 90_000, "the cached entry itself is not changed");
+  assert.equal(rebaseListingFlashSaleRemaining(products, 0)[0], products[0]);
 });

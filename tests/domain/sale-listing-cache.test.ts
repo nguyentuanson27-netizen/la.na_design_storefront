@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { createSaleListingCache } from "../../src/commerce/sale-listing-cache.ts";
+import {
+  createSaleListingCache,
+  createStorefrontListingCache,
+} from "../../src/commerce/sale-listing-cache.ts";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -298,6 +301,26 @@ describe("Sale listing cache", () => {
 
     assert.deepEqual(await cache.read("a", async () => "unused"), { value: "A", cached: true });
     assert.deepEqual(await cache.read("b", async () => "B again"), { value: "B again", cached: false });
+  });
+
+  it("supports delete, clear and size reporting", async () => {
+    const cache = createStorefrontListingCache<string>();
+    assert.equal(cache.size(), 0);
+
+    await cache.read("k1", async () => "v1");
+    await cache.read("k2", async () => "v2");
+    assert.equal(cache.size(), 2);
+
+    assert.equal(cache.delete("k1"), true);
+    assert.equal(cache.size(), 1);
+    assert.equal(cache.delete("k1"), false);
+
+    // Reading k1 after delete performs a fresh read
+    assert.deepEqual(await cache.read("k1", async () => "v1-fresh"), { value: "v1-fresh", cached: false });
+
+    cache.clear();
+    assert.equal(cache.size(), 0);
+    assert.deepEqual(await cache.read("k2", async () => "v2-fresh"), { value: "v2-fresh", cached: false });
   });
 
   it("rejects bounds that cannot hold an entry", () => {

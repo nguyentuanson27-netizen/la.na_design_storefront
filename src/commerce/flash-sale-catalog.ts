@@ -566,7 +566,9 @@ export function createFlashSaleCatalogRepository(
    * the next boundary is the first instant that decision can change; every kind counts, because a
    * campaign of another kind changes a variant's candidate count and so its resolved price.
    */
-  async function readSaleIdPageGeneration(now: Date): Promise<string> {
+  async function readPricingGeneration(
+    now: Date,
+  ): Promise<Readonly<{ key: string; nextBoundaryAt: Date | null }>> {
     const [revisionRow, boundary] = await Promise.all([
       client.promotionPricingRevision.findUnique({
         where: { id: PROMOTION_PRICING_REVISION_ID },
@@ -577,7 +579,14 @@ export function createFlashSaleCatalogRepository(
     if (revisionRow === null) {
       throw new Error("Promotion pricing revision row is missing; migrations are not deployed");
     }
-    return `r${revisionRow.revision}:b${boundary === null ? "none" : boundary.getTime()}`;
+    return Object.freeze({
+      key: `r${revisionRow.revision}:b${boundary === null ? "none" : boundary.getTime()}`,
+      nextBoundaryAt: boundary,
+    });
+  }
+
+  async function readSaleIdPageGeneration(now: Date): Promise<string> {
+    return (await readPricingGeneration(now)).key;
   }
 
   /**
@@ -805,5 +814,6 @@ export function createFlashSaleCatalogRepository(
     listSalePage,
     readNextFlashSaleBoundary,
     readNextSaleBoundary,
+    readPricingGeneration,
   };
 }

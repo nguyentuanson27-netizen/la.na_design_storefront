@@ -45,6 +45,20 @@ export type SaleListingCache<T> = Readonly<{
    * cached value outdated. It never reuses a background read already in flight.
    */
   refresh: (key: string, load: () => Promise<T>) => Promise<T>;
+  /** Drops all cached entries and active in-flight promises immediately. */
+  clear?: () => void;
+  /** Drops a single entry and its in-flight promise. Returns true if an entry was deleted. */
+  delete?: (key: string) => boolean;
+  /** Current number of cached entries. */
+  size?: () => number;
+}>;
+
+export type StorefrontListingCache<T> = Readonly<{
+  read: (key: string, load: () => Promise<T>) => Promise<Readonly<{ value: T; cached: boolean }>>;
+  refresh: (key: string, load: () => Promise<T>) => Promise<T>;
+  clear: () => void;
+  delete: (key: string) => boolean;
+  size: () => number;
 }>;
 
 function assertPositiveMs(value: number, name: string) {
@@ -69,7 +83,7 @@ export function createSaleListingCache<T>({
   maxEntries?: number;
   backgroundRetryMs?: number;
   onBackgroundError?: (error: unknown) => void;
-}> = {}): SaleListingCache<T> {
+}> = {}): StorefrontListingCache<T> {
   assertPositiveMs(freshMs, "fresh time");
   assertPositiveMs(maxAgeMs, "maximum age");
   assertPositiveMs(maxEntries, "entry limit");
@@ -155,5 +169,28 @@ export function createSaleListingCache<T>({
     return load(key, loader, true);
   }
 
-  return Object.freeze({ read, refresh });
+  function clear(): void {
+    entries.clear();
+    inFlight.clear();
+  }
+
+  function deleteEntry(key: string): boolean {
+    const deleted = entries.delete(key);
+    inFlight.delete(key);
+    return deleted;
+  }
+
+  function size(): number {
+    return entries.size;
+  }
+
+  return Object.freeze({
+    read,
+    refresh,
+    clear,
+    delete: deleteEntry,
+    size,
+  });
 }
+
+export const createStorefrontListingCache = createSaleListingCache;

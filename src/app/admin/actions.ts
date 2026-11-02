@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 
+import { clearStorefrontRuntimeCaches } from "@/commerce/storefront-catalog-runtime";
+
 import { readAuthServerConfig } from "@/auth/config";
 import { requireCurrentAdmin } from "@/auth/current-admin";
 import { AuthorizationError } from "@/auth/authorization";
@@ -143,6 +145,7 @@ async function readAdminSession(): Promise<
 }
 
 function revalidateDirectory(): void {
+  clearStorefrontRuntimeCaches();
   revalidatePath("/admin");
   revalidatePath("/shop");
 }
