@@ -112,6 +112,14 @@ export function checkoutSubmitFeedback(
         message: "Giỏ hàng hiện chưa thể thanh toán. Nàng quay lại giỏ hàng xem lại sản phẩm nhé.",
         mayRetry: false,
       };
+    case "TOO_MANY_ORDERS":
+      return {
+        tone: "warning",
+        title: "Số điện thoại này đã đặt nhiều đơn hôm nay",
+        message:
+          `Để tránh đơn trùng, ${BRAND.identity.name} tạm giới hạn số đơn mỗi ngày cho một số điện thoại. Nàng liên hệ shop qua hotline hoặc Zalo ở cuối trang để được hỗ trợ đặt thêm nhé.`,
+        mayRetry: false,
+      };
     case "SERVICE_UNAVAILABLE":
     case "CHECKOUT_UNAVAILABLE":
       return {

@@ -1,4 +1,5 @@
 import type { GuestCheckoutSubmitResult } from "./guest-checkout-submit.ts";
+import { normalizeVietnamPhone } from "./vietnam-phone.ts";
 
 type GuestCheckoutCartSession = {
   read(): string | null;
@@ -26,6 +27,16 @@ export type GuestCheckoutPublicActionDependencies = {
   readAttribution?: () => string | null;
   /** Whether bank transfer may be chosen right now. Absent means it is off. */
   isBankTransferEnabled?: () => boolean;
+  /**
+   * Daily per-phone order ceiling. `isPhoneAllowed` is read before the order is submitted and
+   * `recordPhoneOrder` after one is actually placed. Both are protections added on top of the
+   * checkout, so a failure in either never costs a shopper their order: an unreadable counter
+   * lets the order through, and an uncounted order is a missed count, not a refusal.
+   */
+  phoneOrderLimit?: {
+    isPhoneAllowed(phone: string): Promise<boolean>;
+    recordPhoneOrder(phone: string): Promise<void>;
+  };
 };
 
 function checkoutInputFromFormData(formData: FormData, attribution: string | null) {
@@ -51,7 +62,7 @@ function readAttributionSafely(readAttribution: (() => string | null) | undefine
 }
 
 export async function submitGuestCheckoutPublicAction(
-  { cartSession, consumeAttempt, submitCheckout, readAttribution, isBankTransferEnabled }: GuestCheckoutPublicActionDependencies,
+  { cartSession, consumeAttempt, submitCheckout, readAttribution, isBankTransferEnabled, phoneOrderLimit }: GuestCheckoutPublicActionDependencies,
   formData: FormData,
 ): Promise<GuestCheckoutSubmitResult> {
   // A stale page or a hand-built request can still post BANK_TRANSFER after the owner turned it
@@ -88,6 +99,20 @@ export async function submitGuestCheckoutPublicAction(
     };
   }
 
+  // A malformed number is not counted here: the submit below refuses it as INVALID_PHONE.
+  const phone = normalizeVietnamPhone(formData.get("phone"));
+  if (phone !== null && phoneOrderLimit) {
+    let phoneAllowed = true;
+    try {
+      phoneAllowed = await phoneOrderLimit.isPhoneAllowed(phone);
+    } catch {
+      phoneAllowed = true;
+    }
+    if (!phoneAllowed) {
+      return { ok: false, status: "RETRYABLE", reason: "TOO_MANY_ORDERS" };
+    }
+  }
+
   const result = await submitCheckout({
     cartId,
     checkoutInput: checkoutInputFromFormData(formData, readAttributionSafely(readAttribution)),
@@ -102,6 +127,13 @@ export async function submitGuestCheckoutPublicAction(
 
   if (result.ok) {
     cartSession.clear();
+    if (phone !== null && phoneOrderLimit) {
+      try {
+        await phoneOrderLimit.recordPhoneOrder(phone);
+      } catch {
+        // The order is placed; a missed count never turns that into a failure.
+      }
+    }
   }
 
   return result;

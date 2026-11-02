@@ -119,7 +119,8 @@ export type GuestCheckoutBrowserReason =
   | "CART_UNAVAILABLE"
   | "CART_CHANGED"
   | "SERVICE_UNAVAILABLE"
-  | "CHECKOUT_UNAVAILABLE";
+  | "CHECKOUT_UNAVAILABLE"
+  | "TOO_MANY_ORDERS";
 
 /**
  * The refreshed money a buyer must explicitly accept before submission can continue.

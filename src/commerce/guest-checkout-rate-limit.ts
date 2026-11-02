@@ -1,9 +1,22 @@
+import { createHash } from "node:crypto";
+
 import type { PrismaClient } from "../generated/prisma/client.ts";
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_WINDOW_MS = 60_000;
 const DEFAULT_MAX_CLIENT_ATTEMPTS = 20;
 const DEFAULT_CLIENT_WINDOW_MS = 60_000;
+// Slower-moving ceilings against order flooding. The per-minute buckets stop a burst; these stop
+// the same abuse spread out, which a per-minute limit alone lets through indefinitely.
+//  - Per client, per hour. Phones on one mobile carrier can share an address, so this is a ceiling
+//    far above what a household or a shared connection places, not a tight quota.
+//  - Per phone number, per day, counting orders that were actually placed: the case this exists for
+//    is one number receiving an unwanted COD parcel again and again, and one person rarely places
+//    more than a few real orders in a day.
+const DEFAULT_MAX_CLIENT_HOURLY_ATTEMPTS = 60;
+const DEFAULT_CLIENT_HOURLY_WINDOW_MS = 60 * 60_000;
+const DEFAULT_MAX_PHONE_DAILY_ORDERS = 5;
+const DEFAULT_PHONE_DAILY_WINDOW_MS = 24 * 60 * 60_000;
 const DEFAULT_MAX_GEO_CLIENT_ATTEMPTS = 60;
 const DEFAULT_GEO_CLIENT_WINDOW_MS = 60_000;
 const DEFAULT_MAX_UPSELL_CLIENT_ATTEMPTS = 20;
@@ -18,6 +31,10 @@ const MAX_CART_ID_LENGTH = 128;
 const PSEUDONYMOUS_CLIENT_KEY = /^v1:[0-9a-f]{64}$/;
 
 type GuestCheckoutRateLimiterOptions = Readonly<{
+  maxClientHourlyAttempts?: number;
+  clientHourlyWindowMs?: number;
+  maxPhoneDailyOrders?: number;
+  phoneDailyWindowMs?: number;
   maxAttempts?: number;
   windowMs?: number;
   maxClientAttempts?: number;
@@ -125,6 +142,24 @@ export function createGuestCheckoutRateLimiter(
     options.upsellPageClientWindowMs ?? DEFAULT_UPSELL_PAGE_CLIENT_WINDOW_MS,
     "Checkout upsell page client window",
   );
+  const maxClientHourlyAttempts = requirePositiveSafeInteger(
+    options.maxClientHourlyAttempts ?? DEFAULT_MAX_CLIENT_HOURLY_ATTEMPTS,
+    "Checkout client hourly max attempts",
+  );
+  const clientHourlyWindowMs = requirePositiveSafeInteger(
+    options.clientHourlyWindowMs ?? DEFAULT_CLIENT_HOURLY_WINDOW_MS,
+    "Checkout client hourly window",
+  );
+  const maxPhoneDailyOrders = requirePositiveSafeInteger(
+    options.maxPhoneDailyOrders ?? DEFAULT_MAX_PHONE_DAILY_ORDERS,
+    "Checkout phone daily max orders",
+  );
+  const phoneDailyWindowMs = requirePositiveSafeInteger(
+    options.phoneDailyWindowMs ?? DEFAULT_PHONE_DAILY_WINDOW_MS,
+    "Checkout phone daily window",
+  );
+  const clientHourlyCappedCount = cappedCount(maxClientHourlyAttempts, "Checkout client hourly max attempts");
+  const phoneDailyCappedCount = cappedCount(maxPhoneDailyOrders, "Checkout phone daily max orders");
   const upsellPageClientCappedCount = cappedCount(maxUpsellPageClientAttempts, "Checkout upsell page client max attempts");
   const upsellBrowseClientCappedCount = cappedCount(maxUpsellBrowseClientAttempts, "Checkout upsell browse client max attempts");
   const upsellClientCappedCount = cappedCount(maxUpsellClientAttempts, "Checkout upsell client max attempts");
@@ -265,5 +300,67 @@ export function createGuestCheckoutRateLimiter(
     });
   }
 
-  return { consume, consumeClient, consumeGeoClient, consumeUpsellClient, consumeUpsellBrowseClient, consumeUpsellPageClient };
+  /** The same client, over an hour. Consumed with the per-minute bucket on every submit attempt. */
+  async function consumeClientHourly({
+    clientKey,
+    now = new Date(),
+  }: {
+    clientKey: string;
+    now?: Date;
+  }): Promise<boolean> {
+    return consumeBucket({
+      bucketKey: `checkout-client-hour:${requireClientKey(clientKey)}`,
+      now,
+      windowMs: clientHourlyWindowMs,
+      maxAttempts: maxClientHourlyAttempts,
+      cap: clientHourlyCappedCount,
+    });
+  }
+
+  /**
+   * One bucket per phone number, keyed by a hash so the table never holds the number itself. The
+   * caller passes the normalized national form (`0912345678`), so every way of typing one number
+   * lands in the same bucket.
+   */
+  function phoneBucketKey(phone: string): string {
+    if (typeof phone !== "string" || !/^0\d{9,10}$/.test(phone)) {
+      throw new TypeError("Checkout phone key must be a normalized Vietnamese phone number");
+    }
+    return `checkout-phone-day:v1:${createHash("sha256").update(phone).digest("hex")}`;
+  }
+
+  /** Whether this number may place another order today. Reads only; it spends nothing. */
+  async function isPhoneAllowed({
+    phone,
+    now = new Date(),
+  }: {
+    phone: string;
+    now?: Date;
+  }): Promise<boolean> {
+    const key = phoneBucketKey(phone);
+    const resetBefore = BigInt(requireNow(now).getTime()) - BigInt(phoneDailyWindowMs);
+    const rows = await client.$queryRaw<Array<{ count: number }>>`
+      SELECT "count" FROM "rateLimit" WHERE "id" = ${key} AND "lastRequest" > ${resetBefore}
+    `;
+    return (rows[0]?.count ?? 0) < maxPhoneDailyOrders;
+  }
+
+  /** Counts an order that was actually placed for this number. */
+  async function recordPhoneOrder({
+    phone,
+    now = new Date(),
+  }: {
+    phone: string;
+    now?: Date;
+  }): Promise<void> {
+    await consumeBucket({
+      bucketKey: phoneBucketKey(phone),
+      now,
+      windowMs: phoneDailyWindowMs,
+      maxAttempts: maxPhoneDailyOrders,
+      cap: phoneDailyCappedCount,
+    });
+  }
+
+  return { consume, consumeClient, consumeClientHourly, isPhoneAllowed, recordPhoneOrder, consumeGeoClient, consumeUpsellClient, consumeUpsellBrowseClient, consumeUpsellPageClient };
 }

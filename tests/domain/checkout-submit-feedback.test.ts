@@ -107,3 +107,11 @@ test("UX-08/AC-10: a price change names the submitted total and the server's new
     assert.match(feedback.message, /Tổng thanh toán hiện tại là 545\.000\s₫/);
   }
 });
+
+test("the daily phone-number limit tells the shopper who to contact and does not invite a retry", () => {
+  const feedback = checkoutSubmitFeedback({ ok: false, status: "RETRYABLE", reason: "TOO_MANY_ORDERS" });
+  assert.equal(feedback.tone, "warning");
+  assert.equal(feedback.mayRetry, false);
+  assert.match(feedback.message, /hotline hoặc Zalo/);
+  assert.doesNotMatch(feedback.message, /tạm gián đoạn/);
+});

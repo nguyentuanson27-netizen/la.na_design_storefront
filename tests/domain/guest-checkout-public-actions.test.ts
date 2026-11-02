@@ -296,3 +296,87 @@ test("bank transfer is forwarded to the checkout once it is enabled", async () =
   assert.equal(submittedInput?.checkoutInput.paymentMethod, "BANK_TRANSFER");
   assert.equal(result.ok, true);
 });
+
+const okSubmit = async () => ({ ok: true as const, status: "CONFIRMED" as const, orderCode: "LA-002" });
+const cartSession = () => ({ read: () => "server-cart-id", clear: () => undefined });
+
+test("a phone that has used its daily orders is refused before the order is submitted", async () => {
+  let submitted = false;
+  const result = await submitGuestCheckoutPublicAction(
+    {
+      cartSession: cartSession(),
+      consumeAttempt: allowAttempt,
+      submitCheckout: async () => { submitted = true; return okSubmit(); },
+      phoneOrderLimit: { isPhoneAllowed: async () => false, recordPhoneOrder: async () => undefined },
+    },
+    makeFormData(),
+  );
+  assert.deepEqual(result, { ok: false, status: "RETRYABLE", reason: "TOO_MANY_ORDERS" });
+  assert.equal(submitted, false);
+});
+
+test("the phone is checked and counted in its normalized form, and only once an order is placed", async () => {
+  const seen: string[] = [];
+  const recorded: string[] = [];
+  const form = makeFormData();
+  form.set("phone", "+84 901 234 567");
+  const result = await submitGuestCheckoutPublicAction(
+    {
+      cartSession: cartSession(),
+      consumeAttempt: allowAttempt,
+      submitCheckout: okSubmit,
+      phoneOrderLimit: {
+        isPhoneAllowed: async (phone) => { seen.push(phone); return true; },
+        recordPhoneOrder: async (phone) => { recorded.push(phone); },
+      },
+    },
+    form,
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(seen, ["0901234567"]);
+  assert.deepEqual(recorded, ["0901234567"]);
+
+  const failedRecorded: string[] = [];
+  await submitGuestCheckoutPublicAction(
+    {
+      cartSession: cartSession(),
+      consumeAttempt: allowAttempt,
+      submitCheckout: async () => ({ ok: false as const, status: "RETRYABLE" as const, reason: "CART_CHANGED" as const }),
+      phoneOrderLimit: { isPhoneAllowed: async () => true, recordPhoneOrder: async (phone) => { failedRecorded.push(phone); } },
+    },
+    makeFormData(),
+  );
+  assert.deepEqual(failedRecorded, []);
+});
+
+test("a broken phone counter never costs a shopper their order", async () => {
+  const result = await submitGuestCheckoutPublicAction(
+    {
+      cartSession: cartSession(),
+      consumeAttempt: allowAttempt,
+      submitCheckout: okSubmit,
+      phoneOrderLimit: {
+        isPhoneAllowed: async () => { throw new Error("db down"); },
+        recordPhoneOrder: async () => { throw new Error("db down"); },
+      },
+    },
+    makeFormData(),
+  );
+  assert.equal(result.ok, true);
+});
+
+test("a malformed phone is left to the submit's own validation and is not counted", async () => {
+  let checked = false;
+  const form = makeFormData();
+  form.set("phone", "12345");
+  await submitGuestCheckoutPublicAction(
+    {
+      cartSession: cartSession(),
+      consumeAttempt: allowAttempt,
+      submitCheckout: async () => ({ ok: false as const, status: "RETRYABLE" as const, reason: "INVALID_PHONE" as const }),
+      phoneOrderLimit: { isPhoneAllowed: async () => { checked = true; return true; }, recordPhoneOrder: async () => undefined },
+    },
+    form,
+  );
+  assert.equal(checked, false);
+});
