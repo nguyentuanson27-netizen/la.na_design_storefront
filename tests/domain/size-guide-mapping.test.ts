@@ -54,6 +54,7 @@ function rawProductPayload(
     pancakeProductId: `pancake-${id}`,
     slug,
     name,
+    productCode: null,
     primaryImageUrl: "https://content.pancake.vn/photo-1.jpg",
     content: {
       status,

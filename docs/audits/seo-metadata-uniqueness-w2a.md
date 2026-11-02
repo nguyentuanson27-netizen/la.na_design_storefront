@@ -293,3 +293,32 @@ Those are different guarantees, and the choice is a search-presentation judgemen
 Whichever is chosen, `findProductMetadataCollisions` changes in one place — its grouping key — and
 the regressions follow. It belonged to the same owner decision above rather than being left implicit,
 and that is how it was settled: pair-level, in the source contract, before U29 implemented it.
+
+## 2026-11-02 addendum — the code replaces the slug where a product has one
+
+**Decision source:** the owner's request to fix the PDP title that shows the raw slug
+(`... — set-vay-sv605-01dd0809c343402da7d6`). This section is authoritative where it disagrees with
+the paragraphs above.
+
+Evidence gathered from the live catalog (275 products in the sitemap, titles and descriptions
+fetched from the rendered pages):
+
+- With the slug and path removed and nothing put in their place, exactly **one** pair of products
+  collided (two "Set váy Bạch Lăng", codes SV9574 and SV9575), and 203 of 275 (74%) were on the
+  generic fallback copy, so the slug really was carrying the uniqueness.
+- Both colliding products have a Pancake product code, and the codes differ.
+
+What changed in `src/seo/product-metadata.ts`:
+
+| Product | Title | Description |
+|---|---|---|
+| Has a product code | `<seoTitle or name> <CODE>` (code omitted when the title already contains it) | published copy as written, or `Thông tin sản phẩm <name> (mã <CODE>) tại <brand>.` |
+| No product code | unchanged: `<title> — <slug>` | unchanged: `... — /shop/<slug>.` |
+
+A product with no code keeps the slug, so no product loses its discriminator. A trailing brand typed
+into `seoTitle` (`... | La.na Design`) is removed, because the site title template appends it again.
+
+Still true: the database does not enforce uniqueness of the published pair, and the product code is
+not constrained unique in the schema (`ProductMirror.productCode` is a plain nullable column). Two
+products sharing both a name and a code would collide; Pancake issues one code per product and the
+live catalog has no such pair, but this is evidence, not a constraint.

@@ -182,3 +182,85 @@ test("P13 withholds the canonical tag while search indexing is disabled", () => 
   assert.equal(metadata.alternates, undefined);
   assert.equal(metadata.openGraph?.url, "https://la.lanadesign.vn/shop/ao-oxford-relaxed");
 });
+
+const coded = (
+  overrides: Partial<Omit<typeof baseProduct, "seoTitle" | "seoDescription">> & {
+    productCode?: string | null;
+    seoTitle?: string | null;
+    seoDescription?: string | null;
+  },
+) => ({
+  ...baseProduct,
+  slug: "set-vay-sv605-01dd0809c343402da7d6",
+  ...overrides,
+});
+
+test("a product with a code is told apart by the code, not by a hash-ending slug", () => {
+  const metadata = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: coded({ productCode: "SV605", seoTitle: "Set Váy Tơ Gương", seoDescription: "Set váy tơ gương thêu hoa sen." }),
+  });
+  assert.equal(metadata.title, "Set Váy Tơ Gương SV605");
+  assert.equal(metadata.description, "Set váy tơ gương thêu hoa sen.");
+  assert.doesNotMatch(String(metadata.title), /01dd0809/);
+  assert.doesNotMatch(String(metadata.description), /\/shop\//);
+});
+
+test("the code is not repeated when the published title already carries it", () => {
+  const metadata = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: coded({ productCode: "SV605", seoTitle: "Set Váy SV605 Tơ Gương Thêu Hoa Sen" }),
+  });
+  assert.equal(metadata.title, "Set Váy SV605 Tơ Gương Thêu Hoa Sen");
+});
+
+test("a brand typed at the end of the SEO title is not doubled by the site title template", () => {
+  for (const typed of ["Set Váy Tơ Gương | La.na Design", "Set Váy Tơ Gương - La.na Design", "Set Váy Tơ Gương — la.na design"]) {
+    const metadata = buildStorefrontProductMetadata({
+      origin: "https://shop.example.com",
+      indexingEnabled: true,
+      product: coded({ productCode: "SV605", seoTitle: typed }),
+    });
+    assert.equal(metadata.title, "Set Váy Tơ Gương SV605", typed);
+  }
+  const inside = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: coded({ productCode: "SV605", seoTitle: "La.na Design Set Váy Tơ Gương" }),
+  });
+  assert.equal(inside.title, "La.na Design Set Váy Tơ Gương SV605");
+});
+
+test("fallback copy with a code names the code and carries no path", () => {
+  const metadata = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: coded({ productCode: "SV9574", name: "Set váy Bạch Lăng", seoTitle: null, seoDescription: null }),
+  });
+  assert.equal(metadata.title, "Set váy Bạch Lăng SV9574");
+  assert.match(String(metadata.description), /^Thông tin sản phẩm Set váy Bạch Lăng \(mã SV9574\) tại .+\.$/);
+});
+
+test("two products sharing a name and no published copy stay distinct through their codes", () => {
+  const build = (productCode: string, slug: string) =>
+    buildStorefrontProductMetadata({
+      origin: "https://shop.example.com",
+      indexingEnabled: true,
+      product: coded({ productCode, slug, name: "Set váy Bạch Lăng", seoTitle: null, seoDescription: null }),
+    });
+  const [a, b] = [build("SV9574", "set-vay-sv9574-aaa"), build("SV9575", "set-vay-sv9575-bbb")];
+  assert.notEqual(a.title, b.title);
+  assert.notEqual(a.description, b.description);
+});
+
+test("a blank code behaves as no code, keeping the slug discriminator", () => {
+  const metadata = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: coded({ productCode: "   ", seoTitle: "Set Váy", seoDescription: "Mô tả." }),
+  });
+  assert.equal(metadata.title, "Set Váy — set-vay-sv605-01dd0809c343402da7d6");
+  assert.equal(metadata.description, "Mô tả. — /shop/set-vay-sv605-01dd0809c343402da7d6.");
+});
