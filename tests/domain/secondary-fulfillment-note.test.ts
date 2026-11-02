@@ -77,3 +77,37 @@ test("lists several articles and ignores ones without secondary stock", () => {
     "[Xuất kho phụ: SKU SKU-A x2, SKU SKU-B x1]",
   );
 });
+
+test("units another order holds claim the primary stock first, so this order is sent to the secondary shop", () => {
+  // primary 1, secondary 1, another order holds 1 that Pancake does not show yet, this order needs 1.
+  assert.equal(
+    buildSecondaryFulfillmentTag([{ pancakeVariationId: "a", units: 1, heldElsewhere: 1 }], lives(live("a", "SKU-A", 1, 1))),
+    "[Xuất kho phụ: SKU SKU-A x1]",
+  );
+  // The earlier order was judged with nothing held and took the primary unit: no note for it.
+  assert.equal(
+    buildSecondaryFulfillmentTag([{ pancakeVariationId: "a", units: 1, heldElsewhere: 0 }], lives(live("a", "SKU-A", 1, 1))),
+    null,
+  );
+});
+
+test("held units are a property of the variation: they are not added up across resources sharing it", () => {
+  // Two resources of the same article both carry heldElsewhere 1 (it is the same 1 unit): primary 2.
+  assert.equal(
+    buildSecondaryFulfillmentTag(
+      [
+        { pancakeVariationId: "a", units: 1, heldElsewhere: 1 },
+        { pancakeVariationId: "a", units: 1, heldElsewhere: 1 },
+      ],
+      lives(live("a", "SKU-A", 2, 5)),
+    ),
+    "[Xuất kho phụ: SKU SKU-A x1]",
+  );
+});
+
+test("held units never push the secondary quantity above this order's own demand or the secondary stock", () => {
+  assert.equal(
+    buildSecondaryFulfillmentTag([{ pancakeVariationId: "a", units: 2, heldElsewhere: 9 }], lives(live("a", "SKU-A", 3, 1))),
+    "[Xuất kho phụ: SKU SKU-A x1]",
+  );
+});

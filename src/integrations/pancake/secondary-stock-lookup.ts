@@ -21,7 +21,7 @@ export type SecondaryShopGatewayConfig = {
   findAmbiguousSkus?: (primaryShopId: number, skus: readonly string[]) => Promise<ReadonlySet<string>>;
 };
 
-/** Pancake accepts up to 100 rows a page; a wide page makes a fuzzy `search` unlikely to cut off the exact SKU. */
+/** Pancake accepts up to 100 rows a page; a wide page keeps a fuzzy `search` to a single request in practice. */
 export const SECONDARY_LOOKUP_PAGE_SIZE = 100;
 /** Requests to the secondary shop in flight at once, so a many-line order cannot burst the API. */
 export const SECONDARY_LOOKUP_CONCURRENCY = 4;
@@ -49,22 +49,31 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+/** Pages of a fuzzy `search` read before the answer is given up as inconclusive. */
+export const SECONDARY_LOOKUP_MAX_PAGES = 5;
+
 async function lookupSecondarySku(
   secondary: SecondaryShopGatewayConfig,
   displayId: string,
   sku: string,
 ): Promise<LookupOutcome> {
   try {
-    const payload = await secondary.client.getJson(
-      `/shops/${secondary.shopId}/products/variations`,
-      { page_number: 1, page_size: SECONDARY_LOOKUP_PAGE_SIZE, search: displayId.trim() },
-    );
-    const page = parsePancakeCatalogVariations(payload);
-    const matches = page.variations.filter((variation) => normalizeSku(variation.displayId) === sku);
-    if (matches.length > 0) return { kind: "found", matches };
-    // `search` is a fuzzy match. A full page with no exact SKU may have cut it off, which is
-    // different from "the secondary shop does not stock it".
-    return page.variations.length >= SECONDARY_LOOKUP_PAGE_SIZE ? { kind: "failed" } : { kind: "none" };
+    // The exact SKU may sit on any page of a fuzzy search, and the mirror sync adds every row that
+    // carries it, so all pages are read; if they cannot all be, nothing is known about its stock.
+    const matches: PancakeCatalogVariation[] = [];
+    let totalPages = 1;
+    for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+      const payload = await secondary.client.getJson(`/shops/${secondary.shopId}/products/variations`, {
+        page_number: pageNumber,
+        page_size: SECONDARY_LOOKUP_PAGE_SIZE,
+        search: displayId.trim(),
+      });
+      const page = parsePancakeCatalogVariations(payload);
+      totalPages = page.totalPages;
+      if (totalPages > SECONDARY_LOOKUP_MAX_PAGES) return { kind: "failed" };
+      matches.push(...page.variations.filter((variation) => normalizeSku(variation.displayId) === sku));
+    }
+    return matches.length > 0 ? { kind: "found", matches } : { kind: "none" };
   } catch {
     return { kind: "failed" };
   }

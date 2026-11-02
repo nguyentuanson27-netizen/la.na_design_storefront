@@ -6,7 +6,11 @@ import {
   observeStoredStockAvailability,
   writeObservedWarehouseStocks,
 } from "./catalog-mirror-repository.ts";
-import { acquireCatalogSyncLock, CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS } from "./catalog-sync-lock.ts";
+import {
+  acquireCatalogSyncLock,
+  CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS,
+  lockVariantMirrorRows,
+} from "./catalog-sync-lock.ts";
 import {
   SECONDARY_WAREHOUSE_KEY_PREFIX,
   secondaryShopKeyPrefix,
@@ -19,6 +23,7 @@ type SyncTransaction = Parameters<typeof observeStoredStockAvailability>[0];
 /** Database-side steps of a chunk, injectable so the matching logic can be tested without a database. */
 export type SecondaryInventorySyncHooks = {
   acquireLock(tx: SyncTransaction, shopId: number): Promise<void>;
+  lockVariants(tx: SyncTransaction, variantIds: readonly string[]): Promise<void>;
   observeAvailability(
     tx: SyncTransaction,
     input: { shopId: number; variantIds: readonly string[]; observedAt: Date },
@@ -27,6 +32,7 @@ export type SecondaryInventorySyncHooks = {
 
 const DEFAULT_HOOKS: SecondaryInventorySyncHooks = {
   acquireLock: acquireCatalogSyncLock,
+  lockVariants: lockVariantMirrorRows,
   observeAvailability: observeStoredStockAvailability,
 };
 
@@ -183,6 +189,9 @@ export async function syncSecondaryShopInventory({
         // The shop's catalog-sync lock serializes this with the primary sync and the admin policy
         // writes that decide a preorder variant's availability cycle.
         await hooks.acquireLock(tx, primaryShopId);
+        // The rows `reserveOrderCapacity()` locks before it reads stock, in the same order, so a
+        // reservation never commits on a figure this chunk is replacing.
+        await hooks.lockVariants(tx, chunk.map(({ variantId }) => variantId));
         for (const { variantId, stocks } of chunk) {
           await writeObservedWarehouseStocks(tx, variantId, stocks, observedAt, {
             kind: "secondary",
@@ -217,6 +226,10 @@ export async function syncSecondaryShopInventory({
  * Removing is the safe direction: the storefront then sells on primary stock alone and the checkout
  * live read still adds whatever the secondary shop really has.
  *
+ * Done like every other stock write: under the shop's catalog-sync lock, with the affected variant
+ * rows locked, and followed by a fresh availability observation of those variants (and the combos
+ * built on them) so a preorder cycle never keeps describing stock that is no longer there.
+ *
  * - `exceptShopId`: keep that shop's rows, remove every other secondary shop's (the configured
  *   shop id changed).
  * - `shopId` + `syncedBefore`: remove that shop's rows last written before the instant (its sync
@@ -224,21 +237,51 @@ export async function syncSecondaryShopInventory({
  * - neither: remove every secondary row (the feature was switched off).
  */
 export async function purgeSecondaryWarehouseStock(
-  prisma: Pick<PrismaClient, "warehouseStock">,
-  options: { exceptShopId?: number; shopId?: number; syncedBefore?: Date } = {},
+  prisma: Pick<PrismaClient, "$transaction">,
+  {
+    primaryShopId,
+    exceptShopId,
+    shopId,
+    syncedBefore,
+    observedAt = new Date(),
+    hooks = DEFAULT_HOOKS,
+  }: {
+    primaryShopId: number;
+    exceptShopId?: number;
+    shopId?: number;
+    syncedBefore?: Date;
+    observedAt?: Date;
+    hooks?: SecondaryInventorySyncHooks;
+  },
 ): Promise<number> {
-  const { exceptShopId, shopId, syncedBefore } = options;
-  const result = await prisma.warehouseStock.deleteMany({
-    where: {
-      pancakeWarehouseId: {
-        startsWith:
-          shopId === undefined ? SECONDARY_WAREHOUSE_KEY_PREFIX : secondaryShopKeyPrefix(shopId),
-      },
-      ...(exceptShopId === undefined
-        ? {}
-        : { NOT: { pancakeWarehouseId: { startsWith: secondaryShopKeyPrefix(exceptShopId) } } }),
-      ...(syncedBefore === undefined ? {} : { syncedAt: { lt: syncedBefore } }),
+  const where = {
+    pancakeWarehouseId: {
+      startsWith:
+        shopId === undefined ? SECONDARY_WAREHOUSE_KEY_PREFIX : secondaryShopKeyPrefix(shopId),
     },
-  });
-  return result.count;
+    ...(exceptShopId === undefined
+      ? {}
+      : { NOT: { pancakeWarehouseId: { startsWith: secondaryShopKeyPrefix(exceptShopId) } } }),
+    ...(syncedBefore === undefined ? {} : { syncedAt: { lt: syncedBefore } }),
+  };
+
+  return prisma.$transaction(
+    async (tx) => {
+      await hooks.acquireLock(tx, primaryShopId);
+      const affected = await tx.warehouseStock.findMany({
+        where,
+        select: { variantId: true },
+        distinct: ["variantId"],
+        orderBy: { variantId: "asc" },
+      });
+      const variantIds = affected.map(({ variantId }) => variantId);
+      if (variantIds.length === 0) return 0;
+
+      await hooks.lockVariants(tx, variantIds);
+      const result = await tx.warehouseStock.deleteMany({ where: { ...where, variantId: { in: variantIds } } });
+      await hooks.observeAvailability(tx, { shopId: primaryShopId, variantIds, observedAt });
+      return result.count;
+    },
+    { timeout: CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS },
+  );
 }

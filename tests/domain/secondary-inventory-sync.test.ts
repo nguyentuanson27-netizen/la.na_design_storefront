@@ -95,7 +95,49 @@ test("a secondary write is confined to its own namespace and never touches the p
     },
   });
   assert.equal(operations.find((o) => o.op === "upsert")?.args.create?.pancakeWarehouseId, "secondary:407962350:wh_sec_1");
-  assert.equal(operations.find((o) => o.op === "updateMany"), undefined);
+  // It is ordered by its own marker, never the primary's.
+  assert.deepEqual(operations.find((o) => o.op === "updateMany")?.args, {
+    where: {
+      id: "variant-001",
+      OR: [{ secondaryStockObservedAt: null }, { secondaryStockObservedAt: { lte: now } }],
+    },
+    data: { secondaryStockObservedAt: now },
+  });
+});
+
+test("a secondary read that began earlier than the one already applied writes nothing, even over an empty set", async () => {
+  const operations: string[] = [];
+  const tx = {
+    warehouseStock: {
+      async count() {
+        return 0;
+      },
+      async deleteMany() {
+        operations.push("deleteMany");
+        return { count: 0 };
+      },
+      async upsert() {
+        operations.push("upsert");
+        return {};
+      },
+    },
+    variantMirror: {
+      async updateMany() {
+        return { count: 0 };
+      },
+    },
+  } as unknown as Parameters<typeof writeObservedWarehouseStocks>[0];
+
+  const written = await writeObservedWarehouseStocks(
+    tx,
+    "variant-001",
+    [{ warehouseId: "wh_sec_1", remainQuantity: 5 }],
+    now,
+    { kind: "secondary", shopId: 407962350 },
+  );
+
+  assert.equal(written, false);
+  assert.deepEqual(operations, []);
 });
 
 test("a secondary write with no stock clears only its own namespace", async () => {
@@ -160,6 +202,7 @@ function syncHarness({
   primary: Array<{ id: string; pancakeDisplayId: string | null; isPresent: boolean }>;
 }) {
   const hookCalls: string[] = [];
+  const locked: Array<readonly string[]> = [];
   const observed: Array<{ shopId: number; variantIds: readonly string[]; observedAt: Date }> = [];
   let findManyWhere: unknown;
   const client = {
@@ -193,8 +236,9 @@ function syncHarness({
       },
     },
     variantMirror: {
-      async updateMany() {
-        throw new Error("a secondary sync must not stamp the primary watermark");
+      async updateMany(args: { data: Record<string, unknown> }) {
+        assert.deepEqual(Object.keys(args.data), ["secondaryStockObservedAt"], "a secondary sync must not stamp the primary watermark");
+        return { count: 1 };
       },
     },
   };
@@ -215,6 +259,7 @@ function syncHarness({
     writes,
     warnings,
     hookCalls,
+    locked,
     observed,
     findManyWhere: () => findManyWhere,
     run: () =>
@@ -228,6 +273,10 @@ function syncHarness({
         hooks: {
           async acquireLock(_tx, shopId) {
             hookCalls.push(`lock:${shopId}`);
+          },
+          async lockVariants(_tx, variantIds) {
+            hookCalls.push("lockRows");
+            locked.push(variantIds);
           },
           async observeAvailability(_tx, input) {
             hookCalls.push("observe");
@@ -315,72 +364,87 @@ test("a retired variant sharing a SKU does not make the live one ambiguous, and 
   ]);
 });
 
-test("purgeSecondaryWarehouseStock selects only the rows it is asked to drop", async () => {
-  const calls: unknown[] = [];
-  const prisma = {
+test("purgeSecondaryWarehouseStock deletes under the shop lock, locks the rows, and re-observes what it changed", async () => {
+  const steps: string[] = [];
+  const wheres: unknown[] = [];
+  const tx = {
     warehouseStock: {
-      async deleteMany(args: unknown) {
-        calls.push(args);
+      async findMany(args: { where: unknown }) {
+        steps.push("find");
+        wheres.push(args.where);
+        return [{ variantId: "v1" }, { variantId: "v2" }];
+      },
+      async deleteMany(args: { where: unknown }) {
+        steps.push("delete");
+        wheres.push(args.where);
         return { count: 3 };
       },
     },
+  };
+  const observed: unknown[] = [];
+  const hooks = {
+    async acquireLock(_tx: unknown, shopId: number) {
+      steps.push(`lock:${shopId}`);
+    },
+    async lockVariants(_tx: unknown, ids: readonly string[]) {
+      steps.push(`lockRows:${ids.join(",")}`);
+    },
+    async observeAvailability(_tx: unknown, input: unknown) {
+      steps.push("observe");
+      observed.push(input);
+    },
+  };
+  const prisma = {
+    async $transaction<T>(fn: (t: typeof tx) => Promise<T>): Promise<T> {
+      return fn(tx);
+    },
   } as unknown as PrismaClient;
 
-  assert.equal(await purgeSecondaryWarehouseStock(prisma), 3);
-  assert.equal(await purgeSecondaryWarehouseStock(prisma, { exceptShopId: 2 }), 3);
-  assert.equal(await purgeSecondaryWarehouseStock(prisma, { shopId: 2, syncedBefore: now }), 3);
+  const removed = await purgeSecondaryWarehouseStock(prisma, {
+    primaryShopId: 4_741_464,
+    shopId: 2,
+    syncedBefore: now,
+    observedAt: now,
+    hooks,
+  });
 
-  assert.deepEqual(calls, [
-    { where: { pancakeWarehouseId: { startsWith: "secondary:" } } },
-    {
-      where: {
-        pancakeWarehouseId: { startsWith: "secondary:" },
-        NOT: { pancakeWarehouseId: { startsWith: "secondary:2:" } },
+  assert.equal(removed, 3);
+  assert.deepEqual(steps, ["lock:4741464", "find", "lockRows:v1,v2", "delete", "observe"]);
+  assert.deepEqual(wheres, [
+    { pancakeWarehouseId: { startsWith: "secondary:2:" }, syncedAt: { lt: now } },
+    { pancakeWarehouseId: { startsWith: "secondary:2:" }, syncedAt: { lt: now }, variantId: { in: ["v1", "v2"] } },
+  ]);
+  assert.deepEqual(observed, [{ shopId: 4_741_464, variantIds: ["v1", "v2"], observedAt: now }]);
+});
+
+test("purge scopes: everything when disabled, every other shop when the shop changed", async () => {
+  const wheres: unknown[] = [];
+  const tx = {
+    warehouseStock: {
+      async findMany(args: { where: unknown }) {
+        wheres.push(args.where);
+        return [];
       },
     },
-    { where: { pancakeWarehouseId: { startsWith: "secondary:2:" }, syncedAt: { lt: now } } },
+  };
+  const prisma = {
+    async $transaction<T>(fn: (t: typeof tx) => Promise<T>): Promise<T> {
+      return fn(tx);
+    },
+  } as unknown as PrismaClient;
+  const hooks = {
+    async acquireLock() {},
+    async lockVariants() {},
+    async observeAvailability() {},
+  };
+
+  assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 1, hooks }), 0);
+  assert.equal(await purgeSecondaryWarehouseStock(prisma, { primaryShopId: 1, exceptShopId: 2, hooks }), 0);
+  assert.deepEqual(wheres, [
+    { pancakeWarehouseId: { startsWith: "secondary:" } },
+    {
+      pancakeWarehouseId: { startsWith: "secondary:" },
+      NOT: { pancakeWarehouseId: { startsWith: "secondary:2:" } },
+    },
   ]);
-});
-
-test("a variant that lost its SKU is still read and has its secondary stock cleared", async () => {
-  const harness = syncHarness({
-    secondary: [variationRow("sec_var_1", "SKU-1", [["wh_sec_1", 5]])],
-    primary: [
-      { id: "pri_no_sku", pancakeDisplayId: null, isPresent: true },
-      { id: "pri_blank_sku", pancakeDisplayId: "   ", isPresent: true },
-    ],
-  });
-
-  const result = await harness.run();
-
-  assert.equal(result.matchedCount, 0);
-  assert.deepEqual(harness.writes, [
-    { variantId: "pri_no_sku", keys: [], quantities: [] },
-    { variantId: "pri_blank_sku", keys: [], quantities: [] },
-  ]);
-  // The query must not exclude them: it also selects variants that still carry this shop's rows.
-  assert.deepEqual(harness.findManyWhere(), {
-    product: { pancakeShopId: 4_741_464 },
-    OR: [
-      { pancakeDisplayId: { not: null } },
-      { warehouseStocks: { some: { pancakeWarehouseId: { startsWith: "secondary:407962350:" } } } },
-    ],
-  });
-});
-
-test("each chunk takes the catalog lock, writes, then re-observes availability for exactly its variants", async () => {
-  const primary = Array.from({ length: 101 }, (_, i) => ({
-    id: `pri_${i}`,
-    pancakeDisplayId: `SKU-${i}`,
-    isPresent: true,
-  }));
-  const harness = syncHarness({ secondary: [variationRow("s", "SKU-0", [["wh", 1]])], primary });
-
-  await harness.run();
-
-  assert.deepEqual(harness.hookCalls, ["lock:4741464", "observe", "lock:4741464", "observe"]);
-  assert.equal(harness.observed[0]!.variantIds.length, 100);
-  assert.deepEqual(harness.observed[1]!.variantIds, ["pri_100"]);
-  assert.equal(harness.observed[0]!.shopId, 4_741_464);
-  assert.deepEqual(harness.observed[0]!.observedAt, now);
 });

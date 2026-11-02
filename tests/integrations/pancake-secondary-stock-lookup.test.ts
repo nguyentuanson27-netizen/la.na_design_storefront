@@ -5,6 +5,7 @@ import type { PancakeCatalogVariation } from "../../src/integrations/pancake/cat
 import {
   addSecondaryShopStock,
   SECONDARY_LOOKUP_CONCURRENCY,
+  SECONDARY_LOOKUP_MAX_PAGES,
   SECONDARY_LOOKUP_PAGE_SIZE,
 } from "../../src/integrations/pancake/secondary-stock-lookup.ts";
 
@@ -43,8 +44,15 @@ function secondaryRow(id: string, displayId: string, stock: number, warehouse = 
   };
 }
 
-function page(rows: unknown[]) {
-  return { success: true, page_number: 1, page_size: SECONDARY_LOOKUP_PAGE_SIZE, total_entries: rows.length, total_pages: 1, data: rows };
+function page(rows: unknown[], pageNumber = 1, totalPages = 1) {
+  return {
+    success: true,
+    page_number: pageNumber,
+    page_size: SECONDARY_LOOKUP_PAGE_SIZE,
+    total_entries: rows.length * totalPages,
+    total_pages: totalPages,
+    data: rows,
+  };
 }
 
 const shopId = 407_962_350;
@@ -104,11 +112,8 @@ test("a variation without a SKU is never looked up", async () => {
   assert.equal(result, original);
 });
 
-test("failed and possibly truncated lookups fall back to primary stock and are reported once, with counts only", async () => {
+test("failed and unreadable lookups fall back to primary stock and are reported once, with counts only", async () => {
   const warnings: string[] = [];
-  const fullPageWithoutExactSku = Array.from({ length: SECONDARY_LOOKUP_PAGE_SIZE }, (_, i) =>
-    secondaryRow(`s${i}`, `SKU-1${String(i).padStart(3, "0")}`, 1),
-  );
   const variations = [primary("p1", "SKU-1", 2), primary("p2", "SKU-2", 2), primary("p3", "SKU-3", 2)];
 
   const result = await addSecondaryShopStock(
@@ -117,7 +122,7 @@ test("failed and possibly truncated lookups fall back to primary stock and are r
       shopId,
       client: {
         async getJson(_endpoint, query) {
-          if (query?.search === "SKU-1") return page(fullPageWithoutExactSku);
+          if (query?.search === "SKU-1") return page([], 1, SECONDARY_LOOKUP_MAX_PAGES + 1);
           if (query?.search === "SKU-2") throw new Error("network down: secret-token");
           return page([secondaryRow("s3", "SKU-3", 7)]);
         },
@@ -126,12 +131,54 @@ test("failed and possibly truncated lookups fall back to primary stock and are r
     { primaryShopId, warn: (message) => warnings.push(message) },
   );
 
-  assert.equal(result[0]!.sellableStock, 2);
+  assert.equal(result[0]!.sellableStock, 2, "too many pages to read: inconclusive, not zero");
   assert.equal(result[1]!.sellableStock, 2);
   assert.equal(result[2]!.sellableStock, 9);
   assert.equal(warnings.length, 1);
   assert.match(warnings[0]!, /2 of 3/);
   assert.ok(!warnings[0]!.includes("secret-token") && !warnings[0]!.includes("SKU-"));
+});
+
+test("an exact SKU spread over several pages of a fuzzy search is added up across all of them", async () => {
+  const requested: unknown[] = [];
+  const [result] = await addSecondaryShopStock(
+    [primary("p1", "SKU-1", 1)],
+    {
+      shopId,
+      client: {
+        async getJson(_endpoint, query) {
+          requested.push(query?.page_number);
+          const pageNumber = Number(query?.page_number);
+          return pageNumber === 1
+            ? page([secondaryRow("s1", "SKU-1", 2, "wh_a"), secondaryRow("s9", "SKU-10", 50)], 1, 2)
+            : page([secondaryRow("s2", "SKU-1", 3, "wh_b")], 2, 2);
+        },
+      },
+    },
+    { primaryShopId, warn: () => assert.fail("no warning expected") },
+  );
+
+  assert.deepEqual(requested, [1, 2]);
+  assert.equal(result!.secondarySellableStock, 5, "matches on both pages count, like the mirror sync");
+  assert.equal(result!.sellableStock, 6);
+});
+
+test("a match missing from page 1 but present on a later page is still found", async () => {
+  const [result] = await addSecondaryShopStock(
+    [primary("p1", "SKU-1", 0)],
+    {
+      shopId,
+      client: {
+        async getJson(_endpoint, query) {
+          return Number(query?.page_number) === 1
+            ? page([secondaryRow("s9", "SKU-10", 50)], 1, 2)
+            : page([secondaryRow("s1", "SKU-1", 4)], 2, 2);
+        },
+      },
+    },
+    { primaryShopId, warn: () => assert.fail("no warning expected") },
+  );
+  assert.equal(result!.sellableStock, 4);
 });
 
 test("an unreadable payload counts as a failed lookup, not as stock", async () => {

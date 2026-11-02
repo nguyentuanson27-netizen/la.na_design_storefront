@@ -331,8 +331,8 @@ export async function writeObservedWarehouseStocks(
   observedAt: Date,
   scope: WarehouseStockScope = PRIMARY_WAREHOUSE_SCOPE,
 ): Promise<boolean> {
-  // The primary shop owns the variant-level watermark; a secondary contributor only owns its own
-  // namespaced rows, so it neither reads nor moves the primary read's marker.
+  // A secondary contributor owns only its namespaced rows and its own marker; it neither reads nor
+  // moves the primary read's `stockObservedAt`.
   const rowScope = warehouseStockScopeFilter(scope);
   const keyed = stocks.map(({ warehouseId, remainQuantity }) => ({
     key: warehouseStockKey(scope, warehouseId),
@@ -345,17 +345,22 @@ export async function writeObservedWarehouseStocks(
   });
   if (newer > 0) return false;
 
-  if (scope.kind === "primary") {
-    // The watermark survives an empty warehouse set, which leaves no row to carry the read's start.
-    const stamped = await tx.variantMirror.updateMany({
-      where: {
-        id: variantId,
-        OR: [{ stockObservedAt: null }, { stockObservedAt: { lte: observedAt } }],
-      },
-      data: { stockObservedAt: observedAt },
-    });
-    if (stamped.count === 0) return false;
-  }
+  // Each shop's reads are ordered by their own durable marker, which survives a read that observed
+  // no warehouse row at all (it leaves no row to carry the read's start).
+  const stamped = await tx.variantMirror.updateMany({
+    where:
+      scope.kind === "primary"
+        ? {
+            id: variantId,
+            OR: [{ stockObservedAt: null }, { stockObservedAt: { lte: observedAt } }],
+          }
+        : {
+            id: variantId,
+            OR: [{ secondaryStockObservedAt: null }, { secondaryStockObservedAt: { lte: observedAt } }],
+          },
+    data: scope.kind === "primary" ? { stockObservedAt: observedAt } : { secondaryStockObservedAt: observedAt },
+  });
+  if (stamped.count === 0) return false;
 
   const currentKeys = keyed.map(({ key }) => key);
   await tx.warehouseStock.deleteMany({
