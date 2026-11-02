@@ -27,7 +27,6 @@ import {
 } from "./storefront-product-slug-resolution.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import {
-  resolveStorefrontPromotionRefresh,
   resolveStorefrontPromotionRefreshFromCampaigns,
 } from "./storefront-promotion-freshness.ts";
 import type { ApplicablePromotionCampaign, PromotionCampaignKind } from "./promotion-pricing.ts";
@@ -85,42 +84,53 @@ type HomepageNewArrivalsResult = Readonly<{
 /** One per server process: `/sale` and its sub-listings share their heavy page read across requests. */
 const saleIdPageCache = createSaleListingCache<SaleIdPage>();
 
-const categoryDiscoveryPageCache = createStorefrontListingCache<DiscoveryPageResult>();
-const categoryDiscoveryFacetsCache = createStorefrontListingCache<ScopedFacetsResult>();
-const storefrontDiscoveryPageCache = createStorefrontListingCache<DiscoveryPageResult>();
-const collectionDiscoveryFacetsCache = createStorefrontListingCache<ScopedFacetsResult>();
-const manualNewArrivalsCache = createStorefrontListingCache<ManualNewArrivalsPageResult>();
-const homepageFeaturedCache = createStorefrontListingCache<HomepageFeaturedResult>();
-const homepageNewArrivalsCache = createStorefrontListingCache<HomepageNewArrivalsResult>();
+const categoryDiscoveryPageCache = createStorefrontListingCache<PricingStamped<DiscoveryPageResult>>();
+const categoryDiscoveryFacetsCache = createStorefrontListingCache<PricingStamped<ScopedFacetsResult>>();
+const storefrontDiscoveryPageCache = createStorefrontListingCache<PricingStamped<DiscoveryPageResult>>();
+const collectionDiscoveryFacetsCache = createStorefrontListingCache<PricingStamped<ScopedFacetsResult>>();
+const manualNewArrivalsCache = createStorefrontListingCache<PricingStamped<ManualNewArrivalsPageResult>>();
+const homepageFeaturedCache = createStorefrontListingCache<PricingStamped<HomepageFeaturedResult>>();
+const homepageNewArrivalsCache = createStorefrontListingCache<PricingStamped<HomepageNewArrivalsResult>>();
 const productSlugCache = createStorefrontListingCache<StorefrontProductSlugResolution>();
-const pdpProductCache = createStorefrontListingCache<PdpProductResult>();
+const pdpProductCache = createStorefrontListingCache<PricingStamped<PdpProductResult>>();
 const relatedProductsCache = createStorefrontListingCache<StorefrontProductsResult>();
 const categoryMegaMediaCache = createStorefrontListingCache<readonly CategoryMegaMediaFacts[]>();
 const categoryHeroMediaCache = createStorefrontListingCache<ReadonlyMap<string, string>>();
+
+/** A cached listing with the request instant it was read at, which its `refreshAfterMs` counts from. */
+type PricingStamped<T> = Readonly<{ value: T; loadedAtMs: number }>;
 
 /**
  * Reads a listing whose prices depend on promotions through an in-process cache.
  *
  * Like `/sale`, the key carries the durable promotion pricing revision and the next campaign
  * boundary, so a published promotion edit or a window opening or closing is a different key and is
- * read fresh instead of being served for up to the cache's maximum age. The cached `refreshAfterMs`
- * was computed when the entry was stored, so it is re-derived against this request's instant.
+ * read fresh instead of being served for up to the cache's maximum age. The listing's own
+ * `refreshAfterMs` counted from the instant it was read, so a hit shortens it by the time since.
  */
 async function readPricingScopedListing<T>(
-  cache: StorefrontListingCache<T>,
+  cache: StorefrontListingCache<PricingStamped<T>>,
   baseKey: string,
   now: Date | undefined,
   load: () => Promise<T>,
 ): Promise<T> {
   const at = now ?? new Date();
   const generation = await createFlashSaleCatalogRepository(prisma).readPricingGeneration(at);
-  const { value } = await cache.read(`${baseKey}:${generation.key}`, load);
-  if (typeof value !== "object" || value === null || !("refreshAfterMs" in value)) return value;
-  const { refreshAfterMs } = resolveStorefrontPromotionRefresh({
-    now: at,
-    nextBoundaryAt: generation.nextBoundaryAt,
-  });
-  return { ...value, refreshAfterMs };
+  const { value: stamped } = await cache.read(`${baseKey}:${generation.key}`, async () =>
+    Object.freeze({ value: await load(), loadedAtMs: at.getTime() }),
+  );
+  const { value } = stamped;
+  const elapsedMs = at.getTime() - stamped.loadedAtMs;
+  if (
+    elapsedMs <= 0
+    || typeof value !== "object"
+    || value === null
+    || !("refreshAfterMs" in value)
+    || typeof value.refreshAfterMs !== "number"
+  ) {
+    return value;
+  }
+  return { ...value, refreshAfterMs: Math.max(0, value.refreshAfterMs - elapsedMs) };
 }
 
 export async function resolveStorefrontPromotionForProducts({
