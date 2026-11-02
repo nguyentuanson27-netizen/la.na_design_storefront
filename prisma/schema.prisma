@@ -729,6 +729,9 @@ model CatalogSyncState {
   listPriceAuditSummary Json?
   pancakeShopId Int      @id
   syncedAt      DateTime
+  /// A secondary-shop stock read that began before this instant is discarded (see purge in
+  /// `secondary-inventory-sync.ts`): set by a configuration change, never moved backwards.
+  secondaryFenceAt DateTime?
   updatedAt     DateTime @updatedAt
 }
 

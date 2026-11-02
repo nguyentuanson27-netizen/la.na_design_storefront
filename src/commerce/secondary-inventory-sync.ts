@@ -31,9 +31,11 @@ export type SecondaryInventorySyncHooks = {
     variantIds: readonly string[],
   ): Promise<ReadonlyArray<{ id: string; pancakeDisplayId: string | null; isPresent: boolean }>>;
   /**
-   * Raises every primary variant's secondary-read marker to `observedAt`, so a read that began
-   * before it can no longer be applied (the marker only ever moves forward).
+   * The instant before which a secondary read must be discarded, or null. One row per shop, read
+   * (and written by `fenceReads`) under the shop's catalog-sync lock; it takes no variant row lock.
    */
+  readFence(tx: SyncTransaction, shopId: number): Promise<Date | null>;
+  /** Raises the shop's fence to `observedAt`; it only ever moves forward. */
   fenceReads(tx: SyncTransaction, shopId: number, observedAt: Date): Promise<void>;
   /** Of the normalized SKUs, those more than one present primary variant carries (read under the lock). */
   findAmbiguousSkus(
@@ -57,15 +59,20 @@ const DEFAULT_HOOKS: SecondaryInventorySyncHooks = {
       orderBy: { id: "asc" },
     }),
   findAmbiguousSkus: (tx, primaryShopId, skus) => findAmbiguousPrimarySkus(tx, primaryShopId, skus),
+  async readFence(tx, shopId) {
+    const row = await tx.catalogSyncState.findUnique({
+      where: { pancakeShopId: shopId },
+      select: { secondaryFenceAt: true },
+    });
+    return row?.secondaryFenceAt ?? null;
+  },
   async fenceReads(tx, shopId, observedAt) {
-    // A bare UPDATE of the marker alone: it must not touch `updatedAt`, which other readers use.
+    // A bare UPDATE of the one column on the one row (no INSERT: before the first catalog sync there
+    // is nothing to write), so `updatedAt` is untouched and no variant row is locked.
     await tx.$executeRaw(Prisma.sql`
-      UPDATE "VariantMirror" v
-      SET "secondaryStockObservedAt" = ${observedAt}
-      FROM "ProductMirror" p
-      WHERE p."id" = v."productId"
-        AND p."pancakeShopId" = ${shopId}
-        AND (v."secondaryStockObservedAt" IS NULL OR v."secondaryStockObservedAt" < ${observedAt})
+      UPDATE "CatalogSyncState"
+      SET "secondaryFenceAt" = GREATEST(COALESCE("secondaryFenceAt", ${observedAt}), ${observedAt})
+      WHERE "pancakeShopId" = ${shopId}
     `);
   },
   observeAvailability: observeStoredStockAvailability,
@@ -91,6 +98,8 @@ export type SecondaryInventorySyncResult = {
    * of them receives any.
    */
   ambiguousCount: number;
+  /** True when a configuration change after the read began made the sync discard its figures. */
+  fenced: boolean;
   totalStockAggregated: number;
   warehouseCount: number;
 };
@@ -123,6 +132,17 @@ export async function syncSecondaryShopInventory({
     client: secondaryClient,
     shopId: secondaryShopId,
   });
+
+  // A variation listed twice (a paginated walk can repeat a row) would have its stock added twice.
+  // The live checkout lookup refuses this too; here the whole snapshot is refused, so nothing is
+  // written from a walk that cannot be trusted.
+  const seenVariationIds = new Set<string>();
+  for (const { id } of secondaryVariations) {
+    if (seenVariationIds.has(id)) {
+      throw new Error("Secondary Pancake catalog repeats a variation id");
+    }
+    seenVariationIds.add(id);
+  }
 
   // Secondary stock per normalized SKU and warehouse. A SKU repeated inside the secondary shop is
   // summed per warehouse: they are the same article held in the same place.
@@ -160,6 +180,7 @@ export async function syncSecondaryShopInventory({
   });
   const candidateIds = candidates.map(({ id }) => id);
 
+  let fenced = false;
   let matchedCount = 0;
   let totalStockAggregated = 0;
   const seenWarehouseIds = new Set<string>();
@@ -176,6 +197,13 @@ export async function syncSecondaryShopInventory({
         // The shop's catalog-sync lock serializes this with the primary sync and the admin policy
         // writes that decide a preorder variant's availability cycle.
         await hooks.acquireLock(tx, primaryShopId);
+        // A configuration change (feature off, shop replaced) after this read began: its figures
+        // belong to a configuration that no longer applies.
+        const fenceAt = await hooks.readFence(tx, primaryShopId);
+        if (fenceAt !== null && observedAt.getTime() < fenceAt.getTime()) {
+          fenced = true;
+          return;
+        }
         // The rows `reserveOrderCapacity()` locks before it reads stock, in the same order, so a
         // reservation never commits on a figure this chunk is replacing.
         await hooks.lockVariants(tx, chunkIds);
@@ -234,6 +262,9 @@ export async function syncSecondaryShopInventory({
   for (const sku of secondaryBySku.keys()) {
     if (!primarySkus.has(sku)) unmatchedCount += 1;
   }
+  if (fenced) {
+    warn("Secondary Pancake inventory sync discarded: the configuration changed after its read began");
+  }
   if (ambiguousSkus.size > 0) {
     warn(
       `Secondary Pancake inventory sync skipped ${ambiguousSkus.size} SKU(s) shared by several primary variants`,
@@ -246,6 +277,7 @@ export async function syncSecondaryShopInventory({
     matchedCount,
     unmatchedCount,
     ambiguousCount: ambiguousSkus.size,
+    fenced,
     totalStockAggregated,
     warehouseCount: seenWarehouseIds.size,
   };
@@ -282,9 +314,10 @@ export async function purgeSecondaryWarehouseStock(
     shopId?: number;
     syncedBefore?: Date;
     /**
-     * For purges caused by a configuration change (feature off, shop replaced): also refuse every
-     * secondary read that began before this instant. Without it a sync that was already running
-     * under the old configuration would write its stock back right after the purge.
+     * For purges caused by a configuration change (feature off, shop replaced): also discard every
+     * secondary read that began before this instant (the shop's `secondaryFenceAt`, one row). Without
+     * it a sync that was already running under the old configuration would write its stock back
+     * right after the purge.
      */
     fence?: boolean;
     observedAt?: Date;

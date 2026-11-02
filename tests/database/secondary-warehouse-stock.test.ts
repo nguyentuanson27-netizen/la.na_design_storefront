@@ -9,6 +9,7 @@ import {
   syncSecondaryShopInventory,
 } from "../../src/commerce/secondary-inventory-sync.ts";
 import { normalizedSkuSql } from "../../src/commerce/sku-sql.ts";
+import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
 import { findAmbiguousPrimarySkus } from "../../src/commerce/secondary-sku-guard.ts";
 import { normalizeSku } from "../../src/integrations/pancake/sku.ts";
 import type { PancakeCompositeSnapshot } from "../../src/integrations/pancake/composite-contract.ts";
@@ -131,6 +132,10 @@ async function sellable(variationId: string) {
 }
 
 async function cleanup() {
+  await prisma.variantCapacityReservation.deleteMany({
+    where: { variant: { product: { pancakeShopId: primaryShopId } } },
+  });
+  await prisma.orderMirror.deleteMany({ where: { publicCode: { startsWith: "sec-handoff" } } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: primaryShopId } });
   await prisma.catalogSyncState.deleteMany({ where: { pancakeShopId: primaryShopId } });
 }
@@ -830,4 +835,130 @@ test("disabling the feature fences the reads that were already running", async (
   });
 
   assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
+});
+
+test("a COMMITTED hold is handed off once the PRIMARY shop observed after the commit, whatever the age of the secondary rows", async () => {
+  const mirror = createCatalogMirrorRepository(prisma, { clock: () => t(59) });
+  const reservations = createCapacityReservationRepository(prisma);
+
+  await mirror.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 3 }])],
+    syncedAt: t(0),
+  });
+  // The secondary rows were read at t(1) and stay at that age.
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(1));
+  const variant = await prisma.variantMirror.findFirstOrThrow({ where: { pancakeVariationId: "v1" }, select: { id: true } });
+
+  // The order is created in the primary POS and committed at t(10).
+  const order = await prisma.orderMirror.create({ data: { publicCode: "sec-handoff-1" }, select: { id: true } });
+  const outcome = await reservations.reserveOrderCapacity({
+    orderId: order.id,
+    lines: [{ variantId: variant.id, quantity: 2 }],
+  });
+  assert.equal(outcome.ok, true);
+  const reservationId = outcome.ok ? outcome.reservations[0]!.id : "";
+  assert.equal(await reservations.transitionReservation({ id: reservationId, from: "RESERVED", to: "SUBMITTING" }), true);
+  assert.equal(
+    await reservations.transitionReservation({ id: reservationId, from: "SUBMITTING", to: "COMMITTED", at: t(10) }),
+    true,
+  );
+
+  // The primary shop is read after the commit and shows its decrement (3 -> 1). That read is the
+  // evidence; the older secondary rows say nothing about this POS and must not keep the hold alive.
+  const result = await mirror.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(20),
+  });
+
+  assert.equal(result.capacityHandedOff, 1);
+  const resource = await prisma.capacityReservationResource.findFirstOrThrow({
+    where: { reservationId },
+    select: { mirroredAt: true, mirrorObservationStartedAt: true },
+  });
+  assert.deepEqual(resource, { mirroredAt: t(59), mirrorObservationStartedAt: t(20) });
+});
+
+test("a hold is still kept while the primary shop has not been read since the commit, however fresh the secondary rows are", async () => {
+  const mirror = createCatalogMirrorRepository(prisma, { clock: () => t(59) });
+  const reservations = createCapacityReservationRepository(prisma);
+
+  await mirror.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 3 }])],
+    syncedAt: t(0),
+  });
+  const variant = await prisma.variantMirror.findFirstOrThrow({ where: { pancakeVariationId: "v1" }, select: { id: true } });
+  const order = await prisma.orderMirror.create({ data: { publicCode: "sec-handoff-2" }, select: { id: true } });
+  const outcome = await reservations.reserveOrderCapacity({
+    orderId: order.id,
+    lines: [{ variantId: variant.id, quantity: 2 }],
+  });
+  const reservationId = outcome.ok ? outcome.reservations[0]!.id : "";
+  await reservations.transitionReservation({ id: reservationId, from: "RESERVED", to: "SUBMITTING" });
+  await reservations.transitionReservation({ id: reservationId, from: "SUBMITTING", to: "COMMITTED", at: t(10) });
+
+  // A secondary read after the commit is not evidence about the primary POS's decrement.
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(30));
+
+  const resource = await prisma.capacityReservationResource.findFirstOrThrow({
+    where: { reservationId },
+    select: { mirroredAt: true },
+  });
+  assert.equal(resource.mirroredAt, null);
+});
+
+test("fencing takes no lock on any variant row: a purge does not wait for a reservation holding one", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(0),
+  });
+  const variant = await prisma.variantMirror.findFirstOrThrow({ where: { pancakeVariationId: "v1" }, select: { id: true } });
+
+  let release!: () => void;
+  const mayFinish = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let locked!: () => void;
+  const lockTaken = new Promise<void>((resolve) => {
+    locked = resolve;
+  });
+  const holder = prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "VariantMirror" WHERE "id" = ${variant.id} FOR UPDATE`;
+    locked();
+    await mayFinish;
+  });
+  await lockTaken;
+
+  try {
+    // Nothing stored, so the purge removes nothing: only the fence is written, and it must not queue
+    // behind the row lock (the former per-variant UPDATE did).
+    const purge = purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: true, observedAt: t(20) });
+    const outcome = await Promise.race([
+      purge.then(() => "finished" as const),
+      new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 1500)),
+    ]);
+    assert.equal(outcome, "finished");
+  } finally {
+    release();
+    await holder;
+  }
+
+  const state = await prisma.catalogSyncState.findUniqueOrThrow({ where: { pancakeShopId: primaryShopId } });
+  assert.deepEqual(state.secondaryFenceAt, t(20));
+});
+
+test("the fence never moves backwards", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [primaryVariation("v1", "SKU-1", [{ warehouseId: "wh-a", remainQuantity: 1 }])],
+    syncedAt: t(0),
+  });
+  await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: true, observedAt: t(40) });
+  await purgeSecondaryWarehouseStock(prisma, { primaryShopId, fence: true, observedAt: t(30) });
+
+  const state = await prisma.catalogSyncState.findUniqueOrThrow({ where: { pancakeShopId: primaryShopId } });
+  assert.deepEqual(state.secondaryFenceAt, t(40));
 });

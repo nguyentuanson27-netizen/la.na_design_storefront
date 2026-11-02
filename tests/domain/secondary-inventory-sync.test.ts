@@ -200,27 +200,35 @@ function syncHarness({
   secondary,
   primary,
   primaryAtLockTime = primary,
+  fenceAt = null,
+  pages,
 }: {
   secondary: ReturnType<typeof variationRow>[];
   /** What the candidate read sees. */
   primary: PrimaryRow[];
   /** What the mapping really is once the lock is held (a primary sync may have committed in between). */
   primaryAtLockTime?: PrimaryRow[];
+  /** The shop's secondary fence as stored when the chunk takes the lock. */
+  fenceAt?: Date | null;
+  /** Serve the secondary catalog in these pages instead of one (to test repeated rows). */
+  pages?: ReturnType<typeof variationRow>[][];
 }) {
   const hookCalls: string[] = [];
   const locked: Array<readonly string[]> = [];
   const observed: Array<{ shopId: number; variantIds: readonly string[]; observedAt: Date }> = [];
   let findManyWhere: unknown;
   const client = {
-    async getJson(endpoint: string) {
+    async getJson(endpoint: string, query?: Readonly<Record<string, string | number | boolean>>) {
       if (endpoint !== "/shops/407962350/products/variations") throw new Error(`Unexpected endpoint: ${endpoint}`);
+      const served = pages ?? [secondary];
+      const pageNumber = Number(query?.page_number ?? 1);
       return {
         success: true,
-        page_number: 1,
+        page_number: pageNumber,
         page_size: 100,
-        total_entries: secondary.length,
-        total_pages: 1,
-        data: secondary,
+        total_entries: served.reduce((total, rows) => total + rows.length, 0),
+        total_pages: served.length,
+        data: served[pageNumber - 1] ?? [],
       };
     },
   };
@@ -288,6 +296,10 @@ function syncHarness({
             hookCalls.push("mapping");
             return primaryAtLockTime.filter(({ id }) => variantIds.includes(id));
           },
+          async readFence() {
+            hookCalls.push("readFence");
+            return fenceAt;
+          },
           async fenceReads() {},
           async findAmbiguousSkus(_tx, _shop, skus) {
             const counts = new Map<string, number>();
@@ -327,6 +339,7 @@ test("syncSecondaryShopInventory matches SKUs, aggregates stock, and ignores unm
     matchedCount: 1,
     unmatchedCount: 1,
     ambiguousCount: 0,
+    fenced: false,
     totalStockAggregated: 8,
     warehouseCount: 2,
   });
@@ -418,6 +431,9 @@ test("purgeSecondaryWarehouseStock deletes under the shop lock, locks the rows, 
     async findAmbiguousSkus() {
       return new Set<string>();
     },
+    async readFence() {
+      return null;
+    },
     async fenceReads(_tx: unknown, shopId: number, at: Date) {
       steps.push(`fence:${shopId}:${at.toISOString()}`);
     },
@@ -482,6 +498,9 @@ test("purge scopes: everything when disabled, every other shop when the shop cha
     },
     async findAmbiguousSkus() {
       return new Set<string>();
+    },
+    async readFence() {
+      return null;
     },
     async fenceReads() {},
   };
@@ -558,4 +577,58 @@ test("a variant that lost its SKU or was retired after the candidate read is cle
     { variantId: "v1", keys: [], quantities: [] },
     { variantId: "v2", keys: [], quantities: [] },
   ]);
+});
+
+test("a sync whose read began before the shop's fence discards everything and says so", async () => {
+  const harness = syncHarness({
+    secondary: [variationRow("sec_a", "SKU-A", [["wh", 5]])],
+    primary: [{ id: "v1", pancakeDisplayId: "SKU-A", isPresent: true }],
+    fenceAt: new Date(now.getTime() + 1),
+  });
+
+  const result = await harness.run();
+
+  assert.equal(result.fenced, true);
+  assert.deepEqual(harness.writes, []);
+  assert.deepEqual(harness.hookCalls, ["lock:4741464", "readFence"], "nothing is locked, read or written after the fence");
+  assert.equal(harness.warnings.length, 1);
+});
+
+test("a read that began at or after the fence is applied", async () => {
+  const harness = syncHarness({
+    secondary: [variationRow("sec_a", "SKU-A", [["wh", 5]])],
+    primary: [{ id: "v1", pancakeDisplayId: "SKU-A", isPresent: true }],
+    fenceAt: now,
+  });
+
+  const result = await harness.run();
+
+  assert.equal(result.fenced, false);
+  assert.equal(harness.writes.length, 1);
+});
+
+test("a variation id repeated across pages refuses the whole snapshot: nothing is written", async () => {
+  const repeated = variationRow("sec-1", "SKU-A", [["wh", 5]]);
+  const harness = syncHarness({
+    secondary: [],
+    pages: [[repeated], [repeated]],
+    primary: [{ id: "v1", pancakeDisplayId: "SKU-A", isPresent: true }],
+  });
+
+  await assert.rejects(() => harness.run(), /repeats a variation id/);
+
+  assert.deepEqual(harness.writes, []);
+  assert.deepEqual(harness.hookCalls, []);
+});
+
+test("distinct variations that share a SKU are still summed, only a repeated id is refused", async () => {
+  const harness = syncHarness({
+    secondary: [],
+    pages: [[variationRow("sec-1", "SKU-A", [["wh", 2]])], [variationRow("sec-2", "SKU-A", [["wh", 3]])]],
+    primary: [{ id: "v1", pancakeDisplayId: "SKU-A", isPresent: true }],
+  });
+
+  await harness.run();
+
+  assert.deepEqual(harness.writes, [{ variantId: "v1", keys: ["secondary:407962350:wh"], quantities: [5] }]);
 });
