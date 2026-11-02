@@ -10,7 +10,7 @@ import {
 } from "../../src/commerce/secondary-inventory-sync.ts";
 import { normalizedSkuSql } from "../../src/commerce/sku-sql.ts";
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
-import { findAmbiguousPrimarySkus } from "../../src/commerce/secondary-sku-guard.ts";
+import { findAmbiguousPrimarySkus, findUnsafePrimarySkus } from "../../src/commerce/secondary-sku-guard.ts";
 import { normalizeSku } from "../../src/integrations/pancake/sku.ts";
 import type { PancakeCompositeSnapshot } from "../../src/integrations/pancake/composite-contract.ts";
 import { Prisma, PrismaClient } from "../../src/generated/prisma/client.ts";
@@ -995,4 +995,44 @@ test("a normal cycle with the right shop configured leaves the fence alone; a re
   });
   assert.equal(removed, 1);
   assert.deepEqual(await fenceAt(), t(40));
+});
+
+test("a live read the mirror disagrees with is unsafe: renamed, unknown or retired variants lose their SKU's secondary stock", async () => {
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [
+      primaryVariation("v1", "SKU-A", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v2", "SKU-B", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v3", "\tsku-c ", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+    ],
+    syncedAt: t(0),
+  });
+  const unsafe = async (entries: Array<[string, string]>) =>
+    [...(await findUnsafePrimarySkus(prisma, primaryShopId, entries.map(([variationId, sku]) => ({ variationId, sku }))))].sort();
+
+  // The mirror and the live read agree (padding and case aside): nothing is unsafe.
+  assert.deepEqual(await unsafe([["v1", "SKU-A"], ["v3", "SKU-C"]]), []);
+
+  // The POS has just renamed v2 from B to A. The mirror still says B, so it sees no duplicate of A
+  // (v1 and v2 look distinct there); the disagreement is what marks A unsafe.
+  assert.deepEqual(await findUnsafePrimarySkus(prisma, primaryShopId, [{ variationId: "v1", sku: "SKU-A" }]), new Set());
+  assert.deepEqual(await unsafe([["v1", "SKU-A"], ["v2", "SKU-A"]]), ["SKU-A"]);
+
+  // A variation the mirror has never seen.
+  assert.deepEqual(await unsafe([["v-new", "SKU-N"]]), ["SKU-N"]);
+
+  // A variant the mirror holds as retired but the POS still lists.
+  await prisma.variantMirror.updateMany({ where: { pancakeVariationId: "v3" }, data: { isPresent: false } });
+  assert.deepEqual(await unsafe([["v3", "SKU-C"]]), ["SKU-C"]);
+
+  // Duplicates the mirror itself knows about stay unsafe, as before.
+  await repository.syncSnapshot({
+    shopId: primaryShopId,
+    variations: [
+      primaryVariation("v1", "SKU-A", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+      primaryVariation("v2", "sku-a", [{ warehouseId: "wh-a", remainQuantity: 1 }]),
+    ],
+    syncedAt: t(1),
+  });
+  assert.deepEqual(await unsafe([["v1", "SKU-A"]]), ["SKU-A"]);
 });

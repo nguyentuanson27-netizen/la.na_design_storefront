@@ -4,7 +4,7 @@ import { scheduleMetaPurchaseSafely } from "./meta-request-context.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig, type PancakeConfig } from "../integrations/pancake/config.ts";
 import { createPancakeOrderGateway } from "../integrations/pancake/order-gateway.ts";
-import { findAmbiguousPrimarySkus } from "./secondary-sku-guard.ts";
+import { findUnsafePrimarySkus } from "./secondary-sku-guard.ts";
 import { createVoucherOrderAcceptance } from "./voucher-order-acceptance.ts";
 import { createVoucherRedemptionService } from "./voucher-redemption-service.ts";
 import {
@@ -29,8 +29,8 @@ export function createPancakeOrderSubmissionRuntime(config: PancakeConfig) {
     ? {
         client: new PancakeClient({ apiKey: config.secondaryShop.apiKey, timeoutMs: SECONDARY_SHOP_TIMEOUT_MS }),
         shopId: config.secondaryShop.shopId,
-        findAmbiguousSkus: (primaryShopId: number, skus: readonly string[]) =>
-          findAmbiguousPrimarySkus(prisma, primaryShopId, skus),
+        findUnsafeSkus: (primaryShopId: number, entries: readonly { variationId: string; sku: string }[]) =>
+          findUnsafePrimarySkus(prisma, primaryShopId, entries),
       }
     : undefined;
   const gateway = createPancakeOrderGateway(

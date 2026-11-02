@@ -228,15 +228,15 @@ test("a SKU shared by several primary variants is never looked up, so its units 
           return page([secondaryRow("s", String(query?.search), 4)]);
         },
       },
-      async findAmbiguousSkus(shop, skus) {
-        asked.push([shop, [...skus]]);
+      async findUnsafeSkus(shop, entries) {
+        asked.push([shop, entries.map(({ variationId, sku }) => `${variationId}:${sku}`)]);
         return new Set(["DUP-SKU"]);
       },
     },
     { primaryShopId, warn: () => assert.fail("no warning expected") },
   );
 
-  assert.deepEqual(asked, [[primaryShopId, ["DUP-SKU", "SKU-OK"]]]);
+  assert.deepEqual(asked, [[primaryShopId, ["p-dup:DUP-SKU", "p-ok:SKU-OK"]]]);
   assert.deepEqual(lookups, ["SKU-OK"]);
   assert.equal(result[0], original);
   assert.equal(result[1]!.sellableStock, 5);
@@ -250,7 +250,7 @@ test("if the uniqueness check cannot run, no secondary stock is added at all", a
     {
       shopId,
       client: { getJson: async () => assert.fail("must not be called") },
-      findAmbiguousSkus: async () => {
+      findUnsafeSkus: async () => {
         throw new Error("database down");
       },
     },
@@ -305,4 +305,135 @@ test("a consistent two-page walk is still added up", async () => {
   );
   assert.equal(result.secondarySellableStock, 5);
   assert.deepEqual(warnings, []);
+});
+
+test("two variations of the same live read that share a SKU get no secondary stock, whatever the mirror says", async () => {
+  const lookups: unknown[] = [];
+  const a = primary("p-a", "SKU-A", 1);
+  const b = primary("p-b", " sku-a ", 1);
+  const result = await addSecondaryShopStock(
+    [a, b],
+    {
+      shopId,
+      client: {
+        async getJson(_endpoint, query) {
+          lookups.push(query?.search);
+          return page([secondaryRow("s", "SKU-A", 5)]);
+        },
+      },
+      // The mirror still has them under different SKUs, so it reports nothing unsafe.
+      findUnsafeSkus: async () => new Set<string>(),
+    },
+    { primaryShopId, warn: () => assert.fail("a deliberate skip is not a failure") },
+  );
+
+  assert.deepEqual(lookups, [], "the shared pool is never even asked for");
+  assert.equal(result[0], a);
+  assert.equal(result[1], b);
+});
+
+test("the same SKU twice in one read is caught even without a mirror check", async () => {
+  let calls = 0;
+  const result = await addSecondaryShopStock(
+    [primary("p-a", "SKU-A", 1), primary("p-b", "SKU-A", 1)],
+    {
+      shopId,
+      client: {
+        async getJson() {
+          calls += 1;
+          return page([secondaryRow("s", "SKU-A", 5)]);
+        },
+      },
+    },
+    { primaryShopId, warn: () => undefined },
+  );
+  assert.equal(calls, 0, "no lookup is made for a SKU two variations of this read share");
+  assert.deepEqual(result.map((v) => v.sellableStock), [1, 1]);
+});
+
+// ---- total deadline ----
+
+const never = () => new Promise<never>(() => undefined);
+const delay = <T,>(ms: number, value: T) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
+
+test("a secondary shop that never answers cannot hold the buyer past the deadline, however many lines", async () => {
+  const warnings: string[] = [];
+  const variations = Array.from({ length: 12 }, (_, i) => primary(`p${i}`, `SKU-${i}`, 1));
+  const started = Date.now();
+  const result = await addSecondaryShopStock(
+    variations,
+    { shopId, client: { getJson: () => never() } },
+    { primaryShopId, deadlineMs: 60, warn: (message) => warnings.push(message) },
+  );
+  const elapsed = Date.now() - started;
+
+  assert.ok(elapsed < 600, `took ${elapsed} ms`);
+  assert.deepEqual(result.map((v) => v.sellableStock), variations.map(() => 1));
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /12 of 12/);
+  assert.match(warnings[0]!, /deadline/);
+});
+
+test("lookups answered before the deadline are kept and only the late ones fall back", async () => {
+  const warnings: string[] = [];
+  const result = await addSecondaryShopStock(
+    [primary("p-fast", "SKU-FAST", 1), primary("p-slow", "SKU-SLOW", 1)],
+    {
+      shopId,
+      client: {
+        async getJson(_endpoint, query) {
+          if (query?.search === "SKU-FAST") return page([secondaryRow("s1", "SKU-FAST", 4)]);
+          return never();
+        },
+      },
+    },
+    { primaryShopId, deadlineMs: 60, warn: (message) => warnings.push(message) },
+  );
+
+  assert.equal(result[0]!.sellableStock, 5);
+  assert.equal(result[1]!.sellableStock, 1);
+  assert.match(warnings[0]!, /1 of 2/);
+});
+
+test("a multi-page walk counts against the same deadline, not a fresh one per page", async () => {
+  const requested: number[] = [];
+  const [result] = await addSecondaryShopStock(
+    [primary("p1", "SKU-1", 1)],
+    {
+      shopId,
+      client: {
+        async getJson(_endpoint, query) {
+          const n = Number(query?.page_number);
+          requested.push(n);
+          return delay(40, page([secondaryRow(`s${n}`, "SKU-1", 1)], n, 4, 4));
+        },
+      },
+    },
+    { primaryShopId, deadlineMs: 70, warn: () => undefined },
+  );
+
+  assert.equal(result!.sellableStock, 1, "four 40 ms pages cannot finish inside 70 ms");
+});
+
+test("no new lookup starts after the deadline", async () => {
+  let calls = 0;
+  const variations = Array.from({ length: 40 }, (_, i) => primary(`p${i}`, `SKU-${i}`, 1));
+  await addSecondaryShopStock(
+    variations,
+    {
+      shopId,
+      client: {
+        async getJson() {
+          calls += 1;
+          return delay(30, page([]));
+        },
+      },
+    },
+    { primaryShopId, deadlineMs: 50, warn: () => undefined },
+  );
+  const callsAtDeadline = calls;
+  await delay(200, undefined);
+
+  assert.equal(calls, callsAtDeadline, "the walk stopped starting lookups once time was up");
+  assert.ok(callsAtDeadline < 40);
 });

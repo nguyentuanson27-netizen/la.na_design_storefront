@@ -14,11 +14,15 @@ export type SecondaryShopGatewayConfig = {
   client: SecondaryStockLookupClient;
   shopId: number;
   /**
-   * Of the normalized SKUs, those that more than one primary variant carries. Their secondary stock
-   * is given to none of them, exactly as the mirror sync does. When it is configured and fails, no
+   * Of the (variation, normalized SKU) pairs read live, the SKUs whose secondary stock must not be
+   * given out: shared by several variants, or whose mirror picture disagrees with the live one. Their
+   * secondary stock goes to none, as in the mirror sync. When it is configured and fails, no
    * secondary stock is added at all: counting the same units twice is the error to avoid.
    */
-  findAmbiguousSkus?: (primaryShopId: number, skus: readonly string[]) => Promise<ReadonlySet<string>>;
+  findUnsafeSkus?: (
+    primaryShopId: number,
+    entries: readonly Readonly<{ variationId: string; sku: string }>[],
+  ) => Promise<ReadonlySet<string>>;
 };
 
 /** Pancake accepts up to 100 rows a page; a wide page keeps a fuzzy `search` to a single request in practice. */
@@ -32,21 +36,20 @@ type LookupOutcome =
   /** Unreadable, or possibly truncated before the exact SKU: nothing is known about its stock. */
   | { kind: "failed" };
 
-async function mapWithConcurrency<T, R>(
+async function mapWithConcurrency<T>(
   items: readonly T[],
   limit: number,
-  task: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
+  task: (item: T, index: number) => Promise<void>,
+  shouldStop: () => boolean,
+): Promise<void> {
   let next = 0;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
+    while (next < items.length && !shouldStop()) {
       const index = next++;
-      results[index] = await task(items[index]!);
+      await task(items[index]!, index);
     }
   });
   await Promise.all(workers);
-  return results;
 }
 
 /** Pages of a fuzzy `search` read before the answer is given up as inconclusive. */
@@ -95,11 +98,19 @@ async function lookupSecondarySku(
 }
 
 /**
+ * The whole secondary enrichment of one read — every SKU, every page — gets this long. The shop's
+ * per-request timeout bounds one request; this bounds what the buyer waits for in total, however
+ * many lines the order has and however many pages a lookup walks.
+ */
+export const SECONDARY_ENRICHMENT_DEADLINE_MS = 4_000;
+
+/**
  * Adds the secondary shop's live sellable stock, matched by SKU, onto primary-shop variations.
  *
  * Identity, price and visibility stay the primary shop's: only the stock figures change. The result
- * is always at least as safe as the primary figure alone — any lookup that fails or is inconclusive
- * leaves its variation exactly as the primary shop reported it.
+ * is always at least as safe as the primary figure alone — any lookup that fails, is inconclusive or
+ * is still running when the deadline passes leaves its variation exactly as the primary shop
+ * reported it.
  *
  * `warn` receives fixed text and counts only, never a Pancake payload, SKU or credential.
  */
@@ -108,38 +119,50 @@ export async function addSecondaryShopStock(
   secondary: SecondaryShopGatewayConfig,
   {
     primaryShopId,
+    deadlineMs = SECONDARY_ENRICHMENT_DEADLINE_MS,
     warn = (message) => console.warn(message),
-  }: { primaryShopId: number; warn?: (message: string) => void },
+  }: { primaryShopId: number; deadlineMs?: number; warn?: (message: string) => void },
 ): Promise<PancakeCatalogVariation[]> {
-  let ambiguous: ReadonlySet<string> = new Set();
-  if (secondary.findAmbiguousSkus) {
-    const skus = [
-      ...new Set(variations.flatMap((variation) => normalizeSku(variation.displayId) ?? [])),
-    ];
+  const entries = variations.flatMap((variation) => {
+    const sku = normalizeSku(variation.displayId);
+    return sku === null ? [] : [{ variationId: variation.id, sku }];
+  });
+
+  // A SKU carried by two variations of THIS read cannot be told apart whatever the mirror says.
+  const variationIdsBySku = new Map<string, Set<string>>();
+  for (const { variationId, sku } of entries) {
+    const ids = variationIdsBySku.get(sku) ?? new Set<string>();
+    ids.add(variationId);
+    variationIdsBySku.set(sku, ids);
+  }
+  const unsafe = new Set<string>();
+  for (const [sku, ids] of variationIdsBySku) if (ids.size > 1) unsafe.add(sku);
+
+  if (secondary.findUnsafeSkus) {
     try {
-      ambiguous = await secondary.findAmbiguousSkus(primaryShopId, skus);
+      for (const sku of await secondary.findUnsafeSkus(primaryShopId, entries)) unsafe.add(sku);
     } catch {
       warn("Secondary Pancake stock skipped: the SKU uniqueness check failed");
       return [...variations];
     }
   }
 
-  let failed = 0;
-  let attempted = 0;
-  const enriched = await mapWithConcurrency(
+  // Each answered lookup writes into `results`; a variation nobody answered for keeps its primary
+  // figure. Once the deadline passes nothing more is started and nothing more is accepted.
+  const results: PancakeCatalogVariation[] = [...variations];
+  let expired = false;
+  let conclusive = 0;
+  const work = mapWithConcurrency(
     variations,
     SECONDARY_LOOKUP_CONCURRENCY,
-    async (variation): Promise<PancakeCatalogVariation> => {
+    async (variation, index) => {
       const sku = normalizeSku(variation.displayId);
-      if (!sku || variation.displayId === null || variation.displayId === undefined) return variation;
-      if (ambiguous.has(sku)) return variation;
-      attempted += 1;
+      if (!sku || variation.displayId === null || variation.displayId === undefined) return;
+      if (unsafe.has(sku)) return;
       const outcome = await lookupSecondarySku(secondary, variation.displayId, sku);
-      if (outcome.kind === "failed") {
-        failed += 1;
-        return variation;
-      }
-      if (outcome.kind === "none") return variation;
+      if (expired || outcome.kind === "failed") return;
+      conclusive += 1;
+      if (outcome.kind === "none") return;
 
       // Several exact matches are the same article held in several secondary rows: their stock adds.
       const secondarySellableStock = outcome.matches.reduce(
@@ -147,7 +170,7 @@ export async function addSecondaryShopStock(
         0,
       );
       const primarySellableStock = variation.sellableStock;
-      return {
+      results[index] = {
         ...variation,
         warehouseStocks: [
           ...variation.warehouseStocks,
@@ -158,10 +181,29 @@ export async function addSecondaryShopStock(
         secondarySellableStock,
       };
     },
+    () => expired,
   );
 
-  if (failed > 0) {
-    warn(`Secondary Pancake stock lookup failed or was inconclusive for ${failed} of ${attempted} variation(s)`);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, deadlineMs);
+  });
+  await Promise.race([work, deadline]);
+  expired = true;
+  if (timer !== undefined) clearTimeout(timer);
+
+  // Lookups that never started count as unanswered too, so the figure is every eligible variation
+  // minus those that got a conclusive answer in time.
+  const eligible = variations.filter((variation) => {
+    const sku = normalizeSku(variation.displayId);
+    return sku !== null && !unsafe.has(sku);
+  }).length;
+  const unanswered = eligible - conclusive;
+  if (unanswered > 0) {
+    warn(
+      `Secondary Pancake stock lookup was inconclusive for ${unanswered} of ${eligible} variation(s)` +
+        ` (failed, unreadable or past the ${deadlineMs} ms deadline)`,
+    );
   }
-  return enriched;
+  return results;
 }
