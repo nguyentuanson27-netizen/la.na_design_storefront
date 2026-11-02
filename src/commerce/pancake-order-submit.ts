@@ -896,7 +896,34 @@ export function createPancakeOrderSubmissionService(
     const orderMarker = `[ORDER:${order.publicCode}]`;
     // Staff read the note, not a payment field, to know an order is waiting on a transfer.
     const markers = order.paymentMethod === "BANK_TRANSFER" ? `[CHUYỂN KHOẢN - chờ thanh toán] ${orderMarker}` : orderMarker;
-    const noteWithMarker = order.note ? `${order.note} ${markers}` : markers;
+    let noteWithMarker = order.note ? `${order.note} ${markers}` : markers;
+
+    const secondaryFulfilled = new Map<string, { sku: string; quantity: number }>();
+    for (const plan of liveCapacityPlans) {
+      for (const resource of plan.resources) {
+        const liveResource = liveByVariationId.get(resource.pancakeVariationId);
+        if (!liveResource || !liveResource.secondarySellableStock || liveResource.secondarySellableStock <= 0) continue;
+        const primaryStock = Math.max(0, liveResource.primarySellableStock ?? 0);
+        const unitsFromSecondary = Math.min(
+          Math.max(0, resource.units - primaryStock),
+          liveResource.secondarySellableStock,
+        );
+        if (unitsFromSecondary > 0) {
+          const sku = liveResource.displayId ?? resource.pancakeVariationId;
+          const current = secondaryFulfilled.get(sku);
+          if (current) {
+            current.quantity += unitsFromSecondary;
+          } else {
+            secondaryFulfilled.set(sku, { sku, quantity: unitsFromSecondary });
+          }
+        }
+      }
+    }
+    if (secondaryFulfilled.size > 0) {
+      const parts = [...secondaryFulfilled.values()].map((item) => `SKU ${item.sku} x${item.quantity}`);
+      noteWithMarker = `${noteWithMarker} [Xuất kho phụ: ${parts.join(", ")}]`;
+    }
+
     const addressDetailWithMarker = `${contact.addressDetail} ${orderMarker}`;
 
     let geoNames: { provinceName: string; communeName: string } | undefined;

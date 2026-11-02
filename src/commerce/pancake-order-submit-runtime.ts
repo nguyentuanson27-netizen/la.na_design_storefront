@@ -17,7 +17,18 @@ function writePancakeOrderSubmissionEvent(event: PancakeOrderSubmissionEvent): v
 
 export function createPancakeOrderSubmissionRuntime(config: PancakeConfig) {
   const client = new PancakeClient({ apiKey: config.apiKey });
-  const gateway = createPancakeOrderGateway(client);
+  const secondaryConfig = config.secondaryShop
+    ? {
+        client: new PancakeClient({ apiKey: config.secondaryShop.apiKey }),
+        shopId: config.secondaryShop.shopId,
+      }
+    : undefined;
+  const gateway = createPancakeOrderGateway(
+    client,
+    undefined,
+    undefined,
+    secondaryConfig,
+  );
   // V13: voucher acceptance runs in the write-boundary transaction. It is a settle path, so it never reads the
   // feature flag or the verified-shop list; an order with no bound hold passes through without writing.
   const voucherAcceptance = createVoucherOrderAcceptance({ readAttemptSecret: () => readAuthServerConfig().secret });

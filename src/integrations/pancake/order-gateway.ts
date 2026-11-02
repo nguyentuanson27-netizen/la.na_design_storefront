@@ -1,4 +1,7 @@
-import type { PancakeCatalogVariation } from "./catalog-contract.ts";
+import {
+  parsePancakeCatalogVariations,
+  type PancakeCatalogVariation,
+} from "./catalog-contract.ts";
 import { fetchAllPancakeCatalogVariations } from "./catalog-pages.ts";
 import {
   fetchPancakeVariationsByIds,
@@ -54,10 +57,16 @@ function requireOrderId(value: string): string {
   return value;
 }
 
+export type SecondaryShopGatewayConfig = {
+  client: PancakeOrderGatewayClient;
+  shopId: number;
+};
+
 export function createPancakeOrderGateway(
   client: PancakeOrderGatewayClient,
   fetchCompleteCatalog: FetchCompleteCatalog = fetchAllPancakeCatalogVariations,
   fetchVariationsByIds: FetchVariationsByIds = fetchPancakeVariationsByIds,
+  secondaryShop?: SecondaryShopGatewayConfig,
 ) {
   return {
     async fetchCompleteCatalog(shopId: number): Promise<readonly PancakeCatalogVariation[]> {
@@ -86,19 +95,65 @@ export function createPancakeOrderGateway(
       for (let start = 0; start < requested.length; start += MAX_VARIATIONS_PER_READ) {
         chunks.push(requested.slice(start, start + MAX_VARIATIONS_PER_READ));
       }
+      let primaryVariations: PancakeCatalogVariation[];
       try {
         const pages = await Promise.all(
           chunks.map((chunk) =>
             fetchVariationsByIds({ client, shopId: checkedShopId, variationIds: chunk }),
           ),
         );
-        return pages.flat();
+        primaryVariations = pages.flat();
       } catch (error) {
         if (!(error instanceof PancakeVariationFilterMismatchError)) throw error;
+        const wanted = new Set(requested);
+        const catalog = await fetchCompleteCatalog({ client, shopId: checkedShopId });
+        primaryVariations = catalog.filter((variation) => wanted.has(variation.id));
       }
-      const wanted = new Set(requested);
-      const catalog = await fetchCompleteCatalog({ client, shopId: checkedShopId });
-      return catalog.filter((variation) => wanted.has(variation.id));
+
+      if (!secondaryShop) {
+        return primaryVariations;
+      }
+
+      // Query secondary shop concurrently for variations that have displayId
+      const variationsWithSecondaryStock = await Promise.all(
+        primaryVariations.map(async (variation) => {
+          if (!variation.displayId) return variation;
+          const normalizedSku = variation.displayId.trim().toUpperCase();
+          try {
+            const payload = await secondaryShop.client.getJson(
+              `/shops/${secondaryShop.shopId}/products/variations`,
+              {
+                page_number: 1,
+                page_size: 30,
+                search: variation.displayId.trim(),
+              },
+            );
+            const parsed = parsePancakeCatalogVariations(payload);
+            const match = parsed.variations.find(
+              (v) => v.displayId?.trim().toUpperCase() === normalizedSku,
+            );
+            if (!match) return variation;
+
+            const primarySellableStock = variation.sellableStock;
+            const secondarySellableStock = match.sellableStock;
+            const combinedWarehouses = [
+              ...variation.warehouseStocks,
+              ...match.warehouseStocks,
+            ];
+            return {
+              ...variation,
+              warehouseStocks: combinedWarehouses,
+              sellableStock: primarySellableStock + secondarySellableStock,
+              primarySellableStock,
+              secondarySellableStock,
+            };
+          } catch {
+            return variation;
+          }
+        }),
+      );
+
+      return variationsWithSecondaryStock;
     },
 
     /**

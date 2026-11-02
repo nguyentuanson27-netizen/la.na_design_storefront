@@ -7,6 +7,7 @@ import { processInventorySignals } from "../operations/inventory-batch.ts";
 import { createCatalogMirrorRepository } from "./catalog-mirror-repository.ts";
 import { syncPancakeCatalog } from "./catalog-sync.ts";
 import { createInventorySignalRepository } from "./pancake-inventory-signals.ts";
+import { syncSecondaryShopInventory } from "./secondary-inventory-sync.ts";
 
 /**
  * `clock` is forwarded rather than a timestamp: `syncPancakeCatalog()` samples it immediately before
@@ -28,6 +29,22 @@ export async function syncConfiguredPancakeCatalog({
     shopId: config.shopId,
     ...(clock ? { clock } : {}),
   });
+
+  if (config.secondaryShop) {
+    try {
+      const secondaryClient = new PancakeClient({ apiKey: config.secondaryShop.apiKey });
+      await syncSecondaryShopInventory({
+        primaryShopId: config.shopId,
+        secondaryShopId: config.secondaryShop.shopId,
+        secondaryClient,
+        prisma,
+        ...(clock ? { clock } : {}),
+      });
+    } catch (error) {
+      console.error("Secondary Pancake shop inventory sync failed:", error);
+    }
+  }
+
   try {
     await auditListPrices({ client: prisma, shopId: config.shopId, now: new Date() });
   } catch {

@@ -71,6 +71,8 @@ export type PancakeCatalogVariation = {
   };
   warehouseStocks: PancakeCatalogWarehouseStock[];
   sellableStock: number;
+  primarySellableStock?: number;
+  secondarySellableStock?: number;
 };
 
 export type PancakeParsedCatalogVariation = Omit<PancakeCatalogVariation, "product"> & {

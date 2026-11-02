@@ -768,3 +768,34 @@ test("Ambiguous create leaves order in SYNC_UNKNOWN without inline marker search
   assert.equal(prismaMock.getOrderState().syncErrorCode, "CREATE_OUTCOME_UNKNOWN");
   assert.equal(prismaMock.getOrderState().pancakeOrderId, null);
 });
+
+test("Order fulfilled from secondary warehouse appends [Xuất kho phụ: SKU ...] to note", async () => {
+  const prismaMock = buildMockPrisma({ sellingMode: "STANDARD" });
+  let createdRequest: unknown;
+
+  const gateway = {
+    async fetchVariations() {
+      const variation = buildCatalogVariation(pancakeVariationId, 5);
+      // Primary had 0, secondary supplied 5
+      variation.primarySellableStock = 0;
+      variation.secondarySellableStock = 5;
+      variation.displayId = "SVD468-AO-XL";
+      return [variation];
+    },
+    async createOrder(request: unknown) {
+      createdRequest = request;
+      return { id: 70099 };
+    },
+  };
+
+  const service = createPancakeOrderSubmissionService(prismaMock, gateway);
+  const result = await service.submit({ publicCode, shopId });
+
+  assert.deepEqual(result, { ok: true, state: "CONFIRMED", pancakeOrderId: "70099" });
+  assert.ok(createdRequest);
+  const note = (createdRequest as { note: string }).note;
+  assert.ok(
+    note.includes("[Xuất kho phụ: SKU SVD468-AO-XL x1]"),
+    `Note did not contain expected tag: ${note}`,
+  );
+});

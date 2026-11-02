@@ -285,7 +285,12 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
-type ObservedWarehouseStock = Readonly<{ warehouseId: string; remainQuantity: number }>;
+export type ObservedWarehouseStock = Readonly<{ warehouseId: string; remainQuantity: number }>;
+
+export type WriteObservedWarehouseStocksOptions = Readonly<{
+  scopeWarehouseIds?: readonly string[];
+  stampVariantWatermark?: boolean;
+}>;
 
 /**
  * Writes one variant's complete warehouse set from a stock read that began at `observedAt` — the
@@ -299,34 +304,59 @@ type ObservedWarehouseStock = Readonly<{ warehouseId: string; remainQuantity: nu
  * neither side (ADR 0014 §4.1). Every write covers the whole variant, so the variant is the exact
  * granularity: a newer read already stated all of its warehouses. Returns whether it was written.
  */
-async function writeObservedWarehouseStocks(
+export async function writeObservedWarehouseStocks(
   tx: Prisma.TransactionClient,
   variantId: string,
   stocks: readonly ObservedWarehouseStock[],
   observedAt: Date,
+  options?: WriteObservedWarehouseStocksOptions,
 ): Promise<boolean> {
+  const scopeIds = options?.scopeWarehouseIds;
+  const hasScope = scopeIds !== undefined && scopeIds.length > 0;
+
   // Rows a release without the watermark wrote (after a rollback) still count as observations.
   const newer = await tx.warehouseStock.count({
-    where: { variantId, syncedAt: { gt: observedAt } },
-  });
-  if (newer > 0) return false;
-  // The watermark survives an empty warehouse set, which leaves no row to carry the read's start.
-  const stamped = await tx.variantMirror.updateMany({
-    where: {
-      id: variantId,
-      OR: [{ stockObservedAt: null }, { stockObservedAt: { lte: observedAt } }],
-    },
-    data: { stockObservedAt: observedAt },
-  });
-  if (stamped.count === 0) return false;
-
-  const currentWarehouseIds = stocks.map(({ warehouseId }) => warehouseId);
-  await tx.warehouseStock.deleteMany({
     where: {
       variantId,
-      ...(currentWarehouseIds.length > 0 ? { pancakeWarehouseId: { notIn: currentWarehouseIds } } : {}),
+      syncedAt: { gt: observedAt },
+      ...(hasScope ? { pancakeWarehouseId: { in: [...scopeIds] } } : {}),
     },
   });
+  if (newer > 0) return false;
+
+  const shouldStamp = options?.stampVariantWatermark ?? !hasScope;
+  if (shouldStamp) {
+    // The watermark survives an empty warehouse set, which leaves no row to carry the read's start.
+    const stamped = await tx.variantMirror.updateMany({
+      where: {
+        id: variantId,
+        OR: [{ stockObservedAt: null }, { stockObservedAt: { lte: observedAt } }],
+      },
+      data: { stockObservedAt: observedAt },
+    });
+    if (stamped.count === 0) return false;
+  }
+
+  const currentWarehouseIds = stocks.map(({ warehouseId }) => warehouseId);
+  if (hasScope) {
+    await tx.warehouseStock.deleteMany({
+      where: {
+        variantId,
+        pancakeWarehouseId: {
+          in: [...scopeIds],
+          ...(currentWarehouseIds.length > 0 ? { notIn: currentWarehouseIds } : {}),
+        },
+      },
+    });
+  } else {
+    await tx.warehouseStock.deleteMany({
+      where: {
+        variantId,
+        ...(currentWarehouseIds.length > 0 ? { pancakeWarehouseId: { notIn: currentWarehouseIds } } : {}),
+      },
+    });
+  }
+
   for (const stock of stocks) {
     await tx.warehouseStock.upsert({
       where: {
@@ -623,6 +653,9 @@ export function createCatalogMirrorRepository(
         }
 
         const internalVariantIds = new Map<string, string>();
+        const snapshotWarehouseIds = [
+          ...new Set(variations.flatMap((v) => v.warehouseStocks.map((s) => s.warehouseId))),
+        ];
         // Variants whose stock a later targeted read already wrote; this snapshot's older numbers
         // for them are not observations of the current state (see `writeObservedWarehouseStocks`).
         const newerStockVariationIds = new Set<string>();
@@ -676,6 +709,9 @@ export function createCatalogMirrorRepository(
             mirrored.id,
             variation.warehouseStocks,
             safeSyncedAt,
+            snapshotWarehouseIds.length > 0
+              ? { scopeWarehouseIds: snapshotWarehouseIds, stampVariantWatermark: true }
+              : undefined,
           );
           if (!written) newerStockVariationIds.add(variation.id);
         }
@@ -974,6 +1010,9 @@ export function createCatalogMirrorRepository(
         }
 
         const written: { variantId: string; productId: string; stock: number }[] = [];
+        const observationWarehouseIds = [
+          ...new Set(observations.flatMap((o) => o.warehouseStocks.map((s) => s.warehouseId))),
+        ];
         let superseded = 0;
         for (const observation of observations) {
           const variant = variantByVariationId.get(observation.variationId);
@@ -983,6 +1022,9 @@ export function createCatalogMirrorRepository(
             variant.id,
             observation.warehouseStocks,
             safeSyncedAt,
+            observationWarehouseIds.length > 0
+              ? { scopeWarehouseIds: observationWarehouseIds, stampVariantWatermark: true }
+              : undefined,
           );
           if (!wrote) {
             superseded += 1;
