@@ -732,6 +732,10 @@ model CatalogSyncState {
   /// The secondary shop the deployment is configured with (null: none), set under the shop's
   /// catalog-sync lock. A secondary sync writes only while this is its own shop.
   secondaryShopId Int?
+  /// Counts the times that configuration changed (any change of `secondaryShopId`), advanced under the
+  /// same lock. A secondary sync remembers the epoch it started in and writes only while it is
+  /// unchanged, so a worker from an earlier activation cannot write after A -> B -> A either.
+  secondaryEpoch Int @default(0)
   updatedAt     DateTime @updatedAt
 }
 

@@ -120,6 +120,7 @@ function racingPrisma(beforeFirstTransaction: () => Promise<void>): PrismaClient
   let first = true;
   return {
     variantMirror: prisma.variantMirror,
+    catalogSyncState: prisma.catalogSyncState,
     async $transaction(fn: unknown, options: unknown) {
       if (first) {
         first = false;
@@ -955,6 +956,62 @@ test("a worker of the previous shop cannot write after the shop was replaced, ev
 
   await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s9", 7]] }], t(30), otherSecondaryShopId);
   assert.deepEqual(await stockRows("v1"), [["secondary:920240:wh-s9", 7], ["wh-a", 1]], "only B counts");
+});
+
+test("A -> B -> A: a read of A that began before the round trip cannot write, although the shop id is A again", async () => {
+  await seedPrimary();
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(5)); // A active, A=5 stored
+
+  const result = await inFlightSync(
+    secondaryShopId,
+    async () => {
+      await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId: otherSecondaryShopId, observedAt: t(20) });
+      await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId, observedAt: t(21) }); // no sync of B in between
+    },
+    [{ displayId: "SKU-1", stocks: [["wh-s1", 9]] }],
+    t(10),
+  );
+
+  assert.equal(await activeShop(), secondaryShopId, "A is the configured shop again");
+  assert.equal(result.discarded, true, "but the read belongs to the earlier activation");
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]], "the old snapshot of A was not written");
+});
+
+test("a configuration that did not change does not end the activation a running sync belongs to", async () => {
+  await seedPrimary();
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(5));
+
+  const result = await inFlightSync(
+    secondaryShopId,
+    async () => {
+      await configureSecondaryShop(prisma, { primaryShopId, secondaryShopId, observedAt: t(20) }); // same shop: a no-op
+    },
+    [{ displayId: "SKU-1", stocks: [["wh-s1", 9]] }],
+    t(10),
+  );
+
+  assert.equal(result.discarded, false);
+  assert.deepEqual(await stockRows("v1"), [["secondary:920239:wh-s1", 9], ["wh-a", 1]]);
+});
+
+test("configure fails -> withdrawal -> a paused sync of the old shop resumes: its stock stays absent", async () => {
+  await seedPrimary();
+  await syncSecondary([{ displayId: "SKU-1", stocks: [["wh-s1", 5]] }], t(5)); // A active, A=5 stored
+
+  const result = await inFlightSync(
+    secondaryShopId,
+    async () => {
+      const { outcome } = await failedConfigurationCycle();
+      assert.ok(outcome instanceof SecondaryConfigurationError);
+    },
+    [{ displayId: "SKU-1", stocks: [["wh-s1", 9]] }],
+    t(10),
+  );
+
+  assert.equal(result.discarded, true);
+  assert.equal(await activeShop(), null, "the withdrawal stored 'no secondary shop' in the same transaction");
+  assert.deepEqual(await stockRows("v1"), [["wh-a", 1]]);
+  assert.equal(await sellable("v1"), 1, "what the storefront reads");
 });
 
 test("replacing the shop when the old one had stored NOTHING still stops the old worker: old read, change, old write, new write", async () => {

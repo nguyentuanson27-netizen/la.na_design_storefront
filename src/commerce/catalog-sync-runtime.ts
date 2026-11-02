@@ -35,7 +35,7 @@ export async function syncConfiguredPancakeCatalog({
   seams?: Readonly<{
     syncCatalog?: typeof syncPancakeCatalog;
     configureSecondary?: typeof configureSecondaryShop;
-    withdrawSecondary?: typeof purgeSecondaryWarehouseStock;
+    withdrawSecondary?: typeof configureSecondaryShop;
   }>;
 } = {}) {
   const config = readPancakeConfig();
@@ -43,7 +43,7 @@ export async function syncConfiguredPancakeCatalog({
   const repository = createCatalogMirrorRepository(prisma);
   const syncCatalog = seams.syncCatalog ?? syncPancakeCatalog;
   const configureSecondary = seams.configureSecondary ?? configureSecondaryShop;
-  const withdrawSecondary = seams.withdrawSecondary ?? purgeSecondaryWarehouseStock;
+  const withdrawSecondary = seams.withdrawSecondary ?? configureSecondaryShop;
 
   // Before the primary read, and whatever it turns out to do: what the configuration says about the
   // secondary shop (off, or another shop) is applied from the database alone. A primary outage must
@@ -114,12 +114,17 @@ async function applySecondaryConfiguration(
  */
 async function withdrawAllSecondaryStock(
   config: ReturnType<typeof readPancakeConfig>,
-  withdraw: typeof purgeSecondaryWarehouseStock,
+  withdraw: typeof configureSecondaryShop,
   clock?: () => Date,
 ): Promise<void> {
   try {
-    const removed = await withdraw(prisma, {
+    // "No secondary shop" is stored and every secondary row removed in ONE transaction under the
+    // catalog-sync lock: a worker that read the old shop before this finds another value (and another
+    // epoch) when it takes the lock, so it cannot write the rows back. The next cycle that does apply
+    // the configuration activates its shop afresh.
+    const { removed } = await withdraw(prisma, {
       primaryShopId: config.shopId,
+      secondaryShopId: null,
       observedAt: clock ? clock() : new Date(),
     });
     if (removed > 0) console.warn(`Withdrew ${removed} secondary warehouse stock row(s) until the configuration can be applied`);

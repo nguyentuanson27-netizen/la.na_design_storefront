@@ -32,12 +32,15 @@ export type SecondaryInventorySyncHooks = {
   ): Promise<ReadonlyArray<{ id: string; pancakeDisplayId: string | null; isPresent: boolean }>>;
   /**
    * The secondary shop the deployment is configured with, as stored under the shop's catalog-sync
-   * lock; `present: false` when the shop has no catalog state yet (nothing has been synced).
+   * lock; `present: false` when the shop has no catalog state yet (nothing has been synced). `epoch`
+   * counts the changes of that value: a sync is bound to the activation it started in, which the
+   * shop id alone cannot tell apart (A -> B -> A).
    */
   readActiveShop(
     tx: SyncTransaction,
     shopId: number,
-  ): Promise<Readonly<{ present: boolean; shopId: number | null }>>;
+  ): Promise<Readonly<{ present: boolean; shopId: number | null; epoch: number }>>;
+  /** Stores the configured shop and advances the epoch; called only when the value actually changes. */
   setActiveShop(tx: SyncTransaction, shopId: number, activeShopId: number | null): Promise<void>;
   /** Of the normalized SKUs, those more than one present primary variant carries (read under the lock). */
   findAmbiguousSkus(
@@ -64,14 +67,14 @@ const DEFAULT_HOOKS: SecondaryInventorySyncHooks = {
   async readActiveShop(tx, shopId) {
     const row = await tx.catalogSyncState.findUnique({
       where: { pancakeShopId: shopId },
-      select: { secondaryShopId: true },
+      select: { secondaryShopId: true, secondaryEpoch: true },
     });
-    return { present: row !== null, shopId: row?.secondaryShopId ?? null };
+    return { present: row !== null, shopId: row?.secondaryShopId ?? null, epoch: row?.secondaryEpoch ?? 0 };
   },
   async setActiveShop(tx, shopId, activeShopId) {
     await tx.catalogSyncState.updateMany({
       where: { pancakeShopId: shopId },
-      data: { secondaryShopId: activeShopId },
+      data: { secondaryShopId: activeShopId, secondaryEpoch: { increment: 1 } },
     });
   },
   observeAvailability: observeStoredStockAvailability,
@@ -126,6 +129,24 @@ export async function syncSecondaryShopInventory({
   // Sampled before the read starts, like the primary sync: a stock figure is only as new as the
   // instant its read began.
   const observedAt = clock();
+
+  // The activation this sync belongs to, taken before anything is read from the secondary shop. Every
+  // chunk below writes only while it is still the current one, which also rules out a read of A that
+  // outlived an A -> B -> A change of configuration.
+  const started = await hooks.readActiveShop(prisma as unknown as SyncTransaction, primaryShopId);
+  if (started.shopId !== secondaryShopId) {
+    warn("Secondary Pancake inventory sync discarded: this is no longer the configured secondary shop");
+    return {
+      secondaryShopId,
+      totalSecondaryVariations: 0,
+      matchedCount: 0,
+      unmatchedCount: 0,
+      ambiguousCount: 0,
+      discarded: true,
+      totalStockAggregated: 0,
+      warehouseCount: 0,
+    };
+  }
 
   const secondaryVariations = await fetchAllPancakeCatalogVariations({
     client: secondaryClient,
@@ -200,7 +221,7 @@ export async function syncSecondaryShopInventory({
         // started under an earlier configuration (feature off, shop replaced) finds another value
         // here and writes nothing, whether or not it had anything stored and whenever it began.
         const active = await hooks.readActiveShop(tx, primaryShopId);
-        if (active.shopId !== secondaryShopId) {
+        if (active.shopId !== secondaryShopId || active.epoch !== started.epoch) {
           discarded = true;
           return;
         }

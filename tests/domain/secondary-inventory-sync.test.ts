@@ -299,7 +299,7 @@ function syncHarness({
           },
           async readActiveShop() {
             hookCalls.push("readActive");
-            return { present: true, shopId: activeShop };
+            return { present: true, shopId: activeShop, epoch: 0 };
           },
           async setActiveShop() {},
           async findAmbiguousSkus(_tx, _shop, skus) {
@@ -436,7 +436,7 @@ function purgeHarness(options: { present?: boolean; activeShop?: number | null; 
     },
     async readActiveShop() {
       steps.push("readActive");
-      return { present, shopId: activeShop };
+      return { present, shopId: activeShop, epoch: 0 };
     },
     async setActiveShop(_tx: unknown, _shop: number, value: number | null) {
       steps.push(`setActive:${value}`);
@@ -591,7 +591,7 @@ test("a sync for a shop that is no longer the configured one discards everything
 
   assert.equal(result.discarded, true);
   assert.deepEqual(harness.writes, []);
-  assert.deepEqual(harness.hookCalls, ["lock:4741464", "readActive"], "nothing is locked, read or written after that");
+  assert.deepEqual(harness.hookCalls, ["readActive"], "found out before anything is read from the secondary shop; nothing is locked or written");
   assert.equal(harness.warnings.length, 1);
 });
 
@@ -627,7 +627,7 @@ test("a variation id repeated across pages refuses the whole snapshot: nothing i
   await assert.rejects(() => harness.run(), /repeats a variation id/);
 
   assert.deepEqual(harness.writes, []);
-  assert.deepEqual(harness.hookCalls, []);
+  assert.deepEqual(harness.hookCalls, ["readActive"], "only the activation was read; no lock, no write");
 });
 
 test("distinct variations that share a SKU are still summed, only a repeated id is refused", async () => {
