@@ -573,13 +573,15 @@ function buildBaseProductFilters(shopId: number, discovery: StorefrontDiscoveryQ
 
   if (discovery.query) {
     // Every word of the query must appear, in any order, ignoring Vietnamese marks and case, so
-    // "ao dai" and "váy hoa sen" both find what a shopper means. The mirrored name drops the
+    // "ao dai" and "váy hoa sen" both find what a shopper means. Stored text is composed to NFC
+    // first, because `translate()` only replaces precomposed letters and a name that arrived as
+    // base letter + combining mark ("A\u0301o") would otherwise keep its mark. The mirrored name drops the
     // Pancake product code ("SV605"), so the code and the variant display ids are searched too.
     for (const term of searchTerms(discovery.query)) {
       const pattern = `%${escapeLikeTerm(term)}%`;
       filters.push(Prisma.sql`(
-        LOWER(translate(p."name", ${FOLD_FROM}, ${FOLD_TO})) LIKE ${pattern} ESCAPE '\\'
-        OR LOWER(translate(COALESCE(p."productCode", ''), ${FOLD_FROM}, ${FOLD_TO})) LIKE ${pattern} ESCAPE '\\'
+        LOWER(translate(NORMALIZE(p."name", NFC), ${FOLD_FROM}, ${FOLD_TO})) LIKE ${pattern} ESCAPE '\\'
+        OR LOWER(translate(NORMALIZE(COALESCE(p."productCode", ''), NFC), ${FOLD_FROM}, ${FOLD_TO})) LIKE ${pattern} ESCAPE '\\'
         OR EXISTS (
           SELECT 1
           FROM "VariantMirror" vm

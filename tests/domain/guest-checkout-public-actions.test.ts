@@ -299,6 +299,11 @@ test("bank transfer is forwarded to the checkout once it is enabled", async () =
 
 const okSubmit = async () => ({ ok: true as const, status: "CONFIRMED" as const, orderCode: "LA-002" });
 const cartSession = () => ({ read: () => "server-cart-id", clear: () => undefined });
+type Limit = NonNullable<Parameters<typeof submitGuestCheckoutPublicAction>[0]["phoneOrderLimit"]>;
+const admitting = (result: Awaited<ReturnType<Limit["admit"]>>, calls: string[] = []): Limit => ({
+  admit: async (phone, cartId) => { calls.push(`admit ${phone} ${cartId}`); return result; },
+  release: async (phone, cartId) => { calls.push(`release ${phone} ${cartId}`); },
+});
 
 test("a phone that has used its daily orders is refused before the order is submitted", async () => {
   let submitted = false;
@@ -307,7 +312,7 @@ test("a phone that has used its daily orders is refused before the order is subm
       cartSession: cartSession(),
       consumeAttempt: allowAttempt,
       submitCheckout: async () => { submitted = true; return okSubmit(); },
-      phoneOrderLimit: { isPhoneAllowed: async () => false, recordPhoneOrder: async () => undefined },
+      phoneOrderLimit: admitting("REFUSED"),
     },
     makeFormData(),
   );
@@ -315,38 +320,77 @@ test("a phone that has used its daily orders is refused before the order is subm
   assert.equal(submitted, false);
 });
 
-test("the phone is checked and counted in its normalized form, and only once an order is placed", async () => {
-  const seen: string[] = [];
-  const recorded: string[] = [];
+test("the slot is reserved for this cart in the normalized phone form before the order is submitted", async () => {
+  const calls: string[] = [];
   const form = makeFormData();
   form.set("phone", "+84 901 234 567");
   const result = await submitGuestCheckoutPublicAction(
     {
       cartSession: cartSession(),
       consumeAttempt: allowAttempt,
-      submitCheckout: okSubmit,
-      phoneOrderLimit: {
-        isPhoneAllowed: async (phone) => { seen.push(phone); return true; },
-        recordPhoneOrder: async (phone) => { recorded.push(phone); },
-      },
+      submitCheckout: async () => { calls.push("submit"); return okSubmit(); },
+      phoneOrderLimit: admitting("ADMITTED", calls),
     },
     form,
   );
   assert.equal(result.ok, true);
-  assert.deepEqual(seen, ["0901234567"]);
-  assert.deepEqual(recorded, ["0901234567"]);
+  // Reserved first, and a confirmed order keeps its slot (no release).
+  assert.deepEqual(calls, ["admit 0901234567 server-cart-id", "submit"]);
+});
 
-  const failedRecorded: string[] = [];
+test("an order that certainly does not exist gives its reserved slot back", async () => {
+  for (const failure of [
+    { ok: false as const, status: "RETRYABLE" as const, reason: "CART_CHANGED" as const },
+    { ok: false as const, status: "RETRYABLE" as const, reason: "INVALID_PHONE" as const },
+    { ok: false as const, status: "RETRYABLE" as const, reason: "CHECKOUT_UNAVAILABLE" as const },
+  ]) {
+    const calls: string[] = [];
+    await submitGuestCheckoutPublicAction(
+      { cartSession: cartSession(), consumeAttempt: allowAttempt, submitCheckout: async () => failure, phoneOrderLimit: admitting("ADMITTED", calls) },
+      makeFormData(),
+    );
+    assert.deepEqual(calls, ["admit 0901234567 server-cart-id", "release 0901234567 server-cart-id"], failure.reason);
+  }
+});
+
+test("an order that may exist keeps its slot", async () => {
+  for (const unsure of [
+    { ok: false as const, status: "PROCESSING" as const, orderCode: "LA-9" },
+    { ok: false as const, status: "SYNC_UNKNOWN" as const, orderCode: "LA-9" },
+    { ok: false as const, status: "RETRYABLE" as const, reason: "CHECKOUT_UNAVAILABLE" as const, orderCode: "LA-9" },
+  ]) {
+    const calls: string[] = [];
+    await submitGuestCheckoutPublicAction(
+      { cartSession: cartSession(), consumeAttempt: allowAttempt, submitCheckout: async () => unsure, phoneOrderLimit: admitting("ADMITTED", calls) },
+      makeFormData(),
+    );
+    assert.deepEqual(calls, ["admit 0901234567 server-cart-id"], `${unsure.status}`);
+  }
+});
+
+test("a submit that throws keeps the slot and the error still propagates", async () => {
+  const calls: string[] = [];
+  await assert.rejects(() =>
+    submitGuestCheckoutPublicAction(
+      { cartSession: cartSession(), consumeAttempt: allowAttempt, submitCheckout: async () => { throw new Error("boom"); }, phoneOrderLimit: admitting("ADMITTED", calls) },
+      makeFormData(),
+    ),
+  );
+  assert.deepEqual(calls, ["admit 0901234567 server-cart-id"]);
+});
+
+test("a retry that finds the cart's earlier reservation never releases someone else's slot", async () => {
+  const calls: string[] = [];
   await submitGuestCheckoutPublicAction(
     {
       cartSession: cartSession(),
       consumeAttempt: allowAttempt,
       submitCheckout: async () => ({ ok: false as const, status: "RETRYABLE" as const, reason: "CART_CHANGED" as const }),
-      phoneOrderLimit: { isPhoneAllowed: async () => true, recordPhoneOrder: async (phone) => { failedRecorded.push(phone); } },
+      phoneOrderLimit: admitting("ALREADY_ADMITTED", calls),
     },
     makeFormData(),
   );
-  assert.deepEqual(failedRecorded, []);
+  assert.deepEqual(calls, ["admit 0901234567 server-cart-id"]);
 });
 
 test("a broken phone counter never costs a shopper their order", async () => {
@@ -356,17 +400,29 @@ test("a broken phone counter never costs a shopper their order", async () => {
       consumeAttempt: allowAttempt,
       submitCheckout: okSubmit,
       phoneOrderLimit: {
-        isPhoneAllowed: async () => { throw new Error("db down"); },
-        recordPhoneOrder: async () => { throw new Error("db down"); },
+        admit: async () => { throw new Error("db down"); },
+        release: async () => { throw new Error("db down"); },
       },
     },
     makeFormData(),
   );
   assert.equal(result.ok, true);
+
+  // And a release that fails after a certain failure is swallowed, not surfaced.
+  const failed = await submitGuestCheckoutPublicAction(
+    {
+      cartSession: cartSession(),
+      consumeAttempt: allowAttempt,
+      submitCheckout: async () => ({ ok: false as const, status: "RETRYABLE" as const, reason: "CART_CHANGED" as const }),
+      phoneOrderLimit: { admit: async () => "ADMITTED", release: async () => { throw new Error("db down"); } },
+    },
+    makeFormData(),
+  );
+  assert.equal(failed.ok, false);
 });
 
-test("a malformed phone is left to the submit's own validation and is not counted", async () => {
-  let checked = false;
+test("a malformed phone takes no reservation and is left to the submit's own validation", async () => {
+  const calls: string[] = [];
   const form = makeFormData();
   form.set("phone", "12345");
   await submitGuestCheckoutPublicAction(
@@ -374,9 +430,9 @@ test("a malformed phone is left to the submit's own validation and is not counte
       cartSession: cartSession(),
       consumeAttempt: allowAttempt,
       submitCheckout: async () => ({ ok: false as const, status: "RETRYABLE" as const, reason: "INVALID_PHONE" as const }),
-      phoneOrderLimit: { isPhoneAllowed: async () => { checked = true; return true; }, recordPhoneOrder: async () => undefined },
+      phoneOrderLimit: admitting("ADMITTED", calls),
     },
     form,
   );
-  assert.equal(checked, false);
+  assert.deepEqual(calls, []);
 });

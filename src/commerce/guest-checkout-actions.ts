@@ -50,8 +50,8 @@ async function createGuestCheckoutActionDependencies(metaContext: MetaPurchaseRe
     },
     isBankTransferEnabled: () => readBankTransferConfig() !== null,
     phoneOrderLimit: {
-      isPhoneAllowed: (phone: string) => rateLimiter.isPhoneAllowed({ phone }),
-      recordPhoneOrder: (phone: string) => rateLimiter.recordPhoneOrder({ phone }),
+      admit: (phone: string, cartId: string) => rateLimiter.admitPhoneOrder({ phone, cartId }),
+      release: (phone: string, cartId: string) => rateLimiter.releasePhoneOrder({ phone, cartId }),
     },
     readAttribution: () => formatAdAttributionNote(cookieStore.get(AD_ATTRIBUTION_COOKIE)?.value),
     submitCheckout: (input: Parameters<typeof submitGuestCheckoutByCart>[0]) => submitGuestCheckoutByCart({ ...input, metaContext }),

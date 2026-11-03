@@ -91,6 +91,8 @@ async function cleanupDatabase() {
     });
     await prisma.cart.deleteMany({ where: { id: cartId } });
   }
+  // The per-phone daily limit keeps a keyed, pseudonymous counter and claim for the number used here.
+  await prisma.rateLimit.deleteMany({ where: { id: { startsWith: "checkout-phone-" } } });
 }
 
 try {
@@ -195,6 +197,10 @@ try {
   assert.equal(clientBucket?.count, 1, "real Server Action must consume the trusted-client checkout bucket");
   assert.equal(order?.state, "CONFIRMED");
   assert.equal(order?.pancakeOrderId, "990001");
+  // The confirmed order kept its reservation against the number's daily limit, and nothing stores the number itself.
+  const phoneRows = await prisma.rateLimit.findMany({ where: { id: { startsWith: "checkout-phone-" } } });
+  assert.deepEqual(phoneRows.map((row) => row.id.split(":")[0]).sort(), ["checkout-phone-claim", "checkout-phone-day"]);
+  assert.equal(phoneRows.some((row) => row.id.includes("0901234567") || row.key.includes("0901234567")), false);
 
   console.log("Guest checkout Server Action HTTP smoke passed: request cookie and trusted client identity reached both limiters, confirmed fast-path cleared the cart cookie, and no live Pancake order was needed.");
 } finally {

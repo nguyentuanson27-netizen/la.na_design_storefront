@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 
 import type { PrismaClient } from "../generated/prisma/client.ts";
 
@@ -35,6 +35,11 @@ type GuestCheckoutRateLimiterOptions = Readonly<{
   clientHourlyWindowMs?: number;
   maxPhoneDailyOrders?: number;
   phoneDailyWindowMs?: number;
+  /**
+   * Server-only secret the phone buckets are keyed with. Defaults to `BETTER_AUTH_SECRET`, which the
+   * app already refuses to start without. Never stored in the database.
+   */
+  phoneKeySecret?: string;
   maxAttempts?: number;
   windowMs?: number;
   maxClientAttempts?: number;
@@ -159,7 +164,6 @@ export function createGuestCheckoutRateLimiter(
     "Checkout phone daily window",
   );
   const clientHourlyCappedCount = cappedCount(maxClientHourlyAttempts, "Checkout client hourly max attempts");
-  const phoneDailyCappedCount = cappedCount(maxPhoneDailyOrders, "Checkout phone daily max orders");
   const upsellPageClientCappedCount = cappedCount(maxUpsellPageClientAttempts, "Checkout upsell page client max attempts");
   const upsellBrowseClientCappedCount = cappedCount(maxUpsellBrowseClientAttempts, "Checkout upsell browse client max attempts");
   const upsellClientCappedCount = cappedCount(maxUpsellClientAttempts, "Checkout upsell client max attempts");
@@ -317,50 +321,135 @@ export function createGuestCheckoutRateLimiter(
     });
   }
 
+  const MIN_PHONE_KEY_SECRET_LENGTH = 32;
+  let phoneKey: Buffer | null = null;
+
   /**
-   * One bucket per phone number, keyed by a hash so the table never holds the number itself. The
-   * caller passes the normalized national form (`0912345678`), so every way of typing one number
-   * lands in the same bucket.
+   * HMAC-SHA-256 of the normalized number under a server-only key, so a copy of the `rateLimit`
+   * table cannot be matched against hashes of candidate numbers: the space of Vietnamese numbers is
+   * small enough that an unkeyed hash would only pseudonymize them. The key is derived per purpose
+   * (`...:v2`), so the app secret is never used directly and a future scheme is a new version.
+   * Changing the secret only starts the counters afresh.
    */
-  function phoneBucketKey(phone: string): string {
+  function phoneDigest(phone: string): string {
     if (typeof phone !== "string" || !/^0\d{9,10}$/.test(phone)) {
       throw new TypeError("Checkout phone key must be a normalized Vietnamese phone number");
     }
-    return `checkout-phone-day:v1:${createHash("sha256").update(phone).digest("hex")}`;
+    if (phoneKey === null) {
+      const secret = options.phoneKeySecret ?? process.env.BETTER_AUTH_SECRET ?? "";
+      if (secret.trim().length < MIN_PHONE_KEY_SECRET_LENGTH) {
+        throw new TypeError("Checkout phone limiter needs a server secret of at least 32 characters");
+      }
+      phoneKey = createHmac("sha256", secret).update("la-na:checkout-phone-limit:v2").digest();
+    }
+    return createHmac("sha256", phoneKey).update(phone).digest("hex");
   }
 
-  /** Whether this number may place another order today. Reads only; it spends nothing. */
-  async function isPhoneAllowed({
+  const phoneCounterKey = (phone: string) => `checkout-phone-day:v2:${phoneDigest(phone)}`;
+  // One claim per (phone, cart): a retry of the same order finds its claim and is not counted twice.
+  const phoneClaimKey = (phone: string, cartId: string) =>
+    `checkout-phone-claim:v2:${phoneDigest(phone)}:${requireCartId(cartId)}`;
+
+  type PhoneAdmission = "ADMITTED" | "ALREADY_ADMITTED" | "REFUSED";
+
+  /**
+   * Reserves one of this number's daily orders for this cart, atomically, before the order is
+   * created anywhere else. Two carts racing at the ceiling cannot both pass: the counter row is the
+   * single point they serialize on, and it only advances while it is under the ceiling.
+   *
+   * - `ADMITTED`: a new reservation was taken; the caller must `releasePhoneOrder` if the order then
+   *   fails for certain, and leaves it in place otherwise (confirmed, or an order may exist).
+   * - `ALREADY_ADMITTED`: this cart already holds one (a retry of the same order); nothing is spent.
+   * - `REFUSED`: the number has used its orders for the day; nothing was reserved.
+   */
+  async function admitPhoneOrder({
     phone,
+    cartId,
     now = new Date(),
   }: {
     phone: string;
+    cartId: string;
     now?: Date;
-  }): Promise<boolean> {
-    const key = phoneBucketKey(phone);
-    const resetBefore = BigInt(requireNow(now).getTime()) - BigInt(phoneDailyWindowMs);
-    const rows = await client.$queryRaw<Array<{ count: number }>>`
-      SELECT "count" FROM "rateLimit" WHERE "id" = ${key} AND "lastRequest" > ${resetBefore}
-    `;
-    return (rows[0]?.count ?? 0) < maxPhoneDailyOrders;
+  }): Promise<PhoneAdmission> {
+    const counterKey = phoneCounterKey(phone);
+    const claimKey = phoneClaimKey(phone, cartId);
+    const nowMs = BigInt(requireNow(now).getTime());
+    const resetBefore = nowMs - BigInt(phoneDailyWindowMs);
+
+    const admission = await client.$transaction(async (tx) => {
+      const claimed = await tx.$queryRaw<Array<{ id: string }>>`
+        INSERT INTO "rateLimit" AS c ("id", "key", "count", "lastRequest")
+        VALUES (${claimKey}, ${claimKey}, 1, ${nowMs})
+        ON CONFLICT ("id") DO UPDATE SET "count" = 1, "lastRequest" = ${nowMs}
+        WHERE c."lastRequest" <= ${resetBefore}
+        RETURNING "id"
+      `;
+      if (claimed.length === 0) return "ALREADY_ADMITTED" as const;
+
+      const counted = await tx.$queryRaw<Array<{ count: number }>>`
+        INSERT INTO "rateLimit" AS existing ("id", "key", "count", "lastRequest")
+        VALUES (${counterKey}, ${counterKey}, 1, ${nowMs})
+        ON CONFLICT ("id") DO UPDATE SET
+          "count" = CASE WHEN existing."lastRequest" <= ${resetBefore} THEN 1 ELSE existing."count" + 1 END,
+          "lastRequest" = CASE WHEN existing."lastRequest" <= ${resetBefore} THEN ${nowMs} ELSE existing."lastRequest" END
+        WHERE existing."lastRequest" <= ${resetBefore} OR existing."count" < ${maxPhoneDailyOrders}
+        RETURNING "count"
+      `;
+      if (counted.length === 0) {
+        // At the ceiling: give back the claim taken above, in the same transaction.
+        await tx.$executeRaw`DELETE FROM "rateLimit" WHERE "id" = ${claimKey}`;
+        return "REFUSED" as const;
+      }
+      return "ADMITTED" as const;
+    });
+
+    if (admission === "ADMITTED") await sweepExpiredPhoneRows(nowMs).catch(() => undefined);
+    return admission;
   }
 
-  /** Counts an order that was actually placed for this number. */
-  async function recordPhoneOrder({
+  /**
+   * Gives back a reservation `admitPhoneOrder` took for this cart, when the order is known not to
+   * exist. Does nothing for a cart that holds none, so calling it twice never frees a second slot.
+   */
+  async function releasePhoneOrder({
     phone,
+    cartId,
     now = new Date(),
   }: {
     phone: string;
+    cartId: string;
     now?: Date;
   }): Promise<void> {
-    await consumeBucket({
-      bucketKey: phoneBucketKey(phone),
-      now,
-      windowMs: phoneDailyWindowMs,
-      maxAttempts: maxPhoneDailyOrders,
-      cap: phoneDailyCappedCount,
+    const counterKey = phoneCounterKey(phone);
+    const claimKey = phoneClaimKey(phone, cartId);
+    const resetBefore = BigInt(requireNow(now).getTime()) - BigInt(phoneDailyWindowMs);
+
+    await client.$transaction(async (tx) => {
+      const deleted = await tx.$queryRaw<Array<{ id: string }>>`
+        DELETE FROM "rateLimit" WHERE "id" = ${claimKey} AND "lastRequest" > ${resetBefore} RETURNING "id"
+      `;
+      if (deleted.length === 0) return;
+      await tx.$executeRaw`
+        UPDATE "rateLimit" SET "count" = GREATEST("count" - 1, 0)
+        WHERE "id" = ${counterKey} AND "lastRequest" > ${resetBefore}
+      `;
     });
   }
 
-  return { consume, consumeClient, consumeClientHourly, isPhoneAllowed, recordPhoneOrder, consumeGeoClient, consumeUpsellClient, consumeUpsellBrowseClient, consumeUpsellPageClient };
+  // Expired counters and claims hold nothing useful and are pseudonymous personal data, so each
+  // admission removes a bounded batch of them; the same pattern as the other pseudonymous limiters.
+  async function sweepExpiredPhoneRows(nowMs: bigint): Promise<void> {
+    const staleBefore = nowMs - BigInt(phoneDailyWindowMs);
+    await client.$executeRaw`
+      WITH stale AS (
+        SELECT "id" FROM "rateLimit"
+        WHERE ("id" LIKE 'checkout-phone-day:%' OR "id" LIKE 'checkout-phone-claim:%')
+          AND "lastRequest" <= ${staleBefore}
+        ORDER BY "lastRequest", "id" LIMIT 50 FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM "rateLimit" AS target USING stale WHERE target."id" = stale."id"
+    `;
+  }
+
+  return { consume, consumeClient, consumeClientHourly, admitPhoneOrder, releasePhoneOrder, consumeGeoClient, consumeUpsellClient, consumeUpsellBrowseClient, consumeUpsellPageClient };
 }

@@ -28,14 +28,16 @@ export type GuestCheckoutPublicActionDependencies = {
   /** Whether bank transfer may be chosen right now. Absent means it is off. */
   isBankTransferEnabled?: () => boolean;
   /**
-   * Daily per-phone order ceiling. `isPhoneAllowed` is read before the order is submitted and
-   * `recordPhoneOrder` after one is actually placed. Both are protections added on top of the
-   * checkout, so a failure in either never costs a shopper their order: an unreadable counter
-   * lets the order through, and an uncounted order is a missed count, not a refusal.
+   * Daily per-phone order ceiling, taken as a reservation before the order is submitted so that
+   * carts racing on one number cannot all pass a check made before any of them is counted.
+   * `admit` reserves (or finds this cart's earlier reservation); `release` gives a reservation back
+   * when the order is known not to exist. It is a protection added on top of the checkout, so a
+   * failure in either never costs a shopper their order: an unreadable counter lets the order
+   * through, and a reservation that cannot be released is a missed refund, not a refusal.
    */
   phoneOrderLimit?: {
-    isPhoneAllowed(phone: string): Promise<boolean>;
-    recordPhoneOrder(phone: string): Promise<void>;
+    admit(phone: string, cartId: string): Promise<"ADMITTED" | "ALREADY_ADMITTED" | "REFUSED">;
+    release(phone: string, cartId: string): Promise<void>;
   };
 };
 
@@ -99,18 +101,20 @@ export async function submitGuestCheckoutPublicAction(
     };
   }
 
-  // A malformed number is not counted here: the submit below refuses it as INVALID_PHONE.
+  // A malformed number takes no reservation: the submit below refuses it as INVALID_PHONE.
   const phone = normalizeVietnamPhone(formData.get("phone"));
+  let reservedHere = false;
   if (phone !== null && phoneOrderLimit) {
-    let phoneAllowed = true;
+    let admission: "ADMITTED" | "ALREADY_ADMITTED" | "REFUSED" = "ALREADY_ADMITTED";
     try {
-      phoneAllowed = await phoneOrderLimit.isPhoneAllowed(phone);
+      admission = await phoneOrderLimit.admit(phone, cartId);
     } catch {
-      phoneAllowed = true;
+      // The counter is unreadable: the order goes ahead, unprotected rather than refused.
     }
-    if (!phoneAllowed) {
+    if (admission === "REFUSED") {
       return { ok: false, status: "RETRYABLE", reason: "TOO_MANY_ORDERS" };
     }
+    reservedHere = admission === "ADMITTED";
   }
 
   const result = await submitCheckout({
@@ -127,14 +131,26 @@ export async function submitGuestCheckoutPublicAction(
 
   if (result.ok) {
     cartSession.clear();
-    if (phone !== null && phoneOrderLimit) {
-      try {
-        await phoneOrderLimit.recordPhoneOrder(phone);
-      } catch {
-        // The order is placed; a missed count never turns that into a failure.
-      }
+  } else if (reservedHere && phone !== null && phoneOrderLimit && orderCertainlyAbsent(result)) {
+    try {
+      await phoneOrderLimit.release(phone, cartId);
+    } catch {
+      // Best effort: an unreleased slot expires with its day.
     }
   }
 
   return result;
+}
+
+/**
+ * Whether a refused submit left no order anywhere, so its reservation can be given back. A pending
+ * or unknown order (`PROCESSING`, `SYNC_UNKNOWN`), or a refusal that still names an order code, may
+ * exist outside this system and keeps its slot; a retry from the same cart finds the same
+ * reservation and is not counted again. A submit that throws is treated the same way, and is left
+ * to propagate.
+ */
+function orderCertainlyAbsent(result: GuestCheckoutSubmitResult): boolean {
+  if (result.ok) return false;
+  if (result.status === "PRICE_CHANGED") return true;
+  return result.status === "RETRYABLE" && result.orderCode === undefined;
 }
