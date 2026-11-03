@@ -1,4 +1,5 @@
 import type { GuestCheckoutSubmitResult } from "./guest-checkout-submit.ts";
+import { submissionDisposition } from "./submission-disposition.ts";
 import { normalizeVietnamPhone } from "./vietnam-phone.ts";
 
 type GuestCheckoutCartSession = {
@@ -131,7 +132,7 @@ export async function submitGuestCheckoutPublicAction(
 
   if (result.ok) {
     cartSession.clear();
-  } else if (reservedHere && phone !== null && phoneOrderLimit && orderCertainlyAbsent(result)) {
+  } else if (reservedHere && phone !== null && phoneOrderLimit && submissionDisposition(result) === "NOT_SENT") {
     try {
       await phoneOrderLimit.release(phone, cartId);
     } catch {
@@ -140,17 +141,4 @@ export async function submitGuestCheckoutPublicAction(
   }
 
   return result;
-}
-
-/**
- * Whether a refused submit left no order anywhere, so its reservation can be given back. A pending
- * or unknown order (`PROCESSING`, `SYNC_UNKNOWN`), or a refusal that still names an order code, may
- * exist outside this system and keeps its slot; a retry from the same cart finds the same
- * reservation and is not counted again. A submit that throws is treated the same way, and is left
- * to propagate.
- */
-function orderCertainlyAbsent(result: GuestCheckoutSubmitResult): boolean {
-  if (result.ok) return false;
-  if (result.status === "PRICE_CHANGED") return true;
-  return result.status === "RETRYABLE" && result.orderCode === undefined;
 }

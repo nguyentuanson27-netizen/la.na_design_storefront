@@ -343,6 +343,11 @@ test("an order that certainly does not exist gives its reserved slot back", asyn
     { ok: false as const, status: "RETRYABLE" as const, reason: "CART_CHANGED" as const },
     { ok: false as const, status: "RETRYABLE" as const, reason: "INVALID_PHONE" as const },
     { ok: false as const, status: "RETRYABLE" as const, reason: "CHECKOUT_UNAVAILABLE" as const },
+    // The local order row has a code even when nothing reached Pancake (a capacity refusal, or an
+    // order Pancake rejected outright), so a code is not evidence that an order exists.
+    { ok: false as const, status: "RETRYABLE" as const, reason: "CART_CHANGED" as const, orderCode: "LA-local-only" },
+    { ok: false as const, status: "RETRYABLE" as const, reason: "CHECKOUT_UNAVAILABLE" as const, orderCode: "LA-rejected" },
+    { ok: false as const, status: "RETRYABLE" as const, reason: "SERVICE_UNAVAILABLE" as const, orderCode: "LA-unvalidated" },
   ]) {
     const calls: string[] = [];
     await submitGuestCheckoutPublicAction(
@@ -357,7 +362,6 @@ test("an order that may exist keeps its slot", async () => {
   for (const unsure of [
     { ok: false as const, status: "PROCESSING" as const, orderCode: "LA-9" },
     { ok: false as const, status: "SYNC_UNKNOWN" as const, orderCode: "LA-9" },
-    { ok: false as const, status: "RETRYABLE" as const, reason: "CHECKOUT_UNAVAILABLE" as const, orderCode: "LA-9" },
   ]) {
     const calls: string[] = [];
     await submitGuestCheckoutPublicAction(

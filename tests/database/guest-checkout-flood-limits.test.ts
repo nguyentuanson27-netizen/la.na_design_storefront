@@ -4,7 +4,9 @@ import test from "node:test";
 import { createHash, createHmac } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import { submitGuestCheckoutPublicAction } from "../../src/commerce/guest-checkout-public-actions.ts";
 import { createGuestCheckoutRateLimiter } from "../../src/commerce/guest-checkout-rate-limit.ts";
+import { createGuestCheckoutSubmitService } from "../../src/commerce/guest-checkout-submit.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -150,4 +152,102 @@ test("the limiter refuses to run without a real server secret, and only takes a 
   const limiter = limiterFor();
   await assert.rejects(() => limiter.admitPhoneOrder({ phone: "+84912345678", cartId: cart(1), now: start }), TypeError);
   await assert.rejects(() => limiter.releasePhoneOrder({ phone: "abc", cartId: cart(1), now: start }), TypeError);
+});
+
+// --- the whole path: real limiter, real submit service, public action -----------------------------
+
+type SubmissionOutcome = Parameters<typeof createGuestCheckoutSubmitService>[0]["orderSubmission"]["submit"];
+const orderRow = (n: number) => ({
+  id: `order-${n}`,
+  publicCode: `LA-${n}`,
+  state: "DRAFT" as const,
+  merchandiseSubtotalVnd: BigInt(500_000),
+  shippingFeeVnd: BigInt(30_000),
+  totalVnd: BigInt(530_000),
+  lines: [{ variantId: "variant-1", quantity: 1 }],
+});
+
+/** One shopper placing one order from cart `n`, through the limiter that is under test. */
+function placeOrder(
+  n: number,
+  outcome: { capacityRefuses?: true; submission?: Awaited<ReturnType<SubmissionOutcome>> },
+  limiter: ReturnType<typeof limiterFor>,
+) {
+  const service = createGuestCheckoutSubmitService({
+    snapshot: {
+      async create() {
+        return { ok: true as const, order: orderRow(n), verifiedFulfillmentStateByVariantId: new Map() };
+      },
+    } as never,
+    orderSubmission: {
+      async submit() {
+        if (!outcome.submission) throw new Error("must not be sent");
+        return outcome.submission;
+      },
+    } as never,
+    generatePublicCode: () => `LA-p${n}`,
+    ...(outcome.capacityRefuses
+      ? {
+          capacity: {
+            async reserveOrderCapacity() {
+              return { ok: false as const, reason: "standard-would-go-negative" as const, refusedVariantId: "variant-1" };
+            },
+            async transitionReservation() {
+              return true;
+            },
+          } as never,
+        }
+      : {}),
+  });
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ name: "Nguyễn Văn A", phone, provinceRef: "province-01", communeRef: "commune-0001", detail: "12 Đường A" })) form.set(key, value);
+  const thisCart = cart(900 + n);
+  return submitGuestCheckoutPublicAction(
+    {
+      cartSession: { read: () => thisCart, clear: () => undefined },
+      consumeAttempt: async () => true,
+      submitCheckout: (input) =>
+        service.submit({ cartId: input.cartId, shopId: 920_007, checkoutInput: { name: "Nguyễn Văn A", phone, provinceRef: "province-01", communeRef: "commune-0001", detail: "12 Đường A", note: null } as never, now: start }),
+      phoneOrderLimit: {
+        admit: (p, c) => limiter.admitPhoneOrder({ phone: p, cartId: c, now: start }),
+        release: (p, c) => limiter.releasePhoneOrder({ phone: p, cartId: c, now: start }),
+      },
+    },
+    form,
+  );
+}
+
+test("orders that certainly were never sent do not use up the number's daily orders", async () => {
+  await cleanup();
+  const limiter = limiterFor({ maxPhoneDailyOrders: 5 });
+
+  // Five different carts, each refused at the capacity gate with a local order code and nothing sent.
+  for (let n = 1; n <= 5; n += 1) {
+    const refused = await placeOrder(n, { capacityRefuses: true }, limiter);
+    assert.deepEqual(refused, { ok: false, status: "RETRYABLE", reason: "CART_CHANGED", orderCode: `LA-${n}` });
+  }
+  assert.equal((await counterRow(phone))?.count, 0, "none of them took a slot");
+
+  // Five more, each rejected outright by Pancake (HTTP 4xx): also nothing to ship.
+  for (let n = 6; n <= 10; n += 1) {
+    await placeOrder(n, { submission: { ok: false, state: "REJECTED", reason: "ORDER_REJECTED" } as never }, limiter);
+  }
+  assert.equal((await counterRow(phone))?.count, 0);
+
+  // So a sixth, real order still goes through, and only it is counted.
+  const placed = await placeOrder(11, { submission: { ok: true, state: "CONFIRMED", pancakeOrderId: "700001" } as never }, limiter);
+  assert.equal(placed.ok, true);
+  assert.equal((await counterRow(phone))?.count, 1);
+});
+
+test("orders that may exist keep their slot, so unknown outcomes still reach the ceiling", async () => {
+  await cleanup();
+  const limiter = limiterFor({ maxPhoneDailyOrders: 5 });
+  for (let n = 1; n <= 5; n += 1) {
+    const unknown = await placeOrder(n, { submission: { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" } as never }, limiter);
+    assert.equal(unknown.ok === false && unknown.status, "SYNC_UNKNOWN");
+  }
+  assert.equal((await counterRow(phone))?.count, 5);
+  const sixth = await placeOrder(6, { submission: { ok: true, state: "CONFIRMED", pancakeOrderId: "700002" } as never }, limiter);
+  assert.deepEqual(sixth, { ok: false, status: "RETRYABLE", reason: "TOO_MANY_ORDERS" });
 });
