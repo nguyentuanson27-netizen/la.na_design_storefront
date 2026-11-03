@@ -1,4 +1,6 @@
 import type { GuestCheckoutSubmitResult } from "./guest-checkout-submit.ts";
+import { submissionDisposition } from "./submission-disposition.ts";
+import { normalizeVietnamPhone } from "./vietnam-phone.ts";
 
 type GuestCheckoutCartSession = {
   read(): string | null;
@@ -26,6 +28,18 @@ export type GuestCheckoutPublicActionDependencies = {
   readAttribution?: () => string | null;
   /** Whether bank transfer may be chosen right now. Absent means it is off. */
   isBankTransferEnabled?: () => boolean;
+  /**
+   * Daily per-phone order ceiling, taken as a reservation before the order is submitted so that
+   * carts racing on one number cannot all pass a check made before any of them is counted.
+   * `admit` reserves (or finds this cart's earlier reservation); `release` gives a reservation back
+   * when the order is known not to exist. It is a protection added on top of the checkout, so a
+   * failure in either never costs a shopper their order: an unreadable counter lets the order
+   * through, and a reservation that cannot be released is a missed refund, not a refusal.
+   */
+  phoneOrderLimit?: {
+    admit(phone: string, cartId: string): Promise<"ADMITTED" | "ALREADY_ADMITTED" | "REFUSED">;
+    release(phone: string, cartId: string): Promise<void>;
+  };
 };
 
 function checkoutInputFromFormData(formData: FormData, attribution: string | null) {
@@ -51,7 +65,7 @@ function readAttributionSafely(readAttribution: (() => string | null) | undefine
 }
 
 export async function submitGuestCheckoutPublicAction(
-  { cartSession, consumeAttempt, submitCheckout, readAttribution, isBankTransferEnabled }: GuestCheckoutPublicActionDependencies,
+  { cartSession, consumeAttempt, submitCheckout, readAttribution, isBankTransferEnabled, phoneOrderLimit }: GuestCheckoutPublicActionDependencies,
   formData: FormData,
 ): Promise<GuestCheckoutSubmitResult> {
   // A stale page or a hand-built request can still post BANK_TRANSFER after the owner turned it
@@ -88,6 +102,22 @@ export async function submitGuestCheckoutPublicAction(
     };
   }
 
+  // A malformed number takes no reservation: the submit below refuses it as INVALID_PHONE.
+  const phone = normalizeVietnamPhone(formData.get("phone"));
+  let reservedHere = false;
+  if (phone !== null && phoneOrderLimit) {
+    let admission: "ADMITTED" | "ALREADY_ADMITTED" | "REFUSED" = "ALREADY_ADMITTED";
+    try {
+      admission = await phoneOrderLimit.admit(phone, cartId);
+    } catch {
+      // The counter is unreadable: the order goes ahead, unprotected rather than refused.
+    }
+    if (admission === "REFUSED") {
+      return { ok: false, status: "RETRYABLE", reason: "TOO_MANY_ORDERS" };
+    }
+    reservedHere = admission === "ADMITTED";
+  }
+
   const result = await submitCheckout({
     cartId,
     checkoutInput: checkoutInputFromFormData(formData, readAttributionSafely(readAttribution)),
@@ -102,6 +132,12 @@ export async function submitGuestCheckoutPublicAction(
 
   if (result.ok) {
     cartSession.clear();
+  } else if (reservedHere && phone !== null && phoneOrderLimit && submissionDisposition(result) === "NOT_SENT") {
+    try {
+      await phoneOrderLimit.release(phone, cartId);
+    } catch {
+      // Best effort: an unreleased slot expires with its day.
+    }
   }
 
   return result;

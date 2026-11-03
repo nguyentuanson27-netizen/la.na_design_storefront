@@ -43,9 +43,16 @@ async function createGuestCheckoutActionDependencies(metaContext: MetaPurchaseRe
       if (!(await rateLimiter.consumeClient({ clientKey, now }))) {
         return false;
       }
+      if (!(await rateLimiter.consumeClientHourly({ clientKey, now }))) {
+        return false;
+      }
       return rateLimiter.consume({ cartId, now });
     },
     isBankTransferEnabled: () => readBankTransferConfig() !== null,
+    phoneOrderLimit: {
+      admit: (phone: string, cartId: string) => rateLimiter.admitPhoneOrder({ phone, cartId }),
+      release: (phone: string, cartId: string) => rateLimiter.releasePhoneOrder({ phone, cartId }),
+    },
     readAttribution: () => formatAdAttributionNote(cookieStore.get(AD_ATTRIBUTION_COOKIE)?.value),
     submitCheckout: (input: Parameters<typeof submitGuestCheckoutByCart>[0]) => submitGuestCheckoutByCart({ ...input, metaContext }),
   };

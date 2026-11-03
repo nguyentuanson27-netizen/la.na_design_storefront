@@ -1971,6 +1971,37 @@ body:has(.admin-shell) .pancake-chat-facade {
   }
 }
 
+/* On a phone the floating chat bubble must never sit on top of what the shopper is about to press.
+   - Product page: while the panel's own "Thêm vào giỏ" / "Mua ngay" row is on screen the sticky
+     purchase bar is hidden, and a bubble in the corner covered the end of that row. It steps aside
+     then and returns, above the bar, as soon as the bar takes over. The panel itself links to
+     Messenger and Zalo for size questions, so the shopper is never without a way to ask.
+   - Checkout: the bubble rode over the address fields and the shipping total. Checkout is a
+     single task on one form, so the bubble is left out of it below `lg`; on a wide screen there is
+     room beside the form and it stays. */
+@media (max-width: 1023.98px) {
+  body:has([data-mobile-purchase-bar][data-hidden="true"]) .messenger-fab,
+  body:has([data-mobile-purchase-bar][data-hidden="true"]) .pancake-chat-facade,
+  body:has([data-mobile-purchase-bar][data-hidden="true"]) #pancake-chat-plugin-root:not(:has(.pkcp-popup-open)),
+  body:has([data-checkout-form]) .messenger-fab,
+  body:has([data-checkout-form]) .pancake-chat-facade,
+  body:has([data-checkout-form]) #pancake-chat-plugin-root:not(:has(.pkcp-popup-open)) {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* Checkout is one task on one form, so the ways out of it are quiet: the menu, the category nav,
+   search and the account link step aside and the logo (home) and the cart stay. `visibility`
+   rather than `display`, so the header keeps its layout and nothing around it shifts; hidden this
+   way they also leave the tab order and the accessibility tree instead of being a dead target. */
+body:has([data-checkout-form]) .site-header .mobile-nav,
+body:has([data-checkout-form]) .site-header .desktop-nav,
+body:has([data-checkout-form]) .site-header .utility-nav > :not(button.relative) {
+  visibility: hidden;
+}
+
 /* Nothing to chat about while managing the catalog. `SiteChatSlot` renders no chat in admin and
    reloads a document Pancake has run in; this only covers the frame before that reload lands. */
 body:has(.admin-shell) .messenger-fab,

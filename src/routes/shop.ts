@@ -37,7 +37,15 @@ export async function loadShopRoute({
   try {
     discovery = parseStorefrontDiscoverySearchParams(await searchParams);
     [catalogPage, facets] = await Promise.all([
-      listConfiguredStorefrontDiscoveryPage({ discovery, pageSize: SHOP_PAGE_SIZE, now: requestNow }),
+      listConfiguredStorefrontDiscoveryPage({
+        discovery,
+        pageSize: SHOP_PAGE_SIZE,
+        now: requestNow,
+        // Under the default A-Z order, products a shopper can buy lead the grid: an out-of-stock
+        // card at the top of the whole catalog is a dead end on the first screen. An explicit
+        // price or name choice is left exactly as asked.
+        inStockFirst: discovery.sort === "name-asc",
+      }),
       listConfiguredStorefrontDiscoveryFacets(),
     ]);
   } catch (error) {

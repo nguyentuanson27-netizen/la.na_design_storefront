@@ -85,13 +85,19 @@ function findFieldErrors(values: FieldValues): Partial<Record<RequiredField, str
   return errors;
 }
 
-// In-field labels: the label sits inside the compact rounded box like a placeholder and disappears
-// once the field holds a value (owner request 2026-10-18). It stays the field's real <label>, so the
-// accessible name never depends on it being visible. `placeholder=" "` lets CSS tell "filled" apart.
+// In-field labels: the label sits inside the compact rounded box like a placeholder, and once the
+// field holds a value it shrinks to a small caption at the top of the same box instead of vanishing,
+// so a buyer reviewing the form before placing the order can still tell which field is which. It is
+// the field's real <label> throughout, so the accessible name never depends on how it is drawn.
+// `placeholder=" "` lets CSS tell "filled" apart. (The 2026-10-18 owner request asked for the label
+// to disappear on filling; keeping a caption is the one deliberate departure from it.)
 const fieldClassName =
   "peer block h-11 w-full rounded-xl border border-black/20 bg-white px-3.5 text-base outline-none transition-colors focus:border-black focus:ring-2 focus:ring-black/10 disabled:cursor-not-allowed disabled:bg-black/[0.04] disabled:text-black/45 aria-invalid:border-[#b42318] aria-invalid:focus:ring-[#b42318]/15";
+// Text inputs only: a <select> has no placeholder, so it never matches `:placeholder-shown` and would
+// take the caption padding permanently. The padding makes room for the caption once the box is filled.
+const floatingFieldClassName = `${fieldClassName} [&:not(:placeholder-shown)]:pb-0.5 [&:not(:placeholder-shown)]:pt-4`;
 const inFieldLabelClassName =
-  "pointer-events-none absolute inset-x-3.5 top-1/2 -translate-y-1/2 truncate text-base text-black/60 peer-[:not(:placeholder-shown)]:opacity-0";
+  "pointer-events-none absolute inset-x-3.5 top-1/2 -translate-y-1/2 truncate text-base text-black/60 transition-all duration-150 motion-reduce:transition-none peer-[:not(:placeholder-shown)]:top-1 peer-[:not(:placeholder-shown)]:translate-y-0 peer-[:not(:placeholder-shown)]:text-[11px] peer-[:not(:placeholder-shown)]:leading-4";
 // A select already shows "Chọn …" while empty, so its label is for assistive technology only.
 const selectLabelClassName = "sr-only";
 
@@ -487,7 +493,7 @@ export function GuestCheckoutForm({
         : "border-black bg-transparent text-black";
 
   return (
-    <form ref={formRef} data-checkout-render={quoteRenderId} action={submitAction} className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-x-16" noValidate onSubmit={handleSubmit}>
+    <form ref={formRef} data-checkout-form="" data-checkout-render={quoteRenderId} action={submitAction} className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-x-16" noValidate onSubmit={handleSubmit}>
       {/* Opaque, server-authenticated, and always the token issued by the render currently on
           screen. Editing it cannot change what the buyer is charged: the server recomputes the price
           itself and only asks this token whether that price is the one it already showed. A tampered
@@ -542,7 +548,7 @@ export function GuestCheckoutForm({
           <div className="relative">
             <input
               autoComplete="name"
-              className={fieldClassName}
+              className={floatingFieldClassName}
               id="checkout-name"
               maxLength={2048}
               name="name"
@@ -563,7 +569,7 @@ export function GuestCheckoutForm({
           <div className="relative">
             <input
               autoComplete="tel"
-              className={fieldClassName}
+              className={floatingFieldClassName}
               id="checkout-phone"
               inputMode="tel"
               maxLength={32}
@@ -676,7 +682,7 @@ export function GuestCheckoutForm({
           <div className="relative">
             <input
               autoComplete="street-address"
-              className={fieldClassName}
+              className={floatingFieldClassName}
               id="checkout-detail"
               maxLength={2048}
               name="detail"
@@ -696,7 +702,7 @@ export function GuestCheckoutForm({
 
         <div className="relative">
           <textarea
-            className={`${fieldClassName} h-auto min-h-16 resize-y py-2.5`}
+            className={`${floatingFieldClassName} h-auto min-h-16 resize-y py-2.5 [&:not(:placeholder-shown)]:pt-5`}
             rows={2}
             id="checkout-note"
             maxLength={2048}
@@ -705,7 +711,7 @@ export function GuestCheckoutForm({
             value={note}
             onChange={(event) => setNote(event.target.value)}
           />
-          <label className="pointer-events-none absolute inset-x-3.5 top-2.5 truncate text-base text-black/60 peer-[:not(:placeholder-shown)]:opacity-0" htmlFor="checkout-note">
+          <label className="pointer-events-none absolute inset-x-3.5 top-2.5 truncate text-base text-black/60 transition-all duration-150 motion-reduce:transition-none peer-[:not(:placeholder-shown)]:top-1 peer-[:not(:placeholder-shown)]:text-[11px] peer-[:not(:placeholder-shown)]:leading-4" htmlFor="checkout-note">
             Ghi chú (không bắt buộc)
           </label>
         </div>

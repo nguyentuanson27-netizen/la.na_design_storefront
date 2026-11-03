@@ -21,6 +21,8 @@ type ProductMetadataInput = Readonly<{
   product: Readonly<{
     slug: string;
     name: string;
+    /** The Pancake product code ("SV605"), when the product has one. */
+    productCode?: string | null;
     seoTitle: string | null;
     seoDescription: string | null;
     media: Readonly<{
@@ -32,16 +34,43 @@ type ProductMetadataInput = Readonly<{
   }>;
 }>;
 
+/**
+ * An editor often types the brand into the SEO title ("... | La.na Design"), and the site title
+ * template appends it again, so the result read "... | La.na Design — La.na Design". Only a
+ * trailing brand is removed; a brand name inside the title is part of the copy and stays.
+ */
+function withoutTrailingBrand(title: string): string {
+  const brand = BRAND.identity.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return title.replace(new RegExp(`\\s*[|·–—-]\\s*${brand}\\s*$`, "iu"), "").trim();
+}
+
+function cleanProductCode(product: ProductMetadataInput["product"]): string | null {
+  const code = product.productCode?.normalize("NFC").trim();
+  return code && code.length > 0 ? code : null;
+}
+
+/**
+ * What keeps two products with the same copy apart. The product code is short, readable in a search
+ * result and, unlike the slug (which ends in a content hash), something a shopper recognises. A
+ * product without one keeps the slug, which is unique by construction, so no product ever loses its
+ * discriminator: see docs/audits/seo-metadata-uniqueness-w2a.md.
+ */
 function buildProductTitle(product: ProductMetadataInput["product"]): string {
-  return `${product.seoTitle ?? product.name} — ${product.slug}`;
+  const base = withoutTrailingBrand(product.seoTitle ?? product.name);
+  const code = cleanProductCode(product);
+  if (code === null) return `${base} — ${product.slug}`;
+  // Published copy usually carries the code already ("Set Váy SV605 ..."); never say it twice.
+  return base.toLowerCase().includes(code.toLowerCase()) ? base : `${base} ${code}`;
 }
 
 function buildProductDescription(product: ProductMetadataInput["product"]): string {
-  if (product.seoDescription) {
-    return `${product.seoDescription} — /shop/${product.slug}.`;
-  }
+  const code = cleanProductCode(product);
+  // Without a code the path is still the discriminator, as before.
+  const path = code === null ? ` — /shop/${product.slug}.` : "";
+  if (product.seoDescription) return `${product.seoDescription}${path}`;
 
-  return `Thông tin sản phẩm ${product.name} tại ${BRAND.identity.name} — /shop/${product.slug}.`;
+  const named = code === null ? product.name : `${product.name} (mã ${code})`;
+  return `Thông tin sản phẩm ${named} tại ${BRAND.identity.name}${path || "."}`;
 }
 
 export function buildStorefrontProductMetadata({

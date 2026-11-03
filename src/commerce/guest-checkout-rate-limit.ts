@@ -1,9 +1,22 @@
+import { createHmac } from "node:crypto";
+
 import type { PrismaClient } from "../generated/prisma/client.ts";
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_WINDOW_MS = 60_000;
 const DEFAULT_MAX_CLIENT_ATTEMPTS = 20;
 const DEFAULT_CLIENT_WINDOW_MS = 60_000;
+// Slower-moving ceilings against order flooding. The per-minute buckets stop a burst; these stop
+// the same abuse spread out, which a per-minute limit alone lets through indefinitely.
+//  - Per client, per hour. Phones on one mobile carrier can share an address, so this is a ceiling
+//    far above what a household or a shared connection places, not a tight quota.
+//  - Per phone number, per day, counting orders that were actually placed: the case this exists for
+//    is one number receiving an unwanted COD parcel again and again, and one person rarely places
+//    more than a few real orders in a day.
+const DEFAULT_MAX_CLIENT_HOURLY_ATTEMPTS = 60;
+const DEFAULT_CLIENT_HOURLY_WINDOW_MS = 60 * 60_000;
+const DEFAULT_MAX_PHONE_DAILY_ORDERS = 5;
+const DEFAULT_PHONE_DAILY_WINDOW_MS = 24 * 60 * 60_000;
 const DEFAULT_MAX_GEO_CLIENT_ATTEMPTS = 60;
 const DEFAULT_GEO_CLIENT_WINDOW_MS = 60_000;
 const DEFAULT_MAX_UPSELL_CLIENT_ATTEMPTS = 20;
@@ -18,6 +31,15 @@ const MAX_CART_ID_LENGTH = 128;
 const PSEUDONYMOUS_CLIENT_KEY = /^v1:[0-9a-f]{64}$/;
 
 type GuestCheckoutRateLimiterOptions = Readonly<{
+  maxClientHourlyAttempts?: number;
+  clientHourlyWindowMs?: number;
+  maxPhoneDailyOrders?: number;
+  phoneDailyWindowMs?: number;
+  /**
+   * Server-only secret the phone buckets are keyed with. Defaults to `BETTER_AUTH_SECRET`, which the
+   * app already refuses to start without. Never stored in the database.
+   */
+  phoneKeySecret?: string;
   maxAttempts?: number;
   windowMs?: number;
   maxClientAttempts?: number;
@@ -125,6 +147,23 @@ export function createGuestCheckoutRateLimiter(
     options.upsellPageClientWindowMs ?? DEFAULT_UPSELL_PAGE_CLIENT_WINDOW_MS,
     "Checkout upsell page client window",
   );
+  const maxClientHourlyAttempts = requirePositiveSafeInteger(
+    options.maxClientHourlyAttempts ?? DEFAULT_MAX_CLIENT_HOURLY_ATTEMPTS,
+    "Checkout client hourly max attempts",
+  );
+  const clientHourlyWindowMs = requirePositiveSafeInteger(
+    options.clientHourlyWindowMs ?? DEFAULT_CLIENT_HOURLY_WINDOW_MS,
+    "Checkout client hourly window",
+  );
+  const maxPhoneDailyOrders = requirePositiveSafeInteger(
+    options.maxPhoneDailyOrders ?? DEFAULT_MAX_PHONE_DAILY_ORDERS,
+    "Checkout phone daily max orders",
+  );
+  const phoneDailyWindowMs = requirePositiveSafeInteger(
+    options.phoneDailyWindowMs ?? DEFAULT_PHONE_DAILY_WINDOW_MS,
+    "Checkout phone daily window",
+  );
+  const clientHourlyCappedCount = cappedCount(maxClientHourlyAttempts, "Checkout client hourly max attempts");
   const upsellPageClientCappedCount = cappedCount(maxUpsellPageClientAttempts, "Checkout upsell page client max attempts");
   const upsellBrowseClientCappedCount = cappedCount(maxUpsellBrowseClientAttempts, "Checkout upsell browse client max attempts");
   const upsellClientCappedCount = cappedCount(maxUpsellClientAttempts, "Checkout upsell client max attempts");
@@ -265,5 +304,152 @@ export function createGuestCheckoutRateLimiter(
     });
   }
 
-  return { consume, consumeClient, consumeGeoClient, consumeUpsellClient, consumeUpsellBrowseClient, consumeUpsellPageClient };
+  /** The same client, over an hour. Consumed with the per-minute bucket on every submit attempt. */
+  async function consumeClientHourly({
+    clientKey,
+    now = new Date(),
+  }: {
+    clientKey: string;
+    now?: Date;
+  }): Promise<boolean> {
+    return consumeBucket({
+      bucketKey: `checkout-client-hour:${requireClientKey(clientKey)}`,
+      now,
+      windowMs: clientHourlyWindowMs,
+      maxAttempts: maxClientHourlyAttempts,
+      cap: clientHourlyCappedCount,
+    });
+  }
+
+  const MIN_PHONE_KEY_SECRET_LENGTH = 32;
+  let phoneKey: Buffer | null = null;
+
+  /**
+   * HMAC-SHA-256 of the normalized number under a server-only key, so a copy of the `rateLimit`
+   * table cannot be matched against hashes of candidate numbers: the space of Vietnamese numbers is
+   * small enough that an unkeyed hash would only pseudonymize them. The key is derived per purpose
+   * (`...:v2`), so the app secret is never used directly and a future scheme is a new version.
+   * Changing the secret only starts the counters afresh.
+   */
+  function phoneDigest(phone: string): string {
+    if (typeof phone !== "string" || !/^0\d{9,10}$/.test(phone)) {
+      throw new TypeError("Checkout phone key must be a normalized Vietnamese phone number");
+    }
+    if (phoneKey === null) {
+      const secret = options.phoneKeySecret ?? process.env.BETTER_AUTH_SECRET ?? "";
+      if (secret.trim().length < MIN_PHONE_KEY_SECRET_LENGTH) {
+        throw new TypeError("Checkout phone limiter needs a server secret of at least 32 characters");
+      }
+      phoneKey = createHmac("sha256", secret).update("la-na:checkout-phone-limit:v2").digest();
+    }
+    return createHmac("sha256", phoneKey).update(phone).digest("hex");
+  }
+
+  const phoneCounterKey = (phone: string) => `checkout-phone-day:v2:${phoneDigest(phone)}`;
+  // One claim per (phone, cart): a retry of the same order finds its claim and is not counted twice.
+  const phoneClaimKey = (phone: string, cartId: string) =>
+    `checkout-phone-claim:v2:${phoneDigest(phone)}:${requireCartId(cartId)}`;
+
+  type PhoneAdmission = "ADMITTED" | "ALREADY_ADMITTED" | "REFUSED";
+
+  /**
+   * Reserves one of this number's daily orders for this cart, atomically, before the order is
+   * created anywhere else. Two carts racing at the ceiling cannot both pass: the counter row is the
+   * single point they serialize on, and it only advances while it is under the ceiling.
+   *
+   * - `ADMITTED`: a new reservation was taken; the caller must `releasePhoneOrder` if the order then
+   *   fails for certain, and leaves it in place otherwise (confirmed, or an order may exist).
+   * - `ALREADY_ADMITTED`: this cart already holds one (a retry of the same order); nothing is spent.
+   * - `REFUSED`: the number has used its orders for the day; nothing was reserved.
+   */
+  async function admitPhoneOrder({
+    phone,
+    cartId,
+    now = new Date(),
+  }: {
+    phone: string;
+    cartId: string;
+    now?: Date;
+  }): Promise<PhoneAdmission> {
+    const counterKey = phoneCounterKey(phone);
+    const claimKey = phoneClaimKey(phone, cartId);
+    const nowMs = BigInt(requireNow(now).getTime());
+    const resetBefore = nowMs - BigInt(phoneDailyWindowMs);
+
+    const admission = await client.$transaction(async (tx) => {
+      const claimed = await tx.$queryRaw<Array<{ id: string }>>`
+        INSERT INTO "rateLimit" AS c ("id", "key", "count", "lastRequest")
+        VALUES (${claimKey}, ${claimKey}, 1, ${nowMs})
+        ON CONFLICT ("id") DO UPDATE SET "count" = 1, "lastRequest" = ${nowMs}
+        WHERE c."lastRequest" <= ${resetBefore}
+        RETURNING "id"
+      `;
+      if (claimed.length === 0) return "ALREADY_ADMITTED" as const;
+
+      const counted = await tx.$queryRaw<Array<{ count: number }>>`
+        INSERT INTO "rateLimit" AS existing ("id", "key", "count", "lastRequest")
+        VALUES (${counterKey}, ${counterKey}, 1, ${nowMs})
+        ON CONFLICT ("id") DO UPDATE SET
+          "count" = CASE WHEN existing."lastRequest" <= ${resetBefore} THEN 1 ELSE existing."count" + 1 END,
+          "lastRequest" = CASE WHEN existing."lastRequest" <= ${resetBefore} THEN ${nowMs} ELSE existing."lastRequest" END
+        WHERE existing."lastRequest" <= ${resetBefore} OR existing."count" < ${maxPhoneDailyOrders}
+        RETURNING "count"
+      `;
+      if (counted.length === 0) {
+        // At the ceiling: give back the claim taken above, in the same transaction.
+        await tx.$executeRaw`DELETE FROM "rateLimit" WHERE "id" = ${claimKey}`;
+        return "REFUSED" as const;
+      }
+      return "ADMITTED" as const;
+    });
+
+    if (admission === "ADMITTED") await sweepExpiredPhoneRows(nowMs).catch(() => undefined);
+    return admission;
+  }
+
+  /**
+   * Gives back a reservation `admitPhoneOrder` took for this cart, when the order is known not to
+   * exist. Does nothing for a cart that holds none, so calling it twice never frees a second slot.
+   */
+  async function releasePhoneOrder({
+    phone,
+    cartId,
+    now = new Date(),
+  }: {
+    phone: string;
+    cartId: string;
+    now?: Date;
+  }): Promise<void> {
+    const counterKey = phoneCounterKey(phone);
+    const claimKey = phoneClaimKey(phone, cartId);
+    const resetBefore = BigInt(requireNow(now).getTime()) - BigInt(phoneDailyWindowMs);
+
+    await client.$transaction(async (tx) => {
+      const deleted = await tx.$queryRaw<Array<{ id: string }>>`
+        DELETE FROM "rateLimit" WHERE "id" = ${claimKey} AND "lastRequest" > ${resetBefore} RETURNING "id"
+      `;
+      if (deleted.length === 0) return;
+      await tx.$executeRaw`
+        UPDATE "rateLimit" SET "count" = GREATEST("count" - 1, 0)
+        WHERE "id" = ${counterKey} AND "lastRequest" > ${resetBefore}
+      `;
+    });
+  }
+
+  // Expired counters and claims hold nothing useful and are pseudonymous personal data, so each
+  // admission removes a bounded batch of them; the same pattern as the other pseudonymous limiters.
+  async function sweepExpiredPhoneRows(nowMs: bigint): Promise<void> {
+    const staleBefore = nowMs - BigInt(phoneDailyWindowMs);
+    await client.$executeRaw`
+      WITH stale AS (
+        SELECT "id" FROM "rateLimit"
+        WHERE ("id" LIKE 'checkout-phone-day:%' OR "id" LIKE 'checkout-phone-claim:%')
+          AND "lastRequest" <= ${staleBefore}
+        ORDER BY "lastRequest", "id" LIMIT 50 FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM "rateLimit" AS target USING stale WHERE target."id" = stale."id"
+    `;
+  }
+
+  return { consume, consumeClient, consumeClientHourly, admitPhoneOrder, releasePhoneOrder, consumeGeoClient, consumeUpsellClient, consumeUpsellBrowseClient, consumeUpsellPageClient };
 }
