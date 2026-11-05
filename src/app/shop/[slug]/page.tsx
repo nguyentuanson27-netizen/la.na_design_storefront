@@ -257,6 +257,14 @@ function render(data: ProductRouteData) {
   return (
     <>
       <span hidden data-pdp-root="" />
+      <div
+        id="san-pham"
+        data-pdp-anchor=""
+        className="collection-products-anchor"
+      >
+        <span id="products" className="sr-only" aria-hidden="true" />
+        <span id="chi-tiet" className="sr-only" aria-hidden="true" />
+      </div>
       <BrandProductDetail
         selection={{
           slug: data.slug,

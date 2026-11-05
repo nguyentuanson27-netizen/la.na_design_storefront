@@ -55,7 +55,8 @@ function render(data: ShopViewModel) {
       </ListingHeader>
 
       <section
-        className="mt-8 border-b border-[#3B2219]/15 pb-6"
+        id="bo-loc"
+        className="collection-products-anchor mt-8 border-b border-[#3B2219]/15 pb-6"
         aria-labelledby="shop-discovery-title"
       >
         <h2 id="shop-discovery-title" className="sr-only">
@@ -289,17 +290,20 @@ function render(data: ShopViewModel) {
       </section>
 
       {data.totalCount === 0 ? (
-        <ListingEmptyState
-          titleId="shop-empty-title"
-          eyebrow={data.filtered ? "Không tìm thấy" : "Sản phẩm hiện tại"}
-          title={data.filtered ? "Không có sản phẩm phù hợp." : "Chưa có sản phẩm đang mở bán."}
-          copy={
-            data.filtered
-              ? "Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm."
-              : "Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để mua trên website."
-          }
-          action={data.filtered ? { href: "/shop", label: "Xem tất cả sản phẩm" } : undefined}
-        />
+        <div id="san-pham" className="collection-products-anchor">
+          <span id="products" className="sr-only" aria-hidden="true" />
+          <ListingEmptyState
+            titleId="shop-empty-title"
+            eyebrow={data.filtered ? "Không tìm thấy" : "Sản phẩm hiện tại"}
+            title={data.filtered ? "Không có sản phẩm phù hợp." : "Chưa có sản phẩm đang mở bán."}
+            copy={
+              data.filtered
+                ? "Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm."
+                : "Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để mua trên website."
+            }
+            action={data.filtered ? { href: "/shop", label: "Xem tất cả sản phẩm" } : undefined}
+          />
+        </div>
       ) : (
         <section className="mt-8" aria-labelledby="shop-products-title">
           <h2 id="shop-products-title" className="sr-only">

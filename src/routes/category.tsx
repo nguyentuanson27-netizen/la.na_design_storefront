@@ -186,7 +186,7 @@ export function renderCategoryRoute(data: CategoryViewModel) {
       </ListingHeader>
 
       {/* Accessible PLP Filter Panel */}
-      <div className="mt-5">
+      <div id="bo-loc" className="collection-products-anchor mt-5">
         <PlpFilterPanel
           categoryPath={destination.href}
           totalCount={totalCount}

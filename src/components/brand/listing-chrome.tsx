@@ -72,6 +72,13 @@ export function ListingSubnav({
   );
 }
 
+import {
+  STOREFRONT_PRODUCTS_ANCHOR,
+  STOREFRONT_PRODUCTS_ALIAS_ANCHOR,
+} from "@/routes/storefront-anchors";
+
+export { STOREFRONT_PRODUCTS_ANCHOR, STOREFRONT_PRODUCTS_ALIAS_ANCHOR };
+
 /**
  * The product grid: 4 across on desktop and 2 on mobile, as master spec §18 requires, with a
  * 3-column step so the cards do not stretch at tablet widths.
@@ -80,10 +87,27 @@ export function ListingSubnav({
  * shapes (the category model is a bare `ProductCardModel`, the others pair it with an id for the
  * key) and different tone offsets, and inventing a third shape for them to adapt into would buy
  * nothing that a wrapper does not.
+ *
+ * It carries the canonical `#san-pham` anchor (and `#products` alias) with `collection-products-anchor`
+ * scroll offset, allowing direct deep-linking from social chat (Zalo, Messenger) and ad campaigns
+ * straight to the products without forcing users to scroll past headers and introductory content.
  */
-export function ListingProductGrid({ children }: Readonly<{ children: ReactNode }>) {
+export function ListingProductGrid({
+  children,
+  id = STOREFRONT_PRODUCTS_ANCHOR,
+  className,
+}: Readonly<{
+  children: ReactNode;
+  id?: string;
+  className?: string;
+}>) {
   return (
-    <div className="listing-product-grid grid grid-cols-2 gap-[2px] sm:gap-x-6 sm:gap-y-10 md:grid-cols-3 lg:grid-cols-4 lg:gap-x-8 lg:gap-y-12">
+    <div
+      id={id}
+      data-products-anchor=""
+      className={`listing-product-grid collection-products-anchor grid grid-cols-2 gap-[2px] sm:gap-x-6 sm:gap-y-10 md:grid-cols-3 lg:grid-cols-4 lg:gap-x-8 lg:gap-y-12${className ? ` ${className}` : ""}`}
+    >
+      <span id={STOREFRONT_PRODUCTS_ALIAS_ANCHOR} className="sr-only" aria-hidden="true" />
       {children}
     </div>
   );

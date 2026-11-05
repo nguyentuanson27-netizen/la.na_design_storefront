@@ -35,13 +35,16 @@ function render(data: NewArrivalsViewModel) {
       </ListingHeader>
 
       {data.totalCount === 0 ? (
-        <ListingEmptyState
-          titleId="new-arrivals-empty-title"
-          eyebrow="Sản phẩm hiện tại"
-          title="Chưa có sản phẩm trong danh mục Hàng mới về."
-          copy={`Các thiết kế được ${BRAND.identity.name} chọn giới thiệu sẽ xuất hiện tại đây.`}
-          action={{ href: "/shop", label: "Xem toàn bộ cửa hàng" }}
-        />
+        <div id="san-pham" className="collection-products-anchor">
+          <span id="products" className="sr-only" aria-hidden="true" />
+          <ListingEmptyState
+            titleId="new-arrivals-empty-title"
+            eyebrow="Sản phẩm hiện tại"
+            title="Chưa có sản phẩm trong danh mục Hàng mới về."
+            copy={`Các thiết kế được ${BRAND.identity.name} chọn giới thiệu sẽ xuất hiện tại đây.`}
+            action={{ href: "/shop", label: "Xem toàn bộ cửa hàng" }}
+          />
+        </div>
       ) : (
         <section aria-labelledby="new-arrivals-products-title" className="mt-8">
           <h2 id="new-arrivals-products-title" className="sr-only">

@@ -39,13 +39,16 @@ export function SaleListingBody({
 }>) {
   if (data.totalCount === 0) {
     return (
-      <ListingEmptyState
-        titleId="sale-empty-title"
-        eyebrow="Ưu đãi hiện tại"
-        title={emptyTitle}
-        copy="Sản phẩm sẽ xuất hiện tại đây khi có chương trình khuyến mãi đang hoạt động."
-        action={{ href: "/shop", label: "Xem toàn bộ cửa hàng" }}
-      />
+      <div id="san-pham" className="collection-products-anchor">
+        <span id="products" className="sr-only" aria-hidden="true" />
+        <ListingEmptyState
+          titleId="sale-empty-title"
+          eyebrow="Ưu đãi hiện tại"
+          title={emptyTitle}
+          copy="Sản phẩm sẽ xuất hiện tại đây khi có chương trình khuyến mãi đang hoạt động."
+          action={{ href: "/shop", label: "Xem toàn bộ cửa hàng" }}
+        />
+      </div>
     );
   }
 
