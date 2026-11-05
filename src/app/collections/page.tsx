@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 
 import {
@@ -7,7 +6,7 @@ import {
   ListingHeader,
   ListingShell,
 } from "@/components/brand/listing-chrome";
-import { ListingCollectionGrid, ListingViewToggle } from "@/components/brand/listing-view";
+import { ListingCollectionGrid, ListingCollectionImage, ListingViewToggle } from "@/components/brand/listing-view";
 import { loadCollectionsRoute, type CollectionsRouteData } from "@/routes/collections";
 import { createStorefrontRoute } from "@/routes/factory";
 import { buildCollectionsMetadata } from "@/routes/metadata/collections";
@@ -91,11 +90,10 @@ function render(data: CollectionsRouteData) {
                     data-collection-card-media=""
                     className="absolute inset-0 -z-10"
                   >
-                    <Image
+                    <ListingCollectionImage
                       src={collection.heroImageUrl}
                       alt=""
                       fill
-                      sizes="(min-width: 768px) 50vw, 100vw"
                       className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                     />
                   </div>

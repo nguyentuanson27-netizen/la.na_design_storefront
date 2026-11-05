@@ -1,13 +1,19 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import Image, { type ImageProps } from "next/image";
+import { useSearchParams } from "next/navigation";
+import { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   DEFAULT_LISTING_VIEW,
   LISTING_VIEWS,
   LISTING_VIEW_LABELS,
+  DEFAULT_PRODUCT_IMAGE_SIZES,
   collectionGridClassName,
+  collectionImageSizes,
+  parseListingView,
   productGridClassName,
+  productImageSizes,
   serializeListingViewCookie,
   withListingViewParam,
   type ListingView,
@@ -21,17 +27,31 @@ import {
  * into their choice. After that the choice lives here: picking a step redraws the grids in place
  * -- no navigation, so a half-scrolled infinite list keeps its place -- and writes both places the
  * server reads it from, the cookie and the URL.
+ *
+ * The provider lives in the root layout, which Next keeps mounted across client navigations, so
+ * `initialView` is only the first paint's answer. A later navigation to a URL that names a
+ * different `?view=` (a link, back, forward) reaches the state through `ListingViewUrlSync`.
  */
 
 type ListingViewContextValue = Readonly<{
   view: ListingView;
   setView: (view: ListingView) => void;
+  /** The URL named this view: adopt it without writing the URL or cookie back. */
+  adoptUrlView: (view: ListingView) => void;
 }>;
 
 const ListingViewContext = createContext<ListingViewContextValue>({
   view: DEFAULT_LISTING_VIEW,
   setView: () => {},
+  adoptUrlView: () => {},
 });
+
+/**
+ * The view the enclosing `ListingProductGrid` is drawing, or `null` outside one. The homepage and
+ * the product page reuse the product card in grids of their own that the choice does not touch, so
+ * the card's image `sizes` follow the view only where a listing grid says they should.
+ */
+const ListingGridViewContext = createContext<ListingView | null>(null);
 
 export function ListingViewProvider({
   initialView,
@@ -56,8 +76,36 @@ export function ListingViewProvider({
     }
   }, []);
 
-  const value = useMemo(() => ({ view, setView }), [view, setView]);
-  return <ListingViewContext.Provider value={value}>{children}</ListingViewContext.Provider>;
+  const adoptUrlView = useCallback((next: ListingView) => setViewState(next), []);
+
+  const value = useMemo(() => ({ view, setView, adoptUrlView }), [view, setView, adoptUrlView]);
+  return (
+    <ListingViewContext.Provider value={value}>
+      {/* `useSearchParams` needs a boundary; the bridge renders nothing, so the fallback is none. */}
+      <Suspense fallback={null}>
+        <ListingViewUrlSync />
+      </Suspense>
+      {children}
+    </ListingViewContext.Provider>
+  );
+}
+
+/**
+ * Keeps the state in step with a `?view=` that arrives by navigation. It acts only when the URL
+ * names a valid view: a URL without one says nothing, and the cookie's choice (already the state)
+ * stands. Picking a view writes the URL itself, so the value seen here then equals the state and
+ * nothing changes.
+ */
+function ListingViewUrlSync() {
+  const searchParams = useSearchParams();
+  const { adoptUrlView } = useListingView();
+  const urlView = parseListingView(searchParams.get("view"));
+
+  useEffect(() => {
+    if (urlView !== null) adoptUrlView(urlView);
+  }, [urlView, adoptUrlView]);
+
+  return null;
 }
 
 export function useListingView(): ListingViewContextValue {
@@ -68,10 +116,31 @@ export function useListingView(): ListingViewContextValue {
 export function ListingProductGrid({ children }: Readonly<{ children: ReactNode }>) {
   const { view } = useListingView();
   return (
-    <div data-view={view} className={`listing-product-grid ${productGridClassName(view)}`}>
-      {children}
-    </div>
+    <ListingGridViewContext.Provider value={view}>
+      <div data-view={view} className={`listing-product-grid ${productGridClassName(view)}`}>
+        {children}
+      </div>
+    </ListingGridViewContext.Provider>
   );
+}
+
+/**
+ * A product card's photograph. It is `next/image` with one difference: inside a listing grid its
+ * `sizes` follow the grid's columns, so a card that is a quarter of the screen is not fetched at
+ * half-screen width. Outside one it asks for what it always did.
+ */
+export function ListingCardImage(props: Omit<ImageProps, "sizes">) {
+  const gridView = useContext(ListingGridViewContext);
+  const sizes = gridView === null ? DEFAULT_PRODUCT_IMAGE_SIZES : productImageSizes(gridView);
+  // eslint-disable-next-line jsx-a11y/alt-text -- `alt` arrives in props, which may deliberately be "".
+  return <Image {...props} sizes={sizes} />;
+}
+
+/** A collection cover's photograph, sized for the columns the chosen view draws. */
+export function ListingCollectionImage(props: Omit<ImageProps, "sizes">) {
+  const { view } = useListingView();
+  // eslint-disable-next-line jsx-a11y/alt-text -- `alt` arrives in props, which may deliberately be "".
+  return <Image {...props} sizes={collectionImageSizes(view)} />;
 }
 
 /**

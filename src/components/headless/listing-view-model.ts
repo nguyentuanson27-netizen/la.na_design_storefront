@@ -81,7 +81,9 @@ export function withListingViewParam(search: string, view: ListingView): string 
 const PRODUCT_GRID_COLUMNS: Readonly<Record<ListingView, string>> = {
   large: "grid-cols-2 md:grid-cols-3 lg:grid-cols-4",
   medium: "grid-cols-3 md:grid-cols-4 lg:grid-cols-5",
-  small: "grid-cols-4 md:grid-cols-5 lg:grid-cols-6",
+  // Below 360px a fourth column would leave a card ~75px wide, too narrow for a price and an
+  // availability line at a readable size, so the narrowest phones keep three.
+  small: "grid-cols-3 min-[360px]:grid-cols-4 md:grid-cols-5 lg:grid-cols-6",
 };
 
 /** Smaller photographs sit closer together; the gaps shrink with them. */
@@ -108,6 +110,37 @@ const COLLECTION_GRID_COLUMNS: Readonly<Record<ListingView, string>> = {
 
 export function collectionGridClassName(view: ListingView): string {
   return `grid ${COLLECTION_GRID_COLUMNS[view]}`;
+}
+
+/*
+ * `sizes` for the photographs, which is what the browser picks a `srcset` file by -- not the CSS
+ * width the card ends up with. They follow the column counts above (the breakpoints are Tailwind's
+ * `md` 768px and `lg` 1024px, and the 360px step of the small view), so a card that is a quarter
+ * of the phone is asked for a quarter-width file rather than a half-width one.
+ */
+
+/** The product card's photograph (and its hover photograph) inside a listing grid. */
+const PRODUCT_IMAGE_SIZES: Readonly<Record<ListingView, string>> = {
+  large: "(min-width: 1024px) 25vw, (min-width: 768px) 34vw, 50vw",
+  medium: "(min-width: 1024px) 20vw, (min-width: 768px) 25vw, 34vw",
+  small: "(min-width: 1024px) 17vw, (min-width: 768px) 20vw, (min-width: 360px) 25vw, 34vw",
+};
+
+/** What the same photograph asked for before the view existed; still right outside a listing grid. */
+export const DEFAULT_PRODUCT_IMAGE_SIZES = "(min-width: 1024px) 25vw, 50vw";
+
+export function productImageSizes(view: ListingView): string {
+  return PRODUCT_IMAGE_SIZES[view];
+}
+
+const COLLECTION_IMAGE_SIZES: Readonly<Record<ListingView, string>> = {
+  large: "(min-width: 768px) 50vw, 100vw",
+  medium: "(min-width: 768px) 34vw, 50vw",
+  small: "(min-width: 768px) 25vw, 34vw",
+};
+
+export function collectionImageSizes(view: ListingView): string {
+  return COLLECTION_IMAGE_SIZES[view];
 }
 
 export const LISTING_VIEW_LABELS: Readonly<Record<ListingView, string>> = {

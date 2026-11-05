@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
   DEFAULT_LISTING_VIEW,
+  DEFAULT_PRODUCT_IMAGE_SIZES,
+  LISTING_VIEWS,
   LISTING_VIEW_COOKIE,
   collectionGridClassName,
+  collectionImageSizes,
   parseListingView,
   planListingViewRequest,
   productGridClassName,
+  productImageSizes,
   readListingViewParam,
   resolveListingView,
   serializeListingViewCookie,
@@ -34,7 +39,8 @@ test("the URL beats the cookie, the cookie beats the default", () => {
 test("the product grid is 2/3/4, 3/4/5 and 4/5/6 across at phone/tablet/desktop", () => {
   assert.match(productGridClassName("large"), /\bgrid-cols-2 md:grid-cols-3 lg:grid-cols-4\b/);
   assert.match(productGridClassName("medium"), /\bgrid-cols-3 md:grid-cols-4 lg:grid-cols-5\b/);
-  assert.match(productGridClassName("small"), /\bgrid-cols-4 md:grid-cols-5 lg:grid-cols-6\b/);
+  // The narrowest phones keep three: a fourth column would leave a card too narrow to read.
+  assert.match(productGridClassName("small"), /\bgrid-cols-3 min-\[360px\]:grid-cols-4 md:grid-cols-5 lg:grid-cols-6\b/);
 });
 
 test("the collections grid keeps its large view at 1 across on a phone and 2 on desktop", () => {
@@ -78,4 +84,34 @@ test("the proxy plan remembers a view named in the URL, and only then", () => {
 
   const junk = planListingViewRequest({ method: "GET", search: "?view=huge", cookie: "medium" });
   assert.deepEqual(junk, { view: "medium", setCookie: null });
+});
+
+test("image `sizes` follow the columns each view draws, not the large view's", () => {
+  // What a 390px phone is asked for: large 2 across (50vw), medium 3 (34vw), small 4 (25vw).
+  assert.match(productImageSizes("large"), /, 50vw$/);
+  assert.match(productImageSizes("medium"), /, 34vw$/);
+  assert.match(productImageSizes("small"), /\(min-width: 360px\) 25vw/);
+  // 6 columns on a desktop is ~17vw, so 25vw would fetch a file a third too wide.
+  assert.match(productImageSizes("small"), /\(min-width: 1024px\) 17vw/);
+  assert.match(productImageSizes("small"), /\(min-width: 360px\) 25vw, 34vw$/);
+  // Large keeps the desktop figure it always had, and fixes the tablet step (3 columns, not 2).
+  assert.match(productImageSizes("large"), /^\(min-width: 1024px\) 25vw/);
+  assert.match(DEFAULT_PRODUCT_IMAGE_SIZES, /1024px\) 25vw, 50vw$/);
+  for (const view of LISTING_VIEWS) {
+    assert.ok(collectionImageSizes(view).length > 0);
+  }
+  assert.equal(collectionImageSizes("large"), "(min-width: 768px) 50vw, 100vw");
+});
+
+test("the small and medium views never set text under 10px, or name and price under 12px", () => {
+  const css = readFileSync(new URL("../../src/app/globals.css", import.meta.url), "utf8");
+  const block = css.slice(css.indexOf('Listing view ("kiểu xem")'));
+  const sizes = [...block.matchAll(/(\.product-[a-z-]+)\s*\{[^}]*?font-size:\s*([\d.]+)(px|rem)/g)].map(
+    ([, selector, value, unit]) => ({ selector: selector!, px: Number(value) * (unit === "rem" ? 16 : 1) }),
+  );
+  assert.ok(sizes.length >= 20, "the listing-view type steps are present");
+  for (const { selector, px } of sizes) {
+    assert.ok(px >= 10, `${selector} is ${px}px`);
+    if (selector === ".product-title" || selector === ".product-price") assert.ok(px >= 12, `${selector} is ${px}px`);
+  }
 });

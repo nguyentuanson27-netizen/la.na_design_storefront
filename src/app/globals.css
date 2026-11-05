@@ -3380,36 +3380,44 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
 /*
  * Listing view ("kiểu xem"): the photograph-size choice in `listing-view`. Large is the card as it
  * has always been. The smaller steps pack three or four cards across a phone and five or six across
- * a desktop, so the text under the photograph steps down with them -- otherwise a 90px-wide card
- * would carry a 15px, two-line title. Only sizes change; every piece of text stays on the card
- * (the availability and countdown lines carry commerce state and are never hidden).
+ * a desktop, so the text under the photograph steps down with them -- but never below 10px, and
+ * never below 12px for the name and price: availability, the flash-sale countdown and the sale tag
+ * are what a shopper decides on, not decoration. Where a narrow card cannot carry them at that size
+ * the grid gives up a column instead (`productGridClassName`: three columns under 360px), and the
+ * tag drops its bolt so "FLASH SALE" fits. Every piece of text stays on the card.
  */
+/* A long tag ("Lẻ size - Chỉ còn ít") wraps inside its card rather than running off the edge of it. */
+.listing-product-grid[data-view="medium"] .product-tag,
+.listing-product-grid[data-view="small"] .product-tag { height: auto; max-width: 100%; white-space: normal; line-height: 1.15; text-align: center; }
+
 .listing-product-grid[data-view="medium"] .product-title { font-size: 13px; }
-.listing-product-grid[data-view="medium"] .product-price { font-size: 12.5px; }
-.listing-product-grid[data-view="medium"] .product-availability { font-size: 0.625rem; letter-spacing: 0.08em; }
-.listing-product-grid[data-view="medium"] .product-countdown { font-size: 0.625rem; }
-.listing-product-grid[data-view="medium"] .product-tag { height: 1.125rem; padding: 0 0.375rem; font-size: 0.5625rem; }
+.listing-product-grid[data-view="medium"] .product-price { font-size: 13px; }
+.listing-product-grid[data-view="medium"] .product-availability { font-size: 10.5px; letter-spacing: 0.06em; }
+.listing-product-grid[data-view="medium"] .product-countdown { font-size: 10.5px; }
+.listing-product-grid[data-view="medium"] .product-tag { min-height: 1.125rem; padding: 0.125rem 0.375rem; font-size: 10px; }
 
 .listing-product-grid[data-view="small"] .product-meta { padding-inline: 0.25rem; gap: 0.125rem; }
-.listing-product-grid[data-view="small"] .product-title { font-size: 11px; }
-.listing-product-grid[data-view="small"] .product-price { font-size: 10.5px; }
-.listing-product-grid[data-view="small"] .product-availability { font-size: 0.5rem; letter-spacing: 0.04em; }
-.listing-product-grid[data-view="small"] .product-countdown { font-size: 0.5rem; gap: 0.15rem; }
-.listing-product-grid[data-view="small"] .product-countdown svg { width: 0.6rem; height: 0.6rem; }
-.listing-product-grid[data-view="small"] .product-tag { height: 1rem; padding: 0 0.3125rem; font-size: 0.5rem; }
+.listing-product-grid[data-view="small"] .product-title { font-size: 12px; }
+.listing-product-grid[data-view="small"] .product-price { font-size: 12px; }
+.listing-product-grid[data-view="small"] .product-availability { font-size: 10px; letter-spacing: 0.03em; }
+.listing-product-grid[data-view="small"] .product-countdown { font-size: 10px; gap: 0.15rem; flex-wrap: wrap; justify-content: center; }
+.listing-product-grid[data-view="small"] .product-countdown svg { width: 0.625rem; height: 0.625rem; }
+.listing-product-grid[data-view="small"] .product-tag { min-height: 1.125rem; padding: 0.125rem 0.3125rem; font-size: 10px; }
+.listing-product-grid[data-view="small"] .product-tag--flash svg { display: none; }
 .listing-product-grid[data-view="small"] .product-tags { top: 0.25rem; left: 0.25rem; right: 0.25rem; gap: 0.15rem; }
 
 @media (min-width: 768px) {
   .listing-product-grid[data-view="medium"] .product-title { font-size: 15px; }
   .listing-product-grid[data-view="medium"] .product-price { font-size: 14px; }
-  .listing-product-grid[data-view="medium"] .product-availability { font-size: 0.6875rem; }
-  .listing-product-grid[data-view="medium"] .product-countdown { font-size: 0.6875rem; }
-  .listing-product-grid[data-view="medium"] .product-tag { height: 1.25rem; padding: 0 0.4375rem; font-size: 0.625rem; }
+  .listing-product-grid[data-view="medium"] .product-availability { font-size: 11px; }
+  .listing-product-grid[data-view="medium"] .product-countdown { font-size: 11px; }
+  .listing-product-grid[data-view="medium"] .product-tag { min-height: 1.25rem; padding: 0.125rem 0.4375rem; font-size: 10.5px; }
 
   .listing-product-grid[data-view="small"] .product-title { font-size: 13px; }
-  .listing-product-grid[data-view="small"] .product-price { font-size: 12.5px; }
-  .listing-product-grid[data-view="small"] .product-availability { font-size: 0.625rem; }
-  .listing-product-grid[data-view="small"] .product-countdown { font-size: 0.625rem; }
-  .listing-product-grid[data-view="small"] .product-tag { height: 1.125rem; padding: 0 0.375rem; font-size: 0.5625rem; }
+  .listing-product-grid[data-view="small"] .product-price { font-size: 13px; }
+  .listing-product-grid[data-view="small"] .product-availability { font-size: 10.5px; }
+  .listing-product-grid[data-view="small"] .product-countdown { font-size: 10.5px; }
+  .listing-product-grid[data-view="small"] .product-tag { min-height: 1.125rem; padding: 0.125rem 0.375rem; font-size: 10px; }
+  .listing-product-grid[data-view="small"] .product-tag--flash svg { display: inline; }
   .listing-product-grid[data-view="small"] .product-tags { top: 0.5rem; left: 0.5rem; right: 0.5rem; gap: 0.2rem; }
 }
