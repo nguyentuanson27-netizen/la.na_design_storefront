@@ -127,7 +127,7 @@ function render(data: CollectionViewModel) {
 
         {data.totalCount === 0 ? (
           <div id={COLLECTION_PRODUCTS_ANCHOR} className="collection-products-anchor">
-            <span id="products" className="sr-only" aria-hidden="true" />
+            <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
             <ListingEmptyState
               titleId="collection-empty-title"
               eyebrow={data.filtered ? "Không tìm thấy" : "Bộ sưu tập hiện tại"}

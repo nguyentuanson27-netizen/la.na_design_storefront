@@ -37,7 +37,7 @@ function render(data: NewArrivalsViewModel) {
 
       {data.totalCount === 0 ? (
         <div id="san-pham" className="collection-products-anchor">
-          <span id="products" className="sr-only" aria-hidden="true" />
+          <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
           <ListingEmptyState
             titleId="new-arrivals-empty-title"
             eyebrow="Sản phẩm hiện tại"

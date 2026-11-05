@@ -131,3 +131,25 @@ test("resolveStorefrontAnchor ignores unrelated and unsupported input", () => {
   assert.equal(storefrontQueryAnchor("?view=small&scroll=san-pham"), "san-pham");
   assert.equal(storefrontQueryAnchor("?view=small"), null);
 });
+
+test("alias anchor spans are zero-size, not sr-only (sr-only's -1px margin trips the mobile overflow gate)", () => {
+  const files = [
+    "src/components/brand/listing-view.tsx",
+    "src/components/brand/plp-infinite-grid.tsx",
+    "src/components/brand/sale-listing.tsx",
+    "src/components/brand/product-detail.tsx",
+    "src/app/new-arrivals/page.tsx",
+    "src/app/shop/[slug]/page.tsx",
+    "src/app/shop/page.tsx",
+    "src/app/collections/[slug]/page.tsx",
+  ];
+  for (const file of files) {
+    const source = read(file);
+    assert.doesNotMatch(
+      source,
+      /<span id=[^>]*className="sr-only" aria-hidden="true" \/>/,
+      `${file}: an alias anchor span must not use sr-only (it sits at left:-1px)`,
+    );
+    assert.match(source, /pointer-events-none absolute h-0 w-0/, `${file}: alias anchor span is zero-size`);
+  }
+});

@@ -262,8 +262,8 @@ function render(data: ProductRouteData) {
         data-pdp-anchor=""
         className="collection-products-anchor"
       >
-        <span id="products" className="sr-only" aria-hidden="true" />
-        <span id="chi-tiet" className="sr-only" aria-hidden="true" />
+        <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+        <span id="chi-tiet" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
       </div>
       <BrandProductDetail
         selection={{

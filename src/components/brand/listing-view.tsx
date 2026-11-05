@@ -153,7 +153,7 @@ export function ListingProductGrid({
         data-view={view}
         className={`listing-product-grid collection-products-anchor ${productGridClassName(view)}`}
       >
-        <span id={STOREFRONT_PRODUCTS_ALIAS_ANCHOR} className="sr-only" aria-hidden="true" />
+        <span id={STOREFRONT_PRODUCTS_ALIAS_ANCHOR} className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
         {children}
       </div>
     </ListingGridViewContext.Provider>

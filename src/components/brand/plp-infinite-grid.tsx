@@ -44,7 +44,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
   if (products.length === 0) {
     return (
       <div id="san-pham" className="collection-products-anchor">
-        <span id="products" className="sr-only" aria-hidden="true" />
+        <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
         <ListingEmptyState
           titleId="category-empty-title"
           eyebrow="Không tìm thấy"

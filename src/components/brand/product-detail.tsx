@@ -170,8 +170,8 @@ export function BrandProductDetail({
             id="mua-hang"
             className="collection-products-anchor min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2"
           >
-            <span id="dat-hang" className="sr-only" aria-hidden="true" />
-            <span id="chon-size" className="sr-only" aria-hidden="true" />
+            <span id="dat-hang" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+            <span id="chon-size" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
             <PurchasePanelView
               controller={controller}
               productName={productName}

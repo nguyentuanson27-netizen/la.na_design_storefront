@@ -294,7 +294,7 @@ function render(data: ShopViewModel) {
 
       {data.totalCount === 0 ? (
         <div id="san-pham" className="collection-products-anchor">
-          <span id="products" className="sr-only" aria-hidden="true" />
+          <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
           <ListingEmptyState
             titleId="shop-empty-title"
             eyebrow={data.filtered ? "Không tìm thấy" : "Sản phẩm hiện tại"}
