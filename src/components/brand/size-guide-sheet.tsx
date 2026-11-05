@@ -146,10 +146,6 @@ export function SizeGuideSheet({
           </button>
         </div>
 
-        <p className="mt-2 text-sm leading-6 text-[#3B2219]/70">
-          Tìm dòng có cân nặng của nàng, rồi so số đo cùng dòng.
-        </p>
-
         <table className="mt-3 w-full table-fixed border-collapse text-center text-[11px] leading-tight tabular-nums">
           <caption className="sr-only">{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
           <thead>
@@ -213,7 +209,8 @@ export function SizeGuideSheet({
               <strong>Dung sai:</strong> {guide.tolerance.note}
             </p>
           ) : null}
-          <p>{guide.guidanceNote}</p>
+          {/* The approved "tham khảo" note stays for assistive technology; sighted shoppers get the table. */}
+          <p className="sr-only">{guide.guidanceNote}</p>
         </div>
         </div>
 
