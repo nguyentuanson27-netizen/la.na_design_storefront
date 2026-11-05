@@ -7,6 +7,7 @@ import {
   ListingHeader,
   ListingShell,
 } from "@/components/brand/listing-chrome";
+import { ListingCollectionGrid, ListingViewToggle } from "@/components/brand/listing-view";
 import { loadCollectionsRoute, type CollectionsRouteData } from "@/routes/collections";
 import { createStorefrontRoute } from "@/routes/factory";
 import { buildCollectionsMetadata } from "@/routes/metadata/collections";
@@ -32,7 +33,13 @@ type ListedCollection = CollectionsRouteData["collections"][number];
  * centred at one column's width instead of leaving the row's other half empty.
  */
 const CARD_LAYOUT =
-  "md:last:odd:col-span-2 md:last:odd:w-[calc(50%-0.75rem)] md:last:odd:justify-self-center lg:last:odd:w-[calc(50%-1rem)]";
+  "md:group-data-[view=large]/cgrid:last:odd:col-span-2 md:group-data-[view=large]/cgrid:last:odd:w-[calc(50%-0.75rem)] md:group-data-[view=large]/cgrid:last:odd:justify-self-center lg:group-data-[view=large]/cgrid:last:odd:w-[calc(50%-1rem)]";
+
+/*
+ * The centring above is for the two-across grid only. With a smaller photograph size there are
+ * three or four columns, and an odd last card spanning two of them would be wrong, so the card
+ * keeps it only in the large view (`group-data-[view=large]/cgrid`, set by `ListingCollectionGrid`).
+ */
 
 /**
  * The card's one link, in the homepage banner's vocabulary: an underlined small-caps "Khám phá",
@@ -66,66 +73,71 @@ function render(data: CollectionsRouteData) {
         // On a phone the covers run edge to edge with the product grid's 2px seam, the way the
         // homepage stacks its collection banners; the shell's gutter would cost each 16:9 cover a
         // seventh of its height. From `md` they sit in the container, two across.
-        <div className="-mx-6 mt-6 grid grid-cols-1 gap-[2px] md:mx-0 md:mt-8 md:grid-cols-2 md:gap-6 lg:gap-8">
-          {data.collections.map((collection) =>
-            collection.heroImageUrl ? (
-              <article
-                key={collection.slug}
-                className={`group relative isolate aspect-[16/9] overflow-hidden bg-[var(--stone)] ${CARD_LAYOUT}`}
-              >
-                {/* Behind the copy (`-z-10` inside the isolated card) rather than the copy lifted
-                    over it, so the card -- not the copy box -- is what the CTA's stretched hit area
-                    covers. */}
-                <div
-                  data-collection-card-media=""
-                  className="absolute inset-0 -z-10"
+        <>
+          <div className="mt-6 flex justify-end md:mt-8">
+            <ListingViewToggle />
+          </div>
+          <ListingCollectionGrid className="-mx-6 mt-3 gap-[2px] md:mx-0 md:gap-6 lg:gap-8">
+            {data.collections.map((collection) =>
+              collection.heroImageUrl ? (
+                <article
+                  key={collection.slug}
+                  className={`group relative isolate aspect-[16/9] overflow-hidden bg-[var(--stone)] ${CARD_LAYOUT}`}
                 >
-                  <Image
-                    src={collection.heroImageUrl}
-                    alt=""
-                    fill
-                    sizes="(min-width: 768px) 50vw, 100vw"
-                    className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                  {/* Behind the copy (`-z-10` inside the isolated card) rather than the copy lifted
+                      over it, so the card -- not the copy box -- is what the CTA's stretched hit area
+                      covers. */}
+                  <div
+                    data-collection-card-media=""
+                    className="absolute inset-0 -z-10"
+                  >
+                    <Image
+                      src={collection.heroImageUrl}
+                      alt=""
+                      fill
+                      sizes="(min-width: 768px) 50vw, 100vw"
+                      className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                    />
+                  </div>
+
+                  {/* The cover photograph carries the collection's name (owner decision), so the title
+                      is for screen readers only and is not printed a second time over it. */}
+                  <h2 className="sr-only">{collection.title}</h2>
+
+                  {/* Gentle bottom-only vignette under the light CTA */}
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-x-0 bottom-0 -z-10 h-1/3 bg-gradient-to-t from-black/45 via-black/10 to-transparent transition-opacity duration-300 group-hover:from-black/55"
                   />
-                </div>
 
-                {/* The cover photograph carries the collection's name (owner decision), so the title
-                    is for screen readers only and is not printed a second time over it. */}
-                <h2 className="sr-only">{collection.title}</h2>
-
-                {/* Gentle bottom-only vignette under the light CTA */}
-                <div
-                  aria-hidden="true"
-                  className="absolute inset-x-0 bottom-0 -z-10 h-1/3 bg-gradient-to-t from-black/45 via-black/10 to-transparent transition-opacity duration-300 group-hover:from-black/55"
-                />
-
-                <div className="flex h-full flex-col items-center justify-end px-5 pb-2 sm:pb-5 lg:pb-6">
-                  <CollectionCardCta collection={collection} />
-                </div>
-              </article>
-            ) : (
-              <article
-                key={collection.slug}
-                className={`group relative flex min-h-[56.25vw] flex-col justify-between overflow-hidden border-y border-[#2A1810]/10 bg-[var(--cream)] p-6 transition-colors duration-300 hover:bg-[var(--paper)] md:min-h-72 md:border md:p-10 ${CARD_LAYOUT}`}
-              >
-                <div
-                  data-collection-card-media=""
-                  data-collection-card-fallback=""
-                  aria-hidden="true"
-                  className="hidden"
-                />
-                <div>
-                  <h2 className="max-w-xl break-words font-display text-2xl font-normal leading-tight text-[#2A1810] sm:text-3xl lg:text-4xl">
-                    {collection.title}
-                  </h2>
-                </div>
-                <div className="mt-6 md:mt-8">
-                  <CollectionCardCta collection={collection} tone="ink" />
-                </div>
-              </article>
-            ),
-          )}
-        </div>
+                  <div className="flex h-full flex-col items-center justify-end px-5 pb-2 sm:pb-5 lg:pb-6">
+                    <CollectionCardCta collection={collection} />
+                  </div>
+                </article>
+              ) : (
+                <article
+                  key={collection.slug}
+                  className={`group relative flex min-h-[56.25vw] flex-col justify-between overflow-hidden border-y border-[#2A1810]/10 bg-[var(--cream)] p-6 transition-colors duration-300 hover:bg-[var(--paper)] md:min-h-72 md:border md:p-10 ${CARD_LAYOUT}`}
+                >
+                  <div
+                    data-collection-card-media=""
+                    data-collection-card-fallback=""
+                    aria-hidden="true"
+                    className="hidden"
+                  />
+                  <div>
+                    <h2 className="max-w-xl break-words font-display text-2xl font-normal leading-tight text-[#2A1810] sm:text-3xl lg:text-4xl">
+                      {collection.title}
+                    </h2>
+                  </div>
+                  <div className="mt-6 md:mt-8">
+                    <CollectionCardCta collection={collection} tone="ink" />
+                  </div>
+                </article>
+              ),
+            )}
+          </ListingCollectionGrid>
+        </>
       ) : (
         <ListingEmptyState
           titleId="collections-empty-title"

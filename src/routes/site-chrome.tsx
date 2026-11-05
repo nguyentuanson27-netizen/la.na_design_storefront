@@ -19,6 +19,13 @@ import {
   type SiteChromeContent,
 } from "@/components/headless/site-chrome-model";
 import { TryOnSessionProvider } from "@/components/headless/try-on-session";
+import { ListingViewProvider } from "@/components/brand/listing-view";
+import {
+  DEFAULT_LISTING_VIEW,
+  LISTING_VIEW_REQUEST_HEADER,
+  parseListingView,
+  type ListingView,
+} from "@/components/headless/listing-view-model";
 import { readRequestScriptNonce } from "@/security/script-nonce-policy";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildSiteStructuredData, serializeJsonLd } from "@/seo/structured-data";
@@ -54,6 +61,8 @@ export type SiteChromeModel = Readonly<{
    * own scripts from the request's policy header; these are the scripts it does not write.
    */
   scriptNonce: string | undefined;
+  /** The photograph size the shopper chose for listings (`?view=` over the cookie), resolved by the proxy. */
+  listingView: ListingView;
 }>;
 
 import { readConfiguredCategoryMegaMedia } from "@/commerce/storefront-catalog-runtime";
@@ -85,6 +94,7 @@ export async function loadSiteChrome(): Promise<SiteChromeModel> {
     structuredData: [buildSiteStructuredData({ origin: exposure.origin })],
     content: buildSiteChromeContent(megaMedia, process.env),
     scriptNonce: readRequestScriptNonce(requestHeaders),
+    listingView: parseListingView(requestHeaders.get(LISTING_VIEW_REQUEST_HEADER)) ?? DEFAULT_LISTING_VIEW,
   };
 }
 
@@ -119,7 +129,9 @@ export function SiteChrome({
           `try-on-session.tsx`. It wraps only what can start or show one. */}
       <TryOnSessionProvider>
         <SiteMasthead promotion={model.content.promotion} header={model.content.header} />
-        <main id="main-content">{children}</main>
+        <ListingViewProvider initialView={model.listingView}>
+          <main id="main-content">{children}</main>
+        </ListingViewProvider>
         <SiteFooter model={model.content.footer} />
         <BrandTryOnDock />
       </TryOnSessionProvider>

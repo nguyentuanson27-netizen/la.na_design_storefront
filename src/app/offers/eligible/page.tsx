@@ -5,6 +5,7 @@ import {
   ListingEmptyState,
   ListingHeader,
   ListingResultCount,
+  ListingViewToggle,
   ListingShell,
 } from "@/components/brand/listing-chrome";
 import { EligibleOffersInfiniteGrid } from "@/components/brand/eligible-offers-infinite-grid";
@@ -31,8 +32,9 @@ function render({ campaignId, offerName, listing, limited, retryHref, precedingP
           <h2 id="eligible-offers-products-title" className="sr-only">
             Sản phẩm áp dụng ưu đãi
           </h2>
-          <div className="border-b border-[#3B2219]/15 pb-4">
+          <div className="flex items-center justify-between gap-3 border-b border-[#3B2219]/15 pb-4">
             <ListingResultCount>{listing.totalCount} sản phẩm</ListingResultCount>
+            <ListingViewToggle />
           </div>
           <EligibleOffersInfiniteGrid
             initialCards={listing.cards}

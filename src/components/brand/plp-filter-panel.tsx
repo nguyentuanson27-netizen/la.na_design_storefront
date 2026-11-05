@@ -10,6 +10,7 @@ import {
 } from "../../commerce/category-discovery-url";
 import { STOREFRONT_DISCOVERY_LIMITS } from "../../commerce/storefront-discovery";
 import { handleDrawerFocusTrap } from "../headless/cart-drawer-model";
+import { ListingViewToggle } from "./listing-view";
 import { useScrollLock } from "../headless/use-scroll-lock";
 import {
   buildClearAllFiltersHref,
@@ -203,8 +204,9 @@ export function PlpFilterPanel({
     <div className="border-b border-[#3B2219]/15 pb-4">
       {/* Top action row: Count, mobile drawer button, desktop sort dropdown */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="text-xs uppercase tracking-wider text-[#70584B] font-sans">
+        <div className="flex items-center gap-3 text-xs uppercase tracking-wider text-[#70584B] font-sans">
           <span>{totalCount} sản phẩm</span>
+          <ListingViewToggle />
         </div>
 
         <div className="flex items-center gap-3">
