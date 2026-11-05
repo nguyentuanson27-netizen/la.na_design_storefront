@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 import {
   STOREFRONT_PRODUCTS_ANCHOR,
   STOREFRONT_PRODUCTS_ALIAS_ANCHOR,
+  resolveStorefrontAnchor,
+  storefrontQueryAnchor,
+  storefrontScrollBehavior,
 } from "../../src/routes/storefront-anchors.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -85,12 +88,40 @@ test("StorefrontAnchorScroll helper is mounted in SiteDocument for mobile WebVie
   const helper = read("src/components/brand/storefront-anchor-scroll.tsx");
   assert.match(helper, /"use client"/, "helper is a client component");
   assert.match(helper, /scrollIntoView/, "helper uses native scrollIntoView");
-  assert.match(helper, /san-pham/, "helper recognizes san-pham anchor");
-  assert.doesNotMatch(helper, /params\.get\("view"\)/, "helper must not hijack the generic ?view param");
-  assert.match(
-    helper,
-    /function scrollToTarget\(\) \{\s*const targetId = resolveTargetId\(\);/,
-    "target is re-resolved per attempt so hashchange scrolls to the new fragment",
-  );
+});
+
+test("StorefrontAnchorScroll follows client-side navigation, not just the first load", () => {
+  const helper = read("src/components/brand/storefront-anchor-scroll.tsx");
+  assert.match(helper, /usePathname\(\)/, "reacts to pathname changes");
+  assert.match(helper, /useSearchParams\(\)/, "reacts to query-only changes");
+  assert.match(helper, /<Suspense/, "useSearchParams is wrapped in Suspense");
+  assert.match(helper, /\[pathname, queryAnchor\]/, "effect re-runs on navigation, not on every query change");
+  assert.match(helper, /TARGET_WAIT_ATTEMPTS/, "waits a bounded time for the new route's target");
   assert.match(helper, /userMoved/, "delayed scrolls are skipped once the shopper scrolls manually");
+  assert.doesNotMatch(helper, /get\("view"\)/, "must not hijack the listing ?view= param");
+});
+
+test("scroll honours prefers-reduced-motion", () => {
+  assert.equal(storefrontScrollBehavior(true), "instant");
+  assert.equal(storefrontScrollBehavior(false), "smooth");
+  const helper = read("src/components/brand/storefront-anchor-scroll.tsx");
+  assert.match(helper, /prefers-reduced-motion: reduce/, "helper reads the OS setting");
+  assert.doesNotMatch(helper, /behavior:\s*"smooth"/, "no hard-coded smooth scroll");
+});
+
+test("resolveStorefrontAnchor prefers the fragment and falls back to ?scroll= / ?anchor=", () => {
+  assert.equal(resolveStorefrontAnchor("#san-pham", ""), "san-pham");
+  assert.equal(resolveStorefrontAnchor("#mua-hang", "?scroll=san-pham"), "mua-hang");
+  assert.equal(resolveStorefrontAnchor("", "?scroll=san-pham"), "san-pham");
+  assert.equal(resolveStorefrontAnchor("", "?anchor=bo-loc"), "bo-loc");
+  assert.equal(resolveStorefrontAnchor("#unknown", "?anchor=bo-loc"), "bo-loc");
+  assert.equal(resolveStorefrontAnchor("#%E0%A4%A", ""), null, "malformed escape does not throw");
+});
+
+test("resolveStorefrontAnchor ignores unrelated and unsupported input", () => {
+  assert.equal(resolveStorefrontAnchor("", "?view=small"), null, "?view= is the listing size, not an anchor");
+  assert.equal(resolveStorefrontAnchor("", "?scroll=evil"), null);
+  assert.equal(resolveStorefrontAnchor("", ""), null);
+  assert.equal(storefrontQueryAnchor("?view=small&scroll=san-pham"), "san-pham");
+  assert.equal(storefrontQueryAnchor("?view=small"), null);
 });
