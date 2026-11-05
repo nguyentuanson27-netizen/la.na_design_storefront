@@ -27,46 +27,56 @@ export function StorefrontAnchorScroll() {
       // 1. Check URL hash first (standard anchor link)
       const rawHash = window.location.hash.replace(/^#/, "");
       if (rawHash) {
+        let decoded = rawHash;
         try {
-          const decoded = decodeURIComponent(rawHash);
-          if (SUPPORTED_ANCHORS.has(decoded)) return decoded;
+          decoded = decodeURIComponent(rawHash);
         } catch {
-          if (SUPPORTED_ANCHORS.has(rawHash)) return rawHash;
+          // Malformed escape: fall back to the raw fragment.
         }
+        if (SUPPORTED_ANCHORS.has(decoded)) return decoded;
       }
 
       // 2. Query parameter fallback if hash was omitted or stripped by ad platform
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const queryAnchor = params.get("scroll") || params.get("anchor") || params.get("view");
-        if (queryAnchor && SUPPORTED_ANCHORS.has(queryAnchor)) {
-          return queryAnchor;
-        }
-      } catch {
-        // Ignore URLSearchParams error
-      }
+      const params = new URLSearchParams(window.location.search);
+      const queryAnchor = params.get("scroll") || params.get("anchor");
+      if (queryAnchor && SUPPORTED_ANCHORS.has(queryAnchor)) return queryAnchor;
 
       return null;
     }
 
-    const targetId = resolveTargetId();
-    if (!targetId) return;
-
+    // The target is re-resolved on every attempt so a later `hashchange` goes to the new fragment,
+    // not the one that was present at mount.
     function scrollToTarget() {
-      const element = document.getElementById(targetId);
-      if (!element) return;
-      element.scrollIntoView({ behavior: "smooth", block: "start" });
+      const targetId = resolveTargetId();
+      if (!targetId) return;
+      document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    // The delayed initial attempts exist to correct a late layout shift. Once the shopper has
+    // started scrolling themselves they must not be pulled back to the anchor.
+    let userMoved = false;
+    function markUserMoved() {
+      userMoved = true;
+    }
+    function scrollUnlessUserMoved() {
+      if (!userMoved) scrollToTarget();
+    }
+
+    const interactionEvents = ["wheel", "touchstart", "keydown", "mousedown"] as const;
+    for (const type of interactionEvents) {
+      window.addEventListener(type, markUserMoved, { once: true, passive: true });
     }
 
     // Schedule scroll after hydration and on full window load
-    const timer = setTimeout(scrollToTarget, 80);
-    window.addEventListener("load", scrollToTarget, { once: true });
+    const timer = setTimeout(scrollUnlessUserMoved, 80);
+    window.addEventListener("load", scrollUnlessUserMoved, { once: true });
     window.addEventListener("hashchange", scrollToTarget);
 
     return () => {
       clearTimeout(timer);
-      window.removeEventListener("load", scrollToTarget);
+      window.removeEventListener("load", scrollUnlessUserMoved);
       window.removeEventListener("hashchange", scrollToTarget);
+      for (const type of interactionEvents) window.removeEventListener(type, markUserMoved);
     };
   }, []);
 

@@ -1,6 +1,13 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 
+import {
+  STOREFRONT_PRODUCTS_ANCHOR,
+  STOREFRONT_PRODUCTS_ALIAS_ANCHOR,
+} from "@/routes/storefront-anchors";
+
+export { STOREFRONT_PRODUCTS_ANCHOR, STOREFRONT_PRODUCTS_ALIAS_ANCHOR };
+
 /**
  * The listing surfaces' shared presentation.
  *
@@ -71,13 +78,6 @@ export function ListingSubnav({
     </nav>
   );
 }
-
-import {
-  STOREFRONT_PRODUCTS_ANCHOR,
-  STOREFRONT_PRODUCTS_ALIAS_ANCHOR,
-} from "@/routes/storefront-anchors";
-
-export { STOREFRONT_PRODUCTS_ANCHOR, STOREFRONT_PRODUCTS_ALIAS_ANCHOR };
 
 /**
  * The product grid: 4 across on desktop and 2 on mobile, as master spec §18 requires, with a

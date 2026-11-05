@@ -86,4 +86,11 @@ test("StorefrontAnchorScroll helper is mounted in SiteDocument for mobile WebVie
   assert.match(helper, /"use client"/, "helper is a client component");
   assert.match(helper, /scrollIntoView/, "helper uses native scrollIntoView");
   assert.match(helper, /san-pham/, "helper recognizes san-pham anchor");
+  assert.doesNotMatch(helper, /params\.get\("view"\)/, "helper must not hijack the generic ?view param");
+  assert.match(
+    helper,
+    /function scrollToTarget\(\) \{\s*const targetId = resolveTargetId\(\);/,
+    "target is re-resolved per attempt so hashchange scrolls to the new fragment",
+  );
+  assert.match(helper, /userMoved/, "delayed scrolls are skipped once the shopper scrolls manually");
 });
