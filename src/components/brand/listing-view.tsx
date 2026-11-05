@@ -143,17 +143,25 @@ export function useListingView(): ListingViewContextValue {
 export function ListingProductGrid({
   children,
   id = STOREFRONT_PRODUCTS_ANCHOR,
-}: Readonly<{ children: ReactNode; id?: string }>) {
+  anchor = true,
+}: Readonly<{
+  children: ReactNode;
+  id?: string;
+  /** False where another element on the page already owns `#san-pham` (a collection's title or controls). */
+  anchor?: boolean;
+}>) {
   const { view } = useListingView();
   return (
     <ListingGridViewContext.Provider value={view}>
       <div
-        id={id}
-        data-products-anchor=""
+        id={anchor ? id : undefined}
+        data-products-anchor={anchor ? "" : undefined}
         data-view={view}
-        className={`listing-product-grid collection-products-anchor ${productGridClassName(view)}`}
+        className={`listing-product-grid ${anchor ? "collection-products-anchor " : ""}${productGridClassName(view)}`}
       >
-        <span id={STOREFRONT_PRODUCTS_ALIAS_ANCHOR} className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+        {anchor ? (
+          <span id={STOREFRONT_PRODUCTS_ALIAS_ANCHOR} className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+        ) : null}
         {children}
       </div>
     </ListingGridViewContext.Provider>

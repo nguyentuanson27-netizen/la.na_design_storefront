@@ -30,6 +30,12 @@ const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
 function render(data: CollectionViewModel) {
   const { editorial } = data;
+  // Where `#san-pham` lands: the title when the product controls follow it directly, otherwise the
+  // controls themselves, so a tall gallery or video never sits between the shopper and the grid.
+  // The homepage hero's MUA NGAY link and `homepage-hero.spec.ts` rely on this landing, so the grid
+  // below does not take the anchor itself (`anchor={false}`).
+  const productsAnchorOnTitle = !editorial.video && editorial.gallery.length === 0;
+
   return (
     <>
       {/* The hero is the page's first full-bleed surface, not an image inside the container: the
@@ -75,7 +81,13 @@ function render(data: CollectionViewModel) {
         />
         {/* Title only: the owner removed the story line and the buyer notice from this header. The
             story still feeds the page's metadata; the notice stays on `/shop`. */}
-        <div id="bo-suu-tap" className="collection-products-anchor">
+        <div
+          id={productsAnchorOnTitle ? COLLECTION_PRODUCTS_ANCHOR : "bo-suu-tap"}
+          className="collection-products-anchor"
+        >
+          {productsAnchorOnTitle ? (
+            <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+          ) : null}
           <ListingHeader title={data.title} />
         </div>
 
@@ -113,10 +125,13 @@ function render(data: CollectionViewModel) {
         ) : null}
 
         <section
-          id="bo-loc"
+          id={productsAnchorOnTitle ? "bo-loc" : COLLECTION_PRODUCTS_ANCHOR}
           className="collection-products-anchor mt-6 md:mt-12"
           aria-label="Điều khiển bộ sưu tập"
         >
+          {productsAnchorOnTitle ? null : (
+            <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+          )}
           <CollectionFilterPanel
             totalCount={data.totalCount}
             sortOptions={data.sortOptions}
@@ -126,31 +141,28 @@ function render(data: CollectionViewModel) {
         </section>
 
         {data.totalCount === 0 ? (
-          <div id={COLLECTION_PRODUCTS_ANCHOR} className="collection-products-anchor">
-            <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
-            <ListingEmptyState
-              titleId="collection-empty-title"
-              eyebrow={data.filtered ? "Không tìm thấy" : "Bộ sưu tập hiện tại"}
-              title={data.filtered ? "Không có sản phẩm phù hợp." : "Bộ sưu tập này chưa có sản phẩm."}
-              copy={
-                data.filtered
-                  ? "Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm trong bộ sưu tập."
-                  : "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập."
-              }
-              action={
-                data.filtered
-                  ? { href: data.clearFilterHref, label: "Xóa bộ lọc" }
-                  : undefined
-              }
-            />
-          </div>
+          <ListingEmptyState
+            titleId="collection-empty-title"
+            eyebrow={data.filtered ? "Không tìm thấy" : "Bộ sưu tập hiện tại"}
+            title={data.filtered ? "Không có sản phẩm phù hợp." : "Bộ sưu tập này chưa có sản phẩm."}
+            copy={
+              data.filtered
+                ? "Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm trong bộ sưu tập."
+                : "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập."
+            }
+            action={
+              data.filtered
+                ? { href: data.clearFilterHref, label: "Xóa bộ lọc" }
+                : undefined
+            }
+          />
         ) : (
           <section className="mt-8" aria-labelledby="collection-products-title">
             <h2 id="collection-products-title" className="sr-only">
               Sản phẩm
             </h2>
             <div>
-              <ListingProductGrid>
+              <ListingProductGrid anchor={false}>
                 {data.cards.map((card, index) => (
                   <ProductCard
                     key={card.id}

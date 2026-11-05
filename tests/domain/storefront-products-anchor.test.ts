@@ -41,17 +41,19 @@ test("category PLP routes expose #san-pham on grid and empty state, and #bo-loc 
   assert.match(plpGrid, /id="san-pham"/, "PLP empty state carries #san-pham anchor");
 });
 
-test("collection pages deep link straight to products grid from hero cue and external URLs", () => {
+test("collection #san-pham keeps landing on the title or the controls, never on the grid", () => {
+  // homepage-hero.spec.ts locks this: the CTA lands with the H1 (no gallery) or the controls
+  // section (gallery) in view, and exactly one #san-pham exists on the page.
   const collectionPage = read("src/app/collections/[slug]/page.tsx");
   assert.match(
     collectionPage,
     /href=\{`#\$\{COLLECTION_PRODUCTS_ANCHOR\}`\}/,
     "hero cue links to #san-pham",
   );
-  assert.match(collectionPage, /id="bo-suu-tap"/, "collection title carries #bo-suu-tap anchor");
-  assert.match(collectionPage, /id="bo-loc"/, "collection filter carries #bo-loc anchor");
-  assert.match(collectionPage, /<ListingProductGrid/, "collection uses shared ListingProductGrid");
-  assert.match(collectionPage, /id=\{COLLECTION_PRODUCTS_ANCHOR\}/, "collection empty state carries #san-pham anchor");
+  assert.match(collectionPage, /productsAnchorOnTitle \? COLLECTION_PRODUCTS_ANCHOR : "bo-suu-tap"/, "title carries #san-pham, else #bo-suu-tap");
+  assert.match(collectionPage, /productsAnchorOnTitle \? "bo-loc" : COLLECTION_PRODUCTS_ANCHOR/, "controls carry #san-pham when a gallery/video precedes them, else #bo-loc");
+  assert.match(collectionPage, /<ListingProductGrid anchor=\{false\}>/, "the grid must not add a second #san-pham");
+  assert.doesNotMatch(collectionPage, /<div id=\{COLLECTION_PRODUCTS_ANCHOR\}/, "the empty state must not add a second #san-pham");
 });
 
 test("shop, sale, and new-arrivals listing surfaces carry #san-pham on populated and empty states", () => {
