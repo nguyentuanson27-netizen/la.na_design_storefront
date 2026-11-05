@@ -35,6 +35,7 @@ import { useElapsedMs } from "@/components/headless/use-elapsed-ms";
 import { requestStorefrontCartDrawerOpen } from "@/components/headless/cart-drawer-events";
 import { resolveMobilePurchasePresentation } from "@/components/headless/variant-selection-model";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
+import { SIZE_GUIDE_SHEET_QUERY, SizeGuideSheet } from "@/components/brand/size-guide-sheet";
 import type { ProductMappedSizeGuide } from "@/routes/product-model";
 
 /**
@@ -388,6 +389,8 @@ export function PurchasePanelView({
   const mainSizeGuideTriggerRef = useRef<HTMLButtonElement | null>(null);
   const sizeGuideDialogRef = useRef<HTMLDialogElement | null>(null);
   const sizeGuideCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sizeGuideSheetRef = useRef<HTMLDialogElement | null>(null);
+  const sizeGuideSheetCloseRef = useRef<HTMLButtonElement | null>(null);
   const sizeGuideSourceRef = useRef<"main" | "sheet" | null>(null);
   const sheetWasOpenRef = useRef(false);
   const suppressSheetFocusRestoreRef = useRef(false);
@@ -530,12 +533,21 @@ export function PurchasePanelView({
     stickyTriggerRef.current?.focus();
   }, [isSheetOpen]);
 
+  /** Phones (below `sm`) get the bottom-sheet table; everything wider keeps the centred dialog. */
+  function resolveSizeGuideSurface() {
+    const phone = window.matchMedia(SIZE_GUIDE_SHEET_QUERY).matches;
+    return {
+      dialog: phone ? sizeGuideSheetRef.current : sizeGuideDialogRef.current,
+      closeButton: phone ? sizeGuideSheetCloseRef.current : sizeGuideCloseButtonRef.current,
+    };
+  }
+
   function showMainSizeGuide() {
-    const dialog = sizeGuideDialogRef.current;
+    const { dialog, closeButton } = resolveSizeGuideSurface();
     if (!dialog || dialog.open) return;
     sizeGuideSourceRef.current = "main";
     dialog.showModal();
-    sizeGuideCloseButtonRef.current?.focus();
+    closeButton?.focus();
   }
 
   function showSheetSizeGuide() {
@@ -544,10 +556,10 @@ export function PurchasePanelView({
     suppressSheetFocusRestoreRef.current = true;
     setIsSheetOpen(false);
     window.requestAnimationFrame(() => {
-      const dialog = sizeGuideDialogRef.current;
+      const { dialog, closeButton } = resolveSizeGuideSurface();
       if (!dialog || dialog.open) return;
       dialog.showModal();
-      sizeGuideCloseButtonRef.current?.focus();
+      closeButton?.focus();
     });
   }
 
@@ -1118,12 +1130,21 @@ export function PurchasePanelView({
         : null}
 
       {sizeGuide === null ? null : (
-        <MappedSizeGuideDialog
-          guide={sizeGuide}
-          dialogRef={sizeGuideDialogRef}
-          closeButtonRef={sizeGuideCloseButtonRef}
-          onClose={handleSizeGuideClose}
-        />
+        <>
+          <MappedSizeGuideDialog
+            guide={sizeGuide}
+            dialogRef={sizeGuideDialogRef}
+            closeButtonRef={sizeGuideCloseButtonRef}
+            onClose={handleSizeGuideClose}
+          />
+          <SizeGuideSheet
+            guide={sizeGuide}
+            selectedSize={selection.size}
+            dialogRef={sizeGuideSheetRef}
+            closeButtonRef={sizeGuideSheetCloseRef}
+            onClose={handleSizeGuideClose}
+          />
+        </>
       )}
     </>
   );

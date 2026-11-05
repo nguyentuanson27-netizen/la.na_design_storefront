@@ -50,6 +50,8 @@ export type ProductMappedSizeGuide = Readonly<{
   guidanceNote: string;
   /** Admin-set artwork for the guide; `null` draws the table from `chart` instead. */
   imageUrl: string | null;
+  /** The product's Pancake code, named in the phone sheet's title; `null` when it has none. */
+  productCode: string | null;
 }>;
 
 export type ProductEditorial = Readonly<{
@@ -105,6 +107,8 @@ export type ProductViewModelInput = Readonly<{
   sizeGuide: string | null;
   /** The mapped guide's admin-set artwork, when it has one. */
   sizeGuideImageUrl?: string | null;
+  /** The product's Pancake code ("V-DA247"), when it has one. */
+  productCode?: string | null;
   careInstructions: string | null;
   options: readonly StorefrontProjectionOption[];
   productLevelOptions: readonly StorefrontProjectionOption[];
@@ -133,6 +137,7 @@ export function resolveInitialGalleryIndex(
 export function resolveProductMappedSizeGuide(
   sizeGuideId: string | null,
   imageUrl: string | null = null,
+  productCode: string | null = null,
 ): ProductMappedSizeGuide | null {
   if (!isApprovedSizeGuideId(sizeGuideId)) return null;
 
@@ -147,12 +152,17 @@ export function resolveProductMappedSizeGuide(
     circumferenceSemanticsNote: publicGuide.circumferenceSemanticsNote,
     guidanceNote: publicGuide.guidanceNote,
     imageUrl,
+    productCode,
   });
 }
 
 export function buildProductViewModel(input: ProductViewModelInput): ProductViewModel {
   const craftDetails = input.craftDetails.filter((detail) => detail.trim().length > 0);
-  const sizeGuide = resolveProductMappedSizeGuide(input.sizeGuide, input.sizeGuideImageUrl ?? null);
+  const sizeGuide = resolveProductMappedSizeGuide(
+    input.sizeGuide,
+    input.sizeGuideImageUrl ?? null,
+    input.productCode ?? null,
+  );
 
   return Object.freeze({
     slug: input.slug,

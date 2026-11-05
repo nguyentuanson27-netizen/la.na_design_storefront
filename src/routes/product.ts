@@ -161,6 +161,7 @@ export async function loadProductRoute({
         craftDetails: product.craftDetails,
         sizeGuide: product.sizeGuide,
         sizeGuideImageUrl,
+        productCode: product.productCode,
         careInstructions: product.careInstructions,
         options,
         productLevelOptions: selectStorefrontProductLevelOptions(product.projection),
