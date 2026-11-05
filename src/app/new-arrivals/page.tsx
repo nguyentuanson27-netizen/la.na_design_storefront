@@ -7,6 +7,7 @@ import {
   ListingPagination,
   ListingProductGrid,
   ListingResultCount,
+  ListingViewToggle,
   ListingShell,
 } from "@/components/brand/listing-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -50,8 +51,9 @@ function render(data: NewArrivalsViewModel) {
           <h2 id="new-arrivals-products-title" className="sr-only">
             Sản phẩm được chọn
           </h2>
-          <div className="border-b border-[#3B2219]/15 pb-4">
+          <div className="flex items-center justify-between gap-3 border-b border-[#3B2219]/15 pb-4">
             <ListingResultCount>{data.totalCount} sản phẩm</ListingResultCount>
+            <ListingViewToggle />
           </div>
           <div className="mt-8">
             <ListingProductGrid>

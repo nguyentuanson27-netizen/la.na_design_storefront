@@ -15,6 +15,7 @@ import {
   ListingPagination,
   ListingProductGrid,
   ListingShell,
+  ListingViewToggle,
 } from "@/components/brand/listing-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
 import { buildShopMetadata } from "@/routes/metadata/shop";
@@ -66,8 +67,9 @@ function render(data: ShopViewModel) {
         {/* Mobile: search, sort and drawer filters are one GET form authority. */}
         <form method="get" action="/shop" className="md:hidden">
           <div className="flex flex-col gap-4">
-            <div className="text-xs uppercase tracking-wider text-[#70584B] font-sans">
+            <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-wider text-[#70584B] font-sans">
               <span>{data.totalCount} sản phẩm</span>
+              <ListingViewToggle />
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -133,8 +135,9 @@ function render(data: ShopViewModel) {
           {/* Sale has no control on /shop, but a link can filter by it: the form must carry it. */}
           {discovery.sale ? <input type="hidden" name="sale" value="true" /> : null}
           <div className="flex items-center justify-between gap-4">
-            <div className="text-xs uppercase tracking-wider text-[#70584B] font-sans">
+            <div className="flex items-center gap-4 text-xs uppercase tracking-wider text-[#70584B] font-sans">
               <span>{data.totalCount} sản phẩm</span>
+              <ListingViewToggle />
             </div>
 
             <div className="flex items-center gap-4">

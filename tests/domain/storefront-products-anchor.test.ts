@@ -21,7 +21,7 @@ test("storefront products anchor constants define canonical Vietnamese and Engli
 });
 
 test("shared ListingProductGrid carries canonical #san-pham id, #products alias, and scroll margin offset", () => {
-  const chrome = read("src/components/brand/listing-chrome.tsx");
+  const chrome = read("src/components/brand/listing-view.tsx");
   assert.match(chrome, /id\s*=\s*STOREFRONT_PRODUCTS_ANCHOR/, "grid defaults to #san-pham anchor");
   assert.match(chrome, /id=\{STOREFRONT_PRODUCTS_ALIAS_ANCHOR\}/, "grid carries #products alias span");
   assert.match(chrome, /collection-products-anchor/, "grid carries masthead-clearing scroll margin class");

@@ -11,6 +11,11 @@ import {
   readMetaFirstPartyCookiesEnabled,
 } from "@/integrations/meta/first-party-cookies";
 import { VOUCHER_REDIRECT_HEADERS, planVoucherLinkRedirect } from "@/commerce/voucher-marketing-link";
+import {
+  LISTING_VIEW_COOKIE,
+  LISTING_VIEW_REQUEST_HEADER,
+  planListingViewRequest,
+} from "@/components/headless/listing-view-model";
 import { readSearchExposure, shouldNoIndexRequest } from "@/seo/search-exposure";
 import {
   readStrictScriptPolicyMode,
@@ -86,11 +91,34 @@ function applyAdAttributionCookie(request: NextRequest, response: Response): voi
   }
 }
 
+/**
+ * The shopper's listing view (`?view=` over the `la_listing_view` cookie): the render reads the
+ * verdict from a request header, and a view named in the URL is remembered in the cookie so every
+ * other listing opens the same way. The header is overwritten whatever the browser sent.
+ */
+function planListingView(request: NextRequest, requestHeaders: Headers): string | null {
+  try {
+    const plan = planListingViewRequest({
+      method: request.method,
+      search: request.nextUrl.searchParams,
+      cookie: request.cookies.get(LISTING_VIEW_COOKIE)?.value,
+      secure: request.nextUrl.protocol === "https:",
+    });
+    requestHeaders.set(LISTING_VIEW_REQUEST_HEADER, plan.view);
+    return plan.setCookie;
+  } catch {
+    requestHeaders.delete(LISTING_VIEW_REQUEST_HEADER);
+    return null;
+  }
+}
+
 function applyResponseHeaders(
   request: NextRequest,
   response: Response,
   scriptPolicy?: StrictScriptPolicyHeaders,
+  listingViewCookie: string | null = null,
 ): Response {
+  if (listingViewCookie !== null) response.headers.append("Set-Cookie", listingViewCookie);
   applyMetaFirstPartyCookies(request, response);
   applyAdAttributionCookie(request, response);
   if (scriptPolicy?.response) {
@@ -124,17 +152,18 @@ export async function proxy(request: NextRequest) {
   }
 
   const scriptPolicy = readStrictScriptPolicy(request);
+  const listingViewCookie = planListingView(request, scriptPolicy.request);
   const forward = { request: { headers: scriptPolicy.request } };
 
   if (!EXACT_PRODUCT_PATH.test(request.nextUrl.pathname)) {
-    return applyResponseHeaders(request, NextResponse.next(forward), scriptPolicy);
+    return applyResponseHeaders(request, NextResponse.next(forward), scriptPolicy, listingViewCookie);
   }
 
   const slug = request.nextUrl.pathname.slice(SHOP_PRODUCT_PREFIX.length);
   const resolution = await resolveConfiguredStorefrontProductSlug(slug);
 
   if (resolution.kind === "CURRENT") {
-    return applyResponseHeaders(request, NextResponse.next(forward), scriptPolicy);
+    return applyResponseHeaders(request, NextResponse.next(forward), scriptPolicy, listingViewCookie);
   }
 
   if (resolution.kind === "HISTORICAL") {
@@ -178,7 +207,7 @@ export async function proxy(request: NextRequest) {
   destination.search = "";
   destination.hash = "";
 
-  return applyResponseHeaders(request, NextResponse.rewrite(destination, forward), scriptPolicy);
+  return applyResponseHeaders(request, NextResponse.rewrite(destination, forward), scriptPolicy, listingViewCookie);
 }
 
 export const config = {
