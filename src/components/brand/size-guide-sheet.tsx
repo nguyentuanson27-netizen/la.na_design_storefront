@@ -226,7 +226,7 @@ export function SizeGuideSheet({
                 href={zaloHref}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex min-h-12 flex-1 items-center justify-center rounded-full bg-[#3B2219]/8 px-3 text-center text-sm font-semibold leading-tight text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
+                className="inline-flex min-h-12 flex-[1.2] items-center justify-center whitespace-nowrap rounded-full bg-[#3B2219]/8 px-2 text-center text-[13px] font-semibold leading-tight text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
               >
                 Nhắn Zalo nhờ chọn<span className="sr-only"> (mở trong tab mới)</span>
               </a>
@@ -234,7 +234,7 @@ export function SizeGuideSheet({
             <button
               type="button"
               disabled={!action.enabled}
-              className="inline-flex min-h-12 flex-[1.3] items-center justify-center rounded-full bg-[#3B2219] px-3 text-center text-sm font-semibold leading-tight text-[#FAF7F2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:bg-[#3B2219]/25 disabled:text-[#3B2219]/60"
+              className="inline-flex min-h-12 flex-1 items-center justify-center whitespace-nowrap rounded-full bg-[#3B2219] px-2 text-center text-[13px] font-semibold leading-tight text-[#FAF7F2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:bg-[#3B2219]/25 disabled:text-[#3B2219]/60"
               onClick={chooseSize}
             >
               {action.label}
