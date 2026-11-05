@@ -5,6 +5,7 @@ import {
   ListingProductGrid,
   ListingResultCount,
   ListingSubnav,
+  ListingViewToggle,
 } from "@/components/brand/listing-chrome";
 import { SALE_CHILD_NAVIGATION, SALE_ROOT_NAVIGATION } from "@/brand/sale.config";
 import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
@@ -56,10 +57,11 @@ export function SaleListingBody({
       </h2>
       {/* Live, because the count is what changes when a campaign boundary passes and the shell
           re-reads the route underneath the reader. */}
-      <div className="border-b border-[#3B2219]/15 pb-4">
+      <div className="flex items-center justify-between gap-3 border-b border-[#3B2219]/15 pb-4">
         <ListingResultCount live>
           {data.totalCount} {countLabel}
         </ListingResultCount>
+        <ListingViewToggle />
       </div>
       <div className="mt-8">
         <ListingProductGrid>

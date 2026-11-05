@@ -1,5 +1,4 @@
-import Image from "next/image";
-
+import { ListingCardImage } from "@/components/brand/listing-view";
 import { ProductSelectLink } from "@/components/analytics/product-select-link";
 import type { ProductCardModel } from "@/components/headless/build-product-card-model";
 
@@ -81,11 +80,10 @@ export function ProductCard({
           ) : null}
           {primaryImage ? (
             <>
-              <Image
+              <ListingCardImage
                 src={primaryImage.url}
                 alt={primaryImage.alt || model.name}
                 fill
-                sizes="(min-width: 1024px) 25vw, 50vw"
                 loading={eager ? "eager" : undefined}
                 className={`object-cover transition-all duration-500 ${
                   hoverImage
@@ -94,12 +92,11 @@ export function ProductCard({
                 }`}
               />
               {hoverImage ? (
-                <Image
+                <ListingCardImage
                   src={hoverImage.url}
                   alt=""
                   aria-hidden="true"
                   fill
-                  sizes="(min-width: 1024px) 25vw, 50vw"
                   className="object-cover opacity-0 transition-all duration-500 group-hover:opacity-100 group-hover:scale-105"
                 />
               ) : null}

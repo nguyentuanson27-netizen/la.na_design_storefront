@@ -96,11 +96,11 @@ test("the shared header is a normal-weight serif h1 under an eyebrow", () => {
 });
 
 test("the shared product grid is 4 across on desktop and 2 on mobile", () => {
-  const chrome = read("src/components/brand/listing-chrome.tsx");
-  const grid = componentSource(chrome, "ListingProductGrid");
-  // Master spec §18.
-  assert.match(grid, /grid-cols-2/, "2 columns on mobile");
-  assert.match(grid, /lg:grid-cols-4/, "4 products per row on desktop");
+  // Master spec §18. The default view ("large") is the spec's grid; the shopper's other two views
+  // (listing-view) only add columns.
+  const model = read("src/components/headless/listing-view-model.ts");
+  assert.match(model, /DEFAULT_LISTING_VIEW: ListingView = "large"/);
+  assert.match(model, /large: "grid-cols-2 md:grid-cols-3 lg:grid-cols-4"/, "2 columns on mobile, 4 products per row on desktop");
 });
 
 test("storefront product card media and loading skeletons pin the 2:3 aspect ratio contract", () => {

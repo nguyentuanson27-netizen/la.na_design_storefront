@@ -19,11 +19,13 @@ test("mobile independent UX: header exposes menu, logo, search and cart with pra
 });
 
 test("mobile independent UX: phone listing grid is two columns with a 2px rhythm and compact card type", () => {
-  const chrome = read("src/components/brand/listing-chrome.tsx");
+  // The grid's columns now follow the shopper's chosen view; the default ("large") is the grid as
+  // it was: two across a phone at a 2px rhythm, four across a desktop.
+  const model = read("src/components/headless/listing-view-model.ts");
   const card = read("src/components/brand/product-card.tsx");
 
-  assert.match(chrome, /grid-cols-2 gap-\[2px\]/);
-  assert.match(chrome, /lg:grid-cols-4/);
+  assert.match(model, /large: "grid-cols-2 md:grid-cols-3 lg:grid-cols-4"/);
+  assert.match(model, /large: "gap-\[2px\]/);
   assert.match(card, /aspect-\[2\/3\]/, "ProductCard visual frame must pin 2:3 portrait aspect ratio");
   assert.doesNotMatch(card, /aspect-\[4\/5\]|aspect-\[3\/4\]/, "ProductCard must not revert to 4:5 or 3:4");
   assert.match(card, /product-title[^"]*text-\[15px\][^"]*line-clamp-2/);

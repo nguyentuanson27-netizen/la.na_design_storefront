@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
 import { ListingResultCount } from "./listing-chrome";
+import { ListingViewToggle } from "./listing-view";
 import type {
   CollectionAvailabilityOption,
   CollectionSizeOption,
@@ -82,7 +83,10 @@ export function CollectionFilterPanel({
     <div className="border-b border-[#3B2219]/15 pb-3 md:pb-4">
       {/* Top action row: count, sort */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <ListingResultCount>{totalCount} sản phẩm</ListingResultCount>
+        <div className="flex items-center gap-3">
+          <ListingResultCount>{totalCount} sản phẩm</ListingResultCount>
+          <ListingViewToggle />
+        </div>
 
         <nav aria-label="Sắp xếp bộ sưu tập" className="flex items-center gap-2">
           <label
