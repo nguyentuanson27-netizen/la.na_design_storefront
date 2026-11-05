@@ -37,7 +37,11 @@ import {
 type ListingViewContextValue = Readonly<{
   view: ListingView;
   setView: (view: ListingView) => void;
-  /** The URL named this view: adopt it without writing the URL or cookie back. */
+  /**
+   * The URL named this view: adopt it without rewriting the URL, but do keep the cookie in step.
+   * Back/forward can restore a page without a request through the proxy, so the cookie is not
+   * written there; skipping the write here would leave it holding the previous page's view.
+   */
   adoptUrlView: (view: ListingView) => void;
 }>;
 
