@@ -19,6 +19,7 @@ import {
   withListingViewParam,
   type ListingView,
 } from "@/components/headless/listing-view-model";
+import { STOREFRONT_PRODUCTS_ALIAS_ANCHOR, STOREFRONT_PRODUCTS_ANCHOR } from "@/routes/storefront-anchors";
 
 /**
  * The shopper's chosen photograph size ("kiểu xem"), shared by every listing on the site.
@@ -132,12 +133,35 @@ export function useListingView(): ListingViewContextValue {
   return useContext(ListingViewContext);
 }
 
-/** The product grid. Its columns follow the chosen view; `data-view` lets the card trim its text. */
-export function ListingProductGrid({ children }: Readonly<{ children: ReactNode }>) {
+/**
+ * The product grid. Its columns follow the chosen view; `data-view` lets the card trim its text.
+ *
+ * It carries the canonical `#san-pham` anchor (and `#products` alias) with the
+ * `collection-products-anchor` scroll offset, so a link from Zalo, Messenger or an ad lands on the
+ * products instead of making the shopper scroll past the header and the introductory content.
+ */
+export function ListingProductGrid({
+  children,
+  id = STOREFRONT_PRODUCTS_ANCHOR,
+  anchor = true,
+}: Readonly<{
+  children: ReactNode;
+  id?: string;
+  /** False where another element on the page already owns `#san-pham` (a collection's title or controls). */
+  anchor?: boolean;
+}>) {
   const { view } = useListingView();
   return (
     <ListingGridViewContext.Provider value={view}>
-      <div data-view={view} className={`listing-product-grid ${productGridClassName(view)}`}>
+      <div
+        id={anchor ? id : undefined}
+        data-products-anchor={anchor ? "" : undefined}
+        data-view={view}
+        className={`listing-product-grid ${anchor ? "collection-products-anchor " : ""}${productGridClassName(view)}`}
+      >
+        {anchor ? (
+          <span id={STOREFRONT_PRODUCTS_ALIAS_ANCHOR} className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+        ) : null}
         {children}
       </div>
     </ListingGridViewContext.Provider>

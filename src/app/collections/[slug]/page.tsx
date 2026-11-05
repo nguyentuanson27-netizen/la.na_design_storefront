@@ -32,6 +32,8 @@ function render(data: CollectionViewModel) {
   const { editorial } = data;
   // Where `#san-pham` lands: the title when the product controls follow it directly, otherwise the
   // controls themselves, so a tall gallery or video never sits between the shopper and the grid.
+  // The homepage hero's MUA NGAY link and `homepage-hero.spec.ts` rely on this landing, so the grid
+  // below does not take the anchor itself (`anchor={false}`).
   const productsAnchorOnTitle = !editorial.video && editorial.gallery.length === 0;
 
   return (
@@ -80,9 +82,12 @@ function render(data: CollectionViewModel) {
         {/* Title only: the owner removed the story line and the buyer notice from this header. The
             story still feeds the page's metadata; the notice stays on `/shop`. */}
         <div
-          id={productsAnchorOnTitle ? COLLECTION_PRODUCTS_ANCHOR : undefined}
-          className={productsAnchorOnTitle ? "collection-products-anchor" : undefined}
+          id={productsAnchorOnTitle ? COLLECTION_PRODUCTS_ANCHOR : "bo-suu-tap"}
+          className="collection-products-anchor"
         >
+          {productsAnchorOnTitle ? (
+            <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+          ) : null}
           <ListingHeader title={data.title} />
         </div>
 
@@ -120,10 +125,13 @@ function render(data: CollectionViewModel) {
         ) : null}
 
         <section
-          id={productsAnchorOnTitle ? undefined : COLLECTION_PRODUCTS_ANCHOR}
-          className={productsAnchorOnTitle ? "mt-6 md:mt-12" : "collection-products-anchor mt-6 md:mt-12"}
+          id={productsAnchorOnTitle ? "bo-loc" : COLLECTION_PRODUCTS_ANCHOR}
+          className="collection-products-anchor mt-6 md:mt-12"
           aria-label="Điều khiển bộ sưu tập"
         >
+          {productsAnchorOnTitle ? null : (
+            <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+          )}
           <CollectionFilterPanel
             totalCount={data.totalCount}
             sortOptions={data.sortOptions}
@@ -154,7 +162,7 @@ function render(data: CollectionViewModel) {
               Sản phẩm
             </h2>
             <div>
-              <ListingProductGrid>
+              <ListingProductGrid anchor={false}>
                 {data.cards.map((card, index) => (
                   <ProductCard
                     key={card.id}

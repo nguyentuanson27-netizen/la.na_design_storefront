@@ -43,13 +43,16 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
   // Empty state
   if (products.length === 0) {
     return (
-      <ListingEmptyState
-        titleId="category-empty-title"
-        eyebrow="Không tìm thấy"
-        title="Không tìm thấy sản phẩm phù hợp"
-        copy="Nàng thử đổi bộ lọc hoặc bỏ bớt lựa chọn nhé."
-        action={{ href: categoryPath, label: "Xóa tất cả bộ lọc" }}
-      />
+      <div id="san-pham" className="collection-products-anchor">
+        <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+        <ListingEmptyState
+          titleId="category-empty-title"
+          eyebrow="Không tìm thấy"
+          title="Không tìm thấy sản phẩm phù hợp"
+          copy="Nàng thử đổi bộ lọc hoặc bỏ bớt lựa chọn nhé."
+          action={{ href: categoryPath, label: "Xóa tất cả bộ lọc" }}
+        />
+      </div>
     );
   }
 

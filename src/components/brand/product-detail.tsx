@@ -166,7 +166,12 @@ export function BrandProductDetail({
         <div className="grid min-w-0 items-start gap-6 lg:mt-7 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto_1fr] lg:gap-x-16 lg:gap-y-10 lg:border-t lg:border-black/20 lg:pt-8">
           <div className="min-w-0 lg:col-start-1 lg:row-start-1">{identity}</div>
 
-          <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
+          <div
+            id="mua-hang"
+            className="collection-products-anchor min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2"
+          >
+            <span id="dat-hang" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+            <span id="chon-size" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
             <PurchasePanelView
               controller={controller}
               productName={productName}
