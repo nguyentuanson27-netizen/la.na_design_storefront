@@ -13,6 +13,7 @@ import {
   planListingViewRequest,
   productGridClassName,
   productImageSizes,
+  readListingViewCookie,
   readListingViewParam,
   resolveListingView,
   serializeListingViewCookie,
@@ -114,4 +115,13 @@ test("the small and medium views never set text under 10px, or name and price un
     assert.ok(px >= 10, `${selector} is ${px}px`);
     if (selector === ".product-title" || selector === ".product-price") assert.ok(px >= 12, `${selector} is ${px}px`);
   }
+});
+
+test("the saved view is read back out of a cookie string, and only when it is valid", () => {
+  assert.equal(readListingViewCookie("la_listing_view=small"), "small");
+  assert.equal(readListingViewCookie("a=1; la_listing_view=medium; b=2"), "medium");
+  assert.equal(readListingViewCookie(`x=1; ${serializeListingViewCookie("large").split(";")[0]}`), "large");
+  assert.equal(readListingViewCookie("la_listing_view=huge"), null);
+  assert.equal(readListingViewCookie("other_la_listing_view=small"), null);
+  assert.equal(readListingViewCookie(""), null);
 });

@@ -56,6 +56,18 @@ export function serializeListingViewCookie(view: ListingView, options: Readonly<
   return parts.join("; ");
 }
 
+/** The saved view in a `document.cookie` / `Cookie` header string; `null` when absent or invalid. */
+export function readListingViewCookie(cookieString: string): ListingView | null {
+  for (const part of cookieString.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator === -1) continue;
+    if (part.slice(0, separator).trim() === LISTING_VIEW_COOKIE) {
+      return parseListingView(part.slice(separator + 1).trim());
+    }
+  }
+  return null;
+}
+
 /** The `view` of a query string, whichever shape it is held in; `null` when absent or invalid. */
 export function readListingViewParam(search: string | URLSearchParams): ListingView | null {
   const params = typeof search === "string" ? new URLSearchParams(search) : search;

@@ -12,6 +12,7 @@ import {
   collectionGridClassName,
   collectionImageSizes,
   parseListingView,
+  readListingViewCookie,
   productGridClassName,
   productImageSizes,
   serializeListingViewCookie,
@@ -53,6 +54,16 @@ const ListingViewContext = createContext<ListingViewContextValue>({
  */
 const ListingGridViewContext = createContext<ListingView | null>(null);
 
+/** Saves the view in the cookie the server reads, unless it already holds it. */
+function rememberView(view: ListingView): void {
+  try {
+    if (readListingViewCookie(document.cookie) === view) return;
+    document.cookie = serializeListingViewCookie(view, { secure: window.location.protocol === "https:" });
+  } catch {
+    // Cookies blocked: the choice still holds for this page and the URL.
+  }
+}
+
 export function ListingViewProvider({
   initialView,
   children,
@@ -61,11 +72,7 @@ export function ListingViewProvider({
 
   const setView = useCallback((next: ListingView) => {
     setViewState(next);
-    try {
-      document.cookie = serializeListingViewCookie(next, { secure: window.location.protocol === "https:" });
-    } catch {
-      // Cookies blocked: the choice still holds for this page and the URL below.
-    }
+    rememberView(next);
     try {
       const { pathname, search, hash } = window.location;
       // `replaceState` is integrated with the router: it changes the address without a server
@@ -76,7 +83,16 @@ export function ListingViewProvider({
     }
   }, []);
 
-  const adoptUrlView = useCallback((next: ListingView) => setViewState(next), []);
+  /*
+   * The cookie is what the next page without a `?view=` opens in, so it follows the URL the shopper
+   * is looking at. The proxy writes it for a request that reaches it, but back/forward can restore
+   * a page from the router cache without one: the grid would show `large` while the cookie still
+   * said `small`, and the next plain listing would open small.
+   */
+  const adoptUrlView = useCallback((next: ListingView) => {
+    setViewState(next);
+    rememberView(next);
+  }, []);
 
   const value = useMemo(() => ({ view, setView, adoptUrlView }), [view, setView, adoptUrlView]);
   return (
