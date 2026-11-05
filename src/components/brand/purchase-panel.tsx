@@ -1145,7 +1145,12 @@ export function PurchasePanelView({
             selectedSize={selection.size}
             sizeChoices={view.sizes}
             canChooseSize={!awaitsKindSelection}
-            onChooseSize={chooseSize}
+            isPending={isPending}
+            // Same lock as the size radios: a size cannot change while an add or buy-now is in
+            // flight. The sheet disables its button too; this is the guard behind it.
+            onChooseSize={(value) => {
+              if (!isPending) chooseSize(value);
+            }}
             zaloHref={sizeGuideZaloHref}
             dialogRef={sizeGuideSheetRef}
             closeButtonRef={sizeGuideSheetCloseRef}

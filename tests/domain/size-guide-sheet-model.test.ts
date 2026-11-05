@@ -88,7 +88,7 @@ test("a chart row maps to the selector's size by label, and to nothing when the 
 });
 
 test("the primary button chooses the picked size only when the selector would accept it", () => {
-  const base = { choices: CHOICES, canChoose: true } as const;
+  const base = { choices: CHOICES, canChoose: true, isPending: false } as const;
 
   assert.deepEqual(resolveSizeGuideAction({ ...base, pickedSize: "M" }), {
     label: "Chọn size M",
@@ -104,4 +104,24 @@ test("the primary button chooses the picked size only when the selector would ac
   const locked = resolveSizeGuideAction({ ...base, canChoose: false, pickedSize: "M" });
   assert.equal(locked.enabled, false);
   assert.match(locked.note ?? "", /loại sản phẩm/);
+});
+
+test("the primary button stays off while an add is in flight, with its own reason", () => {
+  const pending = resolveSizeGuideAction({
+    pickedSize: "M",
+    choices: CHOICES,
+    canChoose: true,
+    isPending: true,
+  });
+  assert.equal(pending.enabled, false);
+  assert.equal(pending.value, null);
+  assert.match(pending.note ?? "", /Đang xử lý/);
+  // Never worded as the missing-kind case, which tells the shopper to go and choose a kind.
+  assert.doesNotMatch(pending.note ?? "", /loại sản phẩm/);
+
+  assert.equal(
+    resolveSizeGuideAction({ pickedSize: "M", choices: CHOICES, canChoose: true, isPending: false })
+      .enabled,
+    true,
+  );
 });

@@ -31,6 +31,7 @@ export function SizeGuideSheet({
   selectedSize,
   sizeChoices,
   canChooseSize,
+  isPending,
   onChooseSize,
   zaloHref,
   dialogRef,
@@ -44,6 +45,8 @@ export function SizeGuideSheet({
   sizeChoices: readonly GuideSizeChoice[];
   /** False while the selector still wants a kind first, which locks its sizes. */
   canChooseSize: boolean;
+  /** True while an add or buy-now is in flight; the size cannot change then, as on the selector. */
+  isPending: boolean;
   /** Chooses that size in the shared purchase selector; the sheet closes itself afterwards. */
   onChooseSize: (value: string) => void;
   /** The shop's Zalo chat link, or `null` when none can be derived. */
@@ -61,7 +64,12 @@ export function SizeGuideSheet({
    */
   const [tappedSize, setTappedSize] = useState<string | null>(null);
   const pickedSize = tappedSize ?? selectedSize;
-  const action = resolveSizeGuideAction({ pickedSize, choices: sizeChoices, canChoose: canChooseSize });
+  const action = resolveSizeGuideAction({
+    pickedSize,
+    choices: sizeChoices,
+    canChoose: canChooseSize,
+    isPending,
+  });
 
   function handleClose() {
     setTappedSize(null);

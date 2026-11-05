@@ -1462,6 +1462,42 @@ test("F7c admin-set size-guide artwork replaces the fallback table and keeps the
   }
 });
 
+test("the phone size guide cannot change the size while an add to bag is in flight", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, { waitUntil: "networkidle" });
+
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  const sizeRadio = purchasePanel.getByRole("group", { name: "Kích cỡ" }).getByRole("radio", { name: "L" });
+  await purchasePanel.getByRole("group", { name: "Kích cỡ" }).getByText("L", { exact: true }).click();
+  await expect(sizeRadio).toBeChecked();
+
+  // Hold the add in flight: it never reaches the server, so no cart line is created.
+  let held = false;
+  await page.route(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      held = true;
+      return;
+    }
+    await route.continue();
+  });
+  await purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true }).click();
+  await expect.poll(() => held).toBe(true);
+  // The selector's own chips are locked while the request waits.
+  await expect(sizeRadio).toBeDisabled();
+
+  // The guide still opens, but it must not be a way round that lock.
+  await purchasePanel.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Hướng dẫn chọn size: Set/Váy form rộng" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("table").getByRole("button", { name: "L", exact: true }).click();
+  const confirm = sheet.getByRole("button", { name: "Chọn size L", exact: true });
+  await expect(confirm).toBeDisabled();
+  await expect(sheet.getByRole("status")).toHaveText(/Đang xử lý/);
+  await expect(sheet.getByRole("status")).not.toContainText("loại sản phẩm");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 test("F7c different manual mappings stay product-specific and an unmapped same-category product has no trigger", async ({
   page,
 }) => {

@@ -100,12 +100,16 @@ export type SizeGuideSheetAction = Readonly<{
  * What the sheet's primary button does for the row the shopper has picked out.
  *
  * `canChoose` is false while the product still wants a kind first: its sizes are locked then, and
- * choosing one here would bypass the order the selector enforces.
+ * choosing one here would bypass the order the selector enforces. `isPending` is true while an add
+ * or buy-now is in flight: the selector's own size chips are locked for that time, because the
+ * request has already captured the variant it was sent for, and the sheet must not be a way around
+ * that. It gets its own sentence so it is never mistaken for the missing-kind case.
  */
 export function resolveSizeGuideAction(input: {
   pickedSize: string | null;
   choices: readonly GuideSizeChoice[];
   canChoose: boolean;
+  isPending: boolean;
 }): SizeGuideSheetAction {
   if (input.pickedSize === null) {
     return Object.freeze({ label: "Chọn một dòng size", value: null, enabled: false, note: null });
@@ -122,6 +126,14 @@ export function resolveSizeGuideAction(input: {
       value: null,
       enabled: false,
       note: "Chọn loại sản phẩm trước, rồi quay lại chọn size.",
+    });
+  }
+  if (input.isPending) {
+    return Object.freeze({
+      label,
+      value: null,
+      enabled: false,
+      note: "Đang xử lý đơn của nàng, chờ một chút rồi chọn size.",
     });
   }
   if (choice.disabled) {
