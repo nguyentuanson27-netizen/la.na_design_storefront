@@ -114,8 +114,14 @@ test("resolveStorefrontAnchor prefers the fragment and falls back to ?scroll= / 
   assert.equal(resolveStorefrontAnchor("#mua-hang", "?scroll=san-pham"), "mua-hang");
   assert.equal(resolveStorefrontAnchor("", "?scroll=san-pham"), "san-pham");
   assert.equal(resolveStorefrontAnchor("", "?anchor=bo-loc"), "bo-loc");
-  assert.equal(resolveStorefrontAnchor("#unknown", "?anchor=bo-loc"), "bo-loc");
   assert.equal(resolveStorefrontAnchor("#%E0%A4%A", ""), null, "malformed escape does not throw");
+});
+
+test("a fragment the helper does not manage is never overridden by the query fallback", () => {
+  // PDP "Xem ảnh khách hàng" link: opened with ?scroll=mua-hang, then the shopper clicks #pdp-feedback.
+  assert.equal(resolveStorefrontAnchor("#pdp-feedback", "?scroll=mua-hang"), null);
+  assert.equal(resolveStorefrontAnchor("#unknown", "?anchor=bo-loc"), null);
+  assert.equal(resolveStorefrontAnchor("#%E0%A4%A", "?scroll=san-pham"), null, "malformed fragment is still a fragment");
 });
 
 test("resolveStorefrontAnchor ignores unrelated and unsupported input", () => {

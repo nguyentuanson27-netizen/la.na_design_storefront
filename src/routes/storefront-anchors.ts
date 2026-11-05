@@ -30,19 +30,21 @@ export function storefrontQueryAnchor(search: string): string | null {
   return value && SUPPORTED_STOREFRONT_ANCHORS.has(value) ? value : null;
 }
 
-/** The anchor to scroll to: the URL fragment wins, then the query fallback. */
+/**
+ * The anchor to scroll to. A fragment the helper manages wins. A fragment it does not manage
+ * (`#pdp-feedback`, an in-page link the shopper just clicked) is left to the browser: the query
+ * fallback exists for links whose fragment was stripped, so it applies only when there is none.
+ */
 export function resolveStorefrontAnchor(hash: string, search: string): string | null {
   const raw = hash.replace(/^#/, "");
-  if (raw) {
-    let decoded = raw;
-    try {
-      decoded = decodeURIComponent(raw);
-    } catch {
-      // Malformed escape: fall back to the raw fragment.
-    }
-    if (SUPPORTED_STOREFRONT_ANCHORS.has(decoded)) return decoded;
+  if (!raw) return storefrontQueryAnchor(search);
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    // Malformed escape: fall back to the raw fragment.
   }
-  return storefrontQueryAnchor(search);
+  return SUPPORTED_STOREFRONT_ANCHORS.has(decoded) ? decoded : null;
 }
 
 /** Smooth by default; an instant jump for shoppers who asked the OS to reduce motion. */
