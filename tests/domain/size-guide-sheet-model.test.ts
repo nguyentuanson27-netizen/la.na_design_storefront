@@ -70,3 +70,38 @@ test("the mapped guide carries the product code for the sheet title", () => {
   assert.equal(resolveProductMappedSizeGuide("ao-dai", null, "V-DA247")?.productCode, "V-DA247");
   assert.equal(resolveProductMappedSizeGuide("ao-dai")?.productCode, null);
 });
+
+import {
+  findGuideSizeChoice,
+  resolveSizeGuideAction,
+} from "../../src/components/headless/size-guide-sheet-model.ts";
+
+const CHOICES = [
+  { value: "S", disabled: false },
+  { value: "M", disabled: false },
+  { value: "L", disabled: true },
+] as const;
+
+test("a chart row maps to the selector's size by label, and to nothing when the product lacks it", () => {
+  assert.equal(findGuideSizeChoice("m", CHOICES)?.value, "M");
+  assert.equal(findGuideSizeChoice("XL", CHOICES), null);
+});
+
+test("the primary button chooses the picked size only when the selector would accept it", () => {
+  const base = { choices: CHOICES, canChoose: true } as const;
+
+  assert.deepEqual(resolveSizeGuideAction({ ...base, pickedSize: "M" }), {
+    label: "Chọn size M",
+    value: "M",
+    enabled: true,
+    note: null,
+  });
+  assert.equal(resolveSizeGuideAction({ ...base, pickedSize: null }).enabled, false);
+  assert.equal(resolveSizeGuideAction({ ...base, pickedSize: "XL" }).enabled, false);
+  assert.equal(resolveSizeGuideAction({ ...base, pickedSize: "L" }).enabled, false);
+  assert.match(resolveSizeGuideAction({ ...base, pickedSize: "L" }).note ?? "", /chưa mua được/);
+
+  const locked = resolveSizeGuideAction({ ...base, canChoose: false, pickedSize: "M" });
+  assert.equal(locked.enabled, false);
+  assert.match(locked.note ?? "", /loại sản phẩm/);
+});

@@ -319,6 +319,7 @@ export function PurchasePanelView({
   tryOnTrigger = null,
   mobileNudge = null,
   sizeHelp = null,
+  sizeGuideZaloHref = null,
   assurance = null,
   offers = null,
   urgency = NO_PRODUCT_URGENCY,
@@ -336,6 +337,8 @@ export function PurchasePanelView({
   mobileNudge?: ReactNode;
   /** Server-built ways to ask the shop about size (chat links), under the size guide on the panel only. */
   sizeHelp?: ReactNode;
+  /** The shop's Zalo chat link, offered on the phone size-guide sheet; `null` hides that button. */
+  sizeGuideZaloHref?: string | null;
   /** Server-built buying facts (payment, returns, shipping), directly under the purchase buttons. */
   assurance?: ReactNode;
   /** Server-built promotions this product takes part in, directly under the price. */
@@ -1140,6 +1143,10 @@ export function PurchasePanelView({
           <SizeGuideSheet
             guide={sizeGuide}
             selectedSize={selection.size}
+            sizeChoices={view.sizes}
+            canChooseSize={!awaitsKindSelection}
+            onChooseSize={chooseSize}
+            zaloHref={sizeGuideZaloHref}
             dialogRef={sizeGuideSheetRef}
             closeButtonRef={sizeGuideSheetCloseRef}
             onClose={handleSizeGuideClose}

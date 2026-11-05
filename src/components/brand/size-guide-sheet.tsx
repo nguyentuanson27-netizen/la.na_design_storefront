@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useState, type KeyboardEvent, type RefObject } from "react";
 
 import {
   buildSizeGuideSheetTable,
   buildSizeGuideSheetTitle,
+  findGuideSizeChoice,
   isSelectedGuideSize,
+  resolveSizeGuideAction,
+  type GuideSizeChoice,
 } from "@/components/headless/size-guide-sheet-model";
 import type { ProductMappedSizeGuide } from "@/routes/product-model";
 
@@ -26,6 +29,10 @@ export const SIZE_GUIDE_SHEET_QUERY = "(max-width: 639.98px)";
 export function SizeGuideSheet({
   guide,
   selectedSize,
+  sizeChoices,
+  canChooseSize,
+  onChooseSize,
+  zaloHref,
   dialogRef,
   closeButtonRef,
   onClose,
@@ -33,12 +40,39 @@ export function SizeGuideSheet({
   guide: ProductMappedSizeGuide;
   /** The size currently chosen in the purchase selector, or `null` while none is. */
   selectedSize: string | null;
+  /** The sizes the product sells, as the purchase selector offers them. */
+  sizeChoices: readonly GuideSizeChoice[];
+  /** False while the selector still wants a kind first, which locks its sizes. */
+  canChooseSize: boolean;
+  /** Chooses that size in the shared purchase selector; the sheet closes itself afterwards. */
+  onChooseSize: (value: string) => void;
+  /** The shop's Zalo chat link, or `null` when none can be derived. */
+  zaloHref: string | null;
   dialogRef: RefObject<HTMLDialogElement | null>;
   closeButtonRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
 }>) {
   const table = buildSizeGuideSheetTable(guide.chart);
   const title = buildSizeGuideSheetTitle(guide.chart.title, guide.productCode);
+  /*
+   * The row the shopper has tapped. Until they tap one it follows the size already chosen in the
+   * selector, and it forgets the tap when the sheet closes, so the next opening starts from the
+   * selector again rather than from a row nobody confirmed.
+   */
+  const [tappedSize, setTappedSize] = useState<string | null>(null);
+  const pickedSize = tappedSize ?? selectedSize;
+  const action = resolveSizeGuideAction({ pickedSize, choices: sizeChoices, canChoose: canChooseSize });
+
+  function handleClose() {
+    setTappedSize(null);
+    onClose();
+  }
+
+  function chooseSize() {
+    if (!action.enabled || action.value === null) return;
+    onChooseSize(action.value);
+    dialogRef.current?.close();
+  }
 
   useEffect(() => {
     const query = window.matchMedia(SIZE_GUIDE_SHEET_QUERY);
@@ -49,11 +83,28 @@ export function SizeGuideSheet({
     return () => query.removeEventListener("change", closeWhenNoLongerPhone);
   }, [dialogRef]);
 
-  // The close button is the only control inside, so Tab stays on it rather than leaving the modal.
+  // Tab wraps inside the sheet rather than leaving the modal.
   function holdFocus(event: KeyboardEvent<HTMLDialogElement>) {
     if (event.key !== "Tab") return;
-    event.preventDefault();
-    closeButtonRef.current?.focus();
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>("button:not([disabled]), a[href]"),
+    ).filter((element) => element.getClientRects().length > 0);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || !dialog.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   return (
@@ -63,11 +114,13 @@ export function SizeGuideSheet({
       data-size-guide-id={guide.id}
       data-size-guide-sheet=""
       tabIndex={-1}
-      className="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[88dvh] w-full max-w-none overflow-y-auto rounded-t-3xl border-0 bg-[#FAF7F2] p-0 text-[#3B2219] shadow-none backdrop:bg-black/45 sm:hidden"
-      onClose={onClose}
+      className="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[88dvh] w-full max-w-none overflow-hidden rounded-t-3xl border-0 bg-[#FAF7F2] p-0 text-[#3B2219] shadow-none backdrop:bg-black/45 sm:hidden"
+      onClose={handleClose}
       onKeyDown={holdFocus}
     >
-      <div className="px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2.5">
+      {/* Its own flex column: `flex` on the dialog would override the closed dialog's `display: none`. */}
+      <div className="flex max-h-[88dvh] flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3 pt-2.5">
         <div aria-hidden="true" className="mx-auto h-1 w-10 rounded-full bg-[#3B2219]/20" />
 
         <div className="mt-4 flex items-start justify-between gap-3">
@@ -118,21 +171,32 @@ export function SizeGuideSheet({
           </thead>
           <tbody>
             {table.rows.map((row) => {
-              const selected = isSelectedGuideSize(row.size, selectedSize);
+              const selected = isSelectedGuideSize(row.size, pickedSize);
+              const offered = findGuideSizeChoice(row.size, sizeChoices) !== null;
               return (
                 <tr
                   key={row.size}
-                  aria-current={selected ? "true" : undefined}
                   data-selected={selected ? "true" : undefined}
-                  className={`border-b border-[#3B2219]/10 ${
+                  // A tap anywhere on the row picks it; the size button in its first cell is the
+                  // same action for keyboards and screen readers.
+                  onClick={offered ? () => setTappedSize(row.size) : undefined}
+                  className={`border-b border-[#3B2219]/10 ${offered ? "cursor-pointer" : ""} ${
                     selected ? "bg-[#3B2219]/10 font-semibold" : ""
                   }`}
                 >
-                  <th scope="row" className="px-1 py-3 text-left text-sm font-semibold">
-                    {row.size}
+                  <th scope="row" className="p-0 text-left text-sm font-semibold">
+                    <button
+                      type="button"
+                      aria-pressed={selected}
+                      disabled={!offered}
+                      className="min-h-11 w-full px-1 text-left font-semibold disabled:text-[#3B2219]/40 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#3B2219]"
+                      onClick={() => setTappedSize(row.size)}
+                    >
+                      {row.size}
+                    </button>
                   </th>
                   {row.cells.map((cell, index) => (
-                    <td key={table.columns[index]!.label} className="px-0.5 py-3">
+                    <td key={table.columns[index]!.label} className="px-0.5 py-1.5">
                       {cell}
                     </td>
                   ))}
@@ -150,6 +214,35 @@ export function SizeGuideSheet({
             </p>
           ) : null}
           <p>{guide.guidanceNote}</p>
+        </div>
+        </div>
+
+        <div className="shrink-0 border-t border-[#3B2219]/10 bg-[#FAF7F2] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+          {action.note === null ? null : (
+            <p role="status" className="mb-2 text-center text-xs leading-5 text-[#3B2219]/70">
+              {action.note}
+            </p>
+          )}
+          <div className="flex gap-3">
+            {zaloHref === null ? null : (
+              <a
+                href={zaloHref}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-12 flex-1 items-center justify-center rounded-full bg-[#3B2219]/8 px-3 text-center text-sm font-semibold leading-tight text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
+              >
+                Nhắn Zalo nhờ chọn<span className="sr-only"> (mở trong tab mới)</span>
+              </a>
+            )}
+            <button
+              type="button"
+              disabled={!action.enabled}
+              className="inline-flex min-h-12 flex-[1.3] items-center justify-center rounded-full bg-[#3B2219] px-3 text-center text-sm font-semibold leading-tight text-[#FAF7F2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:bg-[#3B2219]/25 disabled:text-[#3B2219]/60"
+              onClick={chooseSize}
+            >
+              {action.label}
+            </button>
+          </div>
         </div>
       </div>
     </dialog>

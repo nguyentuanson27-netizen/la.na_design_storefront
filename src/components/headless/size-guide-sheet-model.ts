@@ -68,3 +68,69 @@ export function buildSizeGuideSheetTitle(chartTitle: string, productCode: string
   const code = productCode?.normalize("NFC").trim();
   return code ? `Bảng size ${code}` : `Bảng size ${chartTitle}`;
 }
+
+/** One size the product actually sells, as the purchase selector offers it. */
+export type GuideSizeChoice = Readonly<{ value: string; disabled: boolean }>;
+
+/**
+ * The selector's own size for a chart row, or `null` when the product does not sell that size.
+ *
+ * Charts and variants name sizes independently, so the match is by the label alone, ignoring case
+ * and spacing. A row with no match stays readable but cannot be picked: nothing is guessed.
+ */
+export function findGuideSizeChoice(
+  rowSize: string,
+  choices: readonly GuideSizeChoice[],
+): GuideSizeChoice | null {
+  const wanted = rowSize.trim().toLowerCase();
+  return choices.find((choice) => choice.value.trim().toLowerCase() === wanted) ?? null;
+}
+
+export type SizeGuideSheetAction = Readonly<{
+  /** The label on the primary button. */
+  label: string;
+  /** The selector value that button would choose; `null` when it can choose nothing. */
+  value: string | null;
+  enabled: boolean;
+  /** Why the button is off, when the shopper can do something about it or deserves a reason. */
+  note: string | null;
+}>;
+
+/**
+ * What the sheet's primary button does for the row the shopper has picked out.
+ *
+ * `canChoose` is false while the product still wants a kind first: its sizes are locked then, and
+ * choosing one here would bypass the order the selector enforces.
+ */
+export function resolveSizeGuideAction(input: {
+  pickedSize: string | null;
+  choices: readonly GuideSizeChoice[];
+  canChoose: boolean;
+}): SizeGuideSheetAction {
+  if (input.pickedSize === null) {
+    return Object.freeze({ label: "Chọn một dòng size", value: null, enabled: false, note: null });
+  }
+
+  const label = `Chọn size ${input.pickedSize}`;
+  const choice = findGuideSizeChoice(input.pickedSize, input.choices);
+  if (choice === null) {
+    return Object.freeze({ label, value: null, enabled: false, note: "Sản phẩm này không có size này." });
+  }
+  if (!input.canChoose) {
+    return Object.freeze({
+      label,
+      value: null,
+      enabled: false,
+      note: "Chọn loại sản phẩm trước, rồi quay lại chọn size.",
+    });
+  }
+  if (choice.disabled) {
+    return Object.freeze({
+      label,
+      value: null,
+      enabled: false,
+      note: "Lựa chọn này hiện chưa mua được.",
+    });
+  }
+  return Object.freeze({ label, value: choice.value, enabled: true, note: null });
+}
