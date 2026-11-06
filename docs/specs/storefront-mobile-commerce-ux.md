@@ -186,6 +186,7 @@ Only **one modal/focus trap may be active at a time**.
 
 - Activating `Hướng dẫn chọn size` from the selection sheet temporarily closes/suspends the selection sheet while preserving the current variant selection and sheet state.
 - Open the existing accessible size-guide dialog as the only active modal.
+- Below `sm` that dialog is the size-guide bottom sheet (see "Information and buy panel" in the master spec): it can set the shopper's size through the shared selection controller, so closing it after a `Chọn size X` restores the selection sheet showing the new size.
 - When the size-guide dialog closes, restore the selection sheet and return focus to its size-guide trigger.
 - Do not leave both the sheet and the size-guide dialog active with competing `aria-modal`/focus traps.
 
