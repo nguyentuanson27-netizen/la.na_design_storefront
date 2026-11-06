@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { BRAND, zaloUrlFromTelephone } from "../../src/brand/index.ts";
 import { SIZE_GUIDE } from "../../src/brand/size-guide.config.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
@@ -154,6 +155,66 @@ async function expectSizeGuideTableFits(
   expect(dialogBox.y).toBeGreaterThanOrEqual(-1);
   expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
   expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
+}
+
+// Below `sm` the guide is a bottom sheet drawn from the same configured data: a row per size and a
+// column per measurement, with no admin artwork. Its table must fit the phone without sideways
+// scrolling; it scrolls vertically inside its own body when the chart is tall.
+async function expectSizeGuideSheetFits(
+  page: Page,
+  dialog: Locator,
+  expectedChartTitle: string,
+  expectedSmallChest: string,
+) {
+  await expect(dialog).toHaveAttribute("data-size-guide-sheet", "");
+  await expect(dialog.locator("img")).toHaveCount(0);
+  await expect(
+    dialog.getByRole("heading", { level: 2, name: `Bảng size ${expectedChartTitle}`, exact: true }),
+  ).toBeVisible();
+
+  const semanticTable = dialog.getByRole("table", {
+    name: `Dữ liệu bảng size ${expectedChartTitle}`,
+    exact: true,
+  });
+  await expect(semanticTable).toHaveCount(1);
+  await expect(semanticTable.getByRole("columnheader", { name: "Size", exact: true })).toHaveCount(1);
+  await expect(semanticTable.getByRole("columnheader", { name: /^Cân nặng/ })).toHaveCount(1);
+  await expect(semanticTable.getByRole("columnheader", { name: /^Ngực/ })).toHaveCount(1);
+  await expect(semanticTable.getByRole("rowheader", { name: "S", exact: true })).toHaveCount(1);
+  await expect(semanticTable.getByRole("cell", { name: expectedSmallChest, exact: true })).toHaveCount(
+    1,
+  );
+
+  const metrics = await dialog.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(metrics.scrollWidth, "size-guide sheet must not scroll horizontally").toBeLessThanOrEqual(
+    metrics.clientWidth + 1,
+  );
+
+  await expect(semanticTable).toBeVisible();
+  const tableBox = await semanticTable.boundingBox();
+  const dialogBox = await dialog.boundingBox();
+  if (!tableBox || !dialogBox) throw new Error("Expected size-guide table and sheet to be laid out");
+  const viewport = page.viewportSize()!;
+
+  expect(tableBox.x).toBeGreaterThanOrEqual(dialogBox.x - 1);
+  expect(tableBox.x + tableBox.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1);
+  expect(dialogBox.x).toBeGreaterThanOrEqual(-1);
+  expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(viewport.width + 1);
+  // Docked to the bottom edge and never taller than the screen.
+  expect(dialogBox.y).toBeGreaterThanOrEqual(-1);
+  expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewport.height + 1);
+  await expect(dialog.getByRole("button", { name: "Đóng", exact: true })).toBeInViewport();
+
+  const zaloHref = zaloUrlFromTelephone(BRAND.contact.telephone);
+  const zaloLink = dialog.getByRole("link", { name: /^Nhắn Zalo nhờ chọn/ });
+  if (zaloHref === null) {
+    await expect(zaloLink).toHaveCount(0);
+  } else {
+    await expect(zaloLink).toHaveAttribute("href", zaloHref);
+  }
 }
 
 async function assertPageQuality(page: import("@playwright/test").Page) {
@@ -1401,6 +1462,116 @@ test("F7c admin-set size-guide artwork replaces the fallback table and keeps the
   }
 });
 
+test("the phone size guide cannot change the size while an add to bag is in flight", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, { waitUntil: "networkidle" });
+
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  const sizeRadio = purchasePanel.getByRole("group", { name: "Kích cỡ" }).getByRole("radio", { name: "L" });
+  await purchasePanel.getByRole("group", { name: "Kích cỡ" }).getByText("L", { exact: true }).click();
+  await expect(sizeRadio).toBeChecked();
+
+  // Hold the add in flight: it never reaches the server, so no cart line is created.
+  let held = false;
+  await page.route(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      held = true;
+      return;
+    }
+    await route.continue();
+  });
+  await purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true }).click();
+  await expect.poll(() => held).toBe(true);
+  // The selector's own chips are locked while the request waits.
+  await expect(sizeRadio).toBeDisabled();
+
+  // The guide still opens, but it must not be a way round that lock.
+  await purchasePanel.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Hướng dẫn chọn size: Set/Váy form rộng" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("table").getByRole("button", { name: "L", exact: true }).click();
+  const confirm = sheet.getByRole("button", { name: "Chọn size L", exact: true });
+  await expect(confirm).toBeDisabled();
+  await expect(sheet.getByRole("status")).toHaveText(/Đang xử lý/);
+  await expect(sheet.getByRole("status")).not.toContainText("loại sản phẩm");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("the phone size guide holds the page still behind it, from the panel and from the selection sheet", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, { waitUntil: "networkidle" });
+
+  const panelTrigger = page
+    .getByRole("region", { name: "Mua sản phẩm" })
+    .getByRole("button", { name: "Hướng dẫn chọn size", exact: true });
+  // Bring the trigger into view first so the click does not scroll the page itself, then read the
+  // position once the page has stopped moving: only movement while the guide is open counts.
+  await panelTrigger.scrollIntoViewIfNeeded();
+  await settledScrollY();
+  expect(await page.evaluate(() => window.scrollY), "the page is scrolled before the guide opens").toBeGreaterThan(0);
+
+  async function settledScrollY() {
+    let previous = -1;
+    await expect
+      .poll(async () => {
+        const current = await page.evaluate(() => window.scrollY);
+        const settled = current === previous;
+        previous = current;
+        return settled;
+      }, { intervals: [150] })
+      .toBe(true);
+    return previous;
+  }
+
+  // A wheel over the backdrop, then over the table, each checked on its own: wheeling down and then
+  // back up would return a page that had scrolled to the bottom to the same place and hide the leak.
+  async function expectPageHeldStill(sheet: Locator) {
+    const baseline = await settledScrollY();
+    const box = await sheet.boundingBox();
+    if (!box) throw new Error("Expected the size-guide sheet to be laid out");
+
+    await page.mouse.move(195, 40);
+    await page.mouse.wheel(0, 500);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.scrollY), "wheel over the backdrop").toBe(baseline);
+
+    await page.mouse.move(195, box.y + box.height / 2);
+    await page.mouse.wheel(0, 500);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.scrollY), "wheel over the table").toBe(baseline);
+
+    await page.mouse.wheel(0, -500);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.scrollY), "wheel up over the table").toBe(baseline);
+  }
+
+  // Entry 1: from the purchase panel.
+  await panelTrigger.click();
+  const fromPanel = page.getByRole("dialog", { name: "Hướng dẫn chọn size: Set/Váy form rộng" });
+  await expect(fromPanel).toBeVisible();
+  await expectPageHeldStill(fromPanel);
+  await page.keyboard.press("Escape");
+  await expect(fromPanel).toBeHidden();
+
+  // Entry 2: from the selection sheet, whose own scroll lock is released while the guide is open.
+  // The phone bar steps aside while the panel's own buttons are on screen, so scroll back up to
+  // where it returns (still part-way down the page, so there is a scroll position to hold).
+  await page.evaluate(() => window.scrollTo(0, 150));
+  const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
+  await expect(stickyBar).toBeVisible();
+  await settledScrollY();
+  await stickyBar.getByRole("button").click();
+  const selection = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
+  await expect(selection).toBeVisible();
+  await selection.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }).click();
+  const fromSheet = page.getByRole("dialog", { name: "Hướng dẫn chọn size: Set/Váy form rộng" });
+  await expect(fromSheet).toBeVisible();
+  await expectPageHeldStill(fromSheet);
+});
+
 test("F7c different manual mappings stay product-specific and an unmapped same-category product has no trigger", async ({
   page,
 }) => {
@@ -1424,8 +1595,30 @@ test("F7c different manual mappings stay product-specific and an unmapped same-c
   });
   await expect(mappedDialog).toBeVisible();
   await expect(mappedDialog).toHaveAttribute("data-size-guide-id", "set-vay-form-rong");
-  await expectSizeGuideTableFits(page, mappedDialog, "Set/Váy form rộng", "86");
-  await page.keyboard.press("Escape");
+  await expectSizeGuideSheetFits(page, mappedDialog, "Set/Váy form rộng", "86");
+
+  // The seeded product sells only L: the other chart rows stay readable but cannot be picked, and
+  // nothing is chosen until the shopper picks a row and confirms it.
+  const sheetTable = mappedDialog.getByRole("table");
+  await expect(sheetTable.getByRole("button", { name: "XL", exact: true })).toBeDisabled();
+  const chooseButton = mappedDialog.getByRole("button", { name: "Chọn một dòng size", exact: true });
+  await expect(chooseButton).toBeDisabled();
+  await sheetTable.getByRole("button", { name: "L", exact: true }).click();
+  await expect(sheetTable.getByRole("button", { name: "L", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const confirm = mappedDialog.getByRole("button", { name: "Chọn size L", exact: true });
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(mappedDialog).toBeHidden();
+  await expect(
+    page
+      .getByRole("region", { name: "Mua sản phẩm" })
+      .getByRole("group", { name: "Kích cỡ" })
+      .getByRole("radio", { name: "L" }),
+  ).toBeChecked();
+  await expect(mappedTrigger).toBeFocused();
 
   await page.goto(`${BASE_URL}/shop/${smallFormProductSlug}`, { waitUntil: "networkidle" });
   const smallFormTrigger = page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true });
@@ -1435,7 +1628,7 @@ test("F7c different manual mappings stay product-specific and an unmapped same-c
   });
   await expect(smallFormDialog).toBeVisible();
   await expect(smallFormDialog).toHaveAttribute("data-size-guide-id", "set-vay-form-nho");
-  await expectSizeGuideTableFits(page, smallFormDialog, "Set/Váy form nhỏ", "84–86");
+  await expectSizeGuideSheetFits(page, smallFormDialog, "Set/Váy form nhỏ", "84–86");
   await page.keyboard.press("Escape");
 
   await page.goto(`${BASE_URL}/shop/${unmappedProductSlug}`, { waitUntil: "networkidle" });

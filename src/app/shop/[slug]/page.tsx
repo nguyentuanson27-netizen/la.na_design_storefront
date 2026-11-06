@@ -285,6 +285,7 @@ function render(data: ProductRouteData) {
         productInformation={productInformation}
         purchaseInformation={purchaseInformation}
         sizeHelp={sizeHelp}
+        sizeGuideZaloHref={zaloHref}
         purchaseAssurance={purchaseAssurance}
         purchaseOffers={purchaseOffers}
         urgency={data.urgency}

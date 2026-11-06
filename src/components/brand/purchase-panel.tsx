@@ -35,6 +35,7 @@ import { useElapsedMs } from "@/components/headless/use-elapsed-ms";
 import { requestStorefrontCartDrawerOpen } from "@/components/headless/cart-drawer-events";
 import { resolveMobilePurchasePresentation } from "@/components/headless/variant-selection-model";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
+import { SIZE_GUIDE_SHEET_QUERY, SizeGuideSheet } from "@/components/brand/size-guide-sheet";
 import type { ProductMappedSizeGuide } from "@/routes/product-model";
 
 /**
@@ -318,6 +319,7 @@ export function PurchasePanelView({
   tryOnTrigger = null,
   mobileNudge = null,
   sizeHelp = null,
+  sizeGuideZaloHref = null,
   assurance = null,
   offers = null,
   urgency = NO_PRODUCT_URGENCY,
@@ -335,6 +337,8 @@ export function PurchasePanelView({
   mobileNudge?: ReactNode;
   /** Server-built ways to ask the shop about size (chat links), under the size guide on the panel only. */
   sizeHelp?: ReactNode;
+  /** The shop's Zalo chat link, offered on the phone size-guide sheet; `null` hides that button. */
+  sizeGuideZaloHref?: string | null;
   /** Server-built buying facts (payment, returns, shipping), directly under the purchase buttons. */
   assurance?: ReactNode;
   /** Server-built promotions this product takes part in, directly under the price. */
@@ -388,6 +392,8 @@ export function PurchasePanelView({
   const mainSizeGuideTriggerRef = useRef<HTMLButtonElement | null>(null);
   const sizeGuideDialogRef = useRef<HTMLDialogElement | null>(null);
   const sizeGuideCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sizeGuideSheetRef = useRef<HTMLDialogElement | null>(null);
+  const sizeGuideSheetCloseRef = useRef<HTMLButtonElement | null>(null);
   const sizeGuideSourceRef = useRef<"main" | "sheet" | null>(null);
   const sheetWasOpenRef = useRef(false);
   const suppressSheetFocusRestoreRef = useRef(false);
@@ -403,6 +409,13 @@ export function PurchasePanelView({
   const [panelActionsInView, setPanelActionsInView] = useState(false);
 
   useScrollLock(isSheetOpen);
+  /*
+   * The phone size-guide sheet holds the page still while it is open. It cannot rely on the selection
+   * sheet's lock above: opening the guide from that sheet closes it first, which releases that lock.
+   * Only one of the two is ever open, so the locks hand over rather than stack.
+   */
+  const [isGuideSheetOpen, setIsGuideSheetOpen] = useState(false);
+  useScrollLock(isGuideSheetOpen);
 
   useEffect(() => {
     const actions = panelActionsRef.current;
@@ -530,12 +543,22 @@ export function PurchasePanelView({
     stickyTriggerRef.current?.focus();
   }, [isSheetOpen]);
 
+  /** Phones (below `sm`) get the bottom-sheet table; everything wider keeps the centred dialog. */
+  function resolveSizeGuideSurface() {
+    const phone = window.matchMedia(SIZE_GUIDE_SHEET_QUERY).matches;
+    return {
+      dialog: phone ? sizeGuideSheetRef.current : sizeGuideDialogRef.current,
+      closeButton: phone ? sizeGuideSheetCloseRef.current : sizeGuideCloseButtonRef.current,
+    };
+  }
+
   function showMainSizeGuide() {
-    const dialog = sizeGuideDialogRef.current;
+    const { dialog, closeButton } = resolveSizeGuideSurface();
     if (!dialog || dialog.open) return;
     sizeGuideSourceRef.current = "main";
     dialog.showModal();
-    sizeGuideCloseButtonRef.current?.focus();
+    setIsGuideSheetOpen(dialog === sizeGuideSheetRef.current);
+    closeButton?.focus();
   }
 
   function showSheetSizeGuide() {
@@ -544,10 +567,11 @@ export function PurchasePanelView({
     suppressSheetFocusRestoreRef.current = true;
     setIsSheetOpen(false);
     window.requestAnimationFrame(() => {
-      const dialog = sizeGuideDialogRef.current;
+      const { dialog, closeButton } = resolveSizeGuideSurface();
       if (!dialog || dialog.open) return;
       dialog.showModal();
-      sizeGuideCloseButtonRef.current?.focus();
+      setIsGuideSheetOpen(dialog === sizeGuideSheetRef.current);
+      closeButton?.focus();
     });
   }
 
@@ -577,6 +601,7 @@ export function PurchasePanelView({
   }
 
   function handleSizeGuideClose() {
+    setIsGuideSheetOpen(false);
     if (sizeGuideSourceRef.current === "sheet") {
       sizeGuideSourceRef.current = null;
       sheetInitialFocusRef.current = "size-guide";
@@ -1118,12 +1143,30 @@ export function PurchasePanelView({
         : null}
 
       {sizeGuide === null ? null : (
-        <MappedSizeGuideDialog
-          guide={sizeGuide}
-          dialogRef={sizeGuideDialogRef}
-          closeButtonRef={sizeGuideCloseButtonRef}
-          onClose={handleSizeGuideClose}
-        />
+        <>
+          <MappedSizeGuideDialog
+            guide={sizeGuide}
+            dialogRef={sizeGuideDialogRef}
+            closeButtonRef={sizeGuideCloseButtonRef}
+            onClose={handleSizeGuideClose}
+          />
+          <SizeGuideSheet
+            guide={sizeGuide}
+            selectedSize={selection.size}
+            sizeChoices={view.sizes}
+            canChooseSize={!awaitsKindSelection}
+            isPending={isPending}
+            // Same lock as the size radios: a size cannot change while an add or buy-now is in
+            // flight. The sheet disables its button too; this is the guard behind it.
+            onChooseSize={(value) => {
+              if (!isPending) chooseSize(value);
+            }}
+            zaloHref={sizeGuideZaloHref}
+            dialogRef={sizeGuideSheetRef}
+            closeButtonRef={sizeGuideSheetCloseRef}
+            onClose={handleSizeGuideClose}
+          />
+        </>
       )}
     </>
   );

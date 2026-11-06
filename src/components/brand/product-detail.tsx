@@ -53,6 +53,8 @@ type BrandProductDetailProps = Readonly<{
   purchaseInformation: ReactNode;
   /** Inside the panel, under the size guide: chat links for size questions. */
   sizeHelp?: ReactNode;
+  /** The shop's Zalo chat link for the phone size-guide sheet; `null` omits that button. */
+  sizeGuideZaloHref?: string | null;
   /** Inside the panel, under the purchase buttons: payment, returns and shipping facts. */
   purchaseAssurance?: ReactNode;
   /** Inside the panel, under the price: promotions this product takes part in. */
@@ -73,6 +75,7 @@ export function BrandProductDetail({
   productInformation,
   purchaseInformation,
   sizeHelp = null,
+  sizeGuideZaloHref = null,
   purchaseAssurance = null,
   purchaseOffers = null,
   urgency,
@@ -179,6 +182,7 @@ export function BrandProductDetail({
               offers={purchaseOffers}
               urgency={urgency}
               sizeHelp={sizeHelp}
+              sizeGuideZaloHref={sizeGuideZaloHref}
               assurance={purchaseAssurance}
               mobileNudge={
                 // Stays mounted while the dialog is open (the native modal makes it inert), so the
