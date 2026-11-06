@@ -409,6 +409,13 @@ export function PurchasePanelView({
   const [panelActionsInView, setPanelActionsInView] = useState(false);
 
   useScrollLock(isSheetOpen);
+  /*
+   * The phone size-guide sheet holds the page still while it is open. It cannot rely on the selection
+   * sheet's lock above: opening the guide from that sheet closes it first, which releases that lock.
+   * Only one of the two is ever open, so the locks hand over rather than stack.
+   */
+  const [isGuideSheetOpen, setIsGuideSheetOpen] = useState(false);
+  useScrollLock(isGuideSheetOpen);
 
   useEffect(() => {
     const actions = panelActionsRef.current;
@@ -550,6 +557,7 @@ export function PurchasePanelView({
     if (!dialog || dialog.open) return;
     sizeGuideSourceRef.current = "main";
     dialog.showModal();
+    setIsGuideSheetOpen(dialog === sizeGuideSheetRef.current);
     closeButton?.focus();
   }
 
@@ -562,6 +570,7 @@ export function PurchasePanelView({
       const { dialog, closeButton } = resolveSizeGuideSurface();
       if (!dialog || dialog.open) return;
       dialog.showModal();
+      setIsGuideSheetOpen(dialog === sizeGuideSheetRef.current);
       closeButton?.focus();
     });
   }
@@ -592,6 +601,7 @@ export function PurchasePanelView({
   }
 
   function handleSizeGuideClose() {
+    setIsGuideSheetOpen(false);
     if (sizeGuideSourceRef.current === "sheet") {
       sizeGuideSourceRef.current = null;
       sheetInitialFocusRef.current = "size-guide";

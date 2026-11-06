@@ -122,13 +122,13 @@ export function SizeGuideSheet({
       data-size-guide-id={guide.id}
       data-size-guide-sheet=""
       tabIndex={-1}
-      className="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[88dvh] w-full max-w-none overflow-hidden rounded-t-3xl border-0 bg-[#FAF7F2] p-0 text-[#3B2219] shadow-none backdrop:bg-black/45 sm:hidden"
+      className="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[88dvh] w-full max-w-none overflow-hidden overscroll-contain rounded-t-3xl border-0 bg-[#FAF7F2] p-0 text-[#3B2219] shadow-none backdrop:overflow-hidden backdrop:overscroll-contain backdrop:bg-black/45 sm:hidden"
       onClose={handleClose}
       onKeyDown={holdFocus}
     >
       {/* Its own flex column: `flex` on the dialog would override the closed dialog's `display: none`. */}
       <div className="flex max-h-[88dvh] flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3 pt-2.5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 pt-2.5">
         <div aria-hidden="true" className="mx-auto h-1 w-10 rounded-full bg-[#3B2219]/20" />
 
         <div className="mt-4 flex items-start justify-between gap-3">

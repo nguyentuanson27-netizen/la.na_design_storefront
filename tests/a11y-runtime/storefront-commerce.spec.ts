@@ -1498,6 +1498,50 @@ test("the phone size guide cannot change the size while an add to bag is in flig
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
+test("the phone size guide holds the page still behind it, from the panel and from the selection sheet", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, { waitUntil: "networkidle" });
+
+  await page.evaluate(() => window.scrollTo(0, 120));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  const startY = await page.evaluate(() => window.scrollY);
+
+  async function expectPageHeldStill(sheet: Locator) {
+    // Wheel on the backdrop above the sheet, then over the table, which may or may not scroll
+    // itself: either way the page behind must not move.
+    await page.mouse.move(195, 40);
+    await page.mouse.wheel(0, 500);
+    const box = await sheet.boundingBox();
+    if (!box) throw new Error("Expected the size-guide sheet to be laid out");
+    await page.mouse.move(195, box.y + box.height / 2);
+    await page.mouse.wheel(0, 500);
+    await page.mouse.wheel(0, -500);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(startY);
+  }
+
+  // Entry 1: from the purchase panel.
+  await page
+    .getByRole("region", { name: "Mua sản phẩm" })
+    .getByRole("button", { name: "Hướng dẫn chọn size", exact: true })
+    .click();
+  const fromPanel = page.getByRole("dialog", { name: "Hướng dẫn chọn size: Set/Váy form rộng" });
+  await expect(fromPanel).toBeVisible();
+  await expectPageHeldStill(fromPanel);
+  await page.keyboard.press("Escape");
+  await expect(fromPanel).toBeHidden();
+
+  // Entry 2: from the selection sheet, whose own scroll lock is released while the guide is open.
+  await page.getByRole("region", { name: "Mua nhanh" }).getByRole("button").click();
+  const selection = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
+  await expect(selection).toBeVisible();
+  await selection.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }).click();
+  const fromSheet = page.getByRole("dialog", { name: "Hướng dẫn chọn size: Set/Váy form rộng" });
+  await expect(fromSheet).toBeVisible();
+  await expectPageHeldStill(fromSheet);
+});
+
 test("F7c different manual mappings stay product-specific and an unmapped same-category product has no trigger", async ({
   page,
 }) => {
