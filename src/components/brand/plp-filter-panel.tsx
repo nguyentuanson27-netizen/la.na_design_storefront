@@ -202,14 +202,18 @@ export function PlpFilterPanel({
 
   return (
     <div className="border-b border-[#3B2219]/15 pb-4">
-      {/* Top action row: Count, mobile drawer button, desktop sort dropdown */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3 text-xs uppercase tracking-wider text-[#70584B] font-sans">
-          <span>{totalCount} sản phẩm</span>
-          <ListingViewToggle />
-        </div>
+      {/* One action row: view size, mobile drawer button, sort. The result count is not drawn (the
+          drawer's "Xem N sản phẩm" button still states it); a live, visually hidden copy keeps it
+          announced when a filter changes it. Below `sm` the sort label is hidden, and below 410px the
+          filter button keeps only its icon, so the select keeps the width it needs and the three
+          controls stay on one line on a phone. */}
+      <div className="flex items-center gap-2 md:gap-4">
+        <span role="status" className="sr-only">
+          {totalCount} sản phẩm
+        </span>
+        <ListingViewToggle compact className="shrink-0" />
 
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2 md:gap-3">
           {/* Mobile Filter Button */}
           <button
             type="button"
@@ -219,7 +223,7 @@ export function PlpFilterPanel({
             }}
             aria-expanded={isMobileOpen}
             aria-controls="mobile-plp-filters"
-            className="btn btn--outline shrink-0 whitespace-nowrap px-4 md:hidden"
+            className="btn btn--outline btn--sm min-h-9 shrink-0 gap-1.5 whitespace-nowrap px-2.5 max-[409px]:w-9 max-[409px]:px-0 md:hidden"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -235,13 +239,15 @@ export function PlpFilterPanel({
                 d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
               />
             </svg>
-            <span>Bộ lọc</span>
+            <span className="max-[409px]:sr-only">Bộ lọc</span>
           </button>
-          <span aria-hidden="true" className="text-xs text-[#70584B] md:hidden">·</span>
 
           {/* Sort Selector */}
-          <div className="flex items-center gap-2">
-            <label htmlFor="plp-sort-select" className="whitespace-nowrap text-xs uppercase tracking-wider text-[#3B2219]/70">
+          <div className="flex min-w-0 items-center gap-2">
+            <label
+              htmlFor="plp-sort-select"
+              className="sr-only whitespace-nowrap text-xs uppercase tracking-wider text-[#3B2219]/70 sm:not-sr-only"
+            >
               Sắp xếp:
             </label>
             <select
@@ -249,7 +255,7 @@ export function PlpFilterPanel({
               aria-label="Sắp xếp sản phẩm"
               value={activeFilters.sort}
               onChange={handleSortChange}
-              className="min-w-0 rounded border border-[#3B2219]/20 bg-transparent px-3 py-1.5 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              className="h-9 min-w-0 max-w-full rounded border border-[#3B2219]/20 bg-transparent px-2 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219] md:h-auto md:px-3 md:py-1.5"
             >
               {SORT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>

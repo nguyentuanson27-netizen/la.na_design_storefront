@@ -232,7 +232,14 @@ const GLYPH_COLUMNS: Readonly<Record<ListingView, number>> = { large: 2, medium:
  * on every listing. Native buttons with `aria-pressed`, so the current step is announced and the
  * keyboard needs nothing extra.
  */
-export function ListingViewToggle({ className = "" }: Readonly<{ className?: string }>) {
+export function ListingViewToggle({
+  className = "",
+  compact = false,
+}: Readonly<{
+  className?: string;
+  /** 32px buttons at every width, for a row that also holds the filter button and the sort. */
+  compact?: boolean;
+}>) {
   const { view, setView } = useListingView();
   return (
     <div role="group" aria-label="Kiểu xem ảnh" className={`inline-flex items-center gap-1 ${className}`}>
@@ -247,7 +254,9 @@ export function ListingViewToggle({ className = "" }: Readonly<{ className?: str
             title={LISTING_VIEW_LABELS[option]}
             data-listing-view-option={option}
             onClick={() => setView(option)}
-            className={`relative inline-flex h-9 w-9 items-center justify-center rounded border transition after:absolute after:-inset-[3px] after:content-[''] md:h-8 md:w-8 ${
+            className={`relative inline-flex items-center justify-center rounded border transition after:absolute after:-inset-[3px] after:content-[''] ${
+              compact ? "h-8 w-8" : "h-9 w-9 md:h-8 md:w-8"
+            } ${
               active
                 ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
                 : "border-[#3B2219]/20 text-[#3B2219] hover:border-[#3B2219]"
