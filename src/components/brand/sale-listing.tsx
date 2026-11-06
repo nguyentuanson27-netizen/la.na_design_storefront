@@ -3,16 +3,17 @@ import {
   ListingEmptyState,
   ListingPagination,
   ListingProductGrid,
-  ListingResultCount,
   ListingSubnav,
-  ListingViewToggle,
 } from "@/components/brand/listing-chrome";
+import { PlpFilterPanel } from "@/components/brand/plp-filter-panel";
 import { SALE_CHILD_NAVIGATION, SALE_ROOT_NAVIGATION } from "@/brand/sale.config";
 import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
 
 /**
- * Markup shared by `/sale`, `/sale/uu-dai` and `/sale/flash-sale`. Which products each lists is the
- * loader's decision (`@/routes/sale`); this only draws the tabs, the count, the grid and the pager.
+ * Markup shared by `/sale`, `/sale/uu-dai`, `/sale/flash-sale` and `/sale/xa-hang-le-size`. Which
+ * products each lists is the loader's decision (`@/routes/sale`); this only draws the tabs, the
+ * filter bar, the grid and the pager. The filter bar is the category listing's, so a shopper meets
+ * the same size, price and sort controls on every listing.
  */
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
@@ -33,12 +34,15 @@ export function SaleListingBody({
   paginationLabel,
 }: Readonly<{
   data: FlashSaleViewModel;
-  /** Follows the number, e.g. "sản phẩm đang giảm giá". */
+  /** Follows the number in the bar's hidden live count, e.g. "sản phẩm đang giảm giá". */
   countLabel: string;
   emptyTitle: string;
   paginationLabel: string;
 }>) {
-  if (data.totalCount === 0) {
+  const { filters } = data;
+
+  // Nothing is on sale at all: there is nothing to filter, so the bar is not drawn either.
+  if (data.totalCount === 0 && !filters?.filtered) {
     return (
       <div id="san-pham" className="collection-products-anchor">
         <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
@@ -58,33 +62,56 @@ export function SaleListingBody({
       <h2 id="sale-products-title" className="sr-only">
         Sản phẩm đang giảm giá
       </h2>
-      {/* Live, because the count is what changes when a campaign boundary passes and the shell
-          re-reads the route underneath the reader. */}
-      <div className="flex items-center justify-between gap-3 border-b border-[#3B2219]/15 pb-4">
-        <ListingResultCount live>
-          {data.totalCount} {countLabel}
-        </ListingResultCount>
-        <ListingViewToggle />
-      </div>
-      <div className="mt-8">
-        <ListingProductGrid>
-          {data.cards.map((card, index) => (
-            <ProductCard
-              key={card.id}
-              model={card.model}
-              tone={tones[(data.toneOffset + index) % tones.length]!}
-              eager={index < PRODUCT_CARD_EAGER_COUNT}
-            />
-          ))}
-        </ListingProductGrid>
-      </div>
-      <ListingPagination
-        label={paginationLabel}
-        page={data.page}
-        totalPages={data.totalPages}
-        previousHref={data.previousHref}
-        nextHref={data.nextHref}
-      />
+      {/* Everything on a sale listing is in stock and on sale by construction, so the bar leaves
+          out "Còn hàng" and "Sale". Its hidden count is live, because the count is what changes
+          when a campaign boundary passes and the shell re-reads the route underneath the reader. */}
+      {filters ? (
+        <div id="bo-loc" className="collection-products-anchor">
+          <PlpFilterPanel
+            categoryPath={filters.basePath}
+            totalCount={data.totalCount}
+            availableSizes={filters.availableSizes}
+            saleAvailable={false}
+            offerAvailability={false}
+            countLabel={countLabel}
+            activeFilters={filters.active}
+          />
+        </div>
+      ) : null}
+      {data.totalCount === 0 ? (
+        <div id="san-pham" className="collection-products-anchor mt-8">
+          <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+          <ListingEmptyState
+            titleId="sale-empty-title"
+            eyebrow="Không tìm thấy"
+            title="Không có sản phẩm phù hợp."
+            copy="Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm đang giảm giá."
+            action={filters ? { href: filters.basePath, label: "Xóa bộ lọc" } : undefined}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="mt-8">
+            <ListingProductGrid>
+              {data.cards.map((card, index) => (
+                <ProductCard
+                  key={card.id}
+                  model={card.model}
+                  tone={tones[(data.toneOffset + index) % tones.length]!}
+                  eager={index < PRODUCT_CARD_EAGER_COUNT}
+                />
+              ))}
+            </ListingProductGrid>
+          </div>
+          <ListingPagination
+            label={paginationLabel}
+            page={data.page}
+            totalPages={data.totalPages}
+            previousHref={data.previousHref}
+            nextHref={data.nextHref}
+          />
+        </>
+      )}
     </section>
   );
 }

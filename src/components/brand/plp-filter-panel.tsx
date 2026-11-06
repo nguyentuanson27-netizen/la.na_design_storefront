@@ -32,6 +32,13 @@ export type PlpFilterPanelProps = {
   availableSizes: readonly string[];
   /** Whether the other active filters leave any discounted product to find. */
   saleAvailable?: boolean;
+  /**
+   * Whether the "Còn hàng" toggle is offered. A listing whose every product is in stock by
+   * construction (`/sale`) turns it off rather than show a control that can never narrow anything.
+   */
+  offerAvailability?: boolean;
+  /** Follows the number in the hidden live count, e.g. "sản phẩm đang giảm giá". */
+  countLabel?: string;
   activeFilters: PlpFilterState;
 };
 
@@ -48,6 +55,8 @@ export function PlpFilterPanel({
   totalCount,
   availableSizes,
   saleAvailable = true,
+  offerAvailability = true,
+  countLabel = "sản phẩm",
   activeFilters,
 }: PlpFilterPanelProps) {
   const router = useRouter();
@@ -202,14 +211,20 @@ export function PlpFilterPanel({
 
   return (
     <div className="border-b border-[#3B2219]/15 pb-4">
-      {/* Top action row: Count, mobile drawer button, desktop sort dropdown */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3 text-xs uppercase tracking-wider text-[#70584B] font-sans">
-          <span>{totalCount} sản phẩm</span>
-          <ListingViewToggle />
-        </div>
+      {/* One action row: view size, mobile drawer button, sort. The result count is not drawn (the
+          drawer's "Xem N sản phẩm" button still states it); a live, visually hidden copy keeps it
+          announced when a filter changes it. Below `sm` the sort label is hidden, and below 424px the
+          filter button keeps only its icon, so the select keeps the width it needs and the three
+          controls stay on one line on a phone from 360px. A narrower screen cannot hold them: the
+          filter button and the sort then drop to a second line together rather than clip the sort's
+          label. */}
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 md:flex-nowrap md:gap-x-4">
+        <span role="status" className="sr-only">
+          {totalCount} {countLabel}
+        </span>
+        <ListingViewToggle compact className="shrink-0" />
 
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-[11.4rem] flex-1 items-center justify-end gap-1.5 md:min-w-0 md:gap-3">
           {/* Mobile Filter Button */}
           <button
             type="button"
@@ -219,7 +234,7 @@ export function PlpFilterPanel({
             }}
             aria-expanded={isMobileOpen}
             aria-controls="mobile-plp-filters"
-            className="btn btn--outline shrink-0 whitespace-nowrap px-4 md:hidden"
+            className="btn btn--outline btn--sm relative min-h-9 shrink-0 gap-1.5 whitespace-nowrap px-2.5 after:absolute after:-inset-x-[3px] after:-inset-y-[5px] after:content-[''] max-[423px]:w-9 max-[423px]:px-0 md:hidden"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -235,13 +250,15 @@ export function PlpFilterPanel({
                 d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
               />
             </svg>
-            <span>Bộ lọc</span>
+            <span className="max-[423px]:sr-only">Bộ lọc</span>
           </button>
-          <span aria-hidden="true" className="text-xs text-[#70584B] md:hidden">·</span>
 
           {/* Sort Selector */}
-          <div className="flex items-center gap-2">
-            <label htmlFor="plp-sort-select" className="whitespace-nowrap text-xs uppercase tracking-wider text-[#3B2219]/70">
+          <div className="flex min-w-0 items-center gap-2">
+            <label
+              htmlFor="plp-sort-select"
+              className="sr-only whitespace-nowrap text-xs uppercase tracking-wider text-[#3B2219]/70 sm:not-sr-only"
+            >
               Sắp xếp:
             </label>
             <select
@@ -249,7 +266,7 @@ export function PlpFilterPanel({
               aria-label="Sắp xếp sản phẩm"
               value={activeFilters.sort}
               onChange={handleSortChange}
-              className="min-w-0 rounded border border-[#3B2219]/20 bg-transparent px-3 py-1.5 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              className="h-9 min-w-0 max-w-full rounded border border-[#3B2219]/20 bg-transparent pl-2 pr-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219] md:h-auto md:px-3 md:py-1.5"
             >
               {SORT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -264,19 +281,22 @@ export function PlpFilterPanel({
       {/* Desktop Filter Bar */}
       <div className="mt-4 hidden md:flex md:flex-wrap md:items-center md:gap-x-6 md:gap-y-3 text-xs text-[#3B2219]">
         {/* Availability + Sale toggles */}
+        {offerAvailability || showSaleToggle ? (
         <div className="flex items-center gap-1.5">
-          <Link
-            href={inStockHref}
-            scroll={false}
-            aria-current={isInStockActive ? "true" : undefined}
-            className={`inline-flex items-center rounded-md border px-3 py-1.5 font-medium transition ${
-              isInStockActive
-                ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                : "border-[#3B2219]/20 hover:border-[#3B2219]"
-            }`}
-          >
-            Còn hàng
-          </Link>
+          {offerAvailability ? (
+            <Link
+              href={inStockHref}
+              scroll={false}
+              aria-current={isInStockActive ? "true" : undefined}
+              className={`inline-flex items-center rounded-md border px-3 py-1.5 font-medium transition ${
+                isInStockActive
+                  ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
+                  : "border-[#3B2219]/20 hover:border-[#3B2219]"
+              }`}
+            >
+              Còn hàng
+            </Link>
+          ) : null}
           {showSaleToggle
             ? (() => {
                 const saleHref = buildToggleSaleHref(categoryPath, activeFilters);
@@ -298,6 +318,7 @@ export function PlpFilterPanel({
               })()
             : null}
         </div>
+        ) : null}
 
         {/* Sizes */}
         {availableSizes.length > 0 ? (
@@ -498,23 +519,26 @@ export function PlpFilterPanel({
             {/* Filter controls */}
             <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
               {/* Availability + Sale */}
+              {offerAvailability || showSaleToggle ? (
               <div>
                 <span className="block text-xs font-semibold uppercase tracking-wider text-[#3B2219]/70 mb-3">
                   Ưu đãi
                 </span>
                 <div className="flex flex-wrap gap-2">
-                  <Link
-                    href={inStockHref}
-                    scroll={false}
-                    aria-current={isInStockActive ? "true" : undefined}
-                    className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
-                      isInStockActive
-                        ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                        : "border-[#3B2219]/25 text-[#3B2219]"
-                    }`}
-                  >
-                    Chỉ xem sản phẩm còn hàng
-                  </Link>
+                  {offerAvailability ? (
+                    <Link
+                      href={inStockHref}
+                      scroll={false}
+                      aria-current={isInStockActive ? "true" : undefined}
+                      className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
+                        isInStockActive
+                          ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
+                          : "border-[#3B2219]/25 text-[#3B2219]"
+                      }`}
+                    >
+                      Chỉ xem sản phẩm còn hàng
+                    </Link>
+                  ) : null}
                   {showSaleToggle
                     ? (() => {
                         const saleHref = buildToggleSaleHref(categoryPath, activeFilters);
@@ -537,6 +561,7 @@ export function PlpFilterPanel({
                     : null}
                 </div>
               </div>
+              ) : null}
 
               {/* Sizes */}
               {availableSizes.length > 0 ? (

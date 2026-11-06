@@ -4,6 +4,7 @@ import {
   type PromotionCampaignKind,
 } from "./promotion-pricing.ts";
 import { buildVariantStockCte } from "./storefront-catalog.ts";
+import { sortClothingSizes } from "./clothing-size.ts";
 import { withAdvisorySellableStock } from "./capacity-advisory.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { compositeComponentsAreShared, LAST_SIZES_TOTAL_STOCK_LIMIT } from "./storefront-product.ts";
@@ -41,6 +42,11 @@ type SaleIdRow = Omit<FlashSaleIdRow, "endsAt"> & {
   endsAt: Date | null;
   /** Only on `/sale/xa-hang-le-size`: this product's valid Flash Sale variants, when it was admitted. */
   admittedFlashVariantIds: string[];
+  /**
+   * The sale variants the shopper's size, colour and price choices matched; empty when none were
+   * chosen. The card reads its price from these, the same variants that picked the representative.
+   */
+  matchedVariantIds: string[];
 };
 
 /** One page of `listSalePage`'s heavy read: the ranked ids and their projected money, validated. */
@@ -227,6 +233,8 @@ function buildSaleCte(now: Date) {
       SELECT
         sve."id",
         sve."productId",
+        sve."size",
+        sve."color",
         sve."basePrice"::float8 AS "basePrice",
         sve."resolvedPrice",
         c."kind"::text AS "kind",
@@ -399,6 +407,55 @@ function saleKindFilter(alias: string, kind: SaleCampaignKind | null) {
 }
 
 /**
+ * The shopper's size, colour and price choices, as a predicate on `sale_variant` rows.
+ *
+ * Like the category listings, a product matches when ONE of its sale variants satisfies every choice
+ * at once (size M in the chosen colour inside the price band), and the representative price is read
+ * from the matching variants, so the card shows the price of what the filter asked for. `omit`
+ * leaves one choice out, for the facet that must keep every other size selectable.
+ */
+function saleVariantFilters(
+  alias: string,
+  discovery: StorefrontDiscoveryQuery,
+  { omitSize = false }: Readonly<{ omitSize?: boolean }> = {},
+) {
+  const column = (name: string) => Prisma.raw(`${alias}."${name}"`);
+  const filters: Prisma.Sql[] = [];
+  if (discovery.color) {
+    filters.push(Prisma.sql`LOWER(BTRIM(${column("color")})) = LOWER(${discovery.color})`);
+  }
+  if (discovery.size && !omitSize) {
+    filters.push(Prisma.sql`LOWER(BTRIM(${column("size")})) = LOWER(${discovery.size})`);
+  }
+  if (discovery.minPriceVnd !== null) {
+    filters.push(Prisma.sql`${column("resolvedPrice")} >= ${discovery.minPriceVnd}`);
+  }
+  if (discovery.maxPriceVnd !== null) {
+    filters.push(Prisma.sql`${column("resolvedPrice")} <= ${discovery.maxPriceVnd}`);
+  }
+  return filters.length === 0 ? Prisma.empty : Prisma.sql`AND ${Prisma.join(filters, " AND ")}`;
+}
+
+/**
+ * The listing's order. `default` and `price-asc` are the order this listing always had (cheapest
+ * representative first); the others only change which key leads. Every branch ends on the product
+ * id, so a page boundary never repeats or skips a product.
+ */
+function saleOrder(sort: StorefrontDiscoveryQuery["sort"]) {
+  switch (sort) {
+    case "price-desc":
+      return Prisma.sql`representative."sortPrice" DESC, p."name" ASC, p."id" ASC`;
+    case "name-asc":
+      return Prisma.sql`p."name" ASC, representative."sortPrice" ASC, p."id" ASC`;
+    case "name-desc":
+      return Prisma.sql`p."name" DESC, representative."sortPrice" ASC, p."id" ASC`;
+    case "default":
+    case "price-asc":
+      return Prisma.sql`representative."sortPrice" ASC, p."name" ASC, p."id" ASC`;
+  }
+}
+
+/**
  * The campaign kinds whose discounts a listing shows. `/sale/xa-hang-le-size` shows Flash Sale too,
  * but only on the Flash variants of the products `buildClearanceLastSizesCte` admitted; see
  * `listSalePage`.
@@ -423,9 +480,12 @@ export function createFlashSaleCatalogRepository(
   client: PrismaClient,
   {
     saleIdPageCache,
+    saleFacetsCache,
   }: Readonly<{
     /** Shares `listSalePage`'s heavy read across requests (`sale-listing-cache.ts`). */
     saleIdPageCache?: SaleListingCache<SaleIdPage>;
+    /** Shares `listSaleFacets`' read the same way, under the same promotion generation. */
+    saleFacetsCache?: SaleListingCache<readonly string[]>;
   }> = {},
 ) {
   /**
@@ -629,6 +689,18 @@ export function createFlashSaleCatalogRepository(
         )`
       : Prisma.sql`ARRAY[]::text[]`;
 
+    const variantFilters = saleVariantFilters("sv", discovery);
+    const hasVariantFilters = discovery.size !== null || discovery.color !== null
+      || discovery.minPriceVnd !== null || discovery.maxPriceVnd !== null;
+    const matchedVariantIds = hasVariantFilters
+      ? Prisma.sql`ARRAY(
+          SELECT mv."id"
+          FROM "sale_variant" mv
+          WHERE mv."productId" = p."id" ${saleKindFilter("mv", safeKind)} ${saleVariantFilters("mv", discovery)}
+          ORDER BY mv."id"
+        )`
+      : Prisma.sql`ARRAY[]::text[]`;
+
     const loadIdPage = async (): Promise<SaleIdPage> => {
       const [countRows, idRows] = await Promise.all([
         withoutJit(client.$queryRaw<FlashSaleCountRow[]>(Prisma.sql`
@@ -640,7 +712,7 @@ export function createFlashSaleCatalogRepository(
             AND p."isActive" = TRUE
             AND EXISTS (
               SELECT 1 FROM "sale_variant" sv
-              WHERE sv."productId" = p."id" ${saleKindFilter("sv", safeKind)}
+              WHERE sv."productId" = p."id" ${saleKindFilter("sv", safeKind)} ${variantFilters}
             )
         `)),
         withoutJit(client.$queryRaw<SaleIdRow[]>(Prisma.sql`
@@ -653,7 +725,8 @@ export function createFlashSaleCatalogRepository(
             representative."kind",
             representative."endsAt",
             representative."hasCheaperCurrentVariant",
-            ${admittedFlashVariantIds} AS "admittedFlashVariantIds"
+            ${admittedFlashVariantIds} AS "admittedFlashVariantIds",
+            ${matchedVariantIds} AS "matchedVariantIds"
           FROM "ProductMirror" p
           JOIN LATERAL (
             SELECT
@@ -670,14 +743,14 @@ export function createFlashSaleCatalogRepository(
                   AND current_variant."resolvedPrice" < sv."resolvedPrice"
               ) AS "hasCheaperCurrentVariant"
             FROM "sale_variant" sv
-            WHERE sv."productId" = p."id" ${saleKindFilter("sv", safeKind)}
+            WHERE sv."productId" = p."id" ${saleKindFilter("sv", safeKind)} ${variantFilters}
             ORDER BY sv."resolvedPrice" ASC, sv."id" ASC
             LIMIT 1
           ) representative ON TRUE
           WHERE p."pancakeShopId" = ${safeShopId}
             AND p."isPresent" = TRUE
             AND p."isActive" = TRUE
-          ORDER BY representative."sortPrice" ASC, p."name" ASC, p."id" ASC
+          ORDER BY ${saleOrder(discovery.sort)}
           LIMIT ${safePageSize}
           OFFSET ${offset}
         `)),
@@ -698,6 +771,14 @@ export function createFlashSaleCatalogRepository(
           safeKind ?? "ALL",
           safePageSize,
           discovery.page,
+          // Free text from the URL: serialised, not concatenated, so no two filters share a key.
+          JSON.stringify([
+            discovery.sort,
+            discovery.size?.trim().toLowerCase() ?? null,
+            discovery.color?.trim().toLowerCase() ?? null,
+            discovery.minPriceVnd,
+            discovery.maxPriceVnd,
+          ]),
           await readSaleIdPageGeneration(now),
         ].join(":")
       : null;
@@ -729,9 +810,13 @@ export function createFlashSaleCatalogRepository(
     const orderedProducts = await withAdvisorySellableStock(client, safeShopId, idPage.rows.map((row) => {
       const product = byId.get(row.id);
       if (!product) throw new Error("Sale result changed during read");
-      const base = row.admittedFlashVariantIds.length > 0
+      const withAdmitted = row.admittedFlashVariantIds.length > 0
         ? { ...toFlashProduct(product, componentMedia), admittedFlashVariantIds: Object.freeze([...row.admittedFlashVariantIds]) }
         : toFlashProduct(product, componentMedia);
+      // Carried to the card so its price follows the filtered variants (see `priceScopeVariantIds`).
+      const base = row.matchedVariantIds.length > 0
+        ? { ...withAdmitted, matchedVariantIds: Object.freeze([...row.matchedVariantIds]) }
+        : withAdmitted;
       if (row.kind === "CLEARANCE") return { ...base, isClearance: true as const };
       if (row.kind !== "FLASH_SALE" || row.endsAt === null || row.endsAt <= now) return base;
       return {
@@ -755,6 +840,73 @@ export function createFlashSaleCatalogRepository(
       hasPrevious: discovery.page > 1,
       hasNext: offset + orderedProducts.length < totalCount,
     };
+  }
+
+  /**
+   * The sizes a shopper can still pick on a sale listing, given the colour and price they chose.
+   *
+   * It reads the same `sale_variant` projection and the same predicate as `listSalePage`, minus the
+   * size choice itself, so a size is offered exactly when the grid would list a product for it and
+   * the size that is selected always stays offered to switch off.
+   */
+  async function listSaleFacets({
+    shopId,
+    discovery,
+    kind,
+    now = new Date(),
+  }: {
+    shopId: number;
+    discovery: StorefrontDiscoveryQuery;
+    kind?: SaleCampaignKind;
+    now?: Date;
+  }): Promise<Readonly<{ sizes: readonly string[] }>> {
+    const safeShopId = parseShopId(shopId);
+    const safeKind = parseSaleCampaignKind(kind);
+    const cte = safeKind === "CLEARANCE"
+      ? Prisma.sql`${buildSaleCte(now)}${buildClearanceLastSizesCte()}`
+      : buildSaleCte(now);
+    const filters = saleVariantFilters("sv", discovery, { omitSize: true });
+
+    const loadSizes = async (): Promise<readonly string[]> => {
+      const rows = await withoutJit(client.$queryRaw<{ value: string }[]>(Prisma.sql`
+        ${cte}
+        SELECT DISTINCT BTRIM(sv."size") AS "value"
+        FROM "sale_variant" sv
+        INNER JOIN "ProductMirror" p ON p."id" = sv."productId"
+        WHERE p."pancakeShopId" = ${safeShopId}
+          AND p."isPresent" = TRUE
+          AND p."isActive" = TRUE
+          AND NULLIF(BTRIM(sv."size"), '') IS NOT NULL
+          ${saleKindFilter("sv", safeKind)}
+          ${filters}
+      `));
+      return Object.freeze(rows.map(({ value }) => value));
+    };
+
+    const cacheKey = saleFacetsCache
+      ? [
+          "sale-facets",
+          safeShopId,
+          safeKind ?? "ALL",
+          JSON.stringify([
+            discovery.color?.trim().toLowerCase() ?? null,
+            discovery.minPriceVnd,
+            discovery.maxPriceVnd,
+          ]),
+          await readSaleIdPageGeneration(now),
+        ].join(":")
+      : null;
+    const sizes = saleFacetsCache && cacheKey !== null
+      ? (await saleFacetsCache.read(cacheKey, loadSizes)).value
+      : await loadSizes();
+
+    const list = [...sizes];
+    // A size in the URL that nothing matches under the other choices stays listed, so its chip and
+    // its pill can still be switched off instead of vanishing and leaving an empty grid unexplained.
+    if (discovery.size && !list.some((size) => size.toLowerCase() === discovery.size!.toLowerCase())) {
+      list.push(discovery.size);
+    }
+    return Object.freeze({ sizes: Object.freeze(sortClothingSizes(list)) });
   }
 
   async function readNextFlashSaleBoundary({
@@ -812,6 +964,7 @@ export function createFlashSaleCatalogRepository(
   return {
     listFlashSalePage,
     listSalePage,
+    listSaleFacets,
     readNextFlashSaleBoundary,
     readNextSaleBoundary,
     readPricingGeneration,

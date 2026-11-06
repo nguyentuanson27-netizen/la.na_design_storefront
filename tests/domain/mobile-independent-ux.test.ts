@@ -36,7 +36,10 @@ test("mobile independent UX: phone listing grid is two columns with a 2px rhythm
 test("mobile independent UX: PLP mobile drawer keeps URL-backed filter navigation open and owns a fixed clear/view footer", () => {
   const panel = read("src/components/brand/plp-filter-panel.tsx");
 
-  assert.match(panel, />Bộ lọc<\/span>[\s\S]*aria-hidden="true"[^>]*>·<\/span>[\s\S]*>\s*Sắp xếp:/);
+  assert.match(panel, />Bộ lọc<\/span>[\s\S]*>\s*Sắp xếp:/, "the drawer button precedes the sort in one action row");
+  assert.doesNotMatch(panel, /\{totalCount\} sản phẩm<\/span>\s*<ListingViewToggle \/>/, "the visible result count is not drawn in the action row");
+  assert.match(panel, /<span role="status" className="sr-only">\s*\{totalCount\} \{countLabel\}/, "the count stays available to assistive technology");
+  assert.match(panel, /<ListingViewToggle compact/, "the action row uses the compact view toggle");
   assert.doesNotMatch(panel, /router\.push\(href\);\s*setIsMobileOpen\(false\)/);
   assert.doesNotMatch(panel, /href=\{saleHref\}[\s\S]{0,180}onClick=\{\(\) => setIsMobileOpen\(false\)\}/);
   assert.doesNotMatch(panel, /href=\{sizeHref\}[\s\S]{0,180}onClick=\{\(\) => setIsMobileOpen\(false\)\}/);

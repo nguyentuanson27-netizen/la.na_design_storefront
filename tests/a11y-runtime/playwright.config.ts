@@ -56,6 +56,7 @@ export default defineConfig({
     "pdp-promotion.spec.ts",
     "pdp-pancake-video.spec.ts",
     "list-price-display.spec.ts",
+    "listing-action-bar.spec.ts",
     "pdp-promotion-offers.spec.ts",
     "related-products.spec.ts",
     "storefront-commerce.spec.ts",

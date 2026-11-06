@@ -667,3 +667,63 @@ test("components are shared only when two parent variants use the same one", () 
   assert.equal(compositeComponentsAreShared([parent("top-s", "belt"), parent("top-m", "belt")]), true);
   assert.equal(compositeComponentsAreShared([parent("top-s", "top-s"), parent()]), false);
 });
+
+/* ---------------------------------------------------- price scope (filtered listings) */
+
+test("priceScopeVariantIds prices the card from the matched variants only", () => {
+  // M is 160k and L is 800k, both discounted. A listing filtered to size L must show 800k: showing
+  // the cheapest size's 160k would put the card outside the price band the shopper chose.
+  const pricingRule: StorefrontPricingRule = (candidate) =>
+    candidate.id === "m"
+      ? { price: 160_000, basePriceVnd: 200_000, isDiscounted: true }
+      : { price: 800_000, basePriceVnd: 1_000_000, isDiscounted: true };
+  const variants = [
+    variant({ id: "m", size: "M", retailPrice: 200_000 }),
+    variant({ id: "l", size: "L", retailPrice: 1_000_000 }),
+  ];
+
+  const unscoped = buildProductCardModel({ slug: "ao-dai", name: "Áo dài", variants, pricingRule });
+  assert.match(unscoped.price.displayText, /160\.000/);
+
+  const scoped = buildProductCardModel({
+    slug: "ao-dai",
+    name: "Áo dài",
+    variants,
+    pricingRule,
+    priceScopeVariantIds: ["l"],
+  });
+  assert.equal(scoped.price.displayText, vnd("800.000"));
+  assert.equal(scoped.price.compareAtText, vnd("1.000.000"));
+  assert.equal(scoped.price.isRange, false);
+  assert.equal(scoped.price.discountPercent, 20);
+
+  // Only the price follows the filter: what the product can be sold as does not.
+  assert.equal(scoped.availability, unscoped.availability);
+  assert.equal(scoped.availabilityLabel, unscoped.availabilityLabel);
+  assert.equal(scoped.lowStockLabel, unscoped.lowStockLabel);
+});
+
+test("priceScopeVariantIds that is empty, absent or matches nothing leaves the price over every variant", () => {
+  const pricingRule: StorefrontPricingRule = (candidate) =>
+    candidate.id === "m"
+      ? { price: 160_000, basePriceVnd: 200_000, isDiscounted: true }
+      : { price: 800_000, basePriceVnd: 1_000_000, isDiscounted: true };
+  const variants = [
+    variant({ id: "m", size: "M", retailPrice: 200_000 }),
+    variant({ id: "l", size: "L", retailPrice: 1_000_000 }),
+  ];
+  const base = buildProductCardModel({ slug: "ao-dai", name: "Áo dài", variants, pricingRule });
+
+  for (const priceScopeVariantIds of [[], ["not-a-variant"]] as const) {
+    const model = buildProductCardModel({ slug: "ao-dai", name: "Áo dài", variants, pricingRule, priceScopeVariantIds });
+    assert.equal(model.price.displayText, base.price.displayText);
+  }
+});
+
+test("a Flash Sale card ignores priceScopeVariantIds: its price is the representative the read chose", () => {
+  const variants = [variant({ id: "m", size: "M", retailPrice: 200_000 }), variant({ id: "l", size: "L", retailPrice: 1_000_000 })];
+  const flashSale = { representativeVariantId: "l", basePriceVnd: 1_000_000, effectivePriceVnd: 800_000, hasCheaperCurrentVariant: false, remainingMs: 60_000 };
+  const withScope = buildProductCardModel({ slug: "ao-dai", name: "Áo dài", variants, flashSale, priceScopeVariantIds: ["m"] });
+  const without = buildProductCardModel({ slug: "ao-dai", name: "Áo dài", variants, flashSale });
+  assert.equal(withScope.price.displayText, without.price.displayText);
+});

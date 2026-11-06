@@ -131,6 +131,16 @@ export type ProductCardModelInput = Readonly<{
   flashSale?: StorefrontFlashSalePresentation;
   /** The sale read chose this card for a CLEARANCE discount. Necessary, not sufficient, for the tag. */
   isClearance?: boolean;
+  /**
+   * The variants the shopper's size, colour and price choices matched, when a listing filtered by
+   * them. Only the **price** is read from these (the discounted price, the list reference and the
+   * range), so a card filtered to size L shows L's price instead of the cheapest size's. Everything
+   * else -- availability, "Còn x", preorder, the "Lẻ size" proof, swatches -- still reads every
+   * variant, because those are facts about the product that a filter does not change. Empty or
+   * absent, or matching none of the variants, leaves the price over all of them. A Flash Sale card
+   * ignores it: its price already comes from the representative the read chose among the matches.
+   */
+  priceScopeVariantIds?: readonly string[];
   selectEvent?: TrackingEvent | null;
   isNewArrival?: boolean;
   isBestseller?: boolean;
@@ -305,9 +315,14 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
     productCapacity,
   );
 
+  // The options the price is read from: all of them, or only those a filter matched.
+  const priceScope = input.priceScopeVariantIds ? new Set(input.priceScopeVariantIds) : null;
+  const scopedOptions = priceScope ? capacityOptions.filter((option) => priceScope.has(option.id)) : [];
+  const priceOptions = scopedOptions.length > 0 ? scopedOptions : capacityOptions;
+
   // Flash cards receive the exact representative selected before pagination. Other listings keep
   // their existing option-range path and can still inject a promotion-aware pricing rule.
-  const options = flashSale ? null : capacityOptions;
+  const options = flashSale ? null : priceOptions;
   const promotionSale = options ? resolveStorefrontDiscountPresentation(options) : null;
 
   const primaryImage = media?.primary ?? null;
@@ -322,7 +337,7 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
       : 0;
   const representative = flashSale
     ? capacityOptions.find((option) => option.id === flashSale.representativeVariantId) ?? null
-    : selectRepresentativeOffers(capacityOptions).representative;
+    : selectRepresentativeOffers(priceOptions).representative;
   const listPresentation = representative ? resolveListPricePresentation({ variantId: representative.id, basePriceVnd: representative.basePriceVnd, effectivePriceVnd: flashSale?.effectivePriceVnd ?? representative.price, listPriceVnd: representative.listPriceVnd ?? null, isDiscounted: representative.isDiscounted, enabled: representative.listPriceVnd !== undefined }) : null;
   const discountPercent = listPresentation?.badgePercent ?? (flashSale ? flashSaleDiscountPercent : promotionSale?.discountPercent ?? 0);
 

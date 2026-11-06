@@ -1,5 +1,6 @@
 import {
   STOREFRONT_DISCOVERY_LIMITS,
+  type StorefrontDiscoveryQuery,
   type StorefrontDiscoverySearchParams,
 } from "./storefront-discovery.ts";
 
@@ -161,6 +162,38 @@ export function parseCategoryDiscoverySearchParams(
     sort: parseSort(searchParams.sort),
     page,
     cursor,
+  };
+}
+
+/**
+ * What `/sale` and its sub-listings take from the URL: size, colour, a price band, the sort and the
+ * page.
+ *
+ * It is the category parser without a category, and with the same rules, so a link built by
+ * `buildCategoryDiscoveryHref` round-trips: an absent sort is `default` (the cheapest-first order
+ * this listing has always had), and a malformed value is a `RangeError`, which the route turns into
+ * a 404. Availability and the Sale toggle are not read: everything on a sale listing is in stock and
+ * on sale by construction, so there is nothing for them to narrow. Search text and a collection are
+ * not offered here either. Pagination is by page number only.
+ */
+export function parseSaleDiscoverySearchParams(
+  searchParams: StorefrontDiscoverySearchParams,
+): StorefrontDiscoveryQuery {
+  const minPriceVnd = optionalPrice(searchParams.minPrice);
+  const maxPriceVnd = optionalPrice(searchParams.maxPrice);
+  if (minPriceVnd !== null && maxPriceVnd !== null && minPriceVnd > maxPriceVnd) invalid();
+
+  return {
+    query: null,
+    color: optionalText(searchParams.color, STOREFRONT_DISCOVERY_LIMITS.option),
+    size: optionalText(searchParams.size, STOREFRONT_DISCOVERY_LIMITS.option),
+    availability: null,
+    minPriceVnd,
+    maxPriceVnd,
+    sale: null,
+    collection: null,
+    sort: parseSort(searchParams.sort),
+    page: parsePage(searchParams.page, undefined).page,
   };
 }
 

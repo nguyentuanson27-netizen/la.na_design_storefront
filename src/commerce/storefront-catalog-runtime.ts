@@ -89,6 +89,7 @@ type HomepageNewArrivalsResult = Readonly<{
 
 /** One per server process: `/sale` and its sub-listings share their heavy page read across requests. */
 const saleIdPageCache = createSaleListingCache<SaleIdPage>();
+const saleFacetsCache = createSaleListingCache<readonly string[]>();
 
 const categoryDiscoveryPageCache = createStorefrontListingCache<PricingStamped<DiscoveryPageResult>>();
 const categoryDiscoveryFacetsCache = createStorefrontListingCache<PricingStamped<ScopedFacetsResult>>();
@@ -361,6 +362,25 @@ export async function readConfiguredNextSaleBoundary(
   kind?: PromotionCampaignKind,
 ) {
   return createFlashSaleCatalogRepository(prisma).readNextSaleBoundary({ now, kind });
+}
+
+/** The sizes still selectable on `/sale` or a sale sub-listing, given the other choices. */
+export async function listConfiguredSaleFacets({
+  discovery,
+  kind,
+  now,
+}: {
+  discovery: StorefrontDiscoveryQuery;
+  kind?: PromotionCampaignKind;
+  now?: Date;
+}) {
+  const shopId = readPancakeShopId();
+  return createFlashSaleCatalogRepository(prisma, { saleIdPageCache, saleFacetsCache }).listSaleFacets({
+    shopId,
+    discovery,
+    kind,
+    now,
+  });
 }
 
 export async function listConfiguredCategoryDiscoveryPage({
@@ -677,6 +697,7 @@ export async function readConfiguredCategoryHeroMedia(
 /** Clear all in-process runtime storefront caches (e.g. after admin catalog updates or tests). */
 export function clearStorefrontRuntimeCaches(): void {
   saleIdPageCache.clear();
+  saleFacetsCache.clear?.();
   categoryDiscoveryPageCache.clear();
   categoryDiscoveryFacetsCache.clear();
   storefrontDiscoveryPageCache.clear();
