@@ -1504,28 +1504,52 @@ test("the phone size guide holds the page still behind it, from the panel and fr
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, { waitUntil: "networkidle" });
 
-  await page.evaluate(() => window.scrollTo(0, 120));
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-  const startY = await page.evaluate(() => window.scrollY);
+  const panelTrigger = page
+    .getByRole("region", { name: "Mua sản phẩm" })
+    .getByRole("button", { name: "Hướng dẫn chọn size", exact: true });
+  // Bring the trigger into view first so the click does not scroll the page itself, then read the
+  // position once the page has stopped moving: only movement while the guide is open counts.
+  await panelTrigger.scrollIntoViewIfNeeded();
+  await settledScrollY();
+  expect(await page.evaluate(() => window.scrollY), "the page is scrolled before the guide opens").toBeGreaterThan(0);
 
+  async function settledScrollY() {
+    let previous = -1;
+    await expect
+      .poll(async () => {
+        const current = await page.evaluate(() => window.scrollY);
+        const settled = current === previous;
+        previous = current;
+        return settled;
+      }, { intervals: [150] })
+      .toBe(true);
+    return previous;
+  }
+
+  // A wheel over the backdrop, then over the table, each checked on its own: wheeling down and then
+  // back up would return a page that had scrolled to the bottom to the same place and hide the leak.
   async function expectPageHeldStill(sheet: Locator) {
-    // Wheel on the backdrop above the sheet, then over the table, which may or may not scroll
-    // itself: either way the page behind must not move.
-    await page.mouse.move(195, 40);
-    await page.mouse.wheel(0, 500);
+    const baseline = await settledScrollY();
     const box = await sheet.boundingBox();
     if (!box) throw new Error("Expected the size-guide sheet to be laid out");
+
+    await page.mouse.move(195, 40);
+    await page.mouse.wheel(0, 500);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.scrollY), "wheel over the backdrop").toBe(baseline);
+
     await page.mouse.move(195, box.y + box.height / 2);
     await page.mouse.wheel(0, 500);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.scrollY), "wheel over the table").toBe(baseline);
+
     await page.mouse.wheel(0, -500);
-    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(startY);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.scrollY), "wheel up over the table").toBe(baseline);
   }
 
   // Entry 1: from the purchase panel.
-  await page
-    .getByRole("region", { name: "Mua sản phẩm" })
-    .getByRole("button", { name: "Hướng dẫn chọn size", exact: true })
-    .click();
+  await panelTrigger.click();
   const fromPanel = page.getByRole("dialog", { name: "Hướng dẫn chọn size: Set/Váy form rộng" });
   await expect(fromPanel).toBeVisible();
   await expectPageHeldStill(fromPanel);
@@ -1533,7 +1557,13 @@ test("the phone size guide holds the page still behind it, from the panel and fr
   await expect(fromPanel).toBeHidden();
 
   // Entry 2: from the selection sheet, whose own scroll lock is released while the guide is open.
-  await page.getByRole("region", { name: "Mua nhanh" }).getByRole("button").click();
+  // The phone bar steps aside while the panel's own buttons are on screen, so scroll back up to
+  // where it returns (still part-way down the page, so there is a scroll position to hold).
+  await page.evaluate(() => window.scrollTo(0, 150));
+  const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
+  await expect(stickyBar).toBeVisible();
+  await settledScrollY();
+  await stickyBar.getByRole("button").click();
   const selection = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
   await expect(selection).toBeVisible();
   await selection.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }).click();
