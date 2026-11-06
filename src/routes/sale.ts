@@ -69,8 +69,15 @@ export async function loadSaleRoute(
             flashAdmittedVariantIds.has(variantId) ? saleListingCampaignKinds(kind) : [kind]
         : kind,
   });
+  // The card prices from the variants the filters matched, so the list and select events price the
+  // same variants: a `select_item` must describe the card at the price that was shown.
+  const trackedProducts = page.products.map((product) => {
+    const matched = "matchedVariantIds" in product ? new Set(product.matchedVariantIds) : null;
+    const variants = matched ? product.variants.filter((variant) => matched.has(variant.id)) : [];
+    return variants.length > 0 ? { ...product, variants } : product;
+  });
   const tracking = buildProductListTracking({
-    products: page.products,
+    products: trackedProducts,
     list: listing
       ? { listId: listing.href.slice(1).replaceAll("/", "-"), listName: listing.label }
       : { listId: "sale", listName: SALE_TITLE },

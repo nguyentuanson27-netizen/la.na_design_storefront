@@ -42,6 +42,11 @@ type SaleIdRow = Omit<FlashSaleIdRow, "endsAt"> & {
   endsAt: Date | null;
   /** Only on `/sale/xa-hang-le-size`: this product's valid Flash Sale variants, when it was admitted. */
   admittedFlashVariantIds: string[];
+  /**
+   * The sale variants the shopper's size, colour and price choices matched; empty when none were
+   * chosen. The card reads its price from these, the same variants that picked the representative.
+   */
+  matchedVariantIds: string[];
 };
 
 /** One page of `listSalePage`'s heavy read: the ranked ids and their projected money, validated. */
@@ -685,6 +690,16 @@ export function createFlashSaleCatalogRepository(
       : Prisma.sql`ARRAY[]::text[]`;
 
     const variantFilters = saleVariantFilters("sv", discovery);
+    const hasVariantFilters = discovery.size !== null || discovery.color !== null
+      || discovery.minPriceVnd !== null || discovery.maxPriceVnd !== null;
+    const matchedVariantIds = hasVariantFilters
+      ? Prisma.sql`ARRAY(
+          SELECT mv."id"
+          FROM "sale_variant" mv
+          WHERE mv."productId" = p."id" ${saleKindFilter("mv", safeKind)} ${saleVariantFilters("mv", discovery)}
+          ORDER BY mv."id"
+        )`
+      : Prisma.sql`ARRAY[]::text[]`;
 
     const loadIdPage = async (): Promise<SaleIdPage> => {
       const [countRows, idRows] = await Promise.all([
@@ -710,7 +725,8 @@ export function createFlashSaleCatalogRepository(
             representative."kind",
             representative."endsAt",
             representative."hasCheaperCurrentVariant",
-            ${admittedFlashVariantIds} AS "admittedFlashVariantIds"
+            ${admittedFlashVariantIds} AS "admittedFlashVariantIds",
+            ${matchedVariantIds} AS "matchedVariantIds"
           FROM "ProductMirror" p
           JOIN LATERAL (
             SELECT
@@ -794,9 +810,13 @@ export function createFlashSaleCatalogRepository(
     const orderedProducts = await withAdvisorySellableStock(client, safeShopId, idPage.rows.map((row) => {
       const product = byId.get(row.id);
       if (!product) throw new Error("Sale result changed during read");
-      const base = row.admittedFlashVariantIds.length > 0
+      const withAdmitted = row.admittedFlashVariantIds.length > 0
         ? { ...toFlashProduct(product, componentMedia), admittedFlashVariantIds: Object.freeze([...row.admittedFlashVariantIds]) }
         : toFlashProduct(product, componentMedia);
+      // Carried to the card so its price follows the filtered variants (see `priceScopeVariantIds`).
+      const base = row.matchedVariantIds.length > 0
+        ? { ...withAdmitted, matchedVariantIds: Object.freeze([...row.matchedVariantIds]) }
+        : withAdmitted;
       if (row.kind === "CLEARANCE") return { ...base, isClearance: true as const };
       if (row.kind !== "FLASH_SALE" || row.endsAt === null || row.endsAt <= now) return base;
       return {

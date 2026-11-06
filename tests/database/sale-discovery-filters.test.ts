@@ -8,6 +8,10 @@ import {
   type SaleIdPage,
 } from "../../src/commerce/flash-sale-catalog.ts";
 import { createSaleListingCache } from "../../src/commerce/sale-listing-cache.ts";
+import { readApplicablePromotionCampaignsBatched } from "../../src/commerce/promotion-candidate-batching.ts";
+import type { PromotionCandidateReadClient } from "../../src/commerce/promotion-candidate-repository.ts";
+import { buildPromotionalStorefrontPricing } from "../../src/commerce/storefront-promotion-projection.ts";
+import { buildFlashSaleViewModel } from "../../src/routes/flash-sale-model.ts";
 import { parseSaleDiscoverySearchParams } from "../../src/commerce/category-discovery-url.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
@@ -232,3 +236,54 @@ test("the cache never serves one filter's page or facets to another", async () =
   assert.deepEqual(await sizes({}, cached), ["S", "M", "L"]);
   assert.deepEqual(await sizes({ color: "white" }, cached), ["S", "M"]);
 });
+
+/**
+ * The whole path a card takes: the read, the same pricing authority the route uses, the view model.
+ * The SQL picks D by its L variant; the card must then SHOW L's price, not the cheapest size's.
+ */
+async function cardPrices(params: Record<string, string>, kind?: "PROMOTION") {
+  const discovery = parseSaleDiscoverySearchParams(params);
+  const page = await repository.listSalePage({ shopId, discovery, pageSize: 24, kind, now });
+  const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
+    variantIds: page.products.flatMap((product) => product.variants.map((variant) => variant.id)),
+    client: prisma as unknown as PromotionCandidateReadClient,
+  });
+  const view = buildFlashSaleViewModel({
+    basePath: kind ? "/sale/uu-dai" : "/sale",
+    products: page.products,
+    totalCount: page.totalCount,
+    totalPages: page.totalPages,
+    page: page.page,
+    pageSize: 24,
+    selectEventBySlug: new Map(),
+    pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now, onlyKind: kind }),
+  });
+  return Object.fromEntries(page.products.map((product, index) => [product.slug, view.cards[index]!.model.price]));
+}
+
+for (const kind of [undefined, "PROMOTION"] as const) {
+  const where = kind ? "/sale/uu-dai" : "/sale";
+
+  test(`${where}: a filtered card shows the price of the variant the filter matched`, async () => {
+    // D is M 160k / L 800k after the 20% discount. size=L + minPrice=700k lists D by its L variant.
+    const filtered = await cardPrices({ size: "L", minPrice: "700000" }, kind);
+    assert.deepEqual(Object.keys(filtered), ["sale-filter-d"]);
+    assert.match(filtered["sale-filter-d"]!.displayText, /800\.000/);
+    assert.doesNotMatch(filtered["sale-filter-d"]!.displayText, /160\.000/);
+    assert.match(filtered["sale-filter-d"]!.compareAtText ?? "", /1\.000\.000/);
+
+    // The same product under size=M is its cheap variant, and with no choice it is unchanged: the
+    // cheapest size leads, as it always has.
+    assert.match((await cardPrices({ size: "M" }, kind))["sale-filter-d"]!.displayText, /160\.000/);
+    assert.match((await cardPrices({}, kind))["sale-filter-d"]!.displayText, /160\.000/);
+  });
+
+  test(`${where}: every card on a filtered page, in price-desc order, sits inside the chosen band`, async () => {
+    const page = await cardPrices({ size: "L", sort: "price-desc", minPrice: "300000" }, kind);
+    // A (L 400k) and D (L 800k) qualify. Both cards show their L price, so the order the SQL chose
+    // (D then A) is the order a shopper reads off the prices.
+    assert.deepEqual(Object.keys(page), ["sale-filter-d", "sale-filter-a"]);
+    assert.match(page["sale-filter-d"]!.displayText, /800\.000/);
+    assert.match(page["sale-filter-a"]!.displayText, /400\.000/);
+  });
+}

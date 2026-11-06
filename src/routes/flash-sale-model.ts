@@ -27,6 +27,8 @@ export type FlashSaleProduct = Readonly<{
   flashSale?: StorefrontFlashSalePresentation;
   /** The sale read chose this card for a "Xả hàng lẻ size" (CLEARANCE) discount. */
   isClearance?: boolean;
+  /** The variants a size, colour or price choice matched; the card's price is read from these. */
+  matchedVariantIds?: readonly string[];
 }>;
 
 /** What a listing with filters hands its filter panel. Absent on a listing that has none. */
@@ -104,6 +106,7 @@ export function buildFlashSaleViewModel(input: FlashSaleViewModelInput): FlashSa
             pricingRule: input.pricingRule,
             flashSale: product.flashSale,
             isClearance: product.isClearance,
+            priceScopeVariantIds: product.matchedVariantIds,
             selectEvent: input.selectEventBySlug.get(product.slug) ?? null,
           }),
         }),
