@@ -237,12 +237,23 @@ export function ListingViewToggle({
   compact = false,
 }: Readonly<{
   className?: string;
-  /** 32px buttons at every width, for a row that also holds the filter button and the sort. */
+  /**
+   * For a row that also holds the filter button and the sort. The buttons keep their 36px (32px on
+   * a desktop pointer) and the gap between them grows to 6px, and each button's touch area extends
+   * 3px sideways and 4px up and down past its border: 42 by 44px on a phone, with the areas of
+   * neighbours touching and never overlapping, so a tap at the edge of one cannot land on the next.
+   * (An absolutely positioned `::after` is placed from the padding box, inside the 1px border, so
+   * the insets are 1px larger than the extension they produce.)
+   */
   compact?: boolean;
 }>) {
   const { view, setView } = useListingView();
   return (
-    <div role="group" aria-label="Kiểu xem ảnh" className={`inline-flex items-center gap-1 ${className}`}>
+    <div
+      role="group"
+      aria-label="Kiểu xem ảnh"
+      className={`inline-flex items-center ${compact ? "gap-1.5" : "gap-1"} ${className}`}
+    >
       {LISTING_VIEWS.map((option) => {
         const active = option === view;
         return (
@@ -254,8 +265,8 @@ export function ListingViewToggle({
             title={LISTING_VIEW_LABELS[option]}
             data-listing-view-option={option}
             onClick={() => setView(option)}
-            className={`relative inline-flex items-center justify-center rounded border transition after:absolute after:-inset-[3px] after:content-[''] ${
-              compact ? "h-8 w-8" : "h-9 w-9 md:h-8 md:w-8"
+            className={`relative inline-flex h-9 w-9 items-center justify-center rounded border transition after:absolute after:content-[''] md:h-8 md:w-8 ${
+              compact ? "after:-inset-x-[4px] after:-inset-y-[5px]" : "after:-inset-[3px]"
             } ${
               active
                 ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
