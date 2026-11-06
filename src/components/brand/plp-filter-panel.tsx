@@ -32,6 +32,13 @@ export type PlpFilterPanelProps = {
   availableSizes: readonly string[];
   /** Whether the other active filters leave any discounted product to find. */
   saleAvailable?: boolean;
+  /**
+   * Whether the "Còn hàng" toggle is offered. A listing whose every product is in stock by
+   * construction (`/sale`) turns it off rather than show a control that can never narrow anything.
+   */
+  offerAvailability?: boolean;
+  /** Follows the number in the hidden live count, e.g. "sản phẩm đang giảm giá". */
+  countLabel?: string;
   activeFilters: PlpFilterState;
 };
 
@@ -48,6 +55,8 @@ export function PlpFilterPanel({
   totalCount,
   availableSizes,
   saleAvailable = true,
+  offerAvailability = true,
+  countLabel = "sản phẩm",
   activeFilters,
 }: PlpFilterPanelProps) {
   const router = useRouter();
@@ -209,7 +218,7 @@ export function PlpFilterPanel({
           controls stay on one line on a phone. */}
       <div className="flex items-center gap-2 md:gap-4">
         <span role="status" className="sr-only">
-          {totalCount} sản phẩm
+          {totalCount} {countLabel}
         </span>
         <ListingViewToggle compact className="shrink-0" />
 
@@ -270,19 +279,22 @@ export function PlpFilterPanel({
       {/* Desktop Filter Bar */}
       <div className="mt-4 hidden md:flex md:flex-wrap md:items-center md:gap-x-6 md:gap-y-3 text-xs text-[#3B2219]">
         {/* Availability + Sale toggles */}
+        {offerAvailability || showSaleToggle ? (
         <div className="flex items-center gap-1.5">
-          <Link
-            href={inStockHref}
-            scroll={false}
-            aria-current={isInStockActive ? "true" : undefined}
-            className={`inline-flex items-center rounded-md border px-3 py-1.5 font-medium transition ${
-              isInStockActive
-                ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                : "border-[#3B2219]/20 hover:border-[#3B2219]"
-            }`}
-          >
-            Còn hàng
-          </Link>
+          {offerAvailability ? (
+            <Link
+              href={inStockHref}
+              scroll={false}
+              aria-current={isInStockActive ? "true" : undefined}
+              className={`inline-flex items-center rounded-md border px-3 py-1.5 font-medium transition ${
+                isInStockActive
+                  ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
+                  : "border-[#3B2219]/20 hover:border-[#3B2219]"
+              }`}
+            >
+              Còn hàng
+            </Link>
+          ) : null}
           {showSaleToggle
             ? (() => {
                 const saleHref = buildToggleSaleHref(categoryPath, activeFilters);
@@ -304,6 +316,7 @@ export function PlpFilterPanel({
               })()
             : null}
         </div>
+        ) : null}
 
         {/* Sizes */}
         {availableSizes.length > 0 ? (
@@ -504,23 +517,26 @@ export function PlpFilterPanel({
             {/* Filter controls */}
             <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
               {/* Availability + Sale */}
+              {offerAvailability || showSaleToggle ? (
               <div>
                 <span className="block text-xs font-semibold uppercase tracking-wider text-[#3B2219]/70 mb-3">
                   Ưu đãi
                 </span>
                 <div className="flex flex-wrap gap-2">
-                  <Link
-                    href={inStockHref}
-                    scroll={false}
-                    aria-current={isInStockActive ? "true" : undefined}
-                    className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
-                      isInStockActive
-                        ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                        : "border-[#3B2219]/25 text-[#3B2219]"
-                    }`}
-                  >
-                    Chỉ xem sản phẩm còn hàng
-                  </Link>
+                  {offerAvailability ? (
+                    <Link
+                      href={inStockHref}
+                      scroll={false}
+                      aria-current={isInStockActive ? "true" : undefined}
+                      className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
+                        isInStockActive
+                          ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
+                          : "border-[#3B2219]/25 text-[#3B2219]"
+                      }`}
+                    >
+                      Chỉ xem sản phẩm còn hàng
+                    </Link>
+                  ) : null}
                   {showSaleToggle
                     ? (() => {
                         const saleHref = buildToggleSaleHref(categoryPath, activeFilters);
@@ -543,6 +559,7 @@ export function PlpFilterPanel({
                     : null}
                 </div>
               </div>
+              ) : null}
 
               {/* Sizes */}
               {availableSizes.length > 0 ? (

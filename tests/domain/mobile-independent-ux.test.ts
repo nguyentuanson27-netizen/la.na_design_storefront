@@ -38,7 +38,7 @@ test("mobile independent UX: PLP mobile drawer keeps URL-backed filter navigatio
 
   assert.match(panel, />Bộ lọc<\/span>[\s\S]*>\s*Sắp xếp:/, "the drawer button precedes the sort in one action row");
   assert.doesNotMatch(panel, /\{totalCount\} sản phẩm<\/span>\s*<ListingViewToggle \/>/, "the visible result count is not drawn in the action row");
-  assert.match(panel, /<span role="status" className="sr-only">\s*\{totalCount\} sản phẩm/, "the count stays available to assistive technology");
+  assert.match(panel, /<span role="status" className="sr-only">\s*\{totalCount\} \{countLabel\}/, "the count stays available to assistive technology");
   assert.match(panel, /<ListingViewToggle compact/, "the action row uses the compact view toggle");
   assert.doesNotMatch(panel, /router\.push\(href\);\s*setIsMobileOpen\(false\)/);
   assert.doesNotMatch(panel, /href=\{saleHref\}[\s\S]{0,180}onClick=\{\(\) => setIsMobileOpen\(false\)\}/);

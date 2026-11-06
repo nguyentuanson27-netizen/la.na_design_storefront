@@ -1,3 +1,4 @@
+import { buildCategoryDiscoveryHref } from "../commerce/category-discovery-url.ts";
 import type { StorefrontProductMedia } from "../commerce/product-media.ts";
 import type {
   StorefrontPricingRule,
@@ -9,6 +10,7 @@ import {
   type ProductCardModel,
   type StorefrontFlashSalePresentation,
 } from "../components/headless/build-product-card-model.ts";
+import { hasActivePlpFilters, type PlpFilterState } from "../components/headless/plp-filter-model.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
 
 export type FlashSaleProduct = Readonly<{
@@ -27,7 +29,19 @@ export type FlashSaleProduct = Readonly<{
   isClearance?: boolean;
 }>;
 
+/** What a listing with filters hands its filter panel. Absent on a listing that has none. */
+export type SaleFilterModel = Readonly<{
+  /** The route every filter link is written against. */
+  basePath: string;
+  active: PlpFilterState;
+  /** The sizes still selectable under the other choices, canonical spelling, in clothing order. */
+  availableSizes: readonly string[];
+  /** The shopper chose a filter or a non-default sort, so an empty result is "no match", not "no sale". */
+  filtered: boolean;
+}>;
+
 export type FlashSaleViewModel = Readonly<{
+  filters: SaleFilterModel | null;
   cards: readonly Readonly<{ id: string; model: ProductCardModel }>[];
   toneOffset: number;
   totalCount: number;
@@ -54,11 +68,29 @@ export type FlashSaleViewModelInput = Readonly<{
    * caller, and silently produces a link to an unmounted route when it is not.
    */
   basePath?: string;
+  /** Present on a listing that offers filters: the paging hrefs then keep them. */
+  filters?: Readonly<{ active: PlpFilterState; availableSizes: readonly string[] }>;
 }>;
 
 export function buildFlashSaleViewModel(input: FlashSaleViewModelInput): FlashSaleViewModel {
   const basePath = input.basePath ?? "/flash-sale";
+  const filters = input.filters ?? null;
+  // A listing with filters writes its paging links from the same state the panel does, so the
+  // size, colour, price band and sort survive a page turn; one without keeps the bare `?page=`.
+  const pageHref = (page: number) =>
+    filters === null
+      ? `${basePath}?page=${page}`
+      : buildCategoryDiscoveryHref(basePath, filters.active, page);
   return Object.freeze({
+    filters:
+      filters === null
+        ? null
+        : Object.freeze({
+            basePath,
+            active: filters.active,
+            availableSizes: filters.availableSizes,
+            filtered: hasActivePlpFilters(filters.active),
+          }),
     cards: Object.freeze(
       input.products.map((product) =>
         Object.freeze({
@@ -81,7 +113,7 @@ export function buildFlashSaleViewModel(input: FlashSaleViewModelInput): FlashSa
     totalCount: input.totalCount,
     page: input.page,
     totalPages: input.totalPages,
-    previousHref: input.page > 1 ? `${basePath}?page=${input.page - 1}` : null,
-    nextHref: input.page < input.totalPages ? `${basePath}?page=${input.page + 1}` : null,
+    previousHref: input.page > 1 ? pageHref(input.page - 1) : null,
+    nextHref: input.page < input.totalPages ? pageHref(input.page + 1) : null,
   });
 }

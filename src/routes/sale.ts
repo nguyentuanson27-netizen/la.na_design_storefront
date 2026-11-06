@@ -2,14 +2,13 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { saleListingCampaignKinds } from "@/commerce/flash-sale-catalog";
 import {
+  listConfiguredSaleFacets,
   listConfiguredSalePage,
   readConfiguredNextSaleBoundary,
   resolveStorefrontPricingRuleForProducts,
 } from "@/commerce/storefront-catalog-runtime";
-import {
-  parseStorefrontDiscoverySearchParams,
-  type StorefrontDiscoverySearchParams,
-} from "@/commerce/storefront-discovery";
+import { parseSaleDiscoverySearchParams } from "@/commerce/category-discovery-url";
+import type { StorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
 import { resolveStorefrontPromotionRefresh } from "@/commerce/storefront-promotion-freshness";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { sealRoute, type RouteHandle } from "./core.tsx";
@@ -35,14 +34,16 @@ export async function loadSaleRoute(
   const listing = kind ? saleListingByKind(kind) : null;
   await connection();
   const now = new Date();
-  let discovery: ReturnType<typeof parseStorefrontDiscoverySearchParams>;
+  let discovery: ReturnType<typeof parseSaleDiscoverySearchParams>;
   let page: Awaited<ReturnType<typeof listConfiguredSalePage>>;
+  let facets: Awaited<ReturnType<typeof listConfiguredSaleFacets>>;
   let boundary: Awaited<ReturnType<typeof readConfiguredNextSaleBoundary>>;
 
   try {
-    discovery = parseStorefrontDiscoverySearchParams(await searchParams);
-    [page, boundary] = await Promise.all([
+    discovery = parseSaleDiscoverySearchParams(await searchParams);
+    [page, facets, boundary] = await Promise.all([
       listConfiguredSalePage({ discovery, pageSize: SALE_PAGE_SIZE, kind, now }),
+      listConfiguredSaleFacets({ discovery, kind, now }),
       readConfiguredNextSaleBoundary(now, kind),
     ]);
   } catch (error) {
@@ -84,6 +85,18 @@ export async function loadSaleRoute(
     pageSize: SALE_PAGE_SIZE,
     selectEventBySlug: tracking.selectEventBySlug,
     pricingRule,
+    filters: {
+      active: {
+        size: discovery.size,
+        color: discovery.color,
+        availability: null,
+        minPriceVnd: discovery.minPriceVnd,
+        maxPriceVnd: discovery.maxPriceVnd,
+        sale: null,
+        sort: discovery.sort,
+      },
+      availableSizes: facets.sizes,
+    },
   });
   return sealRoute({
     data: model,
