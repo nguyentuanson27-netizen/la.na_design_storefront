@@ -92,11 +92,11 @@ test("order summary: a waiver needs a positive amount and never changes the valu
 const picker = (overrides: Partial<VoucherPickerModel> = {}): VoucherPickerModel => ({
   previewNotHeld: true,
   groups: [
-    { slot: "MERCHANDISE", kind: "MERCHANDISE", heading: "", hint: "", noneLabel: "", noneSelected: false, mode: "AUTO", items: [{ id: MERCH, title: "Giảm 50.000đ", condition: "", selected: true, selectable: true, disabledReason: null, shortfallVnd: null, savingText: "Dự kiến giảm 50.000đ", publicCode: null, endsAtIso: null }] },
-    { slot: "SHIPPING_FREE", kind: "SHIPPING_FREE", heading: "", hint: "", noneLabel: "", noneSelected: true, mode: "AUTO", items: [] },
+    { slot: "MERCHANDISE", kind: "MERCHANDISE", heading: "", hint: "", tone: "clay", mode: "AUTO", items: [{ id: MERCH, name: "Giảm 50K", title: "Giảm 50.000đ", valueLabel: "50K", valueSub: "Giảm", condition: "", selected: true, selectable: true, disabledReason: null, shortfallVnd: null, progressPercent: null, savingText: "Dự kiến giảm 50.000đ", publicCode: null, endsAtIso: null }] },
+    { slot: "SHIPPING_FREE", kind: "SHIPPING_FREE", heading: "", hint: "", tone: "teal", mode: "AUTO", items: [] },
   ],
-  summary: { paidBeforeText: "900.000đ", merchandiseDiscountText: "-50.000đ", merchandiseLines: [], shippingFeeText: "30.000đ", shippingDiscountText: null, totalText: "880.000đ", totalVnd: 880_000 },
-  footer: { label: "Áp dụng • 1 ưu đãi", count: 1 },
+  summary: { paidBeforeText: "900.000đ", merchandiseDiscountText: "-50.000đ", merchandiseLines: [], shippingFeeText: "30.000đ", shippingDiscountText: null, totalText: "880.000đ", totalVnd: 880_000, savingText: "50.000đ", savingVnd: 50_000 },
+  footer: { label: "Áp dụng · Giảm 50.000đ", count: 1 },
   quoteDigest: "a".repeat(64),
   selectionVersion: "b".repeat(64),
   warnings: { giftLoss: null, totalIncrease: null, notices: [] },

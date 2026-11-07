@@ -4,12 +4,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { useVoucherPickerActions } from "@/components/headless/use-voucher-picker";
-import type { VoucherPickerGroup, VoucherPickerModel } from "@/routes/voucher-picker-model";
+import { formatVoucherVnd, voucherEntryCopy, type VoucherPickerGroup, type VoucherPickerModel } from "@/routes/voucher-picker-model";
 import { VoucherCard } from "./voucher-card";
+import { VoucherIcon } from "./voucher-icons";
 
 /**
  * Voucher v1 (V16): the Grab-inspired picker (spec §7). Mobile is a full-screen sheet with a sticky footer, desktop a
  * centred panel; both are a native modal <dialog>, which gives the inert background, focus containment and Escape.
+ *
+ * Each voucher is a toggle ticket (`VoucherCard`): pressing the chosen one again un-chooses it, so there is no "do not use" row. A group is
+ * one voucher TYPE (ADR 0020) with its own colour; at most one ticket per group is pressed.
  *
  * It owns no pricing and no eligibility. A radio change only asks the server for a preview of that DRAFT (nothing is
  * saved, nothing is held); "Áp dụng" commits every group in one server call and the picker shows what the server
@@ -67,6 +71,14 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
   const [saved, setSaved] = useState(initial);
+  // The clock is read after mount only, so "Còn N ngày" never differs between the server render and the first client render.
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  useEffect(() => {
+    const tick = () => setNowMs(Date.now());
+    tick();
+    const timer = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   // The version of the SAVED choice this picker was built on. It only moves when the picker learns what is saved (a commit, an
   // applied code, a refusal that returns the saved model): never from a preview of a draft, which would hide that another tab
   // changed the choice underneath this one. "Áp dụng" sends it back so a stale picker is refused instead of overwriting.
@@ -407,14 +419,33 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   };
 
   const warnings = [model.warnings.giftLoss, model.warnings.totalIncrease].filter((text): text is string => text !== null);
-  const summary = saved.footer.count > 0 ? `Đang dùng ${saved.footer.count} ưu đãi · Dự kiến ${saved.summary.totalText}` : "Chọn hoặc nhập mã ưu đãi";
+  const entry = voucherEntryCopy(saved);
+  const usedGroups = saved.groups.filter((group) => group.items.some((item) => item.selected));
+  // The voucher the cart is closest to unlocking: a nudge to add a little more, from the server's own shortfall.
+  const nudge = saved.groups
+    .flatMap((group) => group.items.filter((item) => !item.selectable && item.shortfallVnd !== null && item.progressPercent !== null).map((item) => ({ item, tone: group.tone })))
+    .sort((a, b) => a.item.shortfallVnd! - b.item.shortfallVnd!)[0] ?? null;
+  const draftGroups = model.groups.filter((group) => group.items.some((item) => item.selected));
 
   return (
     <div data-voucher-picker>
-      <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 border border-black/30 px-4 py-3 text-left text-sm font-semibold hover:border-black focus-visible:outline-2 focus-visible:outline-offset-4" aria-haspopup="dialog" onClick={() => { setLateRefusal(false); setUnknownOutcome(false); setOpen(true); }}>
-        <span>Ưu đãi</span>
-        <span className="text-right font-normal text-black/75">{summary}</span>
+      <button type="button" className="voucher-entry" aria-haspopup="dialog" onClick={() => { setLateRefusal(false); setUnknownOutcome(false); setOpen(true); }}>
+        <span className="voucher-entry__icon"><VoucherIcon name={entry.used ? "check" : "tag"} /></span>
+        <span className="voucher-entry__text">
+          <span className="voucher-entry__title">
+            {entry.title}
+            {entry.used ? <span className="voucher-dots" aria-hidden="true">{usedGroups.map((group) => <i key={group.slot} className={`voucher-tone voucher-tone--${group.tone}`} />)}</span> : null}
+          </span>
+          <span className="voucher-entry__sub" data-quiet={!entry.used}>{entry.sub}</span>
+        </span>
+        <span className="voucher-entry__go">{entry.used ? "Đổi" : "Chọn"}<VoucherIcon name="chevron" /></span>
       </button>
+      {nudge ? (
+        <div className={`voucher-tone voucher-tone--${nudge.tone} voucher-nudge`} data-voucher-nudge>
+          <span>Mua thêm <b>{formatVoucherVnd(nudge.item.shortfallVnd!)}</b> để dùng voucher <b>{nudge.item.name}</b></span>
+          <span className="voucher-nudge__bar" role="progressbar" aria-label="Tiến độ đạt điều kiện" aria-valuemin={0} aria-valuemax={100} aria-valuenow={nudge.item.progressPercent!}><i style={{ width: `${nudge.item.progressPercent!}%` }} /></span>
+        </div>
+      ) : null}
       {unknownOutcome && !open ? <p role="status" className="mt-2 text-sm text-black/80">Chưa xác định được kết quả của yêu cầu áp dụng ưu đãi. Nàng mở lại “Ưu đãi” để kiểm tra ưu đãi đang dùng rồi thử lại nếu cần.</p> : null}
       {lateRefusal ? <p role="status" className="mt-2 text-sm text-black/80">Yêu cầu áp dụng ưu đãi chưa được thực hiện. Nàng mở lại “Ưu đãi” để xem lý do và thử lại.</p> : null}
 
@@ -422,7 +453,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         ref={dialog}
         aria-labelledby={titleId}
         onCancel={(event) => { event.preventDefault(); close(); }}
-        className="m-0 h-dvh max-h-none w-full max-w-none overflow-hidden border-0 bg-[#fcf8f6] p-0 text-[#30251f] backdrop:bg-black/45 sm:m-auto sm:h-auto sm:max-h-[85dvh] sm:max-w-lg sm:border sm:border-black/25"
+        className="m-0 h-dvh max-h-none w-full max-w-none overflow-hidden border-0 bg-[#fcf8f6] p-0 text-[#30251f] backdrop:bg-black/45 sm:m-auto sm:h-auto sm:max-h-[85dvh] sm:max-w-lg sm:rounded-lg sm:border sm:border-black/25"
       >
         <div className="flex h-dvh flex-col sm:h-auto sm:max-h-[85dvh]">
           <header className="flex items-center gap-3 border-b border-black/15 px-4 py-3">
@@ -432,44 +463,51 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
             <h2 id={titleId} ref={heading} tabIndex={-1} className="font-display text-xl">Ưu đãi</h2>
           </header>
 
+          <div className="voucher-bar" data-voucher-bar>
+            <span className="voucher-bar__count">
+              <span className="voucher-bar__label">
+                {draftGroups.length > 0 ? <span className="voucher-dots" aria-hidden="true">{draftGroups.map((group) => <i key={group.slot} className={`voucher-tone voucher-tone--${group.tone}`} />)}</span> : null}
+                Đang chọn
+              </span>
+              <span className="voucher-bar__value">{model.footer.count > 0 ? <><b>{model.footer.count}</b>voucher</> : "Chưa chọn voucher"}</span>
+            </span>
+            {model.footer.count > 0 && model.summary.savingText ? <span className="voucher-bar__saving"><VoucherIcon name="down" />Giảm {model.summary.savingText}</span> : null}
+          </div>
+
           <div className="flex-1 overflow-y-auto px-4 py-4">
             <form
               className="flex gap-2"
               onSubmit={(event) => { event.preventDefault(); if (code.trim()) submitCode(); }}
             >
               <label className="sr-only" htmlFor={`${titleId}-code`}>Nhập mã khuyến mãi</label>
-              <input id={`${titleId}-code`} value={code} onChange={(event) => editCode(event.target.value)} maxLength={64} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Nhập mã khuyến mãi" className="min-h-11 min-w-0 flex-1 border border-black/30 bg-transparent px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2" />
-              <button type="submit" disabled={pending || code.trim() === ""} className="min-h-11 border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Áp dụng mã</button>
+              <input id={`${titleId}-code`} value={code} onChange={(event) => editCode(event.target.value)} maxLength={64} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Nhập mã khuyến mãi" className="min-h-11 min-w-0 flex-1 rounded-md border border-black/30 bg-transparent px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2" />
+              <button type="submit" disabled={pending || code.trim() === ""} className="min-h-11 rounded-md border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Áp dụng mã</button>
             </form>
 
             {error ? <p role="alert" className="mt-3 border-l-2 border-black bg-black/5 p-3 text-sm">{error}</p> : null}
             {model.warnings.notices.map((notice) => <p key={notice} role="status" className="mt-3 text-sm text-black/80">{notice}</p>)}
 
             {linkVisible ? (
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border border-black/20 p-3 text-sm">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-black/20 p-3 text-sm">
                 <p>Nàng có mã ưu đãi từ liên kết.</p>
-                <button type="button" disabled={pending} onClick={submitLinked} className="min-h-11 border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Dùng mã từ liên kết</button>
+                <button type="button" disabled={pending} onClick={submitLinked} className="min-h-11 rounded-md border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Dùng mã từ liên kết</button>
               </div>
             ) : null}
 
+            {model.groups.some((group) => group.items.length > 0) ? <p className="mt-3 text-xs text-black/65">Nhấn lại voucher đang chọn để bỏ chọn.</p> : null}
+
             {model.groups.map((group) => {
               if (group.items.length === 0) return null;
-              const name = `voucher-${group.slot}`;
+              const chosen = group.items.some((item) => item.selected);
               return (
-                <fieldset key={group.slot} className="mt-6" disabled={pending}>
-                  <legend className="flex w-full items-baseline justify-between text-sm font-semibold">
-                    <span>{group.heading}</span>
-                    <span className="font-normal text-black/65">{group.hint}</span>
+                <fieldset key={group.slot} className={`voucher-tone voucher-tone--${group.tone} mt-5 min-w-0`} disabled={pending}>
+                  <legend className="voucher-group__legend">
+                    <span className="voucher-group__title"><i aria-hidden="true" className="voucher-swatch" />{group.heading}</span>
+                    <span className="voucher-group__hint" data-auto={chosen && group.mode === "AUTO"}>{chosen && group.mode === "AUTO" ? "Đã chọn giúp nàng" : group.hint}</span>
                   </legend>
-                  <ul className="mt-2 space-y-2">
-                    <li>
-                      <label className={`flex min-h-11 cursor-pointer items-center gap-3 border px-3 py-2 ${group.noneSelected ? "border-black" : "border-black/20"}`}>
-                        <input type="radio" name={name} value="" checked={group.noneSelected} onChange={() => choose(group, null)} className="h-5 w-5 accent-black" />
-                        <span className="text-sm">{group.noneLabel}</span>
-                      </label>
-                    </li>
+                  <ul className="space-y-2.5">
                     {group.items.map((item) => (
-                      <VoucherCard key={item.id} item={item} name={name} disabled={pending} onSelect={() => choose(group, item.id)} />
+                      <VoucherCard key={item.id} item={item} disabled={pending} nowMs={nowMs} onToggle={() => choose(group, item.selected ? null : item.id)} />
                     ))}
                   </ul>
                 </fieldset>

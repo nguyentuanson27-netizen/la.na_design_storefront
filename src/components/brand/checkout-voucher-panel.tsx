@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import { useVoucherHold } from "@/components/headless/use-voucher-hold";
 import type { CheckoutVoucherView } from "@/routes/checkout-model";
+import { VoucherIcon } from "./voucher-icons";
 
 /**
  * Voucher v1 (V18): the vouchers' part of the checkout. It decides and prices nothing: a held voucher is already in the
@@ -59,27 +60,33 @@ export function CheckoutVoucherPanel({ view }: Readonly<{ view: CheckoutVoucherV
 
   if (view.state === "HELD") {
     return (
-      <section aria-label="Ưu đãi" className="border border-black/20 px-4 py-4 text-sm" data-checkout-vouchers="held">
-        <p className="font-semibold">Ưu đãi đang áp dụng cho đơn này</p>
-        <ul className="mt-2 space-y-1">
+      <section aria-label="Ưu đãi" className="voucher-held text-sm" data-checkout-vouchers="held">
+        <div className="voucher-held__head">
+          <span className="voucher-held__ok"><VoucherIcon name="check" /></span>
+          <p className="font-semibold">Ưu đãi đang áp dụng cho đơn này</p>
+          {left !== null && left > 0 ? <span aria-hidden="true" className="voucher-held__pill">Còn {left} phút</span> : null}
+        </div>
+        <ul className="grid gap-2.5 px-3.5 py-3">
           {view.lines.map((line) => (
-            <li className="flex justify-between gap-4" data-checkout-voucher-line key={line.id}>
-              <span className="min-w-0">{line.title}</span>
-              <span className="shrink-0 font-medium text-[#24472D]">{line.amountText}</span>
+            <li className="flex items-center justify-between gap-4" data-checkout-voucher-line key={line.id}>
+              <span className="flex min-w-0 items-center gap-2.5"><span aria-hidden="true" className="grid h-7 w-7 flex-none place-items-center rounded-md bg-[#3b2219] text-white"><VoucherIcon name="tag" className="h-4 w-4" /></span><span className="min-w-0">{line.title}</span></span>
+              <span className="shrink-0 font-semibold text-[#b42318]">{line.amountText}</span>
             </li>
           ))}
         </ul>
-        <p className="mt-2 text-black/75" data-checkout-voucher-held-until>
-          {left === null ? "Ưu đãi được giữ tối đa 10 phút." : left > 0 ? `Ưu đãi được giữ thêm khoảng ${left} phút.` : "Ưu đãi đã hết hạn, đang cập nhật giá…"}
-        </p>
-        <Link className="mt-1 inline-block min-h-11 content-center underline" href="/cart">Đổi ưu đãi ở giỏ hàng</Link>
+        <div className="px-3.5 pb-3">
+          <p className="text-black/75" data-checkout-voucher-held-until>
+            {left === null ? "Ưu đãi được giữ tối đa 10 phút." : left > 0 ? `Ưu đãi được giữ thêm khoảng ${left} phút.` : "Ưu đãi đã hết hạn, đang cập nhật giá…"}
+          </p>
+          <Link className="mt-1 inline-block min-h-11 content-center underline" href="/cart">Đổi ưu đãi ở giỏ hàng</Link>
+        </div>
       </section>
     );
   }
 
   if (view.state === "STALE") {
     return (
-      <p className="border border-black/20 px-4 py-3 text-sm" data-checkout-vouchers="stale" role="status">
+      <p className="rounded-lg border border-black/20 px-4 py-3 text-sm" data-checkout-vouchers="stale" role="status">
         Ưu đãi nàng đã chọn đã hết hạn hoặc giỏ hàng đã thay đổi, nên giá bên dưới chưa có ưu đãi. <Link className="underline" href="/cart">Xem lại ở giỏ hàng</Link>.
       </p>
     );
@@ -106,7 +113,7 @@ export function CheckoutVoucherPanel({ view }: Readonly<{ view: CheckoutVoucherV
   };
 
   return (
-    <section aria-label="Ưu đãi" className="border border-black px-4 py-4 text-sm" data-checkout-vouchers="offered">
+    <section aria-label="Ưu đãi" className="rounded-lg border border-black px-4 py-4 text-sm" data-checkout-vouchers="offered">
       <p className="font-semibold">{view.afterStale ? "Nàng xác nhận lại ưu đãi" : "Nàng có ưu đãi cho đơn này"}</p>
       {view.afterStale ? <p className="mt-1 text-black/75">Ưu đãi trước đó đã hết hạn hoặc giỏ hàng đã thay đổi.</p> : null}
       <ul className="mt-2 space-y-1">

@@ -127,16 +127,18 @@ test("AC-12: the picker shows two groups, NONE options, the exact shortfall and 
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("group", { name: /Voucher giảm tiền hàng/ })).toBeVisible();
     await expect(dialog.getByRole("group", { name: /Voucher vận chuyển/ })).toBeVisible();
-    await expect(dialog.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ })).toBeVisible();
-    await expect(dialog.getByRole("radio", { name: /Không dùng voucher vận chuyển/ })).toBeVisible();
+    // Un-choosing is a second press on the chosen ticket, so there is no "do not use" row.
+    await expect(dialog.getByText(/Không dùng voucher/)).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: /^Giảm 50\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
     // 900K cart; the 200K voucher needs 2.000.000đ: the server says exactly how much more.
     await expect(dialog.getByText("Đặt thêm 1.100.000đ để được hưởng ưu đãi này")).toBeVisible();
-    await expect(dialog.getByRole("radio", { name: /Giảm 200.000đ/ })).toBeDisabled();
-    await expect(dialog.getByRole("button", { name: "Áp dụng • 2 ưu đãi" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /^Giảm 200\.000đ\./ })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: /^Áp dụng · Giảm / })).toBeVisible();
+    await expect(dialog.locator("[data-voucher-bar]")).toContainText("Đang chọn");
     await shot(page, `picker-${viewport.width}`);
     expect((await new AxeBuilder({ page }).include("dialog").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
-    // Touch targets: every radio row is at least 44px tall.
-    const heights = await dialog.locator("label:has(input[type=radio])").evaluateAll((labels) => labels.map((label) => label.getBoundingClientRect().height));
+    // Touch targets: every voucher ticket is at least 44px tall.
+    const heights = await dialog.locator("button[aria-pressed]").evaluateAll((tickets) => tickets.map((ticket) => ticket.getBoundingClientRect().height));
     expect(Math.min(...heights)).toBeGreaterThanOrEqual(44);
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -148,26 +150,26 @@ test("AC-26 / AC-42: choosing in the picker previews on the server and saves not
   await page.goto(`${BASE}/cart`);
   await trigger(page).click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  // Nothing is optimistic: the radio flips when the server answers, so click and wait for the answer.
-  await dialog.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ }).click();
-  await expect(dialog.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ })).toBeChecked();
-  await expect(dialog.getByRole("button", { name: "Bỏ qua ưu đãi và tiếp tục" }).or(dialog.getByRole("button", { name: /Áp dụng • 1 ưu đãi/ }))).toBeVisible();
+  // Nothing is optimistic: the ticket flips when the server answers, so press and wait for the answer. A second press on the chosen one un-chooses it.
+  await dialog.getByRole("button", { name: /^Giảm 50\.000đ\./ }).click();
+  await expect(dialog.getByRole("button", { name: /^Giảm 50\.000đ\./ })).toHaveAttribute("aria-pressed", "false");
+  await expect(dialog.getByRole("button", { name: /^Áp dụng · Giảm / }).or(dialog.getByRole("button", { name: "Bỏ qua ưu đãi và tiếp tục" }))).toBeVisible();
   expect(await selection()).toBeNull();
   await page.keyboard.press("Escape");
   expect(await selection()).toBeNull();
   await expect(trigger(page)).toContainText("Đang dùng 2 ưu đãi");
   // Reopened, the saved choice is what is shown, not the discarded draft.
   await trigger(page).click();
-  await expect(dialog.getByRole("radio", { name: /Giảm 50.000đ/ })).toBeChecked();
+  await expect(dialog.getByRole("button", { name: /^Giảm 50\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("V16: Áp dụng commits both groups on the server and the cart shows what the server decided", async ({ page }) => {
   await page.goto(`${BASE}/cart`);
   await trigger(page).click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await dialog.getByRole("radio", { name: /Không dùng voucher vận chuyển/ }).click();
-  await expect(dialog.getByRole("radio", { name: /Không dùng voucher vận chuyển/ })).toBeChecked();
-  await dialog.getByRole("button", { name: /Áp dụng • 1 ưu đãi/ }).click();
+  await dialog.getByRole("button", { name: /^Miễn phí vận chuyển\./ }).click();
+  await expect(dialog.getByRole("button", { name: /^Miễn phí vận chuyển\./ })).toHaveAttribute("aria-pressed", "false");
+  await dialog.getByRole("button", { name: /^Áp dụng · Giảm / }).click();
   await expect(dialog).toBeHidden();
   await expect.poll(async () => (await selection())?.shippingMode).toBe("MANUAL");
   const saved = await selection();
@@ -188,7 +190,7 @@ test("AC-13: a private code is applied through the picker; a wrong code gets one
   await expect(dialog.getByRole("alert")).toContainText("Mã không hợp lệ hoặc đã hết hiệu lực");
   await dialog.getByLabel("Nhập mã khuyến mãi").fill("kol70");
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
-  await expect(dialog.getByRole("radio", { name: /Giảm 70.000đ/ })).toBeChecked();
+  await expect(dialog.getByRole("button", { name: /^Giảm 70\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(async () => (await selection())?.merchandiseVoucherId).toBe(ids.priv);
   expect(JSON.stringify(await selection())).not.toMatch(/KOL70/i);
 });
@@ -233,7 +235,7 @@ test("AC-40: a marketing link is redirected to a clean URL; the code is never in
   // cookie is still there (clearing it re-renders the page, so it waits until the dialog is closed).
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Đã áp dụng mã ưu đãi");
-  await expect(dialog.getByRole("radio", { name: /Giảm 70.000đ/ })).toBeChecked();
+  await expect(dialog.getByRole("button", { name: /^Giảm 70\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
   await expect(dialog.getByRole("button", { name: "Dùng mã từ liên kết" })).toHaveCount(0);
   expect((await context.cookies()).some((cookie) => cookie.name === "la_voucher_code")).toBe(true);
   await page.keyboard.press("Escape");
