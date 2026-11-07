@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
-import { ListingResultCount } from "./listing-chrome";
+import { LISTING_ACTION_BAR_CLASSES } from "../headless/listing-view-model";
 import { ListingViewToggle } from "./listing-view";
 import type {
   CollectionAvailabilityOption,
@@ -20,7 +20,8 @@ export type CollectionFilterPanelProps = {
 };
 
 /**
- * A collection's controls: result count, sort, the size chips and the "còn hàng" toggle.
+ * A collection's controls: the action row (view size and sort on one line), the size chips and the
+ * "còn hàng" toggle. The result count is not drawn; a visually hidden live copy carries it.
  *
  * Size and stock are the only filters a collection has, so they sit in the page at every width
  * rather than behind a "Bộ lọc" drawer: on a phone the drawer cost two taps and a full-screen sheet
@@ -81,17 +82,23 @@ export function CollectionFilterPanel({
 
   return (
     <div className="border-b border-[#3B2219]/15 pb-3 md:pb-4">
-      {/* Top action row: count, sort */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex items-center gap-3">
-          <ListingResultCount>{totalCount} sản phẩm</ListingResultCount>
-          <ListingViewToggle />
-        </div>
+      {/* Top action row: view size and sort on one line, the same bar the other listings draw (the
+          sort is all a collection adds to it: size and stock are the chips below). Below `sm` the
+          label is hidden so the select keeps the width its longest option needs; a screen too
+          narrow for both wraps the sort to a second line rather than clip it. */}
+      <div className={LISTING_ACTION_BAR_CLASSES.bar}>
+        <span role="status" className="sr-only">
+          {totalCount} sản phẩm
+        </span>
+        <ListingViewToggle compact className="shrink-0" />
 
-        <nav aria-label="Sắp xếp bộ sưu tập" className="flex items-center gap-2">
+        <nav
+          aria-label="Sắp xếp bộ sưu tập"
+          className="flex min-w-[9.5rem] flex-1 items-center justify-end gap-2 md:min-w-0"
+        >
           <label
             htmlFor="collection-sort-select"
-            className="text-xs uppercase tracking-wider text-[#3B2219]/70"
+            className="sr-only text-xs uppercase tracking-wider text-[#3B2219]/70 sm:not-sr-only"
           >
             Sắp xếp:
           </label>
@@ -101,7 +108,7 @@ export function CollectionFilterPanel({
             aria-label="Sắp xếp sản phẩm"
             value={activeSortHref}
             onChange={handleSortChange}
-            className="h-9 rounded border border-[#3B2219]/20 bg-transparent px-2 text-base text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219] md:h-auto md:py-1.5 md:text-xs"
+            className="h-9 min-w-0 max-w-full rounded border border-[#3B2219]/20 bg-transparent px-2 text-base text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219] md:h-auto md:py-1.5 md:text-xs"
           >
             {sortOptions.map((opt) => (
               <option key={opt.value} value={opt.href}>

@@ -17,6 +17,7 @@ import {
   ListingShell,
   ListingViewToggle,
 } from "@/components/brand/listing-chrome";
+import { LISTING_ACTION_BAR_CLASSES } from "@/components/headless/listing-view-model";
 import { createStorefrontRoute } from "@/routes/factory";
 import { buildShopMetadata } from "@/routes/metadata/shop";
 import { loadShopRoute, type ShopRouteProps } from "@/routes/shop";
@@ -64,69 +65,74 @@ function render(data: ShopViewModel) {
           Bộ lọc cửa hàng
         </h2>
 
-        {/* Mobile: search, sort and drawer filters are one GET form authority. */}
+        {/* Mobile: search, sort and drawer filters are one GET form authority. The first line is the
+            same action bar every listing draws (view size, filter button, sort); the result count is
+            not drawn, and a visually hidden live copy keeps it announced. The search is a line of
+            its own under it, which the category listing has no use for. */}
         <form method="get" action="/shop" className="md:hidden">
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-wider text-[#70584B] font-sans">
-              <span>{data.totalCount} sản phẩm</span>
-              <ListingViewToggle />
-            </div>
+          <div className="flex flex-col gap-3">
+            <div className={LISTING_ACTION_BAR_CLASSES.bar}>
+              <span role="status" className="sr-only">
+                {data.totalCount} sản phẩm
+              </span>
+              <ListingViewToggle compact className="shrink-0" />
 
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="relative flex min-w-[200px] flex-1 items-center">
-                <span className="sr-only">Tìm sản phẩm</span>
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#3B2219]/40">
-                  <svg
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                </div>
-                <input
-                  type="search"
-                  name="q"
-                  aria-label="Tìm sản phẩm"
-                  placeholder="Tìm sản phẩm…"
-                  defaultValue={discovery.query ?? ""}
-                  maxLength={data.limits.query}
-                  className="w-full rounded-full border border-[#3B2219]/20 bg-transparent py-1.5 pl-8 pr-3 text-xs text-[#2A1810] placeholder:text-[#3B2219]/40 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              <div className={LISTING_ACTION_BAR_CLASSES.controls}>
+                <ShopMobileDrawer
+                  limits={data.limits}
+                  discovery={discovery}
+                  collectionFacets={data.collectionFacets}
+                  colorFacets={data.colorFacets}
+                  sizeFacets={data.sizeFacets}
+                  selectedCollection={data.selectedCollection}
+                  selectedSize={data.selectedSize}
+                  selectedColor={data.selectedColor}
+                  activeFilterCount={activeFilterCount}
                 />
-              </label>
 
-              <ShopMobileDrawer
-                limits={data.limits}
-                discovery={discovery}
-                collectionFacets={data.collectionFacets}
-                colorFacets={data.colorFacets}
-                sizeFacets={data.sizeFacets}
-                selectedCollection={data.selectedCollection}
-                selectedSize={data.selectedSize}
-                selectedColor={data.selectedColor}
-                activeFilterCount={activeFilterCount}
-              />
-
-              <ShopFilterSelect
-                id="shop-sort-select-mobile"
-                name="sort"
-                aria-label="Sắp xếp"
-                defaultValue={discovery.sort}
-                className="rounded border border-[#3B2219]/20 bg-transparent px-3 py-1.5 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
-              >
-                <option value="name-asc">Tên A–Z</option>
-                <option value="name-desc">Tên Z–A</option>
-                <option value="price-asc">Giá thấp → cao</option>
-                <option value="price-desc">Giá cao → thấp</option>
-              </ShopFilterSelect>
+                <ShopFilterSelect
+                  id="shop-sort-select-mobile"
+                  name="sort"
+                  aria-label="Sắp xếp"
+                  defaultValue={discovery.sort}
+                  className={LISTING_ACTION_BAR_CLASSES.sortSelect}
+                >
+                  <option value="name-asc">Tên A–Z</option>
+                  <option value="name-desc">Tên Z–A</option>
+                  <option value="price-asc">Giá thấp → cao</option>
+                  <option value="price-desc">Giá cao → thấp</option>
+                </ShopFilterSelect>
+              </div>
             </div>
+
+            <label className="relative flex w-full items-center">
+              <span className="sr-only">Tìm sản phẩm</span>
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#3B2219]/40">
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+              </div>
+              <input
+                type="search"
+                name="q"
+                aria-label="Tìm sản phẩm"
+                placeholder="Tìm sản phẩm…"
+                defaultValue={discovery.query ?? ""}
+                maxLength={data.limits.query}
+                className="h-9 w-full rounded-full border border-[#3B2219]/20 bg-transparent pl-8 pr-3 text-xs text-[#2A1810] placeholder:text-[#3B2219]/40 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              />
+            </label>
           </div>
         </form>
 
@@ -135,9 +141,11 @@ function render(data: ShopViewModel) {
           {/* Sale has no control on /shop, but a link can filter by it: the form must carry it. */}
           {discovery.sale ? <input type="hidden" name="sale" value="true" /> : null}
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4 text-xs uppercase tracking-wider text-[#70584B] font-sans">
-              <span>{data.totalCount} sản phẩm</span>
-              <ListingViewToggle />
+            <div className="flex items-center gap-4">
+              <span role="status" className="sr-only">
+                {data.totalCount} sản phẩm
+              </span>
+              <ListingViewToggle compact />
             </div>
 
             <div className="flex items-center gap-4">
