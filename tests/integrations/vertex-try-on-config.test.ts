@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { TRY_ON_LOCATION, readTryOnConfig } from "../../src/integrations/vertex-try-on/config.ts";
+import { TRY_ON_DEFAULT_MODEL, TRY_ON_LOCATION, readTryOnConfig, readTryOnModel } from "../../src/integrations/vertex-try-on/config.ts";
 
 const ready = {
   LA_TRY_ON_ENABLED: "true",
@@ -66,4 +66,22 @@ test("a malformed project id is unavailable, never interpolated into the endpoin
 test("the configuration carries no credential material", () => {
   const config = readTryOnConfig(ready);
   assert.doesNotMatch(JSON.stringify(config), /credentials|secret|key/i);
+});
+
+test("the model defaults to Nano Banana 2.1 and accepts only a plain model id override", () => {
+  assert.equal(TRY_ON_DEFAULT_MODEL, "gemini-nano-banana-2.1");
+  assert.equal(readTryOnModel({}), "gemini-nano-banana-2.1");
+  assert.equal(readTryOnModel({ LA_TRY_ON_VERTEX_MODEL: "" }), "gemini-nano-banana-2.1");
+  assert.equal(readTryOnModel({ LA_TRY_ON_VERTEX_MODEL: "gemini-3-pro-image" }), "gemini-3-pro-image");
+  for (const LA_TRY_ON_VERTEX_MODEL of ["../x", "a/b", "Gemini", " gemini-x", "gemini-x?a=1", "gemini x", "g"]) {
+    assert.equal(readTryOnModel({ LA_TRY_ON_VERTEX_MODEL }), null, LA_TRY_ON_VERTEX_MODEL);
+  }
+});
+
+test("a malformed model override fails closed; a valid one keeps try-on available", () => {
+  assert.deepEqual(readTryOnConfig({ ...ready, LA_TRY_ON_VERTEX_MODEL: "../../evil" }), {
+    available: false,
+    reason: "NOT_CONFIGURED",
+  });
+  assert.equal(readTryOnConfig({ ...ready, LA_TRY_ON_VERTEX_MODEL: "gemini-3-pro-image" }).available, true);
 });

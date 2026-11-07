@@ -8,7 +8,7 @@ Product contract: [storefront virtual try-on spec](../specs/storefront-virtual-t
 
 The storefront uses **Nano Banana 2.1 / `gemini-nano-banana-2.1`** as a multi-image editing model on Google Cloud Vertex AI:
 
-- model id: `gemini-nano-banana-2.1` (configurable via `LA_TRY_ON_VERTEX_MODEL`);
+- model id: `gemini-nano-banana-2.1` (configurable via `LA_TRY_ON_VERTEX_MODEL`; a value that is not a plain lowercase model id makes try-on unavailable, fail-closed);
 - Vertex location: `global` only;
 - REST surface: publisher-model `:generateContent`;
 - two inline references: shopper first, exact trusted garment second;

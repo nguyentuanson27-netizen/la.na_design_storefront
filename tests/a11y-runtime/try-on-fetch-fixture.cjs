@@ -25,7 +25,7 @@ function log(entry) {
 }
 
 const EXPECTED_PATH =
-  /^\/v1\/projects\/lana-test-project\/locations\/global\/publishers\/google\/models\/(?:gemini-nano-banana-2\.1|gemini-3-pro-image):generateContent$/;
+  /^\/v1\/projects\/lana-test-project\/locations\/global\/publishers\/google\/models\/gemini-nano-banana-2\.1:generateContent$/;
 
 async function generate(url, init) {
   const headers = new Headers(init?.headers);

@@ -95,6 +95,25 @@ test("request supports custom model parameter", () => {
   );
 });
 
+test("the client sends the model it was given and defaults to Nano Banana 2.1", async () => {
+  const urls: string[] = [];
+  const make = (model?: string) =>
+    createVertexTryOnClient({
+      config,
+      getAccessToken: async () => "test-token",
+      fetch: async (url) => {
+        urls.push(String(url));
+        return json(okBody());
+      },
+      timeoutMs: 5_000,
+      ...(model === undefined ? {} : { model }),
+    });
+  await make("gemini-custom-model").generate({ person, product });
+  await make().generate({ person, product });
+  assert.match(urls[0]!, /\/models\/gemini-custom-model:generateContent$/);
+  assert.match(urls[1]!, /\/models\/gemini-nano-banana-2\.1:generateContent$/);
+});
+
 test("request has no persistence target, user prompt field, or third input image", () => {
   const request = buildGenerateContentRequest({ config, person, product });
   const serialized = JSON.stringify(request.body);

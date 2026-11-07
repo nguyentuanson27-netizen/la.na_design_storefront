@@ -1,15 +1,17 @@
 import { readBoundedBody, sniffImageMime } from "../../commerce/try-on-image.ts";
 import type { TryOnImageMimeType } from "../../commerce/try-on-policy.ts";
+import { TRY_ON_DEFAULT_MODEL } from "./config.ts";
 import { createTimeoutSignal } from "./timeout.ts";
 
 /**
  * One Vertex AI boundary for virtual try-on.
  *
- * Nano Banana 2.1 is gemini-nano-banana-2.1. The app sends two inline references and a fixed
+ * The default model is Nano Banana 2.1 (gemini-nano-banana-2.1). The app sends two inline references and a fixed
  * server-owned prompt to generateContent. There is no model fallback, automatic retry, shopper
  * prompt, or provider storage URI.
  */
-export const TRY_ON_MODEL = process.env.LA_TRY_ON_VERTEX_MODEL || "gemini-nano-banana-2.1";
+/** Default model. The runtime may pass another one validated by `readTryOnModel`; nothing reads env here. */
+export const TRY_ON_MODEL = TRY_ON_DEFAULT_MODEL;
 export const TRY_ON_OUTPUT_IMAGE_SIZE = "2K";
 export const TRY_ON_PROMPT =
   "Create one photorealistic try-on. Image 1=shopper; image 2=exact garment. " +

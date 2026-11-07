@@ -1,6 +1,6 @@
 # Spec: Storefront Virtual Try-on with Vertex AI Nano Banana Pro
 
-Status: **Approved 2026-10-04; amended 2026-10-05 to replace the dedicated Vertex VTO model with Nano Banana Pro (`gemini-3-pro-image`) after observed output quality was insufficient. The server kill switch remains off by default; live quality acceptance is still required before enablement. See [`docs/integrations/vertex-virtual-try-on.md`](../integrations/vertex-virtual-try-on.md).**
+Status: **Approved 2026-10-04; amended 2026-10-05 to replace the dedicated Vertex VTO model with Nano Banana Pro (`gemini-3-pro-image`) after observed output quality was insufficient. The server kill switch remains off by default; live quality acceptance is still required before enablement. Amended 2026-11-07: the model is Nano Banana 2.1 (`gemini-nano-banana-2.1`), overridable with `LA_TRY_ON_VERTEX_MODEL`. See [`docs/integrations/vertex-virtual-try-on.md`](../integrations/vertex-virtual-try-on.md).**
 
 This spec defines the MVP virtual try-on experience for La.na Design product detail pages (PDPs).
 
@@ -17,7 +17,7 @@ Confirmed owner decisions:
 5. Multiple outputs may be added later, but are not part of MVP.
 6. La.na Design does **not persist** the uploaded or generated image in its own durable storage.
 7. The feature is for **apparel worn on the body**; accessories are excluded.
-8. The provider is **Google Cloud Vertex AI** using **Nano Banana Pro / `gemini-3-pro-image`** as a multi-image editing model.
+8. The provider is **Google Cloud Vertex AI** using **Nano Banana 2.1 / `gemini-nano-banana-2.1`** as a multi-image editing model.
 9. MVP supports eligible minors under the age policy in §10.
 
 “Front-facing” is buyer guidance, not a promise that the application will run pose/face classification.
@@ -62,7 +62,7 @@ Current provider contract, checked against Google Cloud documentation on 2026-10
 
 - provider: Google Cloud Vertex AI;
 - model: Nano Banana Pro / Gemini 3 Pro Image;
-- model id: `gemini-3-pro-image`;
+- model id: `gemini-nano-banana-2.1` (overridable with `LA_TRY_ON_VERTEX_MODEL`);
 - launch stage: GA;
 - location: `global` only;
 - request surface: publisher-model `:generateContent`;
@@ -225,7 +225,7 @@ Use the simplest synchronous request/response flow that works within the deploye
 2. server validates the request;
 3. server re-resolves product/category/media authority;
 4. server obtains and validates the first trusted product image;
-5. server calls Vertex AI `gemini-3-pro-image`;
+5. server calls Vertex AI `gemini-nano-banana-2.1`;
 6. server receives one inline generated image;
 7. server returns the result to the current shopper request;
 8. client renders/downloads it;
@@ -462,7 +462,7 @@ Cover:
 - garment reference: cache hit makes no fetch; a <= 7 MB original is sent as is; an original over 7 MB is converted to a bounded WebP (exercised with a real, high-resolution source over 7 MB) and cached; a mutable source never touches the cache;
 - unsupported/oversized shopper image rejected;
 - server ignores/rejects arbitrary client product-image URLs;
-- request pins `gemini-3-pro-image`;
+- request pins `gemini-nano-banana-2.1`;
 - request uses one person image + first trusted product image;
 - request pins one candidate, low input media resolution, `personGeneration=allow_all`, 2K PNG output, the four reviewed safety categories at `BLOCK_LOW_AND_ABOVE`, and no provider storage URI;
 - missing likeness acknowledgement rejected before Vertex;
@@ -554,7 +554,7 @@ Rollout sequence:
 1. implementation verified with feature off by default;
 2. staging/internal validation;
 3. owner quality review with controlled photos;
-4. verify current `gemini-3-pro-image` lifecycle/successor status;
+4. verify current `gemini-nano-banana-2.1` lifecycle/successor status;
 5. limited production enablement;
 6. monitor latency/error/safety-block/cost;
 7. widen if stable.
@@ -568,7 +568,7 @@ Turning the switch off must leave normal PDP commerce unchanged.
 - use current category and trusted-media authorities;
 - re-resolve product authority server-side;
 - use the exact first trusted product image;
-- use Vertex AI `gemini-3-pro-image`;
+- use Vertex AI `gemini-nano-banana-2.1`;
 - use `global` unless a reviewed deployment requirement changes it;
 - keep Google Cloud credentials server-only;
 - send one shopper image + one product image;
@@ -642,7 +642,7 @@ Implementation is acceptable when:
 - [ ] Each request requires likeness-rights acknowledgement.
 - [ ] Server-enforced age state is non-overlapping: `adult` and `teen_eligible_with_guardian` allowed; `below_digital_consent_age` rejected.
 - [ ] Teen flow shows age-appropriate AI disclosure.
-- [ ] Vertex request uses `gemini-3-pro-image` at `global`, two inline reference images at `MEDIA_RESOLUTION_LOW`, one candidate, 2K PNG output, `personGeneration=allow_all`, the four reviewed safety categories at `BLOCK_LOW_AND_ABOVE`, and the compact fixed server-owned fidelity prompt.
+- [ ] Vertex request uses `gemini-nano-banana-2.1` at `global`, two inline reference images at `MEDIA_RESOLUTION_LOW`, one candidate, 2K PNG output, `personGeneration=allow_all`, the four reviewed safety categories at `BLOCK_LOW_AND_ABOVE`, and the compact fixed server-owned fidelity prompt.
 - [ ] Provider safety blocks fail closed without weaker retry/fallback.
 - [ ] One accepted request renders at most one result.
 - [ ] La.na Design does not durably persist input/output image bytes.
