@@ -360,16 +360,16 @@ test("thought images are ignored when exactly one validated final image is prese
   assert.equal((await client.generate({ person, product })).ok, true);
 });
 
-test("thought images are ignored wherever they sit relative to the final image, and thoughtSignature on the final image is kept", async () => {
+test("thought images are ignored wherever they sit relative to the final image, and thoughtSignature on the final part does not mark it as thought", async () => {
   const body = JSON.stringify({
     candidates: [{
       finishReason: "STOP",
       content: {
         role: "model",
         parts: [
-          { thought: true, inlineData: { data: b64(PNG_BYTES), mimeType: "image/png" } },
-          { thought: false, thoughtSignature: "sig", inlineData: { data: b64(PNG_BYTES), mimeType: "image/png" } },
           { thought: true, inlineData: { data: b64(WEBP_BYTES), mimeType: "image/webp" } },
+          { thought: false, thoughtSignature: "sig", inlineData: { data: b64(PNG_BYTES), mimeType: "image/png" } },
+          { thought: true, inlineData: { data: b64(JPEG_BYTES), mimeType: "image/jpeg" } },
         ],
       },
     }],
@@ -377,7 +377,10 @@ test("thought images are ignored wherever they sit relative to the final image, 
   const { client } = harness(() => json(body));
   const result = await client.generate({ person, product });
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.image.mimeType, "image/png");
+  if (result.ok) {
+    assert.equal(result.image.mimeType, "image/png");
+    assert.deepEqual([...result.image.bytes], [...PNG_BYTES]);
+  }
 });
 
 test("two non-thought images are still rejected even when thought images are also present", async () => {
