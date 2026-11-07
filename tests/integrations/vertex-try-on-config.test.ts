@@ -19,7 +19,7 @@ test("try-on is off unless the server switch is exactly 'true'", () => {
   assert.deepEqual(readTryOnConfig({}), { available: false, reason: "DISABLED" });
 });
 
-test("Nano Banana Pro is pinned to the Vertex global location", () => {
+test("Nano Banana 2.1 is pinned to the Vertex global location", () => {
   assert.equal(TRY_ON_LOCATION, "global");
   assert.deepEqual(readTryOnConfig(ready), {
     available: true,

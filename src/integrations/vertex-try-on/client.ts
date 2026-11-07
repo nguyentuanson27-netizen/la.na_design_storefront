@@ -5,11 +5,11 @@ import { createTimeoutSignal } from "./timeout.ts";
 /**
  * One Vertex AI boundary for virtual try-on.
  *
- * Nano Banana Pro is Gemini 3 Pro Image. The app sends two inline references and a fixed
+ * Nano Banana 2.1 is gemini-nano-banana-2.1. The app sends two inline references and a fixed
  * server-owned prompt to generateContent. There is no model fallback, automatic retry, shopper
  * prompt, or provider storage URI.
  */
-export const TRY_ON_MODEL = "gemini-3-pro-image";
+export const TRY_ON_MODEL = process.env.LA_TRY_ON_VERTEX_MODEL || "gemini-nano-banana-2.1";
 export const TRY_ON_OUTPUT_IMAGE_SIZE = "2K";
 export const TRY_ON_PROMPT =
   "Create one photorealistic try-on. Image 1=shopper; image 2=exact garment. " +
@@ -62,7 +62,8 @@ export function buildGenerateContentRequest({
   config,
   person,
   product,
-}: Readonly<{ config: VertexLocation; person: VertexTryOnImage; product: VertexTryOnImage }>) {
+  model = TRY_ON_MODEL,
+}: Readonly<{ config: VertexLocation; person: VertexTryOnImage; product: VertexTryOnImage; model?: string }>) {
   const { projectId, location } = config;
   return {
     url:
@@ -71,7 +72,7 @@ export function buildGenerateContentRequest({
       "/locations/" +
       location +
       "/publishers/google/models/" +
-      TRY_ON_MODEL +
+      model +
       ":generateContent",
     body: {
       contents: [
@@ -203,11 +204,13 @@ export function createVertexTryOnClient({
   getAccessToken,
   fetch: doFetch = (url, init) => fetch(url, init),
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  model = TRY_ON_MODEL,
 }: Readonly<{
   config: VertexLocation;
   getAccessToken: () => Promise<string>;
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
   timeoutMs?: number;
+  model?: string;
 }>) {
   async function generate({
     person,
@@ -224,7 +227,7 @@ export function createVertexTryOnClient({
         return failed(isTimeout(error) ? "TIMEOUT" : "AUTH_FAILED");
       }
 
-      const request = buildGenerateContentRequest({ config, person, product });
+      const request = buildGenerateContentRequest({ config, person, product, model });
       const response = await doFetch(request.url, {
         method: "POST",
         redirect: "error",
