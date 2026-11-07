@@ -10,7 +10,7 @@ import { buildVoucherScopeResolver, type VoucherProductFacts } from "./voucher-s
 
 export const MAX_VOUCHER_TEASER_ITEMS = 2;
 
-export type VoucherTeaserItem = Readonly<{ id: string; text: string }>;
+export type VoucherTeaserItem = Readonly<{ id: string; text: string; kind: VoucherCampaign["kind"] }>;
 
 const money = new Intl.NumberFormat("vi-VN");
 const vnd = (value: number) => `${money.format(value)}đ`;
@@ -39,6 +39,6 @@ export function buildVoucherTeaser(input: Readonly<{ campaigns: readonly Voucher
     .filter((campaign) => buildVoucherScopeResolver(campaign.scope, String(campaign.pancakeShopId))(input.product))
     .sort((a, b) => weight(b) - weight(a) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .slice(0, MAX_VOUCHER_TEASER_ITEMS)
-    .map((campaign) => Object.freeze({ id: campaign.id, text: textOf(campaign) }));
+    .map((campaign) => Object.freeze({ id: campaign.id, text: textOf(campaign), kind: campaign.kind }));
   return Object.freeze(items);
 }

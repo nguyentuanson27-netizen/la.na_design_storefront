@@ -1,43 +1,61 @@
-import type { VoucherPickerItem } from "@/routes/voucher-picker-model";
+import { useId } from "react";
+
+import { voucherExpiryWarning, type VoucherPickerItem } from "@/routes/voucher-picker-model";
+import { VoucherIcon } from "./voucher-icons";
 
 /**
- * One voucher row of the picker (spec §7.3). A semantic radio inside a label: the selected state is the radio's own
- * (not just colour), an unavailable voucher is a disabled radio with its reason in text, and the whole row is a
- * 44px+ touch target. Nothing here knows about money or eligibility -- it renders what the server model says.
+ * One voucher of the picker (spec §7.3), drawn as a ticket. It is a toggle button: pressing a chosen voucher again un-chooses it, which is
+ * why the picker needs no "do not use a voucher" row. The state is `aria-pressed` (and the ring and the check, never colour alone); a voucher
+ * that cannot be used is a disabled button with its reason in text; the whole ticket is a 64px+ touch target. Nothing here knows about money
+ * or eligibility -- it renders what the server model says.
+ *
+ * "Còn N ngày" needs the clock, so the caller passes `nowMs` after mount (null on the server render and the first client render).
  */
-export function VoucherCard({ item, name, onSelect, disabled }: Readonly<{
+export function VoucherCard({ item, onToggle, disabled, nowMs }: Readonly<{
   item: VoucherPickerItem;
-  name: string;
-  onSelect: () => void;
+  onToggle: () => void;
   disabled: boolean;
+  nowMs: number | null;
 }>) {
-  const descriptionId = `${name}-${item.id}-desc`;
+  const descriptionId = useId();
   const unavailable = !item.selectable;
+  const expiry = nowMs === null ? null : voucherExpiryWarning(item.endsAtIso, nowMs);
   return (
     <li>
-      <label
-        className={`flex min-h-14 cursor-pointer items-start gap-3 border px-3 py-3 ${item.selected ? "border-black" : "border-black/20"} ${unavailable ? "cursor-not-allowed opacity-70" : ""}`}
+      <button
+        type="button"
+        className="voucher-ticket"
+        aria-pressed={item.selected}
+        aria-label={`${item.title}. ${item.name}`}
+        aria-describedby={descriptionId}
+        disabled={unavailable || disabled}
+        onClick={onToggle}
+        data-voucher-id={item.id}
       >
-        <input
-          type="radio"
-          name={name}
-          value={item.id}
-          checked={item.selected}
-          disabled={unavailable || disabled}
-          onChange={onSelect}
-          aria-describedby={descriptionId}
-          className="mt-1 h-5 w-5 shrink-0 accent-black"
-        />
-        <span className="min-w-0 flex-1">
-          <span className="block text-base font-semibold">{item.title}</span>
-          <span id={descriptionId} className="mt-0.5 block text-sm leading-5 text-black/75">
-            {item.condition}
-            {item.publicCode ? <span className="ml-2 border border-black/30 px-1.5 text-xs font-semibold tracking-wide">{item.publicCode}</span> : null}
-            {item.disabledReason ? <span className="mt-1 block font-medium text-black">{item.disabledReason}</span> : null}
-            {!unavailable && item.savingText ? <span className="mt-1 block font-semibold text-[#b42318]"><span className="sr-only">Dự kiến giảm </span><span aria-hidden="true">{item.savingText}</span></span> : null}
-          </span>
+        <span className="voucher-ticket__stub" aria-hidden="true">
+          <span className="voucher-ticket__val">{item.valueLabel}</span>
+          {item.valueSub ? <span className="voucher-ticket__sub">{item.valueSub}</span> : null}
         </span>
-      </label>
+        <span className="voucher-ticket__body">
+          <span className="voucher-ticket__main">
+            <span aria-hidden="true" className="voucher-ticket__name">{item.name}</span>
+            <span id={descriptionId} className="grid gap-px">
+              <span className="voucher-ticket__cond">{item.condition}</span>
+              <span className="voucher-ticket__line">
+                {unavailable ? (
+                  item.disabledReason ? <span className="voucher-ticket__need">{item.disabledReason}</span> : null
+                ) : item.savingText ? (
+                  <span className="voucher-ticket__save"><span className="sr-only">Dự kiến giảm </span><span aria-hidden="true">{item.savingText}</span></span>
+                ) : null}
+                {expiry ? <span className="voucher-ticket__warn"><VoucherIcon name="clock" className="h-3 w-3" />{expiry}</span> : null}
+                {item.publicCode ? <span className="voucher-ticket__code">Mã {item.publicCode}</span> : null}
+              </span>
+            </span>
+          </span>
+          <span className="voucher-ticket__mark" aria-hidden="true"><VoucherIcon name="check" /></span>
+        </span>
+        {item.progressPercent !== null ? <span aria-hidden="true" className="voucher-ticket__progress"><i style={{ width: `${item.progressPercent}%` }} /></span> : null}
+      </button>
     </li>
   );
 }

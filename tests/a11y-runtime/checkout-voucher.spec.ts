@@ -214,7 +214,7 @@ test("review f3eed3a: a code applied in the picker updates the cart's expected t
     const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
     await dialog.getByLabel("Nhập mã khuyến mãi").fill("kol70");
     await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
-    await expect(dialog.getByRole("radio", { name: /Giảm 70.000đ/ })).toBeChecked();
+    await expect(dialog.getByRole("button", { name: /^Giảm 70\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
     // The dialog is open on purpose and the page behind it is not touched yet; closing it settles the totals.
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -247,7 +247,7 @@ test("review 1bb0d61 / AC-35: the picker's 'Tiếp tục với voucher này' rem
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
   await expect(dialog).toContainText("quà đã chọn sẽ được bỏ khỏi giỏ hàng");
   // First press only asks again; nothing is saved or removed by it.
-  await dialog.getByRole("button", { name: /Áp dụng • 1 ưu đãi/ }).click();
+  await dialog.getByRole("button", { name: /Áp dụng · Giảm / }).click();
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
   await dialog.getByRole("button", { name: /Tiếp tục với voucher này/ }).click();
   await expect(dialog).toBeHidden();
@@ -382,21 +382,23 @@ test("review beca608: a picker left open on an old choice is refused when anothe
   await expect(dialogB).toBeVisible();
 
   // The other page locks 50K and applies: saved.
-  await dialogB.getByRole("radio", { name: /Giảm 50\.000đ/ }).click();
-  await expect(dialogB.getByRole("radio", { name: /Giảm 50\.000đ/ })).toBeChecked();
-  await dialogB.getByRole("button", { name: /Áp dụng • 1 ưu đãi/ }).click();
+  await dialogB.getByRole("button", { name: /^Giảm 50\.000đ\./ }).click();
+  await expect(dialogB.getByRole("button", { name: /^Giảm 50\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
+  await dialogB.getByRole("button", { name: /Áp dụng · Giảm / }).click();
   await expect(dialogB).toBeHidden();
   await expect.poll(async () => (await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).toBe(fifty.id);
 
-  // This page still thinks nothing was chosen; it picks "no voucher" and applies. It must NOT overwrite what the other page saved.
-  await dialogA.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ }).click();
-  await expect(dialogA.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ })).toBeChecked();
+  // This page still thinks nothing was chosen; it presses 50K and presses it again to choose "no voucher", then applies. It must NOT overwrite what the other page saved.
+  await dialogA.getByRole("button", { name: /^Giảm 50\.000đ\./ }).click();
+  await expect(dialogA.getByRole("button", { name: /^Giảm 50\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
+  await dialogA.getByRole("button", { name: /^Giảm 50\.000đ\./ }).click();
+  await expect(dialogA.getByRole("button", { name: /^Giảm 50\.000đ\./ })).toHaveAttribute("aria-pressed", "false");
   await dialogA.getByRole("button", { name: "Bỏ qua ưu đãi và tiếp tục" }).click();
   await expect(dialogA.getByRole("alert")).toContainText("vừa được thay đổi ở một trang khác");
   expect((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).toBe(fifty.id);
   // It now shows what is saved, and applying from there works.
-  await expect(dialogA.getByRole("radio", { name: /Giảm 50\.000đ/ })).toBeChecked();
-  await dialogA.getByRole("button", { name: /Áp dụng • 1 ưu đãi/ }).click();
+  await expect(dialogA.getByRole("button", { name: /^Giảm 50\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
+  await dialogA.getByRole("button", { name: /Áp dụng · Giảm / }).click();
   await expect(dialogA).toBeHidden();
 });
 
@@ -405,8 +407,8 @@ test("review beca608: dropping a voucher while the price cannot be derived is sa
   await page.goto(`${BASE}/cart`);
   await page.locator("[data-voucher-picker] > button").click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await dialog.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ }).click();
-  await expect(dialog.getByRole("radio", { name: /Không dùng voucher giảm tiền hàng/ })).toBeChecked();
+  await dialog.getByRole("button", { name: /^Giảm 50\.000đ\./ }).click();
+  await expect(dialog.getByRole("button", { name: /^Giảm 50\.000đ\./ })).toHaveAttribute("aria-pressed", "false");
   // Pricing goes away before the shopper presses "Áp dụng": the server cannot derive a quote for the commit.
   await prisma.cartItem.deleteMany({ where: { cartId } });
   await dialog.getByRole("button", { name: "Bỏ qua ưu đãi và tiếp tục" }).click();
@@ -501,7 +503,7 @@ test("review b948f0e: the consent step notices a replaced offer too -- A confirm
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
   // The old offer's confirmation is gone: the dialog shows what is SAVED again (the cart's own automatic 50K choice, not the 70K code that
   // was being confirmed), there is no confirm button for the old offer, and the current offer is shown instead.
-  await expect(dialog.getByRole("radio", { name: /Giảm 50.000đ/ })).toBeChecked();
+  await expect(dialog.getByRole("button", { name: /^Giảm 50\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
   await expect(dialog).not.toContainText("Giảm 70.000đ");
   await expect(dialog.getByRole("button", { name: /Tiếp tục với voucher này/ })).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "Dùng mã từ liên kết" })).toBeVisible();
@@ -510,7 +512,7 @@ test("review b948f0e: the consent step notices a replaced offer too -- A confirm
   // A may now choose to apply the new offer (KOL74 also costs the gift, so it asks again), and only then is anything saved.
   await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
   await expect(dialog).toContainText("Mã hợp lệ. Nàng xem ưu đãi");
-  await expect(dialog.getByRole("radio", { name: /Giảm 60.000đ/ })).toBeChecked();
+  await expect(dialog.getByRole("button", { name: /^Giảm 60\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
   await expect(dialog).toContainText("quà đã chọn sẽ được bỏ khỏi giỏ hàng");
   expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
   await dialog.getByRole("button", { name: /Tiếp tục với voucher này/ }).click();
@@ -547,9 +549,9 @@ test("review 735ff62: a linked code that applies cleanly replaces a typed code w
   await expect.poll(async () => (await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseVoucherId ?? null).toBe(kol10.id);
   // What is shown is KOL10's result; KOL73's confirmation is gone with its footer button.
   await expect(dialog.getByRole("button", { name: /Tiếp tục với voucher này/ })).toHaveCount(0);
-  await expect(dialog.getByRole("radio", { name: /Giảm 10.000đ/ })).toBeChecked();
+  await expect(dialog.getByRole("button", { name: /^Giảm 10\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
   // The footer commits what is displayed: KOL73 is never sent, the gift stays.
-  await dialog.getByRole("button", { name: /Áp dụng • 1 ưu đãi/ }).click();
+  await dialog.getByRole("button", { name: /Áp dụng · Giảm / }).click();
   await expect(dialog).toBeHidden();
   expect((await prisma.cartVoucherSelection.findUniqueOrThrow({ where: { cartId } })).merchandiseVoucherId).toBe(kol10.id);
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);

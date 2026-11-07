@@ -249,17 +249,17 @@ Voucher vận chuyển                          Chọn 1
 
 ### 7.3. Card/selection/feedback
 
-- **Selected:** dấu chọn dễ nhận biết. **Eligible unselected vẫn bấm chọn được**, đổi voucher cùng nhóm là **thay thế** chứ không cộng dồn. Mỗi nhóm có chọn **Không dùng voucher**; chủ động NONE phải được giữ như manual choice.
+- **Selected:** dấu chọn dễ nhận biết. **Eligible unselected vẫn bấm chọn được**, đổi voucher cùng nhóm là **thay thế** chứ không cộng dồn. **Không có dòng “Không dùng voucher”:** mỗi voucher là một nút bật tắt (`aria-pressed`), bấm lần nữa vào voucher đang chọn để bỏ chọn; chủ động bỏ chọn (NONE) vẫn phải được giữ như manual choice. Mỗi loại (nhóm) có một màu riêng, thẻ hiển thị **tên voucher** do Admin đặt, mức giảm trên khối màu, “Còn N ngày” chỉ khi còn ≤3 ngày, và thanh tiến độ ở mép thẻ khi chưa đủ điều kiện (UI refresh, 2026-11-07).
 - **Near threshold:** disabled nhưng đọc rõ, dòng **“Đặt thêm Xđ để được hưởng ưu đãi này”**. X lấy từ **server eligible subtotal trong phạm vi đúng**, sau sale/tier và voucher tiền hàng đã chọn nếu xét freeship. Requote sau khi thêm hàng; không quảng bá X như bảo đảm tuyệt đối nếu giảm giá thay đổi cùng giỏ.
 - **Ineligible khác:** rõ lý do “Hết lượt”, “Đã hết hạn”, “Không áp dụng cho sản phẩm”, “Không thể kết hợp với lựa chọn hiện tại”. PRIVATE chưa nhập **không** lộ trong list; sau khi nhập sai có thông báo không làm lộ private campaign inventory.
 - **Tự động:** server preselect combo có tổng cuối thấp nhất; không gắn nhãn “Tốt nhất” khi chưa được server xác minh. **Manual:** đổi nhóm đó vẫn chọn cứng nếu hợp lệ; nhóm còn lại auto. Nếu manual invalid, auto-reselect và thông báo.
 - **Quà:** preview tổ hợp làm mất quà trước khi commit; hiển thị rõ số suất đã chọn sẽ không còn hợp lệ, cùng hai nhánh **“Giữ quà / đổi voucher”** hoặc **“Tiếp tục với voucher (bỏ/đổi quà bị mất)”**. Xác nhận tường minh mới cho phép cập nhật voucher và CartGiftSelection liên quan trong giao dịch nhất quán, rồi lập quote mới. Đóng picker/back/cancel **không** đổi voucher đã commit hoặc quà đã chọn. Auto preselect chỉ là preview khi xung đột, không được âm thầm thực thi.
-- **Footer:** khi đang có N=1/2 voucher thực sự giảm tiền, nút **“Áp dụng • N ưu đãi”**. N=0: **“Bỏ qua ưu đãi và tiếp tục”**. Bấm chỉ commit selection sau phản hồi server; đóng/back trước khi bấm giữ selection cũ. Không báo thành công chỉ từ click.
+- **Footer:** khi đang có N=1/2 voucher thực sự giảm tiền, nút **“Áp dụng · Giảm Xđ”** (X = tổng voucher tiền hàng và vận chuyển; nếu X=0 thì “Áp dụng • N ưu đãi”). Đầu hộp thoại có thanh **“Đang chọn N voucher · Giảm Xđ”**. N=0: **“Bỏ qua ưu đãi và tiếp tục”**. Bấm chỉ commit selection sau phản hồi server; đóng/back trước khi bấm giữ selection cũ. Không báo thành công chỉ từ click.
 - Nếu đang quote/loading, disable submit phù hợp, hiển thị lỗi có lối retry; khi giá tăng hoặc hết giữ chỗ phải hiển thị báo giá mới và yêu cầu đồng ý. **Manual chọn voucher làm shipping campaign cũ mất hiệu lực** phải có cảnh báo dạng “Phí vận chuyển tăng Xđ; tổng đơn tăng Yđ so với không dùng mã”, yêu cầu xác nhận trước khi áp dụng. Không tạo 2 thanh checkout sticky cạnh nhau.
 
 ### 7.4. Accessibility & visual QA
 
-- Semantic radio group trong mỗi loại, disabled reason có text (không chỉ làm mờ), touch target ≥44px khi khả thi, focus visible, contrast AA, live region khi selection/total thay đổi.
+- Mỗi loại là một `fieldset`/legend; mỗi voucher là nút bật tắt `aria-pressed` (không dùng radio vì radio không bỏ chọn được), tên truy cập “<mức giảm>. <tên voucher>”, disabled reason có text (không chỉ làm mờ), touch target ≥44px khi khả thi, focus visible, contrast AA, live region khi selection/total thay đổi.
 - Picker modal focus trap, Escape/back đóng và trả focus về trigger; support screen reader, zoom 200%, reduced motion.
 - **Ảnh tham chiếu do owner chia sẻ trong chat không tự đính kèm vào repo.** Wireframe và các quy tắc trên là yêu cầu độc lập để coding agent/QA làm việc không cần truy cập ảnh chat.
 
@@ -308,7 +308,7 @@ Voucher vận chuyển                          Chọn 1
 | AC-09 | Shipping min 600K nhưng sau voucher chỉ 570K | Voucher freeship ineligible |
 | AC-10 | Shipping campaign hiện tại fee=0 | Voucher shipping saving=0 không selected/held/consumed |
 | AC-11 | Public near threshold | Card disabled có “Đặt thêm Xđ…” đúng scope/price server |
-| AC-12 | UI mobile và desktop | 2 nhóm, manual radio, input, disabled reasons, footer “Áp dụng • N ưu đãi”, keyboard/focus |
+| AC-12 | UI mobile và desktop | 2 nhóm, manual nút bật tắt (bấm lại để bỏ chọn), input, disabled reasons, footer “Áp dụng · Giảm Xđ”, keyboard/focus |
 | AC-13 | PRIVATE code, link KOL, invalid code | Không lộ code ẩn, đúng mã được manual lock, sai mã an toàn + rate-limit |
 | AC-14 | Quota 1/budget giới hạn; 2 checkout đồng thời | Chỉ hold hợp lệ trong cap, không race oversubscribe |
 | AC-15 | Hold còn 9m59s rồi natural expiry, đến 10m | Hold được bảo vệ trong TTL; hết 10m re-quote, không silently tăng total |

@@ -6,7 +6,7 @@ import type { VoucherCampaign } from "../../src/commerce/voucher-campaign.ts";
 import { toVoucherCard } from "../../src/commerce/voucher-candidate-repository.ts";
 import { buildVoucherQuote, type VoucherQuote, type VoucherQuoteInput } from "../../src/commerce/voucher-quote.ts";
 import { validateVoucherCampaign } from "../../src/commerce/voucher-rule-validation.ts";
-import { buildVoucherPickerModel, formatVoucherVnd, voucherPickerKey } from "../../src/routes/voucher-picker-model.ts";
+import { buildVoucherPickerModel, compactVoucherVnd, formatVoucherVnd, voucherExpiryWarning, voucherPickerKey } from "../../src/routes/voucher-picker-model.ts";
 
 const SHOP = 940_013;
 const line = (lineId: string, quantity: number, unitPriceVnd: number): VoucherPaidLine => ({ lineId, product: { productId: lineId, shopId: String(SHOP), categoryKeys: [] }, quantity, unitPriceVnd });
@@ -33,12 +33,13 @@ test("money is formatted the way the storefront does: 30.000đ", () => {
   assert.equal(formatVoucherVnd(1_250_500), "1.250.500đ");
 });
 
-test("AC-12: two groups, each with a NONE option and a hint, in the spec's wording", () => {
+test("AC-12: two groups, each with a hint, in the spec's wording; un-choosing is a second press, so no NONE row exists", () => {
   const { view } = model([fixed("m30", 30_000, 600_000), freeship("s500", 500_000)], [line("a", 1, 620_000)]);
-  assert.deepEqual(view.groups.map((g) => [g.kind, g.heading, g.hint, g.noneLabel]), [
-    ["MERCHANDISE", "Voucher giảm tiền hàng", "Chọn 1", "Không dùng voucher giảm tiền hàng"],
-    ["SHIPPING_FREE", "Voucher vận chuyển", "Chọn 1", "Không dùng voucher vận chuyển"],
+  assert.deepEqual(view.groups.map((g) => [g.kind, g.heading, g.hint]), [
+    ["MERCHANDISE", "Voucher giảm tiền hàng", "Chọn 1"],
+    ["SHIPPING_FREE", "Voucher vận chuyển", "Chọn 1"],
   ]);
+  assert.doesNotMatch(JSON.stringify(view), /Không dùng voucher|noneLabel|noneSelected/);
   assert.equal(view.previewNotHeld, true);
 });
 
@@ -75,22 +76,23 @@ test("order: usable cards first by saving, then the nearest to qualifying; ids b
   assert.deepEqual(view.groups[0].items.map((i) => i.id), ["a-big", "b-small", "near", "far"]);
 });
 
-test("the selected card and the NONE option follow the server's choice; the footer counts only real savings", () => {
+test("the selected card follows the server's choice; the footer says what the vouchers take off", () => {
   const { view, ok } = model([fixed("m", 30_000, 100_000), freeship("s", null)], [line("a", 1, 620_000)]);
   assert.equal(ok.voucherCount, 2);
-  assert.deepEqual(view.footer, { label: "Áp dụng • 2 ưu đãi", count: 2 });
-  assert.equal(view.groups[0].noneSelected, false);
+  assert.deepEqual(view.footer, { label: "Áp dụng · Giảm 60.000đ", count: 2 });
   assert.equal(view.groups[0].items[0]!.selected, true);
   assert.equal(view.groups[0].items[0]!.savingText, "-30.000đ");
+  assert.deepEqual([view.summary.savingText, view.summary.savingVnd], ["60.000đ", 60_000]);
   const none = model([], [line("a", 1, 100_000)]);
   assert.deepEqual(none.view.footer, { label: "Bỏ qua ưu đãi và tiếp tục", count: 0 });
-  assert.equal(none.view.groups[0].noneSelected, true);
+  assert.equal(none.view.groups[0].items.some((i) => i.selected), false);
+  assert.deepEqual([none.view.summary.savingText, none.view.summary.savingVnd], [null, 0]);
 });
 
 test("the summary reconciles and words every line: subtotal, discounts, fee, total", () => {
   const { view } = model([fixed("m", 30_000, 100_000), freeship("s", null)], [line("a", 1, 620_000)]);
   assert.deepEqual(view.summary, {
-    paidBeforeText: "620.000đ", merchandiseDiscountText: "-30.000đ", merchandiseLines: [], shippingFeeText: "0đ", shippingDiscountText: "-30.000đ", totalText: "590.000đ", totalVnd: 590_000,
+    paidBeforeText: "620.000đ", merchandiseDiscountText: "-30.000đ", merchandiseLines: [], shippingFeeText: "0đ", shippingDiscountText: "-30.000đ", totalText: "590.000đ", totalVnd: 590_000, savingText: "60.000đ", savingVnd: 60_000,
   });
 });
 
@@ -144,7 +146,6 @@ test("ADR 0020: one group per type in application order, then shipping; each tie
     ["SHIPPING_FREE", "SHIPPING_FREE", "Voucher vận chuyển", "Chọn 1"],
   ]);
   assert.deepEqual(view.groups[0]!.items.map((i) => [i.id, i.selected]).sort(), [["a1m", true], ["a500", false]]);
-  assert.equal(view.groups[0]!.noneLabel, "Không dùng voucher “Theo đơn hàng”");
   assert.equal(view.groups[1]!.items[0]!.selected, true);
 });
 
@@ -168,4 +169,47 @@ test("ADR 0020: a locked slot is MANUAL in its own group only; the picker key ch
 test("ADR 0020: with no card at all the untyped merchandise group is still listed, empty (v1 shape)", () => {
   const { view } = model([], [line("a", 1, 100_000)]);
   assert.deepEqual(view.groups.map((g) => [g.slot, g.items.length]), [["MERCHANDISE", 0], ["SHIPPING_FREE", 0]]);
+});
+
+// --- ticket card fields ---------------------------------------------------------------------------------------------------
+
+test("the card carries the shop's own voucher name, so the picker can show it", () => {
+  const { view } = model([fixed("m80", 80_000, 100_000, { name: "Mừng thu La.na" })], [line("a", 1, 620_000)]);
+  assert.equal(view.groups[0]!.items[0]!.name, "Mừng thu La.na");
+});
+
+test("compact figures fit the colour block: exact thousands drop their zeros, millions read as TR", () => {
+  assert.deepEqual([30_000, 80_000, 150_000, 53_500, 1_000_000, 1_500_000, 2_250_000, 500].map(compactVoucherVnd), ["30K", "80K", "150K", "53,5K", "1TR", "1,5TR", "2,25TR", "500đ"]);
+});
+
+test("value label and sub-label: fixed amount, percentage with and without a cap, free shipping", () => {
+  const { view } = model([fixed("f", 80_000, 100_000), percent("p10", 10, 150_000, null), percent("p5", 5, null, null), freeship("s", 500_000)], [line("a", 1, 620_000)]);
+  const merch = Object.fromEntries(view.groups[0]!.items.map((i) => [i.id, [i.valueLabel, i.valueSub]]));
+  assert.deepEqual(merch, { f: ["80K", "Giảm"], p10: ["10%", "Tối đa 150K"], p5: ["5%", "Giảm"] });
+  assert.deepEqual([view.groups[1]!.items[0]!.valueLabel, view.groups[1]!.items[0]!.valueSub], ["FREE", "Vận chuyển"]);
+});
+
+test("progress: a card below its minimum shows how far the cart is, 0..99; a usable card shows none", () => {
+  const { view } = model([fixed("far", 53_000, 600_000), fixed("ok", 10_000, 100_000)], [line("a", 1, 450_000)]);
+  const byId = Object.fromEntries(view.groups[0]!.items.map((i) => [i.id, i.progressPercent]));
+  assert.deepEqual(byId, { ok: null, far: 75 });
+});
+
+test("one colour per type, in application order; free shipping is always teal; more types than colours wrap around", () => {
+  const campaigns = [tierOf("a", "A", "Theo đơn hàng", 1, 30_000, 500_000), tierOf("b", "B", "Theo danh mục", 2, 10_000, 500_000), tierOf("c", "C", "Loại C", 3, 5_000, 500_000), tierOf("d", "D", "Loại D", 4, 5_000, 500_000), tierOf("e", "E", "Loại E", 5, 5_000, 500_000), freeship("s", null)];
+  const { view } = model(campaigns, [line("a", 1, 1_020_000)]);
+  assert.deepEqual(view.groups.map((g) => g.tone), ["clay", "plum", "moss", "navy", "clay", "teal"]);
+});
+
+test("the expiry warning shows only inside three days, and never for a voucher that ended or has no end", () => {
+  const now = Date.parse("2026-11-07T08:00:00Z");
+  const at = (hours: number) => new Date(now + hours * 3_600_000).toISOString();
+  assert.equal(voucherExpiryWarning(null, now), null);
+  assert.equal(voucherExpiryWarning(at(-1), now), null);
+  assert.equal(voucherExpiryWarning(at(5), now), "Còn dưới 1 ngày");
+  assert.equal(voucherExpiryWarning(at(24), now), "Còn dưới 1 ngày");
+  assert.equal(voucherExpiryWarning(at(25), now), "Còn 2 ngày");
+  assert.equal(voucherExpiryWarning(at(72), now), "Còn 3 ngày");
+  assert.equal(voucherExpiryWarning(at(73), now), null);
+  assert.equal(voucherExpiryWarning("not a date", now), null);
 });
