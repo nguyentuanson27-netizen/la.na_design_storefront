@@ -53,3 +53,13 @@ test("the classes keep the sizes the touch-target review settled on", () => {
   assert.match(classes.sortSelect, /\bh-9\b/);
   assert.match(classes.bar, /flex-wrap/);
 });
+
+test("a collection draws the same one-line bar, keeps its named sort region, and no longer draws the count", () => {
+  const panel = read("src/components/brand/collection-filter-panel.tsx");
+  assert.match(panel, /LISTING_ACTION_BAR_CLASSES\.bar/, "the bar is the shared one");
+  assert.match(panel, /<ListingViewToggle compact/, "the compact view toggle");
+  assert.match(panel, /<nav\s+aria-label="Sắp xếp bộ sưu tập"/, "the sort region keeps its name (specs and assistive technology use it)");
+  assert.match(panel, /<span role="status" className="sr-only">\s*\{totalCount\} sản phẩm/, "the count is a hidden live region");
+  assert.doesNotMatch(panel, /ListingResultCount/, "the visible count is gone");
+  assert.match(panel, /sr-only[^"]*sm:not-sr-only/, "the sort label is hidden on a phone so the select keeps its width");
+});

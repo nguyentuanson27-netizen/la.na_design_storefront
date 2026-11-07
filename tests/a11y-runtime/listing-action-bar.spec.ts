@@ -31,6 +31,8 @@ const syncedAt = new Date("2026-09-19T02:00:00.000Z");
 const campaignId = `listing-action-bar-sale-${runId}`;
 const CATEGORY_KEY = "aoDai";
 const CATEGORY_PATH = "/ao-dai";
+const COLLECTION_SLUG = "action-bar-collection";
+const COLLECTION_PATH = `/collections/${COLLECTION_SLUG}`;
 
 /**
  * All 20% off, so a variant sells at 80% of its list price:
@@ -88,10 +90,22 @@ async function stopServer() {
 async function cleanup() {
   await prisma.promotionCampaign.deleteMany({ where: { id: campaignId } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
+  await prisma.collectionDefinition.deleteMany({ where: { slug: COLLECTION_SLUG } });
 }
 
 test.beforeAll(async () => {
   await cleanup();
+  await prisma.collectionDefinition.create({
+    data: {
+      slug: COLLECTION_SLUG,
+      title: "Action Bar Collection",
+      description: "Bộ sưu tập kiểm thử thanh thao tác.",
+      seoTitle: "Action Bar Collection",
+      seoDescription: "Action bar collection",
+      isPublished: true,
+      pancakeCategoryIds: [],
+    },
+  });
   const ids: string[] = [];
   for (const spec of PRODUCTS) {
     const slug = `action-bar-${spec.key}-${runId}`;
@@ -105,6 +119,7 @@ test.beforeAll(async () => {
         isActive: true,
         syncedAt,
         categoryMemberships: { create: [{ categoryKey: CATEGORY_KEY }] },
+        content: { create: { editorialDescription: `Editorial ${spec.key}`, collectionSlugs: [COLLECTION_SLUG] } },
       },
     });
     ids.push(product.id);
@@ -164,19 +179,21 @@ test.afterAll(async () => {
 });
 
 /** The category listing and `/sale` draw one filter panel; `/shop` draws its own form, same bar. */
-const BAR = {
+const BAR: Readonly<Record<string, Readonly<{ filter: string | null; sort: string }>>> = {
   [CATEGORY_PATH]: { filter: 'button[aria-controls="mobile-plp-filters"]', sort: "#plp-sort-select" },
   "/sale": { filter: 'button[aria-controls="mobile-plp-filters"]', sort: "#plp-sort-select" },
   "/shop": { filter: 'button[aria-controls="mobile-shop-drawer"]', sort: "#shop-sort-select-mobile" },
-} as const;
-type BarPath = keyof typeof BAR;
+  // A collection has no filter drawer: size and stock are the chips under the bar.
+  [COLLECTION_PATH]: { filter: null, sort: "#collection-sort-select" },
+};
+type BarPath = string;
 
 async function open(page: Page, width: number, path: string) {
   await page.setViewportSize({ width, height: 800 });
   await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
   const barPath = path.split("?")[0] as BarPath;
   // On a phone the sort is the bar's; on a desktop width `/shop` shows its other form.
-  if (width < 768) await expect(page.locator(BAR[barPath].sort)).toBeVisible();
+  if (width < 768) await expect(page.locator(BAR[barPath]!.sort)).toBeVisible();
 }
 
 type BarMeasure = Readonly<{
@@ -193,7 +210,7 @@ function measureBar(page: Page, path: BarPath): Promise<BarMeasure> {
     const px = (value: string) => Number.parseFloat(value) || 0;
     const buttons = [
       ...document.querySelectorAll<HTMLElement>('[role="group"][aria-label="Kiểu xem ảnh"] button'),
-      ...document.querySelectorAll<HTMLElement>(filterSelector),
+      ...(filterSelector ? document.querySelectorAll<HTMLElement>(filterSelector) : []),
     ].filter((element) => element.getBoundingClientRect().width > 0);
     const controls = buttons.map((element) => {
       const box = element.getBoundingClientRect();
@@ -239,12 +256,12 @@ function measureBar(page: Page, path: BarPath): Promise<BarMeasure> {
       clippedPx: Math.max(0, Math.round(natural - selectBox.width)),
       visibleCountText,
     };
-  }, { filterSelector: BAR[path].filter, sortSelector: BAR[path].sort });
+  }, { filterSelector: BAR[path]!.filter, sortSelector: BAR[path]!.sort });
 }
 
 const PHONE_WIDTHS = [320, 360, 390, 412, 430] as const;
 
-for (const path of [CATEGORY_PATH, "/sale", "/shop"] as const) {
+for (const path of [CATEGORY_PATH, "/sale", "/shop", COLLECTION_PATH]) {
   for (const width of PHONE_WIDTHS) {
     test(`${path} action bar at ${width}px: sort never clipped, hit areas never overlap, count not drawn`, async ({ page }) => {
       await open(page, width, path);
@@ -260,7 +277,7 @@ for (const path of [CATEGORY_PATH, "/sale", "/shop"] as const) {
       else expect(bar.rows, `at most two rows at ${width}px`).toBeLessThanOrEqual(2);
       expect(bar.clippedPx, "the sort label is not clipped").toBeLessThanOrEqual(1);
 
-      expect(bar.controls.length).toBeGreaterThanOrEqual(4);
+      expect(bar.controls.length).toBeGreaterThanOrEqual(BAR[path]!.filter ? 4 : 3);
       for (const control of bar.controls) {
         expect(control.r - control.l, `${control.label} touch width`).toBeGreaterThanOrEqual(40);
         expect(control.b - control.t, `${control.label} touch height`).toBeGreaterThanOrEqual(44);
@@ -364,7 +381,7 @@ test("/sale with nothing matching says so and offers the way out; a sub-listing 
 test("/shop: the phone bar is the shared one, with the search on its own line and the count badge on the funnel", async ({ page }) => {
   await open(page, 390, "/shop?size=M&availability=in-stock");
   const bar = await measureBar(page, "/shop");
-  const trigger = page.locator(BAR["/shop"].filter);
+  const trigger = page.locator(BAR["/shop"]!.filter);
 
   // The funnel is icon-only at this width, but keeps its name and its count of applied filters.
   await expect(trigger).toHaveAccessibleName(/Bộ lọc/);
@@ -377,7 +394,7 @@ test("/shop: the phone bar is the shared one, with the search on its own line an
   // The search is its own line below the bar, full width.
   const search = page.getByLabel("Tìm sản phẩm").filter({ visible: true });
   const searchBox = (await search.boundingBox())!;
-  const sortBox = (await page.locator(BAR["/shop"].sort).boundingBox())!;
+  const sortBox = (await page.locator(BAR["/shop"]!.sort).boundingBox())!;
   expect(searchBox.y).toBeGreaterThan(sortBox.y + sortBox.height - 1);
   expect(searchBox.width).toBeGreaterThan(300);
   expect(searchBox.height).toBeGreaterThanOrEqual(36);
@@ -385,7 +402,7 @@ test("/shop: the phone bar is the shared one, with the search on its own line an
 
 test("/shop: re-sorting and searching from the bar keep the applied filters", async ({ page }) => {
   await open(page, 390, "/shop?size=M");
-  await page.selectOption(BAR["/shop"].sort, "price-desc");
+  await page.selectOption(BAR["/shop"]!.sort, "price-desc");
   await page.waitForURL(/sort=price-desc/);
   expect(page.url()).toContain("size=M");
 
@@ -413,4 +430,29 @@ test("/shop on a desktop: no visible count, the view toggle on the left, search 
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
   const toggle = page.locator('[role="group"][aria-label="Kiểu xem ảnh"]').filter({ visible: true });
   await expect(toggle).toHaveCount(1);
+});
+
+test("a collection's action row is one line, with the size chips on the line under it", async ({ page }) => {
+  await open(page, 390, COLLECTION_PATH);
+  const bar = await measureBar(page, COLLECTION_PATH);
+  expect(bar.rows, "view size and sort share one row").toBe(1);
+
+  const sortBox = (await page.locator(BAR[COLLECTION_PATH]!.sort).boundingBox())!;
+  const chips = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  await expect(chips).toBeVisible();
+  const chipsBox = (await chips.boundingBox())!;
+  expect(chipsBox.y, "the chips are under the bar").toBeGreaterThan(sortBox.y + sortBox.height - 1);
+
+  // The sort still works from the one-line bar.
+  const sort = page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" }).getByRole("combobox");
+  await expect(sort).toBeVisible();
+  const current = await sort.inputValue();
+  const next = await sort.locator("option").evaluateAll(
+    (all, selected) => all.map((option) => (option as HTMLOptionElement).value).find((value) => value !== selected),
+    current,
+  );
+  expect(next, "a second sort option exists").toBeTruthy();
+  await sort.selectOption(next!);
+  await page.waitForURL((url) => `${url.pathname}${url.search}` === next);
+  await expect(page.locator(BAR[COLLECTION_PATH]!.sort)).toBeVisible();
 });
