@@ -1,7 +1,7 @@
 /**
  * Runtime availability for virtual try-on.
  *
- * Nano Banana 2.1 (gemini-nano-banana-2.1) is available on Vertex AI in the global location only.
+ * Nano Banana Pro (gemini-3-pro-image) is available on Vertex AI in the global location only.
  * Configuration is server-only and fail-closed so provider misconfiguration hides try-on rather
  * than breaking the PDP.
  */

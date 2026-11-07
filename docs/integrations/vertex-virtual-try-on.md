@@ -1,14 +1,15 @@
-# Vertex AI virtual try-on — Nano Banana 2.1
+# Vertex AI virtual try-on — Nano Banana Pro
 
-Status: **Primary provider (`LA_TRY_ON_PROVIDER=vertex`, model `gemini-nano-banana-2.1`).** See [Google Flow runbook](google-flow-virtual-try-on.md).
+Status: **implemented as the manual rollback provider (`LA_TRY_ON_PROVIDER=vertex`) behind the primary Google Flow provider; it replaces the removed `virtual-try-on-001` model. Server kill switch remains off by default.** See [Google Flow runbook](google-flow-virtual-try-on.md).
 
 Product contract: [storefront virtual try-on spec](../specs/storefront-virtual-try-on.md).
 
 ## Provider decision
 
-The storefront uses **Nano Banana 2.1 / `gemini-nano-banana-2.1`** as a multi-image editing model on Google Cloud Vertex AI:
+The dedicated Vertex Virtual Try-On model produced insufficient real-world output quality. The
+storefront therefore uses **Nano Banana Pro / Gemini 3 Pro Image** as a multi-image editing model:
 
-- model id: `gemini-nano-banana-2.1` (configurable via `LA_TRY_ON_VERTEX_MODEL`);
+- model id: `gemini-3-pro-image`;
 - Vertex location: `global` only;
 - REST surface: publisher-model `:generateContent`;
 - two inline references: shopper first, exact trusted garment second;
@@ -39,7 +40,7 @@ reference images, a 7 MB limit for each inline image, 1K/2K/4K output resolution
 
 ## Request contract
 
-`POST https://aiplatform.googleapis.com/v1/projects/<project>/locations/global/publishers/google/models/gemini-nano-banana-2.1:generateContent`
+`POST https://aiplatform.googleapis.com/v1/projects/<project>/locations/global/publishers/google/models/gemini-3-pro-image:generateContent`
 
 Conceptual body (base64 shortened):
 

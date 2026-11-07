@@ -47,14 +47,14 @@ const okBody = (image: Uint8Array = PNG_BYTES, mimeType = "image/png") =>
 const json = (body: string, status = 200) =>
   new Response(body, { status, headers: { "content-type": "application/json" } });
 
-test("request pins Nano Banana 2.1, global generateContent, two references and quality controls", () => {
+test("request pins Nano Banana Pro, global generateContent, two references and quality controls", () => {
   const request = buildGenerateContentRequest({ config, person, product });
 
-  assert.equal(TRY_ON_MODEL, "gemini-nano-banana-2.1");
+  assert.equal(TRY_ON_MODEL, "gemini-3-pro-image");
   assert.equal(TRY_ON_OUTPUT_IMAGE_SIZE, "2K");
   assert.equal(
     request.url,
-    "https://aiplatform.googleapis.com/v1/projects/lana-design-prod/locations/global/publishers/google/models/gemini-nano-banana-2.1:generateContent",
+    "https://aiplatform.googleapis.com/v1/projects/lana-design-prod/locations/global/publishers/google/models/gemini-3-pro-image:generateContent",
   );
 
   const parts = request.body.contents[0]!.parts;
@@ -84,14 +84,6 @@ test("request pins Nano Banana 2.1, global generateContent, two references and q
       ["HARM_CATEGORY_HATE_SPEECH", "BLOCK_LOW_AND_ABOVE"],
       ["HARM_CATEGORY_SEXUALLY_EXPLICIT", "BLOCK_LOW_AND_ABOVE"],
     ],
-  );
-});
-
-test("request supports custom model parameter", () => {
-  const request = buildGenerateContentRequest({ config, person, product, model: "gemini-custom-model" });
-  assert.equal(
-    request.url,
-    "https://aiplatform.googleapis.com/v1/projects/lana-design-prod/locations/global/publishers/google/models/gemini-custom-model:generateContent",
   );
 });
 
