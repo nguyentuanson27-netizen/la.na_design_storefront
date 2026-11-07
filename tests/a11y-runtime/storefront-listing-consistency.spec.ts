@@ -569,7 +569,7 @@ test("new-arrivals shows only the admin selection in the admin's order, and page
   ).toBeLessThan(indexOf("newest"));
   expect(indexOf("middle"), "an unselected product is never backfilled").toBe(-1);
 
-  await expect(page.getByText(/^2 sản phẩm$/)).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /^2 sản phẩm$/ })).toHaveCount(1);
 
   // A page past the end is a 404 rather than a silently empty listing.
   const beyond = await page.request.get(`${BASE_URL}/new-arrivals?page=99`);
@@ -826,7 +826,9 @@ test("the collection CTA's keyboard focus shows on a dark hero and on the paper 
   };
 
   try {
-    await page.setViewportSize({ width: 1440, height: 900 });
+    // Tall enough that both CTAs sit well inside the viewport: a screenshot clip is cut at the
+    // viewport edge, and a focus ring cut differently from the unfocused capture cannot be compared.
+    await page.setViewportSize({ width: 1440, height: 1100 });
     await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
 
     for (const [slug, title] of [

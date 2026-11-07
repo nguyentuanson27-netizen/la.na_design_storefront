@@ -63,3 +63,18 @@ test("a collection draws the same one-line bar, keeps its named sort region, and
   assert.doesNotMatch(panel, /ListingResultCount/, "the visible count is gone");
   assert.match(panel, /sr-only[^"]*sm:not-sr-only/, "the sort label is hidden on a phone so the select keeps its width");
 });
+
+test("/new-arrivals, /offers/eligible and the collections index draw the shared view bar, with no visible count", () => {
+  const chrome = read("src/components/brand/listing-chrome.tsx");
+  assert.match(chrome, /export function ListingViewBar/, "the bar lives in the shared listing chrome");
+  assert.match(chrome, /LISTING_ACTION_BAR_CLASSES\.bar/, "drawn from the shared bar classes");
+  assert.match(chrome, /<ListingViewToggle compact/, "with the compact toggle");
+  assert.match(chrome, /<span role="status" className="sr-only">/, "the count is a hidden live region");
+
+  for (const file of ["src/app/new-arrivals/page.tsx", "src/app/offers/eligible/page.tsx", "src/app/collections/page.tsx"]) {
+    const source = read(file);
+    assert.match(source, /<ListingViewBar/, `${file} uses the shared view bar`);
+    assert.doesNotMatch(source, /ListingResultCount/, `${file} no longer draws a visible count`);
+    assert.doesNotMatch(source, /<ListingViewToggle\s*\/>/, `${file} no longer draws its own right-aligned toggle`);
+  }
+});

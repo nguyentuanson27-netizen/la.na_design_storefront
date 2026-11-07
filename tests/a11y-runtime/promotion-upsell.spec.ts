@@ -388,7 +388,7 @@ test("ER-UI: /offers/eligible is the storefront listing: every in-scope product,
     await expect(page.locator(".listing-product-grid article", { hasText: "Áo extra 01" }).locator("img")).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toBeVisible();
     await expect(page.locator(".listing-product-grid article")).toHaveCount(24);
-    await expect(page.getByText("27 sản phẩm", { exact: true })).toBeVisible(); // 26 extra + the candidate; the paid product is in the cart
+    await expect(page.getByRole("status").filter({ hasText: /^27 sản phẩm$/ })).toHaveCount(1); // 26 extra + the candidate; the paid product is in the cart
     await expect(page.getByText("Áo paid")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);

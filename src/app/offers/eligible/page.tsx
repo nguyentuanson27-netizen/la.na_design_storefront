@@ -4,9 +4,8 @@ import {
   ListingBreadcrumbs,
   ListingEmptyState,
   ListingHeader,
-  ListingResultCount,
-  ListingViewToggle,
   ListingShell,
+  ListingViewBar,
 } from "@/components/brand/listing-chrome";
 import { EligibleOffersInfiniteGrid } from "@/components/brand/eligible-offers-infinite-grid";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -32,10 +31,7 @@ function render({ campaignId, offerName, listing, limited, retryHref, precedingP
           <h2 id="eligible-offers-products-title" className="sr-only">
             Sản phẩm áp dụng ưu đãi
           </h2>
-          <div className="flex items-center justify-between gap-3 border-b border-[#3B2219]/15 pb-4">
-            <ListingResultCount>{listing.totalCount} sản phẩm</ListingResultCount>
-            <ListingViewToggle />
-          </div>
+          <ListingViewBar totalCount={listing.totalCount} />
           <EligibleOffersInfiniteGrid
             initialCards={listing.cards}
             totalCount={listing.totalCount}
