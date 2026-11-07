@@ -5,8 +5,9 @@ import {
   ListingEmptyState,
   ListingHeader,
   ListingShell,
+  ListingViewBar,
 } from "@/components/brand/listing-chrome";
-import { ListingCollectionGrid, ListingCollectionImage, ListingViewToggle } from "@/components/brand/listing-view";
+import { ListingCollectionGrid, ListingCollectionImage } from "@/components/brand/listing-view";
 import { loadCollectionsRoute, type CollectionsRouteData } from "@/routes/collections";
 import { createStorefrontRoute } from "@/routes/factory";
 import { buildCollectionsMetadata } from "@/routes/metadata/collections";
@@ -73,9 +74,7 @@ function render(data: CollectionsRouteData) {
         // homepage stacks its collection banners; the shell's gutter would cost each 16:9 cover a
         // seventh of its height. From `md` they sit in the container, two across.
         <>
-          <div className="mt-6 flex justify-end md:mt-8">
-            <ListingViewToggle />
-          </div>
+          <ListingViewBar className="mt-6 md:mt-8" totalCount={data.collections.length} countLabel="bộ sưu tập" rule={false} />
           <ListingCollectionGrid className="-mx-6 mt-3 gap-[2px] md:mx-0 md:gap-6 lg:gap-8">
             {data.collections.map((collection) =>
               collection.heroImageUrl ? (

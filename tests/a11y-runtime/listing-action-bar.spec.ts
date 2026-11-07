@@ -88,6 +88,7 @@ async function stopServer() {
 }
 
 async function cleanup() {
+  await prisma.newArrivalProduct.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.promotionCampaign.deleteMany({ where: { id: campaignId } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.collectionDefinition.deleteMany({ where: { slug: COLLECTION_SLUG } });
@@ -142,6 +143,9 @@ test.beforeAll(async () => {
       });
     }
   }
+  await prisma.newArrivalProduct.createMany({
+    data: ids.slice(0, 3).map((productId, position) => ({ productId, pancakeShopId: SHOP_ID, position })),
+  });
   await prisma.promotionCampaign.create({
     data: {
       id: campaignId,
@@ -455,4 +459,81 @@ test("a collection's action row is one line, with the size chips on the line und
   await sort.selectOption(next!);
   await page.waitForURL((url) => `${url.pathname}${url.search}` === next);
   await expect(page.locator(BAR[COLLECTION_PATH]!.sort)).toBeVisible();
+});
+
+/**
+ * The listings with nothing to filter or sort -- `/new-arrivals` and the collections index -- draw
+ * the same bar with the view toggle alone: left, 36px buttons with the same touch areas, no
+ * visible count, and a hidden live copy of it.
+ */
+for (const path of ["/new-arrivals", "/collections"]) {
+  for (const width of PHONE_WIDTHS) {
+    test(`${path} view bar at ${width}px: toggle on the left, touch areas, no visible count`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
+      const toggle = page.locator('[role="group"][aria-label="Kiểu xem ảnh"]').filter({ visible: true });
+      await expect(toggle).toHaveCount(1);
+
+      const measure = await page.evaluate(() => {
+        const group = document.querySelector<HTMLElement>('[role="group"][aria-label="Kiểu xem ảnh"]')!;
+        const px = (value: string) => Number.parseFloat(value) || 0;
+        const buttons = [...group.querySelectorAll<HTMLElement>("button")].map((element) => {
+          const box = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          const after = getComputedStyle(element, "::after");
+          return {
+            l: box.left + px(style.borderLeftWidth) + px(after.left),
+            t: box.top + px(style.borderTopWidth) + px(after.top),
+            r: box.right - px(style.borderRightWidth) - px(after.right),
+            b: box.bottom - px(style.borderBottomWidth) - px(after.bottom),
+            w: box.width,
+            h: box.height,
+          };
+        });
+        const visibleCountText = [...document.querySelectorAll("main *")].filter((element) =>
+          element.children.length === 0
+          && /^\s*\d+ (sản phẩm|bộ sưu tập)/.test(element.textContent ?? "")
+          && element.closest(".sr-only") === null,
+        ).length;
+        return {
+          buttons,
+          left: group.getBoundingClientRect().left,
+          overflow: document.documentElement.scrollWidth - window.innerWidth,
+          visibleCountText,
+        };
+      });
+
+      expect(measure.overflow, "no horizontal overflow").toBeLessThanOrEqual(1);
+      expect(measure.visibleCountText, "the result count is not drawn").toBe(0);
+      expect(measure.left, "the toggle sits at the page gutter, like the other listings").toBeLessThanOrEqual(28);
+      expect(measure.buttons).toHaveLength(3);
+      for (const button of measure.buttons) {
+        expect(Math.round(button.w), "36px button").toBe(36);
+        expect(button.r - button.l, "touch width").toBeGreaterThanOrEqual(40);
+        expect(button.b - button.t, "touch height").toBeGreaterThanOrEqual(44);
+      }
+      for (let i = 0; i < measure.buttons.length - 1; i += 1) {
+        expect(measure.buttons[i]!.r, "neighbouring touch areas never overlap").toBeLessThanOrEqual(measure.buttons[i + 1]!.l + 0.5);
+      }
+      await expect(page.locator('[role="status"].sr-only').filter({ hasText: /^\d+ (sản phẩm|bộ sưu tập)$/ })).toHaveCount(1);
+    });
+  }
+
+  test(`${path}: the view toggle still switches the grid`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
+    const options = page.locator('[role="group"][aria-label="Kiểu xem ảnh"] button');
+    await expect(options).toHaveCount(3);
+    await options.nth(2).click();
+    await expect(options.nth(2)).toHaveAttribute("aria-pressed", "true");
+    await options.nth(0).click();
+    await expect(options.nth(0)).toHaveAttribute("aria-pressed", "true");
+  });
+}
+
+test("/new-arrivals keeps the selected products in the grid under the bar", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto(`${BASE_URL}/new-arrivals`, { waitUntil: "networkidle" });
+  await expect(page.locator(".listing-product-grid article")).toHaveCount(3);
+  await expect(page.locator('[role="status"].sr-only').filter({ hasText: "3 sản phẩm" })).toHaveCount(1);
 });

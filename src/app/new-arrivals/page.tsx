@@ -6,9 +6,8 @@ import {
   ListingHeader,
   ListingPagination,
   ListingProductGrid,
-  ListingResultCount,
-  ListingViewToggle,
   ListingShell,
+  ListingViewBar,
 } from "@/components/brand/listing-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
 import {
@@ -51,10 +50,7 @@ function render(data: NewArrivalsViewModel) {
           <h2 id="new-arrivals-products-title" className="sr-only">
             Sản phẩm được chọn
           </h2>
-          <div className="flex items-center justify-between gap-3 border-b border-[#3B2219]/15 pb-4">
-            <ListingResultCount>{data.totalCount} sản phẩm</ListingResultCount>
-            <ListingViewToggle />
-          </div>
+          <ListingViewBar totalCount={data.totalCount} />
           <div className="mt-8">
             <ListingProductGrid>
               {data.cards.map((card, index) => (

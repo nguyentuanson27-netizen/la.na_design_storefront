@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 
+import { LISTING_ACTION_BAR_CLASSES } from "@/components/headless/listing-view-model";
+
+import { ListingViewToggle } from "./listing-view";
+
 /**
  * The listing surfaces' shared presentation.
  *
@@ -83,6 +87,32 @@ export function ListingSubnav({
  * nothing that a wrapper does not.
  */
 export { ListingProductGrid, ListingViewToggle } from "./listing-view";
+
+/**
+ * The action bar of a listing that has nothing to filter or sort -- `/new-arrivals`,
+ * `/offers/eligible`, the collections index -- drawn from the same classes as the bars that do, so
+ * the view toggle sits where it sits on the category listing, `/sale`, `/shop` and a collection:
+ * left, 36px buttons, one row. The result count is not drawn; a visually hidden live copy keeps it
+ * available to assistive technology. `rule` draws the line under the bar that separates it from the
+ * products; the collections index turns it off, as its cards are covers and not a product grid.
+ */
+export function ListingViewBar({
+  totalCount,
+  countLabel = "sản phẩm",
+  rule = true,
+  className = "",
+}: Readonly<{ totalCount: number; countLabel?: string; rule?: boolean; className?: string }>) {
+  return (
+    <div className={`${rule ? "border-b border-[#3B2219]/15 pb-3 md:pb-4" : ""} ${className}`}>
+      <div className={LISTING_ACTION_BAR_CLASSES.bar}>
+        <span role="status" className="sr-only">
+          {totalCount} {countLabel}
+        </span>
+        <ListingViewToggle compact className="shrink-0" />
+      </div>
+    </div>
+  );
+}
 
 /** The line above a grid that says how much is in it, and optionally what is filtering it. */
 export function ListingResultCount({
