@@ -360,6 +360,38 @@ test("thought images are ignored when exactly one validated final image is prese
   assert.equal((await client.generate({ person, product })).ok, true);
 });
 
+test("thought images are ignored wherever they sit relative to the final image, and thoughtSignature on the final image is kept", async () => {
+  const body = JSON.stringify({
+    candidates: [{
+      finishReason: "STOP",
+      content: {
+        role: "model",
+        parts: [
+          { thought: true, inlineData: { data: b64(PNG_BYTES), mimeType: "image/png" } },
+          { thought: false, thoughtSignature: "sig", inlineData: { data: b64(PNG_BYTES), mimeType: "image/png" } },
+          { thought: true, inlineData: { data: b64(WEBP_BYTES), mimeType: "image/webp" } },
+        ],
+      },
+    }],
+  });
+  const { client } = harness(() => json(body));
+  const result = await client.generate({ person, product });
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.image.mimeType, "image/png");
+});
+
+test("two non-thought images are still rejected even when thought images are also present", async () => {
+  const image = { inlineData: { data: b64(PNG_BYTES), mimeType: "image/png" } };
+  const body = JSON.stringify({
+    candidates: [{
+      finishReason: "STOP",
+      content: { role: "model", parts: [{ thought: true, ...image }, image, image] },
+    }],
+  });
+  const { client } = harness(() => json(body));
+  assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "GENERATION_FAILED" });
+});
+
 test("only thought images with no final output image is rejected as GENERATION_FAILED", async () => {
   const body = JSON.stringify({
     candidates: [{

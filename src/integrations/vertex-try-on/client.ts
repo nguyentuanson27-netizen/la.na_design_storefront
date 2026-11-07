@@ -192,6 +192,8 @@ function parseGeneratedImage(body: unknown): VertexTryOnResult {
     return failed("GENERATION_FAILED");
   }
 
+  // Thinking models (Gemini 3 / Nano Banana 2.1) also stream intermediate `thought: true` parts, which can
+  // carry scratchpad images. Only the non-thought output counts; the "exactly one image" rule below still holds.
   const images: Array<{ data: string; mimeType: string }> = [];
   for (const part of candidate.content.parts) {
     if (!isRecord(part) || Boolean(part.thought) || !isRecord(part.inlineData)) continue;
