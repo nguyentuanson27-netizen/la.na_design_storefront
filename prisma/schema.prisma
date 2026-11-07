@@ -577,6 +577,8 @@ model QuantityTier {
   minQuantity   Int
   /// Percent (1..99), VND per discounted unit, or VND off the whole order, per `unit`.
   discountValue Int
+  /// Maximum discount in VND when unit is PERCENTAGE. NULL means uncapped.
+  maxDiscountVnd Int?
   createdAt     DateTime                 @default(now())
   campaign      GiftQuantityCampaign     @relation(fields: [campaignId, campaignKind, unit], references: [id, kind, tierUnit], onDelete: Cascade, onUpdate: Cascade)
 

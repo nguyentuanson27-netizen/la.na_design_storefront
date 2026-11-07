@@ -602,7 +602,7 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   await expect(promotion).toBeHidden();
   await expect(promotion).toHaveClass(/promotion-shell/);
   // Shipping is campaign-owned: the default strip must not promise permanent freeship.
-  await expect(promotion).toHaveText("Mua 3 tặng 1 · Mua 4 tặng 1 Set · Mua 5 giảm 10%");
+  await expect(promotion).toHaveText("Mua 3 tặng 1 · Mua 4 tặng 1 Set · Mua 5 giảm 10% (tối đa 200k)");
   await expect(promotion).not.toContainText(/freeship|miễn phí vận chuyển/i);
   expect(await promotion.evaluate((element) => element.getBoundingClientRect().height)).toBe(0);
   await page.evaluate(() => window.scrollTo({ top: 1200, behavior: "instant" }));

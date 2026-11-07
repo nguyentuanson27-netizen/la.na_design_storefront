@@ -53,6 +53,7 @@ const issueMessage: Record<TierConfigIssue, string> = {
   DISCOUNTED_UNITS_INVALID: "Hãy chọn cách áp dụng giảm giá.",
   BASIS_INVALID: "Cách tính mốc giảm giá không hợp lệ.",
   DISCOUNT_NOT_BELOW_THRESHOLD: "Số tiền giảm cho cả đơn phải nhỏ hơn giá trị đơn hàng tối thiểu của bậc đó.",
+  MAX_DISCOUNT_INVALID: "Mức giảm tối đa (VNĐ) phải là số nguyên dương hợp lệ.",
 };
 
 type Basis = NonNullable<TierRuleInput["basis"]>;

@@ -55,7 +55,7 @@ export type SiteChromeContent = Readonly<{
   footer: SiteFooterModel;
 }>;
 
-export const DEFAULT_SITE_PROMOTION_HEADLINE = "Mua 3 tặng 1 · Mua 4 tặng 1 Set · Mua 5 giảm 10%";
+export const DEFAULT_SITE_PROMOTION_HEADLINE = "Mua 3 tặng 1 · Mua 4 tặng 1 Set · Mua 5 giảm 10% (tối đa 200k)";
 
 export function buildSiteChromeContent(
   headerMedia: readonly CategoryMegaMedia[] = [],
