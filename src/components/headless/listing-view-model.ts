@@ -105,6 +105,33 @@ const PRODUCT_GRID_GAPS: Readonly<Record<ListingView, string>> = {
   small: "gap-[2px] sm:gap-x-3 sm:gap-y-6 lg:gap-x-4 lg:gap-y-8",
 };
 
+/**
+ * The one-row action bar of a listing: view size, filter button, sort.
+ *
+ * The category listing, `/sale` and `/shop` draw it from these strings, so a change to its sizes
+ * reaches all of them. What they hold, and why:
+ * - `bar`: one line from 360px; a screen too narrow wraps `controls` to a second line instead of
+ *   clipping the sort.
+ * - `controls`: the filter button and the sort. `min-w-[11.4rem]` is the width they need together
+ *   (a 36px button, a 6px gap and the 140px sort), which is what makes `bar` wrap rather than squeeze.
+ * - `filterTrigger`: 36px tall, with a 40 by 44px touch area (an absolutely positioned `::after` is
+ *   placed from the padding box, inside the 1px border, so its insets are 1px larger than the
+ *   extension they produce). Below 424px it is only the funnel (`filterTriggerLabel` hides the word,
+ *   which stays for assistive technology) so the sort keeps the width its text needs.
+ * - `filterBadge`: a count on the funnel, at the corner when the word is hidden.
+ * - `sortSelect`: 36px tall on a phone, with the right padding trimmed so "Thứ tự mặc định" fits.
+ */
+export const LISTING_ACTION_BAR_CLASSES = {
+  bar: "flex flex-wrap items-center gap-x-1.5 gap-y-2 md:flex-nowrap md:gap-x-4",
+  controls: "flex min-w-[11.4rem] flex-1 items-center justify-end gap-1.5 md:min-w-0 md:gap-3",
+  filterTrigger:
+    "btn btn--outline btn--sm relative min-h-9 shrink-0 gap-1.5 whitespace-nowrap px-2.5 after:absolute after:-inset-x-[3px] after:-inset-y-[5px] after:content-[''] max-[423px]:w-9 max-[423px]:px-0 md:hidden",
+  filterTriggerLabel: "max-[423px]:sr-only",
+  filterBadge: "max-[423px]:absolute max-[423px]:-right-1 max-[423px]:-top-1",
+  sortSelect:
+    "h-9 min-w-0 max-w-full rounded border border-[#3B2219]/20 bg-transparent pl-2 pr-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219] md:h-auto md:px-3 md:py-1.5",
+} as const;
+
 export function productGridClassName(view: ListingView): string {
   return `grid ${PRODUCT_GRID_COLUMNS[view]} ${PRODUCT_GRID_GAPS[view]}`;
 }

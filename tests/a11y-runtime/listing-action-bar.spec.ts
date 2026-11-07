@@ -163,10 +163,20 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
+/** The category listing and `/sale` draw one filter panel; `/shop` draws its own form, same bar. */
+const BAR = {
+  [CATEGORY_PATH]: { filter: 'button[aria-controls="mobile-plp-filters"]', sort: "#plp-sort-select" },
+  "/sale": { filter: 'button[aria-controls="mobile-plp-filters"]', sort: "#plp-sort-select" },
+  "/shop": { filter: 'button[aria-controls="mobile-shop-drawer"]', sort: "#shop-sort-select-mobile" },
+} as const;
+type BarPath = keyof typeof BAR;
+
 async function open(page: Page, width: number, path: string) {
   await page.setViewportSize({ width, height: 800 });
   await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
-  await expect(page.locator("#plp-sort-select")).toBeVisible();
+  const barPath = path.split("?")[0] as BarPath;
+  // On a phone the sort is the bar's; on a desktop width `/shop` shows its other form.
+  if (width < 768) await expect(page.locator(BAR[barPath].sort)).toBeVisible();
 }
 
 type BarMeasure = Readonly<{
@@ -178,12 +188,12 @@ type BarMeasure = Readonly<{
 }>;
 
 /** Reads the bar's geometry in the page. A control's touch area is its box plus its `::after`. */
-function measureBar(page: Page): Promise<BarMeasure> {
-  return page.evaluate(() => {
+function measureBar(page: Page, path: BarPath): Promise<BarMeasure> {
+  return page.evaluate(({ filterSelector, sortSelector }) => {
     const px = (value: string) => Number.parseFloat(value) || 0;
     const buttons = [
       ...document.querySelectorAll<HTMLElement>('[role="group"][aria-label="Kiểu xem ảnh"] button'),
-      ...document.querySelectorAll<HTMLElement>('button[aria-controls="mobile-plp-filters"]'),
+      ...document.querySelectorAll<HTMLElement>(filterSelector),
     ].filter((element) => element.getBoundingClientRect().width > 0);
     const controls = buttons.map((element) => {
       const box = element.getBoundingClientRect();
@@ -202,7 +212,7 @@ function measureBar(page: Page): Promise<BarMeasure> {
       };
     });
 
-    const select = document.querySelector<HTMLSelectElement>("#plp-sort-select")!;
+    const select = document.querySelector<HTMLSelectElement>(sortSelector)!;
     const selectBox = select.getBoundingClientRect();
     const probe = select.cloneNode(true) as HTMLSelectElement;
     probe.style.cssText = "width:auto;position:absolute;visibility:hidden;max-width:none;min-width:0";
@@ -229,20 +239,20 @@ function measureBar(page: Page): Promise<BarMeasure> {
       clippedPx: Math.max(0, Math.round(natural - selectBox.width)),
       visibleCountText,
     };
-  });
+  }, { filterSelector: BAR[path].filter, sortSelector: BAR[path].sort });
 }
 
 const PHONE_WIDTHS = [320, 360, 390, 412, 430] as const;
 
-for (const path of [CATEGORY_PATH, "/sale"]) {
+for (const path of [CATEGORY_PATH, "/sale", "/shop"] as const) {
   for (const width of PHONE_WIDTHS) {
     test(`${path} action bar at ${width}px: sort never clipped, hit areas never overlap, count not drawn`, async ({ page }) => {
       await open(page, width, path);
-      const bar = await measureBar(page);
+      const bar = await measureBar(page, path);
 
       expect(bar.overflow, "no horizontal overflow").toBeLessThanOrEqual(1);
       expect(bar.visibleCountText, "the result count is not drawn").toBe(0);
-      await expect(page.locator('[role="status"].sr-only').first()).toContainText(/\d+ sản phẩm/);
+      await expect(page.locator('[role="status"].sr-only').filter({ visible: true }).first()).toContainText(/\d+ sản phẩm/);
 
       // From 360px the view toggle, the filter button and the sort are one line; narrower, the
       // filter button and the sort share a second line.
@@ -269,11 +279,12 @@ for (const path of [CATEGORY_PATH, "/sale"]) {
 
   test(`${path}: a tap at either edge of a view option selects that option`, async ({ page }) => {
     await open(page, 360, path);
-    const options = page.locator('[role="group"][aria-label="Kiểu xem ảnh"] button');
+    // `/shop` keeps a second, hidden toggle for its desktop form.
+    const options = page.locator('[role="group"][aria-label="Kiểu xem ảnh"] button').filter({ visible: true });
     await expect(options).toHaveCount(3);
 
     for (const index of [2, 0, 1]) {
-      const bar = await measureBar(page);
+      const bar = await measureBar(page, path);
       const hit = bar.controls[index]!;
       const y = (hit.t + hit.b) / 2;
       for (const x of [hit.l + 1, hit.r - 1]) {
@@ -348,4 +359,58 @@ test("/sale with nothing matching says so and offers the way out; a sub-listing 
   await page.getByRole("link", { name: "M", exact: true }).click();
   await page.waitForURL(/\/sale\/uu-dai\?size=M/);
   await expect(card(page, "c")).toBeVisible();
+});
+
+test("/shop: the phone bar is the shared one, with the search on its own line and the count badge on the funnel", async ({ page }) => {
+  await open(page, 390, "/shop?size=M&availability=in-stock");
+  const bar = await measureBar(page, "/shop");
+  const trigger = page.locator(BAR["/shop"].filter);
+
+  // The funnel is icon-only at this width, but keeps its name and its count of applied filters.
+  await expect(trigger).toHaveAccessibleName(/Bộ lọc/);
+  await expect(trigger.getByText("2", { exact: true })).toBeVisible();
+  const triggerBox = (await trigger.boundingBox())!;
+  const badgeBox = (await trigger.getByText("2", { exact: true }).boundingBox())!;
+  expect(badgeBox.x + badgeBox.width, "the badge sits at the funnel's corner").toBeGreaterThan(triggerBox.x + triggerBox.width - 8);
+  expect(bar.rows, "bar is one row").toBe(1);
+
+  // The search is its own line below the bar, full width.
+  const search = page.getByLabel("Tìm sản phẩm").filter({ visible: true });
+  const searchBox = (await search.boundingBox())!;
+  const sortBox = (await page.locator(BAR["/shop"].sort).boundingBox())!;
+  expect(searchBox.y).toBeGreaterThan(sortBox.y + sortBox.height - 1);
+  expect(searchBox.width).toBeGreaterThan(300);
+  expect(searchBox.height).toBeGreaterThanOrEqual(36);
+});
+
+test("/shop: re-sorting and searching from the bar keep the applied filters", async ({ page }) => {
+  await open(page, 390, "/shop?size=M");
+  await page.selectOption(BAR["/shop"].sort, "price-desc");
+  await page.waitForURL(/sort=price-desc/);
+  expect(page.url()).toContain("size=M");
+
+  const search = page.getByLabel("Tìm sản phẩm").filter({ visible: true });
+  await search.fill("Action Bar");
+  await search.press("Enter");
+  await page.waitForURL(/q=Action(\+|%20)Bar/);
+  expect(page.url()).toContain("size=M");
+  expect(page.url()).toContain("sort=price-desc");
+  for (const key of ["a", "c", "d"]) await expect(card(page, key)).toBeVisible();
+  await expect(card(page, "b")).toHaveCount(0);
+});
+
+test("/shop on a desktop: no visible count, the view toggle on the left, search and sort on the right", async ({ page }) => {
+  await open(page, 1280, "/shop");
+  await expect(page.locator('[role="status"].sr-only').first()).toContainText(/\d+ sản phẩm/);
+  const leaked = await page.evaluate(() =>
+    [...document.querySelectorAll("main *")].filter((element) =>
+      element.children.length === 0
+      && /^\s*\d+ sản phẩm/.test(element.textContent ?? "")
+      && element.closest(".sr-only") === null,
+    ).length,
+  );
+  expect(leaked, "the result count is not drawn").toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+  const toggle = page.locator('[role="group"][aria-label="Kiểu xem ảnh"]').filter({ visible: true });
+  await expect(toggle).toHaveCount(1);
 });
