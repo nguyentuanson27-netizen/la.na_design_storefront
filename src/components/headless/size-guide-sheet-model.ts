@@ -1,4 +1,5 @@
 import type { SizeChart } from "../../brand/schema.ts";
+import { OUT_OF_STOCK_LABEL } from "../../commerce/preorder-fulfillment-presentation.ts";
 
 /**
  * The phone size-guide sheet's table: one row per size, one column per measurement.
@@ -141,7 +142,8 @@ export function resolveSizeGuideAction(input: {
       label,
       value: null,
       enabled: false,
-      note: "Lựa chọn này hiện chưa mua được.",
+      // The same word the selector's own size chips and the product card use for a sold-out size.
+      note: OUT_OF_STOCK_LABEL,
     });
   }
   return Object.freeze({ label, value: choice.value, enabled: true, note: null });
