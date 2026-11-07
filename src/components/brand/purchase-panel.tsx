@@ -349,6 +349,7 @@ export function PurchasePanelView({
   const {
     view,
     selection,
+    soldOutSizes,
     isPending,
     canAttemptPurchase,
     message,
@@ -1153,7 +1154,10 @@ export function PurchasePanelView({
           <SizeGuideSheet
             guide={sizeGuide}
             selectedSize={selection.size}
-            sizeChoices={view.sizes}
+            sizeChoices={view.sizes.map((choice) => ({
+              ...choice,
+              soldOut: soldOutSizes.has(choice.value),
+            }))}
             canChooseSize={!awaitsKindSelection}
             isPending={isPending}
             // Same lock as the size radios: a size cannot change while an add or buy-now is in
