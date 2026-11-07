@@ -3488,7 +3488,9 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-ticket:disabled { cursor: not-allowed; }
 
   .voucher-ticket__stub { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.125rem; padding: 0.375rem 0.25rem; background: var(--vc); color: #fff; text-align: center; }
-  .voucher-ticket:disabled .voucher-ticket__stub { background: color-mix(in srgb, var(--vc) 32%, #d8cfc7); }
+  /* a voucher the cart cannot use yet: a muted block with DARK text (white on this tint is only ~2.4:1, and this is the figure the shopper weighs) */
+  .voucher-ticket:disabled .voucher-ticket__stub { background: color-mix(in srgb, var(--vc) 32%, #d8cfc7); color: var(--ink); }
+  .voucher-ticket:disabled .voucher-ticket__sub { opacity: 1; }
   .voucher-ticket__val { font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; line-height: 1; }
   .voucher-ticket__sub { font-family: var(--font-display); font-size: 0.5625rem; font-weight: 600; letter-spacing: 0.08em; line-height: 1.15; text-transform: uppercase; opacity: 0.92; }
 
@@ -3519,6 +3521,11 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-bar__value b { margin-right: 0.25rem; font-size: 1.0625rem; font-weight: 700; }
   .voucher-bar__saving { display: inline-flex; align-items: center; gap: 0.375rem; border-left: 1px solid rgba(255, 255, 255, 0.22); padding-left: 0.875rem; font-family: var(--font-display); font-size: 1rem; font-weight: 700; white-space: nowrap; color: #ffdcb8; }
   .voucher-bar__saving > svg { width: 1.125rem; height: 1.125rem; }
+  /* narrow phones (and 200% zoom on them): the two blocks stack instead of fighting for one row, so a long amount never overlaps the count */
+  @media (max-width: 340px) {
+    .voucher-bar { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+    .voucher-bar__saving { border-left: 0; padding-left: 0; }
+  }
 
   /* the cart entry: same ticket language, in the shop's ink */
   .voucher-entry { position: relative; display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) auto; width: 100%; min-height: 3.75rem; overflow: hidden; border: 0; padding: 0; border-radius: 0.5rem; background: #f3ece6; box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); color: var(--ink); text-align: left; cursor: pointer; --voucher-notch: var(--paper); }
