@@ -20,7 +20,7 @@ export type VoucherPickerItem = Readonly<{
   valueLabel: string;
   /** The small word under it: "Giảm", "Tối đa 150K", "Vận chuyển". */
   valueSub: string;
-  /** Threshold / cap line, e.g. "Đơn từ 600.000đ · Tối đa 100.000đ". */
+  /** Threshold / cap line, e.g. "Đơn từ 600.000đ · Tối đa 100.000đ". Empty when the voucher has neither (its name is shown on its own line). */
   condition: string;
   selected: boolean;
   /** An unavailable card is shown dimmed but never silently hidden, with its reason in text. */
@@ -131,7 +131,7 @@ function conditionOf(card: VoucherCard): string {
   const parts: string[] = [];
   if (card.minEligibleSubtotalVnd !== null) parts.push(`Đơn từ ${formatVoucherVnd(card.minEligibleSubtotalVnd)}`);
   if (card.discount?.type === "PERCENTAGE" && card.discount.maxDiscountVnd !== null) parts.push(`Tối đa ${formatVoucherVnd(card.discount.maxDiscountVnd)}`);
-  return parts.length === 0 ? card.name : parts.join(" · ");
+  return parts.join(" · ");
 }
 
 function itemOf(card: VoucherCard, state: VoucherCardState): VoucherPickerItem {
@@ -260,6 +260,19 @@ export function buildVoucherPickerModel(input: Readonly<{
       notices: Object.freeze(notices),
     }),
   });
+}
+
+/**
+ * The cart entry's two lines. The amounts come from a preview (`previewNotHeld`): nothing is held until checkout, so the line says
+ * "Dự kiến giảm", never "Đã giảm".
+ */
+export function voucherEntryCopy(model: VoucherPickerModel): Readonly<{ used: boolean; title: string; sub: string }> {
+  const count = model.footer.count;
+  if (count > 0) {
+    return { used: true, title: `Đang dùng ${count} ưu đãi`, sub: model.summary.savingText ? `Dự kiến giảm ${model.summary.savingText}` : `Dự kiến ${model.summary.totalText}` };
+  }
+  const usable = model.groups.reduce((total, group) => total + group.items.filter((item) => item.selectable).length, 0);
+  return { used: false, title: "Chọn hoặc nhập mã ưu đãi", sub: usable > 0 ? `${usable} voucher dùng được` : "Nhập mã để nhận ưu đãi" };
 }
 
 /** Changes whenever what the server decided changes, so a client picker can be remounted on the fresh model. */

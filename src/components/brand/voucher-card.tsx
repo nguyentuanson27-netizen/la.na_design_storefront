@@ -40,7 +40,7 @@ export function VoucherCard({ item, onToggle, disabled, nowMs }: Readonly<{
           <span className="voucher-ticket__main">
             <span aria-hidden="true" className="voucher-ticket__name">{item.name}</span>
             <span id={descriptionId} className="grid gap-px">
-              <span className="voucher-ticket__cond">{item.condition}</span>
+              {item.condition ? <span className="voucher-ticket__cond">{item.condition}</span> : null}
               <span className="voucher-ticket__line">
                 {unavailable ? (
                   item.disabledReason ? <span className="voucher-ticket__need">{item.disabledReason}</span> : null

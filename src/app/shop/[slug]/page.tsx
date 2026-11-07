@@ -218,7 +218,7 @@ function render(data: ProductRouteData) {
           <p className="font-medium">Voucher có thể áp dụng cho giỏ hàng:</p>
           <ul aria-label="Voucher" className="mt-2 flex flex-wrap gap-2">
             {data.voucherTeaser.map((item) => (
-              <li className={`voucher-chip voucher-tone ${item.kind === "SHIPPING_FREE" ? "voucher-tone--teal" : "voucher-tone--clay"}`} key={item.id}>
+              <li className={`voucher-chip voucher-tone ${item.kind === "SHIPPING_FREE" ? "voucher-tone--teal" : "voucher-tone--ink"}`} key={item.id}>
                 <span className="voucher-chip__icon"><VoucherIcon name={item.kind === "SHIPPING_FREE" ? "truck" : "tag"} /></span>
                 <span className="voucher-chip__text">{item.text}</span>
               </li>

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { useVoucherPickerActions } from "@/components/headless/use-voucher-picker";
-import { formatVoucherVnd, type VoucherPickerGroup, type VoucherPickerModel } from "@/routes/voucher-picker-model";
+import { formatVoucherVnd, voucherEntryCopy, type VoucherPickerGroup, type VoucherPickerModel } from "@/routes/voucher-picker-model";
 import { VoucherCard } from "./voucher-card";
 import { VoucherIcon } from "./voucher-icons";
 
@@ -419,8 +419,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   };
 
   const warnings = [model.warnings.giftLoss, model.warnings.totalIncrease].filter((text): text is string => text !== null);
-  const used = saved.footer.count > 0;
-  const usable = saved.groups.reduce((total, group) => total + group.items.filter((item) => item.selectable).length, 0);
+  const entry = voucherEntryCopy(saved);
   const usedGroups = saved.groups.filter((group) => group.items.some((item) => item.selected));
   // The voucher the cart is closest to unlocking: a nudge to add a little more, from the server's own shortfall.
   const nudge = saved.groups
@@ -431,17 +430,15 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   return (
     <div data-voucher-picker>
       <button type="button" className="voucher-entry" aria-haspopup="dialog" onClick={() => { setLateRefusal(false); setUnknownOutcome(false); setOpen(true); }}>
-        <span className="voucher-entry__icon"><VoucherIcon name={used ? "check" : "tag"} /></span>
+        <span className="voucher-entry__icon"><VoucherIcon name={entry.used ? "check" : "tag"} /></span>
         <span className="voucher-entry__text">
           <span className="voucher-entry__title">
-            {used ? `Đang dùng ${saved.footer.count} ưu đãi` : "Chọn hoặc nhập mã ưu đãi"}
-            {used ? <span className="voucher-dots" aria-hidden="true">{usedGroups.map((group) => <i key={group.slot} className={`voucher-tone voucher-tone--${group.tone}`} />)}</span> : null}
+            {entry.title}
+            {entry.used ? <span className="voucher-dots" aria-hidden="true">{usedGroups.map((group) => <i key={group.slot} className={`voucher-tone voucher-tone--${group.tone}`} />)}</span> : null}
           </span>
-          <span className="voucher-entry__sub" data-quiet={!used}>
-            {used ? (saved.summary.savingText ? `Đã giảm ${saved.summary.savingText}` : `Dự kiến ${saved.summary.totalText}`) : usable > 0 ? `${usable} voucher dùng được` : "Nhập mã để nhận ưu đãi"}
-          </span>
+          <span className="voucher-entry__sub" data-quiet={!entry.used}>{entry.sub}</span>
         </span>
-        <span className="voucher-entry__go">{used ? "Đổi" : "Chọn"}<VoucherIcon name="chevron" /></span>
+        <span className="voucher-entry__go">{entry.used ? "Đổi" : "Chọn"}<VoucherIcon name="chevron" /></span>
       </button>
       {nudge ? (
         <div className={`voucher-tone voucher-tone--${nudge.tone} voucher-nudge`} data-voucher-nudge>

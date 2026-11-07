@@ -3437,6 +3437,8 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-tone--moss { --vc: #4d5b39; }
   .voucher-tone--navy { --vc: #34476b; }
   .voucher-tone--teal { --vc: #2f5d62; }
+  /* a voucher whose type is not known (the PDP teaser): neutral, so it never claims a type colour it will not have in the picker */
+  .voucher-tone--ink { --vc: #3b2219; }
 
   .voucher-swatch { display: inline-block; width: 0.625rem; height: 0.625rem; flex: none; border-radius: 0.1875rem; background: var(--vc); }
   .voucher-dots { display: inline-flex; gap: 0.1875rem; }

@@ -6,7 +6,7 @@ import type { VoucherCampaign } from "../../src/commerce/voucher-campaign.ts";
 import { toVoucherCard } from "../../src/commerce/voucher-candidate-repository.ts";
 import { buildVoucherQuote, type VoucherQuote, type VoucherQuoteInput } from "../../src/commerce/voucher-quote.ts";
 import { validateVoucherCampaign } from "../../src/commerce/voucher-rule-validation.ts";
-import { buildVoucherPickerModel, compactVoucherVnd, formatVoucherVnd, voucherExpiryWarning, voucherPickerKey } from "../../src/routes/voucher-picker-model.ts";
+import { buildVoucherPickerModel, compactVoucherVnd, formatVoucherVnd, voucherEntryCopy, voucherExpiryWarning, voucherPickerKey } from "../../src/routes/voucher-picker-model.ts";
 
 const SHOP = 940_013;
 const line = (lineId: string, quantity: number, unitPriceVnd: number): VoucherPaidLine => ({ lineId, product: { productId: lineId, shopId: String(SHOP), categoryKeys: [] }, quantity, unitPriceVnd });
@@ -212,4 +212,23 @@ test("the expiry warning shows only inside three days, and never for a voucher t
   assert.equal(voucherExpiryWarning(at(72), now), "Còn 3 ngày");
   assert.equal(voucherExpiryWarning(at(73), now), null);
   assert.equal(voucherExpiryWarning("not a date", now), null);
+});
+
+test("a voucher with no threshold and no cap has an empty condition: its name is shown on its own line, never twice", () => {
+  // A fixed amount must have a minimum, so "no threshold and no cap" is a percentage without a cap, or free shipping without a minimum.
+  const open = campaign("bday", { name: "Mừng sinh nhật", discount: { type: "PERCENTAGE", percent: 10, maxDiscountVnd: null }, minEligibleSubtotalVnd: null });
+  const { view } = model([open, freeship("free", null, { name: "Freeship" })], [line("a", 1, 620_000)]);
+  const merch = view.groups[0]!.items[0]!;
+  assert.deepEqual([merch.name, merch.condition], ["Mừng sinh nhật", ""]);
+  const ship = view.groups[1]!.items[0]!;
+  assert.deepEqual([ship.name, ship.condition], ["Freeship", ""]);
+});
+
+test("the cart entry never says a preview is settled: 'Dự kiến giảm', not 'Đã giảm'", () => {
+  const chosen = model([fixed("m", 30_000, 100_000), freeship("s", null)], [line("a", 1, 620_000)]).view;
+  assert.deepEqual(voucherEntryCopy(chosen), { used: true, title: "Đang dùng 2 ưu đãi", sub: "Dự kiến giảm 60.000đ" });
+  assert.doesNotMatch(JSON.stringify(voucherEntryCopy(chosen)), /Đã giảm/);
+  const manualNone = model([fixed("m", 30_000, 100_000)], [line("a", 1, 620_000)], { selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: null } }, shipping: { mode: "AUTO" } } }).view;
+  assert.deepEqual(voucherEntryCopy(manualNone), { used: false, title: "Chọn hoặc nhập mã ưu đãi", sub: "1 voucher dùng được" });
+  assert.deepEqual(voucherEntryCopy(model([], [line("a", 1, 100_000)]).view), { used: false, title: "Chọn hoặc nhập mã ưu đãi", sub: "Nhập mã để nhận ưu đãi" });
 });
