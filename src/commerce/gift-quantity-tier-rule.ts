@@ -48,7 +48,7 @@ export type TierRuleInput = Readonly<{
   unit: (typeof TIER_UNITS)[number] | null;
   discountedUnits: (typeof TIER_DISCOUNTED_UNITS)[number] | null;
   selectionPriority: (typeof TIER_SELECTION_PRIORITIES)[number] | null;
-  tiers: readonly Readonly<{ minQuantity: number; discountValue: number }>[];
+  tiers: readonly Readonly<{ minQuantity: number; discountValue: number; maxDiscountVnd?: number | null }>[];
   stackingEnabled: boolean;
   stackPriority: number | null;
   peers: readonly StackPeer[];
@@ -271,6 +271,7 @@ export function validateTierRuleStructure(rule: TierRuleInput): readonly TierRul
 export type TierRulePublishError =
   | "BASIS_INVALID"
   | "DISCOUNT_NOT_BELOW_THRESHOLD"
+  | "MAX_DISCOUNT_INVALID"
   | "TIER_CONFIG_INCOMPLETE"
   | "TIERS_EMPTY"
   | "TIERS_TOO_MANY"

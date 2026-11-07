@@ -40,7 +40,12 @@ export type TierSelectionPriority = "CHEAPEST_FIRST" | "MOST_EXPENSIVE_FIRST";
  * One rung. `minQuantity` is a unit count for a `QUANTITY` ladder and a VND order value for an
  * `ORDER_SUBTOTAL` one (the stored column is the same INTEGER for both).
  */
-export type QuantityTierStep = Readonly<{ minQuantity: number; discountValue: number }>;
+export type QuantityTierStep = Readonly<{
+  minQuantity: number;
+  discountValue: number;
+  /** Maximum discount in VND when unit is PERCENTAGE. Capped at this total if positive. */
+  maxDiscountVnd?: number | null;
+}>;
 
 export type QuantityTierConfig = Readonly<{
   /** Absent means `QUANTITY`: every ladder written before the order-value basis existed. */
@@ -64,7 +69,8 @@ export type TierConfigIssue =
   | "UNIT_INVALID"
   | "DISCOUNTED_UNITS_INVALID"
   | "BASIS_INVALID"
-  | "DISCOUNT_NOT_BELOW_THRESHOLD";
+  | "DISCOUNT_NOT_BELOW_THRESHOLD"
+  | "MAX_DISCOUNT_INVALID";
 
 /**
  * Validates the configuration the engine runs on. The server calls this on Draft-complete rules at
@@ -124,6 +130,11 @@ export function validateTierConfig(config: QuantityTierConfig): readonly TierCon
     // order could be priced at nothing or below, and no unit could stay >= 1 VND.
     if (config.unit === "FIXED_AMOUNT_TOTAL_VND" && valueOk && tier.discountValue >= tier.minQuantity) {
       issues.add("DISCOUNT_NOT_BELOW_THRESHOLD");
+    }
+    if (tier.maxDiscountVnd !== undefined && tier.maxDiscountVnd !== null) {
+      if (!Number.isSafeInteger(tier.maxDiscountVnd) || tier.maxDiscountVnd < 1 || tier.maxDiscountVnd > MAX_VND_DISCOUNT) {
+        issues.add("MAX_DISCOUNT_INVALID");
+      }
     }
     if (previous !== null) {
       if (tier.minQuantity <= previous.minQuantity) issues.add("THRESHOLD_NOT_STRICTLY_INCREASING");
@@ -322,6 +333,119 @@ export function priceQuantityTier(config: QuantityTierConfig, lines: readonly Ti
       segments: unchanged(lines),
       totalDiscountVnd: 0,
       discountedUnitCount: 0,
+    };
+  }
+
+  let uncappedDiscountVnd = 0;
+  for (const line of lines) {
+    const discountedQuantity = allocation.get(line.lineKey) ?? 0;
+    if (discountedQuantity > 0) {
+      const price = discountedPrice.get(line.lineKey)!;
+      uncappedDiscountVnd += (line.unitPriceVnd - price) * discountedQuantity;
+    }
+  }
+
+  const maxDiscountVnd = winningTier.maxDiscountVnd;
+  const isCapped =
+    config.unit === "PERCENTAGE" &&
+    typeof maxDiscountVnd === "number" &&
+    maxDiscountVnd > 0 &&
+    uncappedDiscountVnd > maxDiscountVnd;
+
+  if (isCapped) {
+    const total = BigInt(maxDiscountVnd);
+    let discountedSubtotalVnd = 0;
+    for (const line of lines) {
+      const discountedQuantity = allocation.get(line.lineKey) ?? 0;
+      discountedSubtotalVnd += discountedQuantity * line.unitPriceVnd;
+    }
+    const subtotal = BigInt(discountedSubtotalVnd);
+    const shares = lines
+      .filter((line) => (allocation.get(line.lineKey) ?? 0) > 0)
+      .map((line) => {
+        const discountedQuantity = allocation.get(line.lineKey)!;
+        const numerator = total * BigInt(line.unitPriceVnd);
+        return { line, discountedQuantity, floor: numerator / subtotal, remainder: numerator % subtotal };
+      });
+    let owed = total;
+    for (const share of shares) owed -= share.floor * BigInt(share.discountedQuantity);
+    if (owed < BigInt(0) || owed >= BigInt(discountedUnitCount)) return { status: "INVALID_INPUT", reason: "ALLOCATION_INCONSISTENT" };
+
+    const order = [...shares].sort((a, b) => {
+      if (a.remainder !== b.remainder) return a.remainder > b.remainder ? -1 : 1;
+      if (a.line.unitPriceVnd !== b.line.unitPriceVnd) return b.line.unitPriceVnd - a.line.unitPriceVnd;
+      if (a.line.pancakeVariationId !== b.line.pancakeVariationId) return a.line.pancakeVariationId < b.line.pancakeVariationId ? -1 : 1;
+      return a.line.lineKey < b.line.lineKey ? -1 : a.line.lineKey > b.line.lineKey ? 1 : 0;
+    });
+    let remaining = Number(owed);
+    const extraUnits = new Map<string, number>();
+    for (const share of order) {
+      if (remaining === 0) break;
+      const take = Math.min(remaining, share.discountedQuantity);
+      extraUnits.set(share.line.lineKey, take);
+      remaining -= take;
+    }
+
+    const cappedOffending: string[] = [];
+    for (const share of shares) {
+      const floor = Number(share.floor);
+      const extra = extraUnits.get(share.line.lineKey) ?? 0;
+      if (share.line.unitPriceVnd - (extra > 0 ? floor + 1 : floor) < 1) cappedOffending.push(share.line.lineKey);
+    }
+    if (cappedOffending.length > 0) {
+      return {
+        status: "TIER_PRICE_INVALID",
+        eligibleQuantity,
+        startThreshold,
+        winningTier,
+        offendingLineKeys: cappedOffending.sort(),
+        segments: unchanged(lines),
+        totalDiscountVnd: 0,
+        discountedUnitCount: 0,
+      };
+    }
+
+    const segments: TierPriceSegment[] = [];
+    let totalDiscountVnd = 0;
+    const push = (line: TierInputLine, suffix: string, quantity: number, perUnit: number) => {
+      totalDiscountVnd += perUnit * quantity;
+      segments.push({
+        segmentKey: `${line.lineKey}|${suffix}`,
+        lineKey: line.lineKey,
+        pancakeVariationId: line.pancakeVariationId,
+        quantity,
+        unitPriceBeforeVnd: line.unitPriceVnd,
+        unitPriceVnd: line.unitPriceVnd - perUnit,
+        stepDiscountPerUnitVnd: perUnit,
+        discounted: perUnit > 0,
+        lineTotalVnd: (line.unitPriceVnd - perUnit) * quantity,
+      });
+    };
+
+    for (const line of lines) {
+      const discountedQuantity = allocation.get(line.lineKey) ?? 0;
+      if (discountedQuantity > 0) {
+        const share = shares.find((s) => s.line.lineKey === line.lineKey)!;
+        const floor = Number(share.floor);
+        const extra = extraUnits.get(line.lineKey) ?? 0;
+        if (extra > 0) push(line, "disc", extra, floor + 1);
+        const rest = discountedQuantity - extra;
+        if (rest > 0) push(line, floor > 0 ? (extra > 0 ? "discb" : "disc") : "full", rest, floor);
+      }
+      const fullQuantity = line.quantity - discountedQuantity;
+      if (fullQuantity > 0) push(line, "full", fullQuantity, 0);
+    }
+
+    if (totalDiscountVnd !== maxDiscountVnd) return { status: "INVALID_INPUT", reason: "ALLOCATION_INCONSISTENT" };
+
+    return {
+      status: "APPLIED",
+      eligibleQuantity,
+      startThreshold,
+      winningTier,
+      discountedUnitCount,
+      totalDiscountVnd,
+      segments,
     };
   }
 

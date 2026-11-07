@@ -58,7 +58,7 @@ export const giftQuantityCampaignSelection = {
   tierDiscountedUnits: true,
   tierSelectionPriority: true,
   targets: { select: { productId: true, role: true } },
-  tiers: { select: { minQuantity: true, discountValue: true }, orderBy: { minQuantity: "asc" } },
+  tiers: { select: { minQuantity: true, discountValue: true, maxDiscountVnd: true }, orderBy: { minQuantity: "asc" } },
   giftOptions: { select: { variantId: true } },
   stackPeers: { select: { peerKind: true, peerCampaignId: true } },
 } satisfies Prisma.GiftQuantityCampaignSelect;

@@ -542,7 +542,7 @@ function applyRulePatch(
           tierUnit: rule.unit,
           tierDiscountedUnits: rule.discountedUnits,
           tierSelectionPriority: rule.discountedUnits === "FROM_REACHED_THRESHOLD" ? rule.selectionPriority : null,
-          tiers: rule.tiers.map((tier) => ({ minQuantity: tier.minQuantity, discountValue: tier.discountValue })),
+          tiers: rule.tiers.map((tier) => ({ minQuantity: tier.minQuantity, discountValue: tier.discountValue, maxDiscountVnd: tier.maxDiscountVnd ?? null })),
           stackPeers: rule.peers.map((peer) => ({ peerKind: peer.kind, peerCampaignId: peer.campaignId })),
         }),
   };

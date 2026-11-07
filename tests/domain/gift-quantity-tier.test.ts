@@ -274,3 +274,75 @@ test("segments total always equals the sum of source totals minus the reported d
     assert.equal(result.segments.reduce((q, s) => q + s.quantity, 0), 9, "no unit is created or lost");
   }
 });
+
+test("percentage tier with maxDiscountVnd: discounts normally when below cap", () => {
+  const config: QuantityTierConfig = {
+    unit: "PERCENTAGE",
+    discountedUnits: "ALL_ELIGIBLE_UNITS",
+    selectionPriority: null,
+    tiers: [{ minQuantity: 5, discountValue: 10, maxDiscountVnd: 200_000 }],
+  };
+  // 5 units of 300k = 1.5M, 10% = 150k <= 200k
+  const lines = [line("a", 5, 300_000)];
+  const result = applied(priceQuantityTier(config, lines));
+  assert.equal(result.discountedUnitCount, 5);
+  assert.equal(result.totalDiscountVnd, 150_000);
+  assert.equal(sum(result), 1_350_000);
+  assert.equal(result.segments[0]!.unitPriceVnd, 270_000);
+});
+
+test("percentage tier with maxDiscountVnd: caps at maxDiscountVnd when 10% exceeds cap", () => {
+  const config: QuantityTierConfig = {
+    unit: "PERCENTAGE",
+    discountedUnits: "ALL_ELIGIBLE_UNITS",
+    selectionPriority: null,
+    tiers: [{ minQuantity: 5, discountValue: 10, maxDiscountVnd: 200_000 }],
+  };
+  // 5 units of 600k = 3M, 10% would be 300k > 200k -> capped at 200k
+  const lines = [line("a", 5, 600_000)];
+  const result = applied(priceQuantityTier(config, lines));
+  assert.equal(result.discountedUnitCount, 5);
+  assert.equal(result.totalDiscountVnd, 200_000);
+  assert.equal(sum(result), 2_800_000);
+  // 200k / 5 = 40k discount per unit -> 560k
+  assert.equal(result.segments[0]!.unitPriceVnd, 560_000);
+});
+
+test("percentage tier with maxDiscountVnd: allocates exact remainder when line prices differ", () => {
+  const config: QuantityTierConfig = {
+    unit: "PERCENTAGE",
+    discountedUnits: "ALL_ELIGIBLE_UNITS",
+    selectionPriority: null,
+    tiers: [{ minQuantity: 5, discountValue: 10, maxDiscountVnd: 200_000 }],
+  };
+  // 4 items @ 599k + 1 item @ 699k = 3,095,000 VND
+  const lines = [line("lo", 4, 599_000), line("hi", 1, 699_000)];
+  const result = applied(priceQuantityTier(config, lines));
+  assert.equal(result.discountedUnitCount, 5);
+  assert.equal(result.totalDiscountVnd, 200_000);
+  assert.equal(sum(result), 3_095_000 - 200_000);
+  // Total of unit discounts across all segments must equal 200,000 VND exactly
+  const totalUnitDiscount = result.segments.reduce((acc, s) => acc + s.stepDiscountPerUnitVnd * s.quantity, 0);
+  assert.equal(totalUnitDiscount, 200_000);
+});
+
+test("validateTierConfig validates maxDiscountVnd", () => {
+  assert.deepEqual(
+    validateTierConfig({
+      unit: "PERCENTAGE",
+      discountedUnits: "ALL_ELIGIBLE_UNITS",
+      selectionPriority: null,
+      tiers: [{ minQuantity: 5, discountValue: 10, maxDiscountVnd: 0 }],
+    }),
+    ["MAX_DISCOUNT_INVALID"],
+  );
+  assert.deepEqual(
+    validateTierConfig({
+      unit: "PERCENTAGE",
+      discountedUnits: "ALL_ELIGIBLE_UNITS",
+      selectionPriority: null,
+      tiers: [{ minQuantity: 5, discountValue: 10, maxDiscountVnd: -50_000 }],
+    }),
+    ["MAX_DISCOUNT_INVALID"],
+  );
+});
