@@ -341,6 +341,42 @@ test("text and thought parts are ignored when exactly one validated image is pre
   assert.equal((await client.generate({ person, product })).ok, true);
 });
 
+test("thought images are ignored when exactly one validated final image is present", async () => {
+  const body = JSON.stringify({
+    candidates: [{
+      finishReason: "STOP",
+      content: {
+        role: "model",
+        parts: [
+          { thought: true, text: "internal reasoning placeholder" },
+          { thought: true, inlineData: { data: b64(PNG_BYTES), mimeType: "image/png" } },
+          { thought: true, text: "second reasoning step" },
+          { inlineData: { data: b64(PNG_BYTES), mimeType: "image/png" } },
+        ],
+      },
+    }],
+  });
+  const { client } = harness(() => json(body));
+  assert.equal((await client.generate({ person, product })).ok, true);
+});
+
+test("only thought images with no final output image is rejected as GENERATION_FAILED", async () => {
+  const body = JSON.stringify({
+    candidates: [{
+      finishReason: "STOP",
+      content: {
+        role: "model",
+        parts: [
+          { thought: true, text: "internal reasoning placeholder" },
+          { thought: true, inlineData: { data: b64(PNG_BYTES), mimeType: "image/png" } },
+        ],
+      },
+    }],
+  });
+  const { client } = harness(() => json(body));
+  assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "GENERATION_FAILED" });
+});
+
 test("an absurdly large provider response is rejected rather than buffered", async () => {
   const huge = new Response(new ReadableStream({
     pull(controller) {

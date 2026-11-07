@@ -194,7 +194,7 @@ function parseGeneratedImage(body: unknown): VertexTryOnResult {
 
   const images: Array<{ data: string; mimeType: string }> = [];
   for (const part of candidate.content.parts) {
-    if (!isRecord(part) || !isRecord(part.inlineData)) continue;
+    if (!isRecord(part) || Boolean(part.thought) || !isRecord(part.inlineData)) continue;
     const { data, mimeType } = part.inlineData;
     if (typeof data === "string" && typeof mimeType === "string") images.push({ data, mimeType });
   }
