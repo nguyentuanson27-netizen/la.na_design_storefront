@@ -71,45 +71,7 @@ export function buildSizeGuideSheetTitle(chartTitle: string, productCode: string
 }
 
 /** One size the product actually sells, as the purchase selector offers it. */
-export type GuideSizeChoice = Readonly<{
-  value: string;
-  disabled: boolean;
-  /**
-   * True only when every variant of this size is known to be out of stock. `disabled` alone is not
-   * that: the selector also locks a size for a missing price, a mapping fault, or because it is out
-   * only in the chosen colour, none of which is "Hết hàng".
-   */
-  soldOut?: boolean;
-}>;
-
-/** The three facts about a variant that the sold-out decision reads. */
-type SoldOutProbe = Readonly<{
-  kindKey: string | null;
-  size: string | null;
-  unavailableReason: string | null;
-}>;
-
-/**
- * The sizes whose every variant, within the chosen kind, is out of stock.
- *
- * Deliberately conservative: a size counts only when it has variants and all of them carry the
- * `OUT_OF_STOCK` reason. Colour is not narrowed on purpose, so a size that is out in the chosen
- * colour but available in another is not called sold out, and a size held back for a missing price
- * or a mapping fault never is either.
- */
-export function findSoldOutSizes(
-  options: readonly SoldOutProbe[],
-  kindKey: string | null,
-): ReadonlySet<string> {
-  const reasonsBySize = new Map<string, boolean>();
-  for (const option of options) {
-    if (option.size === null) continue;
-    if (kindKey !== null && option.kindKey !== kindKey) continue;
-    const outOfStock = option.unavailableReason === "OUT_OF_STOCK";
-    reasonsBySize.set(option.size, (reasonsBySize.get(option.size) ?? true) && outOfStock);
-  }
-  return new Set([...reasonsBySize].filter(([, allOut]) => allOut).map(([size]) => size));
-}
+export type GuideSizeChoice = Readonly<{ value: string; disabled: boolean }>;
 
 /**
  * The selector's own size for a chart row, or `null` when the product does not sell that size.
@@ -180,9 +142,8 @@ export function resolveSizeGuideAction(input: {
       label,
       value: null,
       enabled: false,
-      // "Hết hàng" only when the size is known to be out of stock; any other reason a size is
-      // locked (missing price, mapping fault, out in this colour only) keeps the neutral sentence.
-      note: choice.soldOut ? OUT_OF_STOCK_LABEL : "Lựa chọn này hiện chưa mua được.",
+      // The same word the selector's own size chips and the product card use for a sold-out size.
+      note: OUT_OF_STOCK_LABEL,
     });
   }
   return Object.freeze({ label, value: choice.value, enabled: true, note: null });

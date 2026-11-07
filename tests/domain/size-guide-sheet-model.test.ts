@@ -99,16 +99,7 @@ test("the primary button chooses the picked size only when the selector would ac
   assert.equal(resolveSizeGuideAction({ ...base, pickedSize: null }).enabled, false);
   assert.equal(resolveSizeGuideAction({ ...base, pickedSize: "XL" }).enabled, false);
   assert.equal(resolveSizeGuideAction({ ...base, pickedSize: "L" }).enabled, false);
-  // A locked size is only called "Hết hàng" when it is known to be out of stock.
-  assert.equal(resolveSizeGuideAction({ ...base, pickedSize: "L" }).note, "Lựa chọn này hiện chưa mua được.");
-  assert.equal(
-    resolveSizeGuideAction({
-      ...base,
-      choices: [{ value: "L", disabled: true, soldOut: true }],
-      pickedSize: "L",
-    }).note,
-    "Hết hàng",
-  );
+  assert.equal(resolveSizeGuideAction({ ...base, pickedSize: "L" }).note, "Hết hàng");
 
   const locked = resolveSizeGuideAction({ ...base, canChoose: false, pickedSize: "M" });
   assert.equal(locked.enabled, false);
@@ -133,40 +124,4 @@ test("the primary button stays off while an add is in flight, with its own reaso
       .enabled,
     true,
   );
-});
-
-import { findSoldOutSizes } from "../../src/components/headless/size-guide-sheet-model.ts";
-
-test("a size is sold out only when every variant of it in the chosen kind is out of stock", () => {
-  const variant = (size: string | null, unavailableReason: string | null, kindKey: string | null = null) => ({
-    kindKey,
-    size,
-    unavailableReason,
-  });
-
-  // Genuinely out of stock, in every colour.
-  assert.deepEqual(
-    [...findSoldOutSizes([variant("M", "OUT_OF_STOCK"), variant("M", "OUT_OF_STOCK")], null)],
-    ["M"],
-  );
-  // Stock exists but the price is unresolved, or the mapping is wrong: locked, not sold out.
-  assert.equal(findSoldOutSizes([variant("M", "PRICE_UNRESOLVED")], null).has("M"), false);
-  assert.equal(findSoldOutSizes([variant("M", "MAPPING_REQUIRED")], null).has("M"), false);
-  assert.equal(findSoldOutSizes([variant("M", "AMBIGUOUS_OPTION")], null).has("M"), false);
-  // Out in one colour but still available in another: the size is not gone.
-  assert.equal(findSoldOutSizes([variant("M", "OUT_OF_STOCK"), variant("M", null)], null).has("M"), false);
-  // Mixed reasons are not a stock claim either.
-  assert.equal(
-    findSoldOutSizes([variant("M", "OUT_OF_STOCK"), variant("M", "PRICE_UNRESOLVED")], null).has("M"),
-    false,
-  );
-  // Other sizes are judged on their own, and a variant with no size is ignored.
-  assert.deepEqual(
-    [...findSoldOutSizes([variant("S", "OUT_OF_STOCK"), variant("L", null), variant(null, "OUT_OF_STOCK")], null)],
-    ["S"],
-  );
-  // Only the chosen kind counts.
-  const kinds = [variant("M", "OUT_OF_STOCK", "set"), variant("M", null, "dress")];
-  assert.equal(findSoldOutSizes(kinds, "set").has("M"), true);
-  assert.equal(findSoldOutSizes(kinds, "dress").has("M"), false);
 });

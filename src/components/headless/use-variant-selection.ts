@@ -8,7 +8,6 @@ import type { StorefrontProjectionOption } from "@/commerce/storefront-projectio
 import type { DeepLinkedVariantSelection } from "@/commerce/storefront-variant-deep-link";
 import { trackCommittedMetaAddToCart } from "@/components/analytics/meta-browser-client";
 import { refreshCartSummary } from "@/components/headless/cart-summary-store";
-import { findSoldOutSizes } from "@/components/headless/size-guide-sheet-model";
 import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-events";
 import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 
@@ -243,13 +242,9 @@ export function useVariantSelection({
     return promptMissingOptions();
   }
 
-  /** Sizes whose every variant (in the chosen kind) is out of stock; see `findSoldOutSizes`. */
-  const soldOutSizes = findSoldOutSizes(options, state.kindKey);
-
   return {
     view,
     selection: state,
-    soldOutSizes,
     isPending,
     canAttemptPurchase,
     /** The add-to-cart outcome message, or "" when there is nothing to say. */
