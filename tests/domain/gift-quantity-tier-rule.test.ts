@@ -210,3 +210,48 @@ test("structure: direct service inputs enforce enum and boolean allowlists befor
     assert.ok(validateTierRuleStructure(malformed).includes(error), field);
   }
 });
+
+test("parse: the per-tier cap is a strict parallel list; blank means no cap and the key is then absent", () => {
+  const value = parsed([
+    ["tierUnit", "PERCENTAGE"], ["tierDiscountedUnits", "ALL_ELIGIBLE_UNITS"],
+    ["tierMinQuantity", "3"], ["tierDiscountValue", "10"], ["tierMaxDiscountVnd", ""],
+    ["tierMinQuantity", "5"], ["tierDiscountValue", "10"], ["tierMaxDiscountVnd", "200000"],
+  ]);
+  assert.deepEqual(value.tiers, [{ minQuantity: 3, discountValue: 10 }, { minQuantity: 5, discountValue: 10, maxDiscountVnd: 200_000 }]);
+
+  const reason = (entries: Array<[string, string]>) => {
+    const result = parseTierRuleForm(form(entries));
+    return result.ok ? "OK" : result.reason;
+  };
+  const base: Array<[string, string]> = [["tierMinQuantity", "5"], ["tierDiscountValue", "10"]];
+  assert.equal(reason([...base, ["tierMaxDiscountVnd", "200000"]]), "OK");
+  assert.equal(reason([...base, ["tierMaxDiscountVnd", "200000"], ["tierMaxDiscountVnd", "1"]]), "INVALID_TIER_ROW", "ragged: one cap too many");
+  assert.equal(reason([...base, ["tierMinQuantity", "6"], ["tierDiscountValue", "12"], ["tierMaxDiscountVnd", "1"]]), "INVALID_TIER_ROW", "ragged: one cap too few");
+  for (const bad of ["20.5", "-1", "1e5", "2_0", "0200000", "abc"]) {
+    assert.equal(reason([...base, ["tierMaxDiscountVnd", bad]]), "INVALID_TIER_ROW", bad);
+  }
+  assert.equal(formCarriesTierRule(form([["tierMaxDiscountVnd", "1"]])), true);
+});
+
+test("structure: a cap must be a positive whole VND within bounds and only on a percentage quantity ladder", () => {
+  const errors = (overrides: Partial<TierRuleInput>) => validateTierRuleStructure(rule(overrides));
+  const withCap = (maxDiscountVnd: number | null) => ({ tiers: [{ minQuantity: 5, discountValue: 10, maxDiscountVnd }] });
+  assert.deepEqual(errors(withCap(200_000)), []);
+  assert.deepEqual(errors(withCap(null)), []);
+  for (const bad of [0, -1, 1.5, 2_000_000_001, Number.NaN]) {
+    assert.ok(errors(withCap(bad)).includes("TIER_MAX_DISCOUNT_OUT_OF_RANGE"), String(bad));
+  }
+  assert.ok(errors({ ...withCap(200_000), unit: "FIXED_AMOUNT_PER_UNIT_VND" }).includes("TIER_MAX_DISCOUNT_NOT_APPLICABLE"));
+  assert.ok(errors({ ...withCap(200_000), unit: null }).includes("TIER_MAX_DISCOUNT_NOT_APPLICABLE"));
+  assert.ok(errors({ ...withCap(200_000), basis: "ORDER_SUBTOTAL" }).includes("TIER_MAX_DISCOUNT_NOT_APPLICABLE"));
+});
+
+test("publish: a tightening cap and a cap on an order-value ladder are named, and the cap reaches the engine config", () => {
+  const tiers = [{ minQuantity: 5, discountValue: 10, maxDiscountVnd: 200_000 }, { minQuantity: 6, discountValue: 15, maxDiscountVnd: 100_000 }];
+  assert.deepEqual(validateTierRuleForPublish(rule({ tiers })), ["MAX_DISCOUNT_DECREASES_WITH_THRESHOLD"]);
+  assert.deepEqual(
+    validateTierRuleForPublish(rule({ basis: "ORDER_SUBTOTAL", tiers: [{ minQuantity: 1_000_000, discountValue: 10, maxDiscountVnd: 200_000 }] })),
+    ["MAX_DISCOUNT_INVALID"],
+  );
+  assert.deepEqual(toQuantityTierConfig(rule({ tiers: [tiers[0]!] }))?.tiers, [tiers[0]]);
+});

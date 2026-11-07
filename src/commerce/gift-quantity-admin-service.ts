@@ -40,7 +40,7 @@ import {
 } from "./gift-quantity-gift-rule.ts";
 import { invalidStackPeers } from "./gift-quantity-stack-peers.ts";
 import { applyExcludeWins, validateScopeConfig, type ScopeIssue } from "./gift-quantity-scope.ts";
-import { validateTierRuleStructure, type TierRuleInput } from "./gift-quantity-tier-rule.ts";
+import { quantityTierRowData, validateTierRuleStructure, type TierRuleInput } from "./gift-quantity-tier-rule.ts";
 import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
 import { lockRows } from "./promotion-activation-service.ts";
 import { buildCopyCampaignName, deriveCampaignLifecycle, type CampaignLifecycleStatus } from "./promotion-campaign-lifecycle.ts";
@@ -154,7 +154,7 @@ function tierRuleColumns(rule: TierRuleInput) {
 function tierRuleChildren(rule: TierRuleInput) {
   return {
     // Nested creates must not pass `unit`: it is a copy of the parent's `tierUnit`, filled from the parent.
-    tiers: { create: rule.tiers.map((tier) => ({ minQuantity: tier.minQuantity, discountValue: tier.discountValue })) },
+    tiers: { create: rule.tiers.map(quantityTierRowData) },
     stackPeers: { create: rule.peers.map((peer) => ({ peerKind: peer.kind, peerCampaignId: peer.campaignId })) },
   } as const;
 }
@@ -387,7 +387,7 @@ export async function copyGiftQuantityCampaign({
         tierDiscountedUnits: source.tierDiscountedUnits,
         tierSelectionPriority: source.tierSelectionPriority,
         targets: { create: source.targets.map((target) => ({ productId: target.productId, role: target.role })) },
-        tiers: { create: source.tiers.map((tier) => ({ minQuantity: tier.minQuantity, discountValue: tier.discountValue })) },
+        tiers: { create: source.tiers.map(quantityTierRowData) },
         giftOptions: { create: source.giftOptions.map((option) => ({ variantId: option.variantId })) },
         // The database forbids a campaign naming itself, so no peer can point at the source.
         stackPeers: { create: source.stackPeers.map((peer) => ({ peerKind: peer.peerKind, peerCampaignId: peer.peerCampaignId })) },

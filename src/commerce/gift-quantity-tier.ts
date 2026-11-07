@@ -47,6 +47,11 @@ export type QuantityTierStep = Readonly<{
   maxDiscountVnd?: number | null;
 }>;
 
+/** A cap means something only for a percentage on a quantity ladder; no other pairing may carry one. */
+function capsAllowed(config: Pick<QuantityTierConfig, "basis" | "unit">): boolean {
+  return config.unit === "PERCENTAGE" && (config.basis ?? "QUANTITY") === "QUANTITY";
+}
+
 export type QuantityTierConfig = Readonly<{
   /** Absent means `QUANTITY`: every ladder written before the order-value basis existed. */
   basis?: TierBasis;
@@ -70,7 +75,8 @@ export type TierConfigIssue =
   | "DISCOUNTED_UNITS_INVALID"
   | "BASIS_INVALID"
   | "DISCOUNT_NOT_BELOW_THRESHOLD"
-  | "MAX_DISCOUNT_INVALID";
+  | "MAX_DISCOUNT_INVALID"
+  | "MAX_DISCOUNT_DECREASES_WITH_THRESHOLD";
 
 /**
  * Validates the configuration the engine runs on. The server calls this on Draft-complete rules at
@@ -131,8 +137,11 @@ export function validateTierConfig(config: QuantityTierConfig): readonly TierCon
     if (config.unit === "FIXED_AMOUNT_TOTAL_VND" && valueOk && tier.discountValue >= tier.minQuantity) {
       issues.add("DISCOUNT_NOT_BELOW_THRESHOLD");
     }
-    if (tier.maxDiscountVnd !== undefined && tier.maxDiscountVnd !== null) {
-      if (!Number.isSafeInteger(tier.maxDiscountVnd) || tier.maxDiscountVnd < 1 || tier.maxDiscountVnd > MAX_VND_DISCOUNT) {
+    const hasCap = tier.maxDiscountVnd !== undefined && tier.maxDiscountVnd !== null;
+    if (hasCap) {
+      // The cap is only honoured by the percentage-on-quantity pricing path; anywhere else it would be
+      // silently ignored, so it is refused instead.
+      if (!capsAllowed(config) || !Number.isSafeInteger(tier.maxDiscountVnd) || tier.maxDiscountVnd! < 1 || tier.maxDiscountVnd! > MAX_VND_DISCOUNT) {
         issues.add("MAX_DISCOUNT_INVALID");
       }
     }
@@ -141,6 +150,13 @@ export function validateTierConfig(config: QuantityTierConfig): readonly TierCon
       // Same-unit values must not fall as the threshold rises (R-05): otherwise buying more could
       // cost more per discounted unit.
       if (tier.discountValue < previous.discountValue) issues.add("VALUE_DECREASES_WITH_THRESHOLD");
+      // The cap is part of the benefit (R-05 again): "no cap" is the highest cap, so a rung may raise or
+      // drop its cap but never tighten it, or buying more could save less (10 % up to 200k, then 15 % up to 100k).
+      if (capsAllowed(config) && (hasCap ? Number.isSafeInteger(tier.maxDiscountVnd) : true)) {
+        const cap = tier.maxDiscountVnd ?? Number.POSITIVE_INFINITY;
+        const previousCap = previous.maxDiscountVnd ?? Number.POSITIVE_INFINITY;
+        if (cap < previousCap) issues.add("MAX_DISCOUNT_DECREASES_WITH_THRESHOLD");
+      }
     }
     previous = tier;
   }
@@ -424,15 +440,20 @@ export function priceQuantityTier(config: QuantityTierConfig, lines: readonly Ti
 
     for (const line of lines) {
       const discountedQuantity = allocation.get(line.lineKey) ?? 0;
+      // Units that end up taking 0 VND off (a tiny cap shared over many units) are plain full-price units:
+      // they join the line's untouched units so a line never carries two segments with the same key.
+      let fullQuantity = line.quantity - discountedQuantity;
       if (discountedQuantity > 0) {
         const share = shares.find((s) => s.line.lineKey === line.lineKey)!;
         const floor = Number(share.floor);
         const extra = extraUnits.get(line.lineKey) ?? 0;
         if (extra > 0) push(line, "disc", extra, floor + 1);
         const rest = discountedQuantity - extra;
-        if (rest > 0) push(line, floor > 0 ? (extra > 0 ? "discb" : "disc") : "full", rest, floor);
+        if (rest > 0) {
+          if (floor > 0) push(line, extra > 0 ? "discb" : "disc", rest, floor);
+          else fullQuantity += rest;
+        }
       }
-      const fullQuantity = line.quantity - discountedQuantity;
       if (fullQuantity > 0) push(line, "full", fullQuantity, 0);
     }
 

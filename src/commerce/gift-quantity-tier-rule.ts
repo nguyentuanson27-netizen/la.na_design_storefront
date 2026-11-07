@@ -115,6 +115,7 @@ const TIER_RULE_FIELDS = [
   "tierSelectionPriority",
   "tierMinQuantity",
   "tierDiscountValue",
+  "tierMaxDiscountVnd",
   "stackingEnabled",
   "stackPriority",
   "stackPeer",
@@ -143,16 +144,28 @@ export function parseTierRuleForm(formData: FormData): ParsedTierRule {
   if (thresholds === null || values === null || thresholds.length !== values.length) {
     return { ok: false, reason: "INVALID_TIER_ROW" };
   }
-  const tiers: Array<{ minQuantity: number; discountValue: number }> = [];
+  // The optional per-tier cap travels as a third parallel list. It is either absent altogether (a unit
+  // that has no cap renders no input) or carries exactly one entry per row, so a cap can never drift onto
+  // the wrong tier; a blank entry means "no cap".
+  const caps = boundedStrings(formData, "tierMaxDiscountVnd", rowLimit);
+  if (caps === null || (caps.length !== 0 && caps.length !== thresholds.length)) {
+    return { ok: false, reason: "INVALID_TIER_ROW" };
+  }
+  const tiers: Array<{ minQuantity: number; discountValue: number; maxDiscountVnd?: number }> = [];
   for (let index = 0; index < thresholds.length; index += 1) {
     const rawThreshold = thresholds[index]!;
     const rawValue = values[index]!;
+    const rawCap = caps[index] ?? "";
     // A completely blank row is an empty form line, not a tier.
-    if (rawThreshold === "" && rawValue === "") continue;
+    if (rawThreshold === "" && rawValue === "" && rawCap === "") continue;
     const minQuantity = strictInt(rawThreshold);
     const discountValue = strictInt(rawValue);
-    if (minQuantity === null || discountValue === null) return { ok: false, reason: "INVALID_TIER_ROW" };
-    tiers.push({ minQuantity, discountValue });
+    const maxDiscountVnd = rawCap === "" ? null : strictInt(rawCap);
+    if (minQuantity === null || discountValue === null || (rawCap !== "" && maxDiscountVnd === null)) {
+      return { ok: false, reason: "INVALID_TIER_ROW" };
+    }
+    // A tier without a cap carries no `maxDiscountVnd` key at all, exactly as a rule typed in code would.
+    tiers.push(maxDiscountVnd === null ? { minQuantity, discountValue } : { minQuantity, discountValue, maxDiscountVnd });
   }
 
   // A checkbox: absent means off. Anything that is not a recognised on/off token is refused.
@@ -199,6 +212,8 @@ export type TierRuleStructureError =
   | "TIER_THRESHOLD_OUT_OF_RANGE"
   | "TIER_VALUE_OUT_OF_RANGE"
   | "TIER_PERCENT_OUT_OF_RANGE"
+  | "TIER_MAX_DISCOUNT_OUT_OF_RANGE"
+  | "TIER_MAX_DISCOUNT_NOT_APPLICABLE"
   | "TIER_THRESHOLD_DUPLICATE"
   | "TIER_UNIT_REQUIRED"
   | "SELECTION_PRIORITY_NOT_APPLICABLE"
@@ -244,6 +259,13 @@ export function validateTierRuleStructure(rule: TierRuleInput): readonly TierRul
       // Also a database check: an order must stay above the amount taken off it.
       errors.add("TIER_TOTAL_NOT_BELOW_THRESHOLD");
     }
+    if (tier.maxDiscountVnd !== undefined && tier.maxDiscountVnd !== null) {
+      if (!Number.isSafeInteger(tier.maxDiscountVnd) || tier.maxDiscountVnd < 1 || tier.maxDiscountVnd > MAX_TIER_VALUE) {
+        errors.add("TIER_MAX_DISCOUNT_OUT_OF_RANGE");
+      }
+      // Only the percentage-on-quantity price path honours a cap; storing one elsewhere would be silently ignored.
+      if (rule.unit !== "PERCENTAGE" || byOrderValue) errors.add("TIER_MAX_DISCOUNT_NOT_APPLICABLE");
+    }
   }
 
   // Only meaningful when only some units are discounted (the database enforces the same).
@@ -272,6 +294,7 @@ export type TierRulePublishError =
   | "BASIS_INVALID"
   | "DISCOUNT_NOT_BELOW_THRESHOLD"
   | "MAX_DISCOUNT_INVALID"
+  | "MAX_DISCOUNT_DECREASES_WITH_THRESHOLD"
   | "TIER_CONFIG_INCOMPLETE"
   | "TIERS_EMPTY"
   | "TIERS_TOO_MANY"
@@ -285,6 +308,11 @@ export type TierRulePublishError =
   | "DISCOUNTED_UNITS_INVALID"
   | "STACK_PRIORITY_REQUIRED"
   | "STACK_PEERS_REQUIRED";
+
+/** The columns of one stored ladder row. Every writer (create, scheduled edit, copy) goes through this so none can drop the cap. */
+export function quantityTierRowData(tier: TierRuleInput["tiers"][number]) {
+  return { minQuantity: tier.minQuantity, discountValue: tier.discountValue, maxDiscountVnd: tier.maxDiscountVnd ?? null } as const;
+}
 
 /** The engine configuration a stored rule describes, or null while a required choice is unset. */
 export function toQuantityTierConfig(rule: TierRuleInput): QuantityTierConfig | null {

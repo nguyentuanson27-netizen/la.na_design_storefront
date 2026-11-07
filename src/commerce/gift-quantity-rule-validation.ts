@@ -40,7 +40,7 @@ export type RuleValidationInput = Readonly<{
   tierUnit: QuantityTierDiscountUnit | null;
   tierDiscountedUnits: QuantityTierDiscountedUnits | null;
   tierSelectionPriority: QuantityTierSelectionPriority | null;
-  tiers: readonly Readonly<{ minQuantity: number; discountValue: number }>[];
+  tiers: readonly Readonly<{ minQuantity: number; discountValue: number; maxDiscountVnd?: number | null }>[];
   giftVariantIds: readonly string[];
   stackingEnabled: boolean;
   stackPriority: number | null;

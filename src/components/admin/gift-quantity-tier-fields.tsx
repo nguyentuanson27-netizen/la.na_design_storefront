@@ -20,7 +20,7 @@ import {
 import { MAX_STACK_PRIORITY } from "@/commerce/gift-quantity-stack-priority";
 import { tiersAfterBasisChange } from "@/components/admin/gift-quantity-tier-basis";
 
-type TierRow = { key: number; min: string; value: string };
+type TierRow = { key: number; min: string; value: string; max: string };
 type PeerKind = (typeof TIER_STACK_PEER_KINDS)[number];
 type PeerRow = { key: number; kind: PeerKind; id: string };
 type SampleRow = Readonly<{
@@ -53,7 +53,8 @@ const issueMessage: Record<TierConfigIssue, string> = {
   DISCOUNTED_UNITS_INVALID: "Hãy chọn cách áp dụng giảm giá.",
   BASIS_INVALID: "Cách tính mốc giảm giá không hợp lệ.",
   DISCOUNT_NOT_BELOW_THRESHOLD: "Số tiền giảm cho cả đơn phải nhỏ hơn giá trị đơn hàng tối thiểu của bậc đó.",
-  MAX_DISCOUNT_INVALID: "Mức giảm tối đa (VNĐ) phải là số nguyên dương hợp lệ.",
+  MAX_DISCOUNT_INVALID: "Mức giảm tối đa (VNĐ) phải là số nguyên dương hợp lệ, chỉ dùng cho giảm theo phần trăm với mốc theo số lượng.",
+  MAX_DISCOUNT_DECREASES_WITH_THRESHOLD: "Mức giảm tối đa không được thấp hơn bậc trước (để trống = không giới hạn).",
 };
 
 type Basis = NonNullable<TierRuleInput["basis"]>;
@@ -79,15 +80,17 @@ function calculatePreview(
   if (basis === "ORDER_SUBTOTAL") return calculateOrderValuePreview(tiers, unit, price, extraInput);
   if (!unit || !discountedUnits) return { ok: false, error: "Hãy chọn đơn vị và cách áp dụng giảm giá." };
 
-  const ladder: { minQuantity: number; discountValue: number }[] = [];
+  const ladder: { minQuantity: number; discountValue: number; maxDiscountVnd: number | null }[] = [];
   for (const row of tiers) {
-    if (row.min === "" && row.value === "") continue;
+    if (row.min === "" && row.value === "" && row.max === "") continue;
     const minQuantity = plainInteger(row.min, 1_000_000);
     const discountValue = plainInteger(row.value, 2_000_000_000);
-    if (minQuantity === null || discountValue === null) {
-      return { ok: false, error: "Mỗi bậc phải có ngưỡng và mức giảm là số nguyên dương trong giới hạn." };
+    // The cap exists only for a percentage; the input is not shown for other units, so any stale text is ignored.
+    const maxDiscountVnd = unit === "PERCENTAGE" && row.max !== "" ? plainInteger(row.max, 2_000_000_000) : null;
+    if (minQuantity === null || discountValue === null || (unit === "PERCENTAGE" && row.max !== "" && maxDiscountVnd === null)) {
+      return { ok: false, error: "Mỗi bậc phải có ngưỡng và mức giảm là số nguyên dương trong giới hạn; mức giảm tối đa (nếu có) cũng vậy." };
     }
-    ladder.push({ minQuantity, discountValue });
+    ladder.push({ minQuantity, discountValue, maxDiscountVnd });
   }
   ladder.sort((a, b) => a.minQuantity - b.minQuantity);
   const config: QuantityTierConfig = {
@@ -206,10 +209,12 @@ export function GiftQuantityTierFields({
   const [discountedUnits, setDiscountedUnits] = useState<NonNullable<TierRuleInput["discountedUnits"]> | "">(initialRule?.discountedUnits ?? "");
   // An order value is discounted as a whole, so the choice is not offered and is always sent as ALL.
   const effectiveDiscountedUnits = byOrderValue ? "ALL_ELIGIBLE_UNITS" : discountedUnits;
+  // A cap is honoured only by a percentage on a quantity ladder; elsewhere no input is rendered, so none is submitted.
+  const capEditable = !byOrderValue && unit === "PERCENTAGE";
   const [selection, setSelection] = useState<NonNullable<TierRuleInput["selectionPriority"]> | "">(initialRule?.selectionPriority ?? "");
   const [tiers, setTiers] = useState<TierRow[]>(() => initialRule?.tiers.length
-    ? initialRule.tiers.map((tier, key) => ({ key, min: String(tier.minQuantity), value: String(tier.discountValue) }))
-    : [{ key: 0, min: "", value: "" }]);
+    ? initialRule.tiers.map((tier, key) => ({ key, min: String(tier.minQuantity), value: String(tier.discountValue), max: tier.maxDiscountVnd == null ? "" : String(tier.maxDiscountVnd) }))
+    : [{ key: 0, min: "", value: "", max: "" }]);
   const [stacking, setStacking] = useState(initialRule?.stackingEnabled ?? false);
   const [stackPriority, setStackPriority] = useState(initialRule?.stackPriority == null ? "" : String(initialRule.stackPriority));
   const [peers, setPeers] = useState<PeerRow[]>(() => initialRule?.peers.map((peer, key) => ({
@@ -230,11 +235,11 @@ export function GiftQuantityTierFields({
     const unitCleared = (next === "ORDER_SUBTOTAL" && unit === "FIXED_AMOUNT_PER_UNIT_VND") || (next === "QUANTITY" && unit === "FIXED_AMOUNT_TOTAL_VND");
     if (unitCleared) setUnit("");
     // A threshold in pieces is not a threshold in VND: the admin types the rungs again for the new basis.
-    setTiers((previous) => tiersAfterBasisChange(previous, basis, next, unitCleared));
+    setTiers((previous) => tiersAfterBasisChange(previous, basis, next, unitCleared).map((row) => ({ ...row, max: "" })));
     setSelection("");
     setPreview(null);
   }
-  function changeTier(key: number, field: "min" | "value", value: string) {
+  function changeTier(key: number, field: "min" | "value" | "max", value: string) {
     setTiers((previous) => previous.map((row) => row.key === key ? { ...row, [field]: value } : row));
     setPreview(null);
   }
@@ -332,7 +337,7 @@ export function GiftQuantityTierFields({
       <div className="mt-6 space-y-4">
         <h3 className={labelClass}>{byOrderValue ? "Bậc giá trị đơn hàng" : "Bậc số lượng"} ({tiers.length}/{MAX_TIERS_PER_CAMPAIGN})</h3>
         {tiers.map((row, index) => (
-          <div className="grid items-end gap-3 border-l-2 border-black/20 pl-4 sm:grid-cols-[1fr_1fr_auto]" key={row.key}>
+          <div className={"grid items-end gap-3 border-l-2 border-black/20 pl-4 " + (capEditable ? "sm:grid-cols-[1fr_1fr_1fr_auto]" : "sm:grid-cols-[1fr_1fr_auto]")} key={row.key}>
             <div>
               <label className={labelClass} htmlFor={id + "-min-" + row.key}>Bậc {index + 1}: {byOrderValue ? "từ giá trị đơn (VND)" : "từ số chiếc"}</label>
               <input className={inputClass} id={id + "-min-" + row.key} inputMode="numeric" maxLength={16} name="tierMinQuantity" onChange={(e) => changeTier(row.key, "min", e.target.value)} type="text" value={row.min} />
@@ -341,16 +346,23 @@ export function GiftQuantityTierFields({
               <label className={labelClass} htmlFor={id + "-value-" + row.key}>Mức giảm {unit === "PERCENTAGE" ? "(%)" : byOrderValue ? "(VND cho cả đơn)" : "(VND/chiếc)"}</label>
               <input className={inputClass} id={id + "-value-" + row.key} inputMode="numeric" maxLength={16} name="tierDiscountValue" onChange={(e) => changeTier(row.key, "value", e.target.value)} type="text" value={row.value} />
             </div>
+            {capEditable ? (
+              <div>
+                <label className={labelClass} htmlFor={id + "-max-" + row.key}>Giảm tối đa (VND, tùy chọn)</label>
+                <input className={inputClass} id={id + "-max-" + row.key} inputMode="numeric" maxLength={16} name="tierMaxDiscountVnd" onChange={(e) => changeTier(row.key, "max", e.target.value)} placeholder="Không giới hạn" type="text" value={row.max} />
+              </div>
+            ) : null}
             <button aria-label={"Bỏ bậc " + (index + 1)} className={buttonClass} onClick={() => { setTiers((old) => old.filter((r) => r.key !== row.key)); setPreview(null); }} type="button">Bỏ</button>
           </div>
         ))}
         <button className={buttonClass} disabled={tiers.length >= MAX_TIERS_PER_CAMPAIGN} onClick={() => {
-          setTiers((old) => [...old, { key: Math.max(0, ...old.map((r) => r.key + 1)), min: "", value: "" }]);
+          setTiers((old) => [...old, { key: Math.max(0, ...old.map((r) => r.key + 1)), min: "", value: "", max: "" }]);
           setPreview(null);
         }} type="button">+ Thêm bậc</button>
         <p className="text-xs text-neutral-700">
           Tối đa 20 bậc, mỗi ngưỡng khác nhau; mức giảm không được giảm khi lên bậc. % từ 1–99.
           {byOrderValue ? " Giá trị đơn tối đa 2 tỷ; số tiền giảm cho cả đơn phải nhỏ hơn giá trị đơn của chính bậc đó." : " VND tối đa 2 tỷ mỗi chiếc."}
+          {capEditable ? " Giảm tối đa chỉ áp dụng cho giảm %; để trống = không giới hạn, và không được thấp hơn bậc trước." : ""}
         </p>
       </div>
 
