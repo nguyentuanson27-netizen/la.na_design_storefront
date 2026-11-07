@@ -40,7 +40,15 @@ const SAFETY_ERROR_PATTERN = new RegExp(
   ].join("|"),
   "i",
 );
-const SAFETY_BLOCK_REASONS = new Set(["SAFETY", "IMAGE_SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST"]);
+// `IMAGE_PROHIBITED_CONTENT` is the finishReason Vertex reports when it withholds a generated image
+// for prohibited content; without it such a response (no parts) would read as a retryable failure.
+const SAFETY_BLOCK_REASONS = new Set([
+  "SAFETY",
+  "IMAGE_SAFETY",
+  "IMAGE_PROHIBITED_CONTENT",
+  "PROHIBITED_CONTENT",
+  "BLOCKLIST",
+]);
 const MAX_ERROR_DETAILS_READ = 8;
 const MAX_ERROR_TEXT_LENGTH = 4_000;
 

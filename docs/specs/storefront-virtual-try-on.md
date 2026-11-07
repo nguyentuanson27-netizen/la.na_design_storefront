@@ -1,4 +1,4 @@
-# Spec: Storefront Virtual Try-on with Vertex AI Nano Banana Pro
+# Spec: Storefront Virtual Try-on with Vertex AI Nano Banana 2.1
 
 Status: **Approved 2026-10-04; amended 2026-10-05 to replace the dedicated Vertex VTO model with Nano Banana Pro (`gemini-3-pro-image`) after observed output quality was insufficient. The server kill switch remains off by default; live quality acceptance is still required before enablement. Amended 2026-11-07: the model is Nano Banana 2.1 (`gemini-nano-banana-2.1`), overridable with `LA_TRY_ON_VERTEX_MODEL`. See [`docs/integrations/vertex-virtual-try-on.md`](../integrations/vertex-virtual-try-on.md).**
 
@@ -55,13 +55,16 @@ For MVP, `aoDai`, `setDo`, and `vayDam` are eligible apparel trees. `phuKien` is
 
 ## 3. Vertex AI contract
 
-Owner amendment, 2026-10-05: replace the dedicated `gemini-3-pro-image` model because observed
-output quality is insufficient.
+Owner amendment, 2026-10-05: replace the dedicated `virtual-try-on-001` model with Nano Banana Pro
+(`gemini-3-pro-image`) because observed output quality was insufficient. Amendment 2026-11-07:
+Nano Banana 2.1 (`gemini-nano-banana-2.1`) replaces Nano Banana Pro as the model.
 
-Current provider contract, checked against Google Cloud documentation on 2026-10-05:
+Current provider contract; model id, GA stage, `global` location and 2K output re-checked against the
+Google Cloud Nano Banana 2.1 model card on 2026-11-07 (during the PR #248 review). The 2026-10-05
+check applied to the previous model:
 
 - provider: Google Cloud Vertex AI;
-- model: Nano Banana Pro / Gemini 3 Pro Image;
+- model: Nano Banana 2.1;
 - model id: `gemini-nano-banana-2.1` (overridable with `LA_TRY_ON_VERTEX_MODEL`);
 - launch stage: GA;
 - location: `global` only;

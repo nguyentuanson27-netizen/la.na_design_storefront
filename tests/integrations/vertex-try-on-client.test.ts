@@ -145,6 +145,7 @@ test("provider safety signals fail closed after exactly one attempt", async () =
     { promptFeedback: { blockReason: "IMAGE_SAFETY" } },
     { candidates: [{ finishReason: "SAFETY", safetyRatings: [{ blocked: true }] }] },
     { candidates: [{ finishReason: "IMAGE_SAFETY" }] },
+    { candidates: [{ finishReason: "IMAGE_PROHIBITED_CONTENT" }] },
   ];
   for (const body of bodies) {
     const { client, calls } = harness(() => json(JSON.stringify(body)));
