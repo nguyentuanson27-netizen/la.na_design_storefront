@@ -5,6 +5,7 @@ import { createGoogleFlowTryOnClient } from "../integrations/google-flow-try-on/
 import { warmFlowWorker } from "../integrations/google-flow-try-on/warm.ts";
 import { readTryOnRuntimeConfig } from "../integrations/try-on/config.ts";
 import { createVertexTryOnClient } from "../integrations/vertex-try-on/client.ts";
+import { readTryOnModel } from "../integrations/vertex-try-on/config.ts";
 import { getGoogleAccessToken } from "../integrations/vertex-try-on/google-auth.ts";
 import { fetchTryOnGarmentImage } from "../integrations/vertex-try-on/product-image.ts";
 import { emitTryOnSignal } from "../operations/try-on-observability.ts";
@@ -65,7 +66,12 @@ export const tryOnService = createTryOnService({
   generate: ({ config, person, product }) =>
     config.provider === "flow"
       ? createGoogleFlowTryOnClient({ config }).generate({ person, product })
-      : createVertexTryOnClient({ config, getAccessToken: getGoogleAccessToken }).generate({ person, product }),
+      : createVertexTryOnClient({
+          config,
+          getAccessToken: getGoogleAccessToken,
+          // readTryOnConfig already fails closed on a malformed override, so null cannot get here.
+          model: readTryOnModel() ?? undefined,
+        }).generate({ person, product }),
   emit: (signal) => emitTryOnSignal(signal),
 });
 

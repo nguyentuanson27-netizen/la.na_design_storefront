@@ -99,7 +99,7 @@ test("the primary button chooses the picked size only when the selector would ac
   assert.equal(resolveSizeGuideAction({ ...base, pickedSize: null }).enabled, false);
   assert.equal(resolveSizeGuideAction({ ...base, pickedSize: "XL" }).enabled, false);
   assert.equal(resolveSizeGuideAction({ ...base, pickedSize: "L" }).enabled, false);
-  assert.match(resolveSizeGuideAction({ ...base, pickedSize: "L" }).note ?? "", /chưa mua được/);
+  assert.equal(resolveSizeGuideAction({ ...base, pickedSize: "L" }).note, "Hết hàng");
 
   const locked = resolveSizeGuideAction({ ...base, canChoose: false, pickedSize: "M" });
   assert.equal(locked.enabled, false);

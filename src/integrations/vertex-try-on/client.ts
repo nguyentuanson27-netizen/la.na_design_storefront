@@ -1,15 +1,17 @@
 import { readBoundedBody, sniffImageMime } from "../../commerce/try-on-image.ts";
 import type { TryOnImageMimeType } from "../../commerce/try-on-policy.ts";
+import { TRY_ON_DEFAULT_MODEL } from "./config.ts";
 import { createTimeoutSignal } from "./timeout.ts";
 
 /**
  * One Vertex AI boundary for virtual try-on.
  *
- * Nano Banana Pro is Gemini 3 Pro Image. The app sends two inline references and a fixed
+ * The default model is Nano Banana 2.1 (gemini-nano-banana-2.1). The app sends two inline references and a fixed
  * server-owned prompt to generateContent. There is no model fallback, automatic retry, shopper
  * prompt, or provider storage URI.
  */
-export const TRY_ON_MODEL = "gemini-3-pro-image";
+/** Default model. The runtime may pass another one validated by `readTryOnModel`; nothing reads env here. */
+export const TRY_ON_MODEL = TRY_ON_DEFAULT_MODEL;
 export const TRY_ON_OUTPUT_IMAGE_SIZE = "2K";
 export const TRY_ON_PROMPT =
   "Create one photorealistic try-on. Image 1=shopper; image 2=exact garment. " +
@@ -38,7 +40,15 @@ const SAFETY_ERROR_PATTERN = new RegExp(
   ].join("|"),
   "i",
 );
-const SAFETY_BLOCK_REASONS = new Set(["SAFETY", "IMAGE_SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST"]);
+// `IMAGE_PROHIBITED_CONTENT` is the finishReason Vertex reports when it withholds a generated image
+// for prohibited content; without it such a response (no parts) would read as a retryable failure.
+const SAFETY_BLOCK_REASONS = new Set([
+  "SAFETY",
+  "IMAGE_SAFETY",
+  "IMAGE_PROHIBITED_CONTENT",
+  "PROHIBITED_CONTENT",
+  "BLOCKLIST",
+]);
 const MAX_ERROR_DETAILS_READ = 8;
 const MAX_ERROR_TEXT_LENGTH = 4_000;
 
@@ -62,7 +72,8 @@ export function buildGenerateContentRequest({
   config,
   person,
   product,
-}: Readonly<{ config: VertexLocation; person: VertexTryOnImage; product: VertexTryOnImage }>) {
+  model = TRY_ON_MODEL,
+}: Readonly<{ config: VertexLocation; person: VertexTryOnImage; product: VertexTryOnImage; model?: string }>) {
   const { projectId, location } = config;
   return {
     url:
@@ -71,7 +82,7 @@ export function buildGenerateContentRequest({
       "/locations/" +
       location +
       "/publishers/google/models/" +
-      TRY_ON_MODEL +
+      model +
       ":generateContent",
     body: {
       contents: [
@@ -203,11 +214,13 @@ export function createVertexTryOnClient({
   getAccessToken,
   fetch: doFetch = (url, init) => fetch(url, init),
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  model = TRY_ON_MODEL,
 }: Readonly<{
   config: VertexLocation;
   getAccessToken: () => Promise<string>;
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
   timeoutMs?: number;
+  model?: string;
 }>) {
   async function generate({
     person,
@@ -224,7 +237,7 @@ export function createVertexTryOnClient({
         return failed(isTimeout(error) ? "TIMEOUT" : "AUTH_FAILED");
       }
 
-      const request = buildGenerateContentRequest({ config, person, product });
+      const request = buildGenerateContentRequest({ config, person, product, model });
       const response = await doFetch(request.url, {
         method: "POST",
         redirect: "error",
