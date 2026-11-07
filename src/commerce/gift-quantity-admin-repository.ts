@@ -120,7 +120,7 @@ export function createGiftQuantityAdminRepository(client: PrismaClient) {
         tierBasis: true, tierUnit: true, tierDiscountedUnits: true, tierSelectionPriority: true, stackingEnabled: true, stackPriority: true,
         minimumQuantity: true, minimumSubtotalVnd: true, awardMode: true, maxGiftsPerOrder: true, allowDuplicateGifts: true,
         giftOptions: { select: { variantId: true }, orderBy: { variantId: "asc" } },
-        tiers: { select: { minQuantity: true, discountValue: true }, orderBy: { minQuantity: "asc" } },
+        tiers: { select: { minQuantity: true, discountValue: true, maxDiscountVnd: true }, orderBy: { minQuantity: "asc" } },
         stackPeers: { select: { peerKind: true, peerCampaignId: true }, orderBy: [{ peerKind: "asc" }, { peerCampaignId: "asc" }] },
         targets: { select: { role: true, product: { select: { id: true, name: true } } }, orderBy: { productId: "asc" } },
       },

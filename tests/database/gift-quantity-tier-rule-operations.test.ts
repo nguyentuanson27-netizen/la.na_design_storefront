@@ -697,3 +697,69 @@ for (const operation of ["publish", "re-enable", "scope edit"] as const) {
     assert.equal((await prisma.variantMirror.findUniqueOrThrow({ where: { id: `${P}-a-v` } })).pancakeRetailPrice, 20_000, "the separate catalog transaction really committed");
   });
 }
+
+test("PR249 follow-up: a percentage cap survives create, read-back, quote, cap-only edits and copy", async () => {
+  await product("exp", 600_000, "setVay");
+  await prisma.variantMirror.update({ where: { id: `${P}-exp-v` }, data: { sku: "EXP-GQ09", color: "Black", size: "M" } });
+  await prisma.warehouseStock.create({ data: { variantId: `${P}-exp-v`, pancakeWarehouseId: `${P}-wh`, quantity: 50, syncedAt: NOW } });
+  const capped = (cap: number | null) => rule({ tiers: [{ minQuantity: 5, discountValue: 10, maxDiscountVnd: cap }] });
+  const LIVE = new Date("2026-10-25T00:00:00.000Z");
+  const quote = async (quantity: number) => {
+    const result = await createStorefrontCartRepository(prisma).getQuote({ shopId: SHOP, items: [{ variantId: `${P}-exp-v`, quantity }], now: LIVE, env: ON });
+    assert.ok(result.benefits.enabled && result.benefits.ok, show(result.benefits));
+    return result.benefits.enabled && result.benefits.ok ? result.benefits.subtotalVnd : -1;
+  };
+
+  // Create -> read back -> quote: 5 x 600.000 at 10% is 300.000 uncapped, so the 200.000 cap must win.
+  const id = await createTier("cap", capped(200_000));
+  assert.deepEqual((await stored(id)).tiers.map((t) => t.maxDiscountVnd), [200_000]);
+  assert.equal((await publish(id)).ok, true);
+  assert.equal(await quote(5), 3_000_000 - 200_000);
+  assert.equal(await quote(4), 4 * 600_000, "below the threshold nothing is discounted");
+
+  // A cap-only Scheduled edit is a real edit: it is stored, bumps the revisions and changes the quote.
+  const before = await revision();
+  const base = await stored(id);
+  const edited = await editScheduledGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN, env: ON, patch: { tierRule: capped(150_000) } });
+  assert.equal(edited.ok, true, show(edited));
+  assert.deepEqual((await stored(id)).tiers.map((t) => t.maxDiscountVnd), [150_000]);
+  assert.equal((await stored(id)).revision, base.revision + 1);
+  assert.equal(await revision(), before + BigInt(1));
+  assert.equal(await quote(5), 3_000_000 - 150_000);
+  // Re-sending the stored cap is not an edit.
+  const same = await editScheduledGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN, env: ON, patch: { tierRule: capped(150_000) } });
+  assert.equal(same.ok, true);
+  assert.equal(await revision(), before + BigInt(1));
+  // Removing the cap is a cap-only edit too and restores the plain 10%.
+  assert.equal((await editScheduledGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN, env: ON, patch: { tierRule: capped(null) } })).ok, true);
+  assert.deepEqual((await stored(id)).tiers.map((t) => t.maxDiscountVnd), [null]);
+  assert.equal(await quote(5), 3_000_000 - 300_000);
+
+  // Draft edit and copy keep the cap as well.
+  const draft = await createTier("draft", capped(200_000));
+  assert.equal((await editDraftGiftQuantityCampaign({ campaignId: draft, now: NOW, session: ADMIN, values: values("draft", capped(120_000)) })).ok, true);
+  assert.deepEqual((await stored(draft)).tiers.map((t) => t.maxDiscountVnd), [120_000]);
+  const copied = await copyGiftQuantityCampaign({ campaignId: draft, session: ADMIN });
+  assert.equal(copied.ok, true, show(copied));
+  if (copied.ok) assert.deepEqual((await stored(copied.campaignId)).tiers.map((t) => [t.discountValue, t.maxDiscountVnd]), [[10, 120_000]]);
+});
+
+test("PR249 follow-up: a cap is refused where it would be ignored, and a tightening cap cannot be published", async () => {
+  const count = () => prisma.giftQuantityCampaign.count({ where: { name: { startsWith: P } } });
+  const before = await count();
+  for (const bad of [
+    rule({ unit: "FIXED_AMOUNT_PER_UNIT_VND", tiers: [{ minQuantity: 2, discountValue: 10_000, maxDiscountVnd: 5_000 }] }),
+    rule({ basis: "ORDER_SUBTOTAL", tiers: [{ minQuantity: 1_000_000, discountValue: 10, maxDiscountVnd: 200_000 }] }),
+    rule({ tiers: [{ minQuantity: 5, discountValue: 10, maxDiscountVnd: 0 }] }),
+  ]) {
+    const outcome = await createDraftGiftQuantityCampaign({ values: values("badcap", bad), session: ADMIN });
+    assert.equal(outcome.ok, false, show(bad));
+  }
+  assert.equal(await count(), before, "refused input leaves no row behind");
+
+  const tightening = await createTier("tighten", rule({
+    tiers: [{ minQuantity: 5, discountValue: 10, maxDiscountVnd: 200_000 }, { minQuantity: 6, discountValue: 15, maxDiscountVnd: 100_000 }],
+  }));
+  assert.deepEqual(await refusedErrors(await publish(tightening)), ["MAX_DISCOUNT_DECREASES_WITH_THRESHOLD"]);
+  assert.equal((await stored(tightening)).isEnabled, false);
+});

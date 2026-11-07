@@ -8,6 +8,7 @@ import {
   MAX_TIER_UNITS,
   MAX_TIERS_PER_CAMPAIGN,
   priceQuantityTier,
+  priceTier,
   validateTierConfig,
   type QuantityTierConfig,
   type TierInputLine,
@@ -345,4 +346,74 @@ test("validateTierConfig validates maxDiscountVnd", () => {
     }),
     ["MAX_DISCOUNT_INVALID"],
   );
+});
+
+const capped = (
+  tiers: Array<[number, number, number | null]>,
+  discountedUnits: QuantityTierConfig["discountedUnits"] = "ALL_ELIGIBLE_UNITS",
+  selectionPriority: QuantityTierConfig["selectionPriority"] = null,
+): QuantityTierConfig => ({
+  unit: "PERCENTAGE",
+  discountedUnits,
+  selectionPriority,
+  tiers: tiers.map(([minQuantity, discountValue, maxDiscountVnd]) => ({ minQuantity, discountValue, maxDiscountVnd })),
+});
+
+test("maxDiscountVnd is refused wherever the engine would not honour it: fixed units and order-value ladders", () => {
+  assert.deepEqual(
+    validateTierConfig({ ...vnd([[2, 10_000]]), tiers: [{ minQuantity: 2, discountValue: 10_000, maxDiscountVnd: 5_000 }] }),
+    ["MAX_DISCOUNT_INVALID"],
+  );
+  const orderValue: QuantityTierConfig = {
+    basis: "ORDER_SUBTOTAL",
+    unit: "PERCENTAGE",
+    discountedUnits: "ALL_ELIGIBLE_UNITS",
+    selectionPriority: null,
+    tiers: [{ minQuantity: 1_000_000, discountValue: 10, maxDiscountVnd: 200_000 }],
+  };
+  assert.deepEqual(validateTierConfig(orderValue), ["MAX_DISCOUNT_INVALID"]);
+  assert.deepEqual(priceTier(orderValue, [line("a", 1, 3_000_000)]), { status: "INVALID_CONFIG", issues: ["MAX_DISCOUNT_INVALID"] });
+  // No cap on the same ladder is untouched.
+  assert.deepEqual(validateTierConfig({ ...orderValue, tiers: [{ minQuantity: 1_000_000, discountValue: 10 }] }), []);
+});
+
+test("maxDiscountVnd: the cap is part of the benefit, so a higher tier may not tighten it (R-05)", () => {
+  // 5 x 600k: 10% up to 200k, then 15% up to 100k would make buying more save less.
+  assert.deepEqual(validateTierConfig(capped([[5, 10, 200_000], [6, 15, 100_000]])), ["MAX_DISCOUNT_DECREASES_WITH_THRESHOLD"]);
+  // "No cap" is the highest cap: dropping a cap or raising it is fine, adding one after an uncapped tier is not.
+  assert.deepEqual(validateTierConfig(capped([[5, 10, 200_000], [6, 15, null]])), []);
+  assert.deepEqual(validateTierConfig(capped([[5, 10, 200_000], [6, 15, 300_000]])), []);
+  assert.deepEqual(validateTierConfig(capped([[5, 10, 200_000], [6, 15, 200_000]])), []);
+  assert.deepEqual(validateTierConfig(capped([[5, 10, null], [6, 15, 300_000]])), ["MAX_DISCOUNT_DECREASES_WITH_THRESHOLD"]);
+});
+
+test("maxDiscountVnd: buying one more unit never lowers the total saving across every threshold", () => {
+  const config = capped([[3, 10, 100_000], [5, 12, 150_000], [7, 15, null]]);
+  assert.deepEqual(validateTierConfig(config), []);
+  let previous = 0;
+  for (let quantity = 1; quantity <= 12; quantity += 1) {
+    const result = priceQuantityTier(config, [line("a", quantity, 600_000)]);
+    const saving = result.status === "APPLIED" ? result.totalDiscountVnd : 0;
+    assert.ok(saving >= previous, `Q=${quantity}: ${saving} < ${previous}`);
+    previous = saving;
+  }
+});
+
+test("maxDiscountVnd: a cap that gives a line 0 VND never produces two segments with the same key", () => {
+  // 3 x 100, FROM 2 -> 2 discounted units; a 1 VND cap leaves one unit with 1 VND and one with 0.
+  const config = capped([[2, 10, 1]], "FROM_REACHED_THRESHOLD", "CHEAPEST_FIRST");
+  const result = applied(priceQuantityTier(config, [line("a", 3, 100)]));
+  assert.equal(result.totalDiscountVnd, 1);
+  const keys = result.segments.map((segment) => segment.segmentKey);
+  assert.equal(new Set(keys).size, keys.length, keys.join(","));
+  assert.equal(result.segments.reduce((total, segment) => total + segment.quantity, 0), 3, "no unit is created or lost");
+  assert.equal(sum(result), 299);
+});
+
+test("maxDiscountVnd: a capped result feeds the next tier of a stack without duplicate line keys", () => {
+  const config = capped([[2, 10, 1]], "FROM_REACHED_THRESHOLD", "CHEAPEST_FIRST");
+  const first = applied(priceQuantityTier(config, [line("a", 3, 100)]));
+  // The stack layer feeds every segment of the first tier to the next as its own input line.
+  const next = priceQuantityTier(pct([[1, 10]]), first.segments.map((segment) => line(segment.segmentKey, segment.quantity, segment.unitPriceVnd)));
+  assert.equal(next.status, "APPLIED", JSON.stringify(next));
 });

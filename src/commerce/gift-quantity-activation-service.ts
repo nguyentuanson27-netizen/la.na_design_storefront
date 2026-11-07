@@ -70,7 +70,7 @@ import {
   type ScopeIssue,
   type ScopeProductFacts,
 } from "./gift-quantity-scope.ts";
-import { toQuantityTierConfig, validateTierRuleStructure, type TierRuleInput } from "./gift-quantity-tier-rule.ts";
+import { quantityTierRowData, toQuantityTierConfig, validateTierRuleStructure, type TierRuleInput } from "./gift-quantity-tier-rule.ts";
 import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
 import { deriveCampaignLifecycle, type CampaignLifecycleStatus } from "./promotion-campaign-lifecycle.ts";
 import { normalizePromotionCampaignName } from "./promotion-campaign-name.ts";
@@ -542,7 +542,7 @@ function applyRulePatch(
           tierUnit: rule.unit,
           tierDiscountedUnits: rule.discountedUnits,
           tierSelectionPriority: rule.discountedUnits === "FROM_REACHED_THRESHOLD" ? rule.selectionPriority : null,
-          tiers: rule.tiers.map((tier) => ({ minQuantity: tier.minQuantity, discountValue: tier.discountValue, maxDiscountVnd: tier.maxDiscountVnd ?? null })),
+          tiers: rule.tiers.map((tier) => ({ ...quantityTierRowData(tier) })),
           stackPeers: rule.peers.map((peer) => ({ peerKind: peer.kind, peerCampaignId: peer.campaignId })),
         }),
   };
@@ -551,7 +551,7 @@ function applyRulePatch(
 function sameTierRule(a: TierRuleInput, b: TierRuleInput): boolean {
   const selection = (rule: TierRuleInput) => (rule.discountedUnits === "FROM_REACHED_THRESHOLD" ? rule.selectionPriority : null);
   const ladder = (rule: TierRuleInput) =>
-    [...rule.tiers].sort((x, y) => x.minQuantity - y.minQuantity).map((tier) => `${tier.minQuantity}:${tier.discountValue}`).join(",");
+    [...rule.tiers].sort((x, y) => x.minQuantity - y.minQuantity).map((tier) => `${tier.minQuantity}:${tier.discountValue}:${tier.maxDiscountVnd ?? ""}`).join(",");
   const peers = (rule: TierRuleInput) => JSON.stringify(rule.peers.map((peer) => JSON.stringify([peer.kind, peer.campaignId])).sort());
   return (
     (a.basis ?? "QUANTITY") === (b.basis ?? "QUANTITY") &&
@@ -784,7 +784,7 @@ export async function editScheduledGiftQuantityCampaign({
           tierDiscountedUnits: rule.discountedUnits,
           tierSelectionPriority: rule.discountedUnits === "FROM_REACHED_THRESHOLD" ? rule.selectionPriority : null,
           // Nested creates must not pass `unit`: it is filled from the parent campaign.
-          tiers: { create: rule.tiers.map((tier) => ({ minQuantity: tier.minQuantity, discountValue: tier.discountValue })) },
+          tiers: { create: rule.tiers.map(quantityTierRowData) },
           stackPeers: { create: rule.peers.map((peer) => ({ peerKind: peer.kind, peerCampaignId: peer.campaignId })) },
         },
       });
