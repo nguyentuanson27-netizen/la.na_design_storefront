@@ -3490,9 +3490,9 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-ticket__stub { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.125rem; padding: 0.375rem 0.25rem; background: var(--vc); color: #fff; text-align: center; }
   /* a voucher the cart cannot use yet: a muted block with DARK text (white on this tint is only ~2.4:1, and this is the figure the shopper weighs) */
   .voucher-ticket:disabled .voucher-ticket__stub { background: color-mix(in srgb, var(--vc) 32%, #d8cfc7); color: var(--ink); }
-  .voucher-ticket:disabled .voucher-ticket__sub { opacity: 1; }
   .voucher-ticket__val { font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; line-height: 1; }
-  .voucher-ticket__sub { font-family: var(--font-display); font-size: 0.5625rem; font-weight: 600; letter-spacing: 0.08em; line-height: 1.15; text-transform: uppercase; opacity: 0.92; }
+  /* no `opacity` here: with it axe (4.12) reads the page behind the block instead of the block's own colour on wide viewports and reports white text at 1.06:1 */
+  .voucher-ticket__sub { font-family: var(--font-display); font-size: 0.5625rem; font-weight: 600; letter-spacing: 0.08em; line-height: 1.15; text-transform: uppercase; }
 
   .voucher-ticket__body { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.75rem; margin-left: -1px; border-left: 1.5px dashed rgba(59, 34, 25, 0.22); padding: 0.5625rem 0.875rem; }
   .voucher-ticket[aria-pressed="true"] .voucher-ticket__body { border-left-color: color-mix(in srgb, var(--vc) 40%, transparent); }
