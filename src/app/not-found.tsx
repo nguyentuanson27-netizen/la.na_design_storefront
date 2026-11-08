@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 import { BRAND } from "@/brand";
 
 // U30 / W14a. Next answers 404 for an unmatched route on its own; what it answers *with* is an

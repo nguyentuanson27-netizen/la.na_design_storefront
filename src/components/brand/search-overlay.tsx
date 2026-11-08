@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/i18n/link";
+import { useRouter } from "@/i18n/navigation";
 
 import { BRAND } from "@/brand";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
 import { useEffect, useMemo, useRef } from "react";
 
 import { formatFlashClock } from "@/components/headless/product-urgency";

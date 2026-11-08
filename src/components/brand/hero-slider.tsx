@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 import { ArtDirectedHeroImage } from "@/components/brand/art-directed-hero-image";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";

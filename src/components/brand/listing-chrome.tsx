@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 import { LISTING_ACTION_BAR_CLASSES } from "@/components/headless/listing-view-model";
 

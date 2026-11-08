@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 
 import { getConfiguredStorefrontProductBySlug } from "@/commerce/storefront-catalog-runtime";
+import { localizeMetadata } from "@/i18n/metadata";
+import { getI18n } from "@/i18n/server";
 import { buildStorefrontProductMetadata } from "@/seo/product-metadata";
 import { readSearchExposure } from "@/seo/search-exposure";
 
@@ -30,9 +32,14 @@ export async function buildProductMetadata({ params }: ProductMetadataProps): Pr
   if (!product) return {};
 
   const exposure = readSearchExposure();
-  return buildStorefrontProductMetadata({
-    origin: exposure.origin,
-    indexingEnabled: exposure.indexingEnabled,
-    product,
-  });
+  const { locale, t } = await getI18n();
+  return localizeMetadata(
+    buildStorefrontProductMetadata({
+      origin: exposure.origin,
+      indexingEnabled: exposure.indexingEnabled,
+      product,
+    }),
+    locale,
+    t,
+  );
 }

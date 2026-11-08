@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 
 import { BRAND } from "@/brand";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 
 import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import {

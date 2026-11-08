@@ -3,8 +3,8 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Link from "@/i18n/link";
+import { usePathname } from "@/i18n/navigation";
 
 import { BRAND, NAVIGATION, type NavigationLink } from "@/brand";
 import { CartDrawer } from "@/components/brand/cart-drawer";
@@ -15,6 +15,8 @@ import { refreshCartSummary, useCartSummary } from "@/components/headless/cart-s
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import type { SiteHeaderModel } from "@/components/headless/site-chrome-model";
 import { useAccountAuth } from "@/components/headless/use-account-auth";
+import { LanguageSwitcher } from "@/components/brand/language-switcher";
+import { useT } from "@/i18n/client";
 
 /**
  * The owner-approved master logo, committed byte-for-byte under `public/brand`. It is the same
@@ -64,6 +66,7 @@ function UtilityIcon({ href }: { href: string }) {
 }
 
 export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
+  const t = useT();
   const pathname = usePathname();
   const { session } = useAccountAuth();
   const cartSummary = useCartSummary();
@@ -207,7 +210,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
       }`}
     >
       <a className="skip-link" href="#main-content">
-        Bỏ qua đến nội dung chính
+        {t("Bỏ qua đến nội dung chính")}
       </a>
 
       <div className="nav-shell">
@@ -242,7 +245,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
             transparent background, so it sits on the cream header and on the scrolled/blurred
             header without a plate behind it. The link keeps its own accessible name, so the image
             stays decorative rather than announcing the wordmark twice. */}
-        <Link className="brand-mark" href="/" aria-label={NAVIGATION.brandHomeLabel}>
+        <Link className="brand-mark" href="/" aria-label={t(NAVIGATION.brandHomeLabel)}>
           <Image
             className="brand-mark-logo"
             src={BRAND_MASTER_LOGO_SRC}
@@ -257,7 +260,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
         </Link>
 
         {/* Desktop Primary Navigation */}
-        <nav className="desktop-nav" aria-label="Điều hướng chính">
+        <nav className="desktop-nav" aria-label={t("Điều hướng chính")}>
           {primary.map((item, index) => {
             const hasChildren = Boolean(item.children && item.children.length > 0);
             // Every category opens a panel -- the leaf ones (Váy, đầm; Phụ kiện) for their image
@@ -284,14 +287,14 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                       isSaleItem ? "text-amber-800 font-semibold" : ""
                     }`}
                   >
-                    {item.label}
+                    {t(item.label)}
                   </Link>
                   {hasMenu ? (
                     <button
                       type="button"
                       aria-expanded={isMegaOpen}
                       aria-haspopup="true"
-                      aria-label={item.label}
+                      aria-label={t(item.label)}
                       onClick={() => setActiveMegaMenu(isMegaOpen ? null : item.href)}
                       className="inline-flex h-6 w-5 items-center justify-center text-[#70584B] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
                     >
@@ -313,12 +316,12 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                 {hasMenu && isMegaOpen ? (
                   <div
                     role="region"
-                    aria-label={item.label}
+                    aria-label={t(item.label)}
                     className="absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1 w-[min(880px,calc(100vw-3rem))] rounded-b-lg border border-[#3B2219]/15 bg-[#FAF7F2] px-5 py-6 shadow-xl"
                   >
                     <div className="grid grid-cols-[minmax(7.5rem,1fr)_minmax(0,44rem)] gap-4 items-start">
                       <div>
-                        <p className="eyebrow text-[#70584B] mb-3">{item.label}</p>
+                        <p className="eyebrow text-[#70584B] mb-3">{t(item.label)}</p>
                         {hasChildren ? (
                           <ul className="space-y-2.5">
                             {item.children!.map((child) => (
@@ -327,7 +330,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                                   href={child.href}
                                   className="block text-sm font-normal normal-case tracking-normal text-[#3B2219] hover:text-[#2A1810] hover:underline underline-offset-4 transition"
                                 >
-                                  {child.label}
+                                  {t(child.label)}
                                 </Link>
                               </li>
                             ))}
@@ -339,7 +342,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                             className="inline-flex items-center text-xs font-semibold uppercase tracking-wider text-[#3B2219] hover:text-[#2A1810] hover:underline underline-offset-4"
                           >
                             {hasChildren ? item.label : "Xem tất cả"}
-                            {hasChildren ? null : <span className="sr-only"> {item.label}</span>}
+                            {hasChildren ? null : <span className="sr-only"> {t(item.label)}</span>}
                           </Link>
                         </div>
                       </div>
@@ -349,7 +352,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                         {media ? (
                           <Image
                             src={media.imageUrl}
-                            alt={media.altText || item.label}
+                            alt={media.altText || t(item.label)}
                             fill
                             sizes="704px"
                             className="object-cover"
@@ -357,7 +360,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                         ) : (
                           <div className="flex h-full w-full flex-col justify-end p-4 bg-gradient-to-t from-[#2A1810]/70 to-transparent">
                             <span className="font-display text-lg text-white font-medium">
-                              {item.label}
+                              {t(item.label)}
                             </span>
                             <span className="text-xs text-white/80 tracking-wider uppercase mt-1">
                               {BRAND.identity.displayNameUpper}
@@ -376,7 +379,8 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
 
 
         {/* Utility Navigation */}
-        <nav className="utility-nav" aria-label="Tiện ích">
+        <nav className="utility-nav" aria-label={t("Tiện ích")}>
+          <LanguageSwitcher className="language-switcher language-switcher--header" />
           {NAVIGATION.utility.map((item, index) => {
             const isSearch = index === 0;
             const isAccount = index === 1;
@@ -390,11 +394,11 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                   ref={searchTriggerRef}
                   type="button"
                   onClick={() => openSearch(searchTriggerRef.current)}
-                  aria-label={item.label}
+                  aria-label={t(item.label)}
                   aria-haspopup="dialog"
                 >
                   <UtilityIcon href={item.href} />
-                  <span className="sr-only">{item.label}</span>
+                  <span className="sr-only">{t(item.label)}</span>
                 </button>
               );
             }
@@ -408,14 +412,14 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                   onClick={() => setCartDrawerOpen(true)}
                   aria-label={
                     cartSummary.count > 0
-                      ? `${item.label}, ${cartSummary.count} sản phẩm trong giỏ`
+                      ? `${t(item.label)}, ${cartSummary.count} sản phẩm trong giỏ`
                       : item.label
                   }
                   aria-haspopup="dialog"
                   className="relative"
                 >
                   <UtilityIcon href={item.href} />
-                  <span className="sr-only">{item.label}</span>
+                  <span className="sr-only">{t(item.label)}</span>
                   {cartSummary.count > 0 ? (
                     <span key={cartSummary.count} data-cart-badge="" className="cart-badge" aria-hidden="true">
                       {cartSummary.count > 99 ? "99+" : cartSummary.count}
@@ -429,11 +433,11 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
               <Link
                 key={item.href}
                 href={destination}
-                aria-label={item.label}
+                aria-label={t(item.label)}
                 className={isAccount ? "mobile-account-link" : undefined}
               >
                 <UtilityIcon href={item.href} />
-                <span className="sr-only">{item.label}</span>
+                <span className="sr-only">{t(item.label)}</span>
               </Link>
             );
           })}
@@ -450,7 +454,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           ref={mobileNavDrawerRef}
           role="dialog"
           aria-modal="true"
-          aria-label="Menu điều hướng"
+          aria-label={t("Menu điều hướng")}
           className="mobile-nav-dialog fixed inset-0 z-50 flex flex-col overflow-y-auto overscroll-contain bg-[#FAF7F2]"
         >
           {/* Mobile Header Bar inside full-screen menu: Logo + Close Button */}
@@ -467,7 +471,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
               ref={mobileNavCloseRef}
               type="button"
               onClick={closeMobileNav}
-              aria-label="Đóng menu"
+              aria-label={t("Đóng menu")}
               className="inline-flex h-11 w-11 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
             >
               <svg
@@ -480,12 +484,12 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
-              <span className="sr-only">Đóng menu</span>
+              <span className="sr-only">{t("Đóng menu")}</span>
             </button>
           </div>
 
           {/* Primary Mobile Navigation Links */}
-          <nav className="mobile-menu flex-1" aria-label="Điều hướng chính trên di động">
+          <nav className="mobile-menu flex-1" aria-label={t("Điều hướng chính trên di động")}>
             <ul className="mobile-menu__list">
               {primary.map((item) => {
                 const hasChildren = item.children && item.children.length > 0;
@@ -504,7 +508,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                         aria-current={currentFor(item.href)}
                         className="mobile-menu__link"
                       >
-                        {item.label}
+                        {t(item.label)}
                       </Link>
                       {hasChildren ? (
                         <button
@@ -512,7 +516,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                           className="mobile-menu__disclosure"
                           aria-expanded={isExpanded}
                           aria-controls={panelId}
-                          aria-label={`${isExpanded ? "Thu gọn" : "Mở rộng"} ${item.label}`}
+                          aria-label={t(isExpanded ? "Thu gọn {label}" : "Mở rộng {label}", { label: t(item.label) })}
                           onClick={() => setExpandedMobileGroup(isExpanded ? null : item.href)}
                         >
                           <svg
@@ -537,7 +541,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                               onClick={closeMobileNav}
                               className="mobile-menu__sublink"
                             >
-                              {child.label}
+                              {t(child.label)}
                             </Link>
                           </li>
                         ))}
@@ -547,6 +551,8 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                 );
               })}
             </ul>
+
+            <LanguageSwitcher className="language-switcher language-switcher--menu" />
 
             {/* Mobile Utility Links */}
             <ul className="mobile-menu__utility">
@@ -560,7 +566,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                         aria-haspopup="dialog"
                         className="mobile-menu__utility-link"
                       >
-                        {item.label}
+                        {t(item.label)}
                       </button>
                     </li>
                   );
@@ -573,7 +579,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                       onClick={closeMobileNav}
                       className="mobile-menu__utility-link"
                     >
-                      {item.label}
+                      {t(item.label)}
                     </Link>
                   </li>
                 );

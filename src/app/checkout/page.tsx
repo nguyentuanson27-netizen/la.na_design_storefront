@@ -1,5 +1,5 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
 import { CheckoutVoucherFocus, CheckoutVoucherPanel } from "@/components/brand/checkout-voucher-panel";

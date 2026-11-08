@@ -1,8 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
 import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 import { useVoucherHold } from "@/components/headless/use-voucher-hold";
 import type { CheckoutVoucherLine, CheckoutVoucherView } from "@/routes/checkout-model";

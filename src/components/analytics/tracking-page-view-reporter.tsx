@@ -1,6 +1,7 @@
 "use client";
 
-import { usePathname, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { usePathname } from "@/i18n/navigation";
 import { useEffect, useRef } from "react";
 
 import { buildPageViewEvent } from "@/tracking/commerce-events";

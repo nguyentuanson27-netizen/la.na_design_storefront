@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 
 import { BRAND, messengerUrlFromFanpage, zaloUrlFromTelephone } from "@/brand";
 import { CommerceEventReporter } from "@/components/brand/commerce-event-reporter";

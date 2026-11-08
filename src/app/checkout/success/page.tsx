@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 
 import { BRAND } from "@/brand";
 import { BrandHistoricalPreorderNotice } from "@/components/brand/historical-preorder-notice";

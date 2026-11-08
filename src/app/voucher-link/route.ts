@@ -7,6 +7,7 @@ import {
   serializeVoucherIntentCookie,
 } from "@/commerce/voucher-marketing-link";
 import { canIssueNewVouchers } from "@/commerce/voucher-gate";
+import { localizeHref, parseLocale } from "@/i18n/locale";
 
 /**
  * Voucher v1 (V19): the server half of a marketing link. The proxy sends `?voucher=CODE` landings here; this handler remembers
@@ -22,7 +23,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   const code = request.nextUrl.searchParams.get("code");
   const origin = readStorefrontOrigin();
   // An unrecognised destination goes home rather than anywhere the link chose.
-  const destination = new URL(isSafeLandingTarget(target) ? target : "/", origin);
+  // `lang` is set by the proxy for a link that arrived under a language prefix, so the shopper
+  // comes back to the page in the language they opened it in.
+  const locale = parseLocale(request.nextUrl.searchParams.get("lang")) ?? "vi";
+  const destination = new URL(localizeHref(isSafeLandingTarget(target) ? target : "/", locale), origin);
   const response = NextResponse.redirect(destination, 303);
   for (const [name, value] of Object.entries(VOUCHER_REDIRECT_HEADERS)) response.headers.set(name, value);
 

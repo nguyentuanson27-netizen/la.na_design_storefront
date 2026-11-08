@@ -5,7 +5,7 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 
 /** The sitemaps.org per-document URL limit, and the whole budget this module apportions. */
-const MAX_SITEMAP_URLS = 50_000;
+export const MAX_SITEMAP_URLS = 50_000;
 
 /**
  * The canonical paths the sitemap always emits, independent of catalog size.

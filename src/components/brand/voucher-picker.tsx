@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { useVoucherPickerActions } from "@/components/headless/use-voucher-picker";

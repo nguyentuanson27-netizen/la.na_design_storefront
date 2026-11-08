@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 /**
  * The head every storefront page shares: container, breadcrumb, eyebrow and display H1.

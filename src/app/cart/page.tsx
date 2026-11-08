@@ -1,5 +1,5 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 
 import { BRAND, ORDER_TRUST_SHORT } from "@/brand";
 import { BrandCartLineControls } from "@/components/brand/cart-line-controls";

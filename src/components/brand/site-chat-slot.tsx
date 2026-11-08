@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname } from "@/i18n/navigation";
 
 import { MessengerButton } from "./messenger-button";
 import { PancakeChat, pancakeChatHasRun } from "./pancake-chat";

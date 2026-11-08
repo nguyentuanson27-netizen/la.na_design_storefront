@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 import type { NavigationLink } from "@/brand";
+import { useT } from "@/i18n/client";
 
 /**
  * One footer link column: a plain heading and list wherever the footer is still more than one
@@ -38,6 +39,7 @@ export function FooterNavGroup({
   panelId: string;
   links: readonly NavigationLink[];
 }>) {
+  const t = useT();
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -68,7 +70,7 @@ export function FooterNavGroup({
         <ul className="footer-nav-list">
           {links.map((item) => (
             <li key={item.label}>
-              <Link href={item.href}>{item.label}</Link>
+              <Link href={item.href}>{t(item.label)}</Link>
             </li>
           ))}
         </ul>

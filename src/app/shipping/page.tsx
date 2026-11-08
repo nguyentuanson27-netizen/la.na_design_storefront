@@ -1,5 +1,5 @@
 import { ShippingPromotionNoticeView } from "@/components/brand/shipping-promotion-notice";
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { createStorefrontRoute } from "@/routes/factory";

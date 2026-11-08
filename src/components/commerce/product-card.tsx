@@ -1,5 +1,5 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 type ProductCardProps = {
   name: string;
