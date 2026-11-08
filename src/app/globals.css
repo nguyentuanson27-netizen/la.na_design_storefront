@@ -3551,6 +3551,8 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-held__head { display: flex; align-items: center; gap: 0.625rem; border-bottom: 1.5px dashed rgba(59, 34, 25, 0.22); padding: 0.75rem 0.875rem; }
   .voucher-held__ok { display: grid; place-items: center; width: 1.625rem; height: 1.625rem; flex: none; border-radius: 50%; background: #24472d; color: #fff; }
   .voucher-held__ok > svg { width: 0.9375rem; height: 0.9375rem; }
+  .voucher-held__ok--offer { background: var(--ink); }
+  .voucher-held__mi { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; flex: none; border-radius: 0.375rem; background: var(--vc, var(--ink)); color: #fff; }
   .voucher-held__pill { margin-left: auto; border-radius: 999px; background: #fbe8cf; padding: 0.1875rem 0.625rem; font-family: var(--font-display); font-size: 0.75rem; font-weight: 700; color: #8a4a00; }
 
   /* PDP teaser: small tickets in one swipeable row, never a promise. Press one to read its full sentence. */

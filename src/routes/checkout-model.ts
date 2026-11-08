@@ -13,7 +13,7 @@ import type { TrustedProductImage } from "../commerce/product-media.ts";
 import { buildCheckoutPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
 import { describeLineDiscount } from "./line-discount-model.ts";
 import { buildOrderSummary, type OrderSummaryView } from "./order-summary-model.ts";
-import type { VoucherPickerModel } from "./voucher-picker-model.ts";
+import type { VoucherPickerModel, VoucherTone } from "./voucher-picker-model.ts";
 
 /**
  * Everything the checkout route decides, as one pure function.
@@ -124,7 +124,14 @@ export type CheckoutBenefitView = Readonly<{
 export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string | null; campaignId: string | null }>;
 
 /** V18: one voucher line on the checkout: what it is called and what it takes off. */
-export type CheckoutVoucherLine = Readonly<{ id: string; title: string; amountText: string }>;
+export type CheckoutVoucherLine = Readonly<{
+  id: string;
+  title: string;
+  amountText: string;
+  kind: "MERCHANDISE" | "SHIPPING_FREE";
+  /** The voucher type's colour, the same one the picker gives it. Absent when the picker could not be read (the line is then neutral). */
+  tone?: VoucherTone;
+}>;
 
 /**
  * V18: what the checkout says about vouchers. Exactly one of three situations, or `null` for "nothing to say":
@@ -157,6 +164,8 @@ export type CheckoutViewModel = Readonly<{
   listPriceSavingsText?: string;
   /** V18: absent unless the voucher feature has something to say about this cart. */
   vouchers?: CheckoutVoucherView;
+  /** The picker model of the cart's voucher choice, so the checkout can change it in place (the same picker as the cart). Absent when vouchers are off or the picker could not be read. */
+  voucherPicker?: VoucherPickerModel;
   giftPicker?: CartGiftPickerModel;
   attemptKey?: string;
   /** UI refresh identity, never a form key or quote authority. */
@@ -559,13 +568,17 @@ export function buildCheckoutVoucherView(input: Readonly<{
   if (render.kind === "BENEFIT" && render.voucher) {
     const v = render.voucher;
     const lines: CheckoutVoucherLine[] = [];
-    for (const entry of v.merchandise) lines.push({ id: entry.campaignId, title: v.names.get(entry.campaignId) ?? "Voucher giảm giá", amountText: `−${currency.format(entry.amountVnd)}` });
-    if (v.shippingCampaignId !== null) lines.push({ id: v.shippingCampaignId, title: v.names.get(v.shippingCampaignId) ?? "Voucher vận chuyển", amountText: `−${currency.format(v.shippingWaivedVnd)}` });
+    // The held quote knows campaign names and amounts, not types; the picker (read in the same request) knows which colour each one wears.
+    const toneOf = new Map<string, VoucherTone>(picker?.groups.flatMap((group) => group.items.map((item): [string, VoucherTone] => [item.id, group.tone])) ?? []);
+    const withTone = (id: string): { tone?: VoucherTone } => { const tone = toneOf.get(id); return tone === undefined ? {} : { tone }; };
+    for (const entry of v.merchandise) lines.push({ id: entry.campaignId, title: v.names.get(entry.campaignId) ?? "Voucher giảm giá", amountText: `−${currency.format(entry.amountVnd)}`, kind: "MERCHANDISE", ...withTone(entry.campaignId) });
+    if (v.shippingCampaignId !== null) lines.push({ id: v.shippingCampaignId, title: v.names.get(v.shippingCampaignId) ?? "Voucher vận chuyển", amountText: `−${currency.format(v.shippingWaivedVnd)}`, kind: "SHIPPING_FREE", ...withTone(v.shippingCampaignId) });
     return Object.freeze({ state: "HELD", lines: Object.freeze(lines), heldUntilMs: input.heldUntilMs });
   }
   const stale = (render.kind === "LEGACY" || render.kind === "BENEFIT") && render.voucherStale === true;
   if (picker !== null && picker.quoteDigest !== null && picker.footer.count > 0) {
-    const lines = picker.groups.flatMap((group) => group.items.filter((item) => item.selected).map((item) => ({ id: item.id, title: item.title, amountText: item.savingText ?? "" })));
+    // Named as the picker card names it (the shop's voucher name), so a voucher reads the same in the cart, the picker and here.
+    const lines = picker.groups.flatMap((group) => group.items.filter((item) => item.selected).map((item): CheckoutVoucherLine => ({ id: item.id, title: item.name, amountText: item.savingText ?? "", kind: group.kind, tone: group.tone })));
     return Object.freeze({
       state: "OFFERED",
       digest: picker.quoteDigest,

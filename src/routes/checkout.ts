@@ -68,10 +68,12 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
       : ({ kind: "LEGACY", giftPicker: undefined, shippingQuote: undefined } as const);
   // V18: what the vouchers have to say about this cart. Read-only: a held voucher is already in the render's quote, an
   // offer is the shopper's own selection previewed by the server, and nothing here can hold anything.
+  // The picker is read once: it feeds the held/offered panel AND the in-place "change vouchers" dialog, which are one choice.
+  const voucherPicker = checkoutContext && lines.length > 0 ? await loadCurrentVoucherPicker() : null;
   const voucherView = checkoutContext && lines.length > 0
     ? buildCheckoutVoucherView({
         render: benefitRender,
-        picker: await loadCurrentVoucherPicker(),
+        picker: voucherPicker,
         heldUntilMs: benefitRender.kind === "BENEFIT" && benefitRender.voucher ? await readCartHeldUntilMs(prisma, checkoutContext.cartId) : null,
         // An offer is only worth showing (and blocking an order for) when the hold button can actually grant it.
         offerAllowed: canGrantHonourableVoucherHolds(readPancakeShopId()),
@@ -89,7 +91,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
     // reported from the order, money paid only -- GQ22.)
     const benefitPixel = benefitRender.kind === "BENEFIT" ? benefitCheckoutPixelParameters(data, lines) : null;
     return sealRoute({
-      data: { ...withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined, ...(voucherView ? { vouchers: voucherView } : {}) },
+      data: { ...withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined, ...(voucherView ? { vouchers: voucherView } : {}), ...(voucherPicker ? { voucherPicker } : {}) },
       refreshAfterMs: 60_000,
       trackingEvent: null,
       structuredData: [],
@@ -140,7 +142,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
       : [];
 
   return sealRoute({
-    data: { ...withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined, ...(voucherView ? { vouchers: voucherView } : {}) },
+    data: { ...withCheckoutExtras(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined, ...(voucherView ? { vouchers: voucherView } : {}), ...(voucherPicker ? { voucherPicker } : {}) },
     // Checkout prices are re-resolved on every request, so nothing here is promotion-cached; the
     // shared default cadence is what the shell mounts.
     refreshAfterMs: 60_000,

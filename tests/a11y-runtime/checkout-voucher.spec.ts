@@ -148,7 +148,8 @@ test("an offered voucher is not applied and blocks the order until the shopper c
     await page.setViewportSize(viewport);
     await page.goto(`${BASE}/checkout`);
     await expect(panel(page)).toHaveAttribute("data-checkout-vouchers", "offered");
-    await expect(panel(page)).toContainText("Giảm 50.000đ");
+    // Named as the picker card names it: the shop's own voucher name.
+    await expect(panel(page)).toContainText("Giảm 50K");
     await expect(page.locator("[data-checkout-voucher-total]")).toContainText("880.000");
     await shot(page, `checkout-offered-${viewport.width}`, true);
     // Nothing is held, nothing is priced: the order cannot be placed with an unconfirmed offer.
@@ -176,6 +177,22 @@ test("an offered voucher is not applied and blocks the order until the shopper c
     await expect(page.getByLabel("Ghi chú", { exact: false })).toHaveValue("Giữ nguyên ghi chú");
     expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
   }
+});
+
+test("the checkout changes the vouchers in place with the cart's own picker, never sending the shopper to the cart", async ({ page }) => {
+  await page.goto(`${BASE}/checkout`);
+  await panel(page).getByRole("button", { name: "Đổi hoặc bỏ ưu đãi" }).click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await expect(dialog).toBeVisible();
+  // The picker is the cart's: a second press on the chosen voucher un-chooses it.
+  await dialog.getByRole("button", { name: /^Giảm 50\.000đ\./ }).click();
+  await expect(dialog.getByRole("button", { name: /^Giảm 50\.000đ\./ })).toHaveAttribute("aria-pressed", "false");
+  await dialog.getByRole("button", { name: /^(Áp dụng · Giảm |Bỏ qua ưu đãi và tiếp tục)/ }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(async () => (await prisma.cartVoucherSelection.findUnique({ where: { cartId } }))?.merchandiseMode).toBe("MANUAL");
+  expect(new URL(page.url()).pathname).toBe("/checkout");
+  // Choosing never holds anything: a hold is the deliberate "Áp dụng và giữ ưu đãi".
+  expect(await holds()).toHaveLength(0);
 });
 
 test("a hold that no longer describes the cart is not applied: the checkout says so and offers the voucher again", async ({ page }) => {

@@ -3,6 +3,8 @@ import Link from "next/link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
 import { CheckoutVoucherPanel } from "@/components/brand/checkout-voucher-panel";
+import { VoucherPicker } from "@/components/brand/voucher-picker";
+import { voucherPickerKey } from "@/routes/voucher-picker-model";
 import { PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
@@ -162,6 +164,21 @@ function render(data: CheckoutViewModel) {
 
   const totalsContent = totalsBlock;
 
+  // Vouchers: the held/offered panel, and the SAME picker as the cart to change the choice in place. Changing it makes the old holds stale, so the
+  // panel then offers the new choice for confirmation. With no panel (nothing chosen) the picker's own ticket lets the shopper choose here.
+  const voucherPicker = data.voucherPicker ?? null;
+  const changeVouchers = (label: string) => (voucherPicker ? <VoucherPicker initial={voucherPicker} key={voucherPickerKey(voucherPicker)} trigger="link" triggerLabel={label} /> : null);
+  const voucherSlot = data.vouchers ? (
+    <CheckoutVoucherPanel
+      change={changeVouchers(data.vouchers.state === "HELD" ? "Đổi ưu đãi" : data.vouchers.state === "STALE" ? "Chọn lại ưu đãi" : "Đổi hoặc bỏ ưu đãi")}
+      view={data.vouchers}
+    />
+  ) : voucherPicker ? (
+    <section aria-label="Ưu đãi" data-checkout-voucher-picker="">
+      <VoucherPicker initial={voucherPicker} key={voucherPickerKey(voucherPicker)} />
+    </section>
+  ) : null;
+
   const preorderNoticeFor = (surface: "mobile" | "desktop") => data.preorderNotice === null ? null : <BrandPreorderFulfillmentNotice notice={data.preorderNotice} titleId={`preorder-fulfillment-title-${surface}`} />;
 
   return (
@@ -196,8 +213,8 @@ function render(data: CheckoutViewModel) {
           totalsSlot={totalsContent}
           preorderSlot={preorderNoticeFor("mobile")}
           desktopPreorderSlot={preorderNoticeFor("desktop")}
-          voucherSlot={data.vouchers ? <CheckoutVoucherPanel view={data.vouchers} /> : null}
-          submitBlockedReason={data.vouchers?.state === "OFFERED" ? "Nàng xác nhận ưu đãi ở trên (hoặc bỏ chọn ưu đãi trong giỏ hàng) trước khi đặt hàng nhé." : null}
+          voucherSlot={voucherSlot}
+          submitBlockedReason={data.vouchers?.state === "OFFERED" ? "Nàng xác nhận ưu đãi ở trên (hoặc đổi, bỏ ưu đãi) trước khi đặt hàng nhé." : null}
           bankTransferEnabled={bankTransferEnabled}
         />
 
