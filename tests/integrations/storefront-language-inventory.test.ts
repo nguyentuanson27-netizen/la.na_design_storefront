@@ -364,13 +364,12 @@ test("U1b shop listing and loading use Vietnamese buyer-functional copy", async 
 test("U1b collection detail uses Vietnamese buyer-functional copy", async () => {
   const source = await readFile(join(REPO_ROOT, "src/app/collections/[slug]/page.tsx"), "utf8");
 
-  // Same two changes as `/shop`: no brand eyebrow in the page body, and the pager's accessible
-  // name is now the `label` the shared pagination puts on its `aria-label`.
+  // No brand eyebrow in the page body. Paging is the category listing's infinite grid now, whose
+  // "Xem thêm" button and crawler link carry their own Vietnamese copy.
   for (const expected of [
     "Bộ sưu tập hiện tại",
     "Bộ sưu tập này chưa có sản phẩm.",
     "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập.",
-    'label="Phân trang bộ sưu tập"',
   ]) {
     assert.equal(source.includes(expected), true, `collection detail missing Vietnamese copy: ${expected}`);
   }

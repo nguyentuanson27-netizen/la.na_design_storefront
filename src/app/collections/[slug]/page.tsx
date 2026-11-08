@@ -1,16 +1,14 @@
 import Image from "next/image";
 
 import { ArtDirectedHeroImage } from "@/components/brand/art-directed-hero-image";
-import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
-import { CollectionFilterPanel } from "@/components/brand/collection-filter-panel";
 import {
   ListingBreadcrumbs,
   ListingEmptyState,
   ListingHeader,
-  ListingPagination,
-  ListingProductGrid,
   ListingShell,
 } from "@/components/brand/listing-chrome";
+import { PlpFilterPanel } from "@/components/brand/plp-filter-panel";
+import { PlpInfiniteGrid } from "@/components/brand/plp-infinite-grid";
 import { loadCollectionRoute, type CollectionRouteProps } from "@/routes/collection";
 import { COLLECTION_PRODUCTS_ANCHOR, type CollectionViewModel } from "@/routes/collection-model";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -20,13 +18,12 @@ import { buildCollectionMetadata } from "@/routes/metadata/collection";
  * Markup only. The definition, its page of products, the filter links, the breadcrumb graph and the
  * refresh window all live in `@/routes/collection`.
  *
- * The editorial half -- hero, gallery, video -- is this collection's own and stays. The
- * listing half underneath now draws the same chrome as every other listing instead of keeping a
- * second one. The loader still owns every canonical sort/filter href; the client panel consumes
- * those hrefs for its sort options and size links without re-deriving route state.
+ * The editorial half -- hero, gallery, video -- is this collection's own and stays. The listing
+ * half underneath is the category listing's: the same filter panel (size, price, "Còn hàng", "Sale",
+ * sort) and the same infinite grid, paging through the collection's own server action. Its links
+ * are written against `/collections/<slug>` in the category vocabulary, and the grid keeps a
+ * crawlable next-page link for a reader without script.
  */
-
-const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
 function render(data: CollectionViewModel) {
   const { editorial } = data;
@@ -132,53 +129,41 @@ function render(data: CollectionViewModel) {
           {productsAnchorOnTitle ? null : (
             <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
           )}
-          <CollectionFilterPanel
+          <PlpFilterPanel
+            categoryPath={data.basePath}
             totalCount={data.totalCount}
-            sortOptions={data.sortOptions}
-            sizeOptions={data.sizeOptions}
-            availabilityOption={data.availabilityOption}
+            availableSizes={data.availableSizes}
+            saleAvailable={data.saleAvailable}
+            activeFilters={data.filters}
           />
         </section>
 
-        {data.totalCount === 0 ? (
+        {data.totalCount === 0 && !data.filtered ? (
           <ListingEmptyState
             titleId="collection-empty-title"
-            eyebrow={data.filtered ? "Không tìm thấy" : "Bộ sưu tập hiện tại"}
-            title={data.filtered ? "Không có sản phẩm phù hợp." : "Bộ sưu tập này chưa có sản phẩm."}
-            copy={
-              data.filtered
-                ? "Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm trong bộ sưu tập."
-                : "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập."
-            }
-            action={
-              data.filtered
-                ? { href: data.clearFilterHref, label: "Xóa bộ lọc" }
-                : undefined
-            }
+            eyebrow="Bộ sưu tập hiện tại"
+            title="Bộ sưu tập này chưa có sản phẩm."
+            copy="Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập."
           />
         ) : (
-          <section className="mt-8" aria-labelledby="collection-products-title">
+          <section className="mt-4" aria-labelledby="collection-products-title">
             <h2 id="collection-products-title" className="sr-only">
               Sản phẩm
             </h2>
-            <div>
-              <ListingProductGrid anchor={false}>
-                {data.cards.map((card, index) => (
-                  <ProductCard
-                    key={card.id}
-                    model={card.model}
-                    tone={tones[(data.toneOffset + index) % tones.length]!}
-                    eager={index < PRODUCT_CARD_EAGER_COUNT}
-                  />
-                ))}
-              </ListingProductGrid>
-            </div>
-            <ListingPagination
-              label="Phân trang bộ sưu tập"
-              page={data.page}
+            {/* The anchors already sit above, on the title or the controls; the grid must not repeat them. */}
+            <PlpInfiniteGrid
+              initialProducts={data.cards.map((card) => card.model)}
+              totalCount={data.totalCount}
               totalPages={data.totalPages}
-              previousHref={data.previousHref}
+              initialPage={data.page}
+              source={{ kind: "collection", slug: data.slug }}
+              clearHref={data.basePath}
+              activeFilters={data.filters}
+              hasNext={data.hasNext}
               nextHref={data.nextHref}
+              nextCursor={data.nextCursor}
+              toneOffset={data.toneOffset}
+              emptyStateAnchors={false}
             />
           </section>
         )}

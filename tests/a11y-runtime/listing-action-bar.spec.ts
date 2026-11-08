@@ -182,13 +182,12 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-/** The category listing and `/sale` draw one filter panel; `/shop` draws its own form, same bar. */
+/** The category listing, `/sale` and a collection draw one filter panel; `/shop` draws its own form, same bar. */
 const BAR: Readonly<Record<string, Readonly<{ filter: string | null; sort: string }>>> = {
   [CATEGORY_PATH]: { filter: 'button[aria-controls="mobile-plp-filters"]', sort: "#plp-sort-select" },
   "/sale": { filter: 'button[aria-controls="mobile-plp-filters"]', sort: "#plp-sort-select" },
   "/shop": { filter: 'button[aria-controls="mobile-shop-drawer"]', sort: "#shop-sort-select-mobile" },
-  // A collection has no filter drawer: size and stock are the chips under the bar.
-  [COLLECTION_PATH]: { filter: null, sort: "#collection-sort-select" },
+  [COLLECTION_PATH]: { filter: 'button[aria-controls="mobile-plp-filters"]', sort: "#plp-sort-select" },
 };
 type BarPath = string;
 
@@ -436,29 +435,22 @@ test("/shop on a desktop: no visible count, the view toggle on the left, search 
   await expect(toggle).toHaveCount(1);
 });
 
-test("a collection's action row is one line, with the size chips on the line under it", async ({ page }) => {
+test("a collection's action row is the category listing's: one line, sizes and price behind the filter button", async ({ page }) => {
   await open(page, 390, COLLECTION_PATH);
   const bar = await measureBar(page, COLLECTION_PATH);
-  expect(bar.rows, "view size and sort share one row").toBe(1);
+  expect(bar.rows, "view size, filter and sort share one row").toBe(1);
 
-  const sortBox = (await page.locator(BAR[COLLECTION_PATH]!.sort).boundingBox())!;
-  const chips = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
-  await expect(chips).toBeVisible();
-  const chipsBox = (await chips.boundingBox())!;
-  expect(chipsBox.y, "the chips are under the bar").toBeGreaterThan(sortBox.y + sortBox.height - 1);
+  await page.locator(BAR[COLLECTION_PATH]!.filter!).click();
+  const dialog = page.getByRole("dialog", { name: "Bộ lọc sản phẩm" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("spinbutton", { name: "Giá tối thiểu" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Đóng bộ lọc" }).click();
 
-  // The sort still works from the one-line bar.
-  const sort = page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" }).getByRole("combobox");
-  await expect(sort).toBeVisible();
-  const current = await sort.inputValue();
-  const next = await sort.locator("option").evaluateAll(
-    (all, selected) => all.map((option) => (option as HTMLOptionElement).value).find((value) => value !== selected),
-    current,
-  );
-  expect(next, "a second sort option exists").toBeTruthy();
-  await sort.selectOption(next!);
-  await page.waitForURL((url) => `${url.pathname}${url.search}` === next);
-  await expect(page.locator(BAR[COLLECTION_PATH]!.sort)).toBeVisible();
+  // The sort works from the one-line bar and writes the category vocabulary onto the collection path.
+  const sort = page.locator(BAR[COLLECTION_PATH]!.sort);
+  await sort.selectOption("price-desc");
+  await page.waitForURL((url) => `${url.pathname}${url.search}` === `${COLLECTION_PATH}?sort=price-desc`);
+  await expect(sort).toHaveValue("price-desc");
 });
 
 /**

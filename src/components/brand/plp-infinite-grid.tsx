@@ -9,7 +9,7 @@ import {
 } from "@/components/brand/listing-chrome";
 import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import type { PlpFilterState } from "@/components/headless/plp-filter-model";
-import { usePlpInfiniteGrid } from "@/components/headless/use-plp-infinite-grid";
+import { usePlpInfiniteGrid, type PlpGridSource } from "@/components/headless/use-plp-infinite-grid";
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
@@ -18,16 +18,24 @@ export type PlpInfiniteGridProps = {
   totalCount: number;
   totalPages: number;
   initialPage: number;
-  categoryKey: string;
-  categoryPath: string;
+  source: PlpGridSource;
+  /** Where "Xóa tất cả bộ lọc" leads from the empty state: the listing without any filter. */
+  clearHref: string;
   activeFilters: PlpFilterState;
   hasNext: boolean;
   nextHref: string | null;
   nextCursor: string | null;
+  /** Card tone cycle offset, so a page opened by its URL continues the cycle of the pages before it. */
+  toneOffset?: number;
+  /**
+   * Whether the empty state carries the `#san-pham`/`#products` anchors. A listing that already
+   * placed them above the grid (a collection) turns this off, so no id appears twice.
+   */
+  emptyStateAnchors?: boolean;
 };
 
 export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
-  const { totalCount, totalPages, categoryPath } = props;
+  const { totalCount, totalPages, clearHref, toneOffset = 0, emptyStateAnchors = true } = props;
   const {
     products,
     currentPage,
@@ -43,14 +51,16 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
   // Empty state
   if (products.length === 0) {
     return (
-      <div id="san-pham" className="collection-products-anchor">
-        <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+      <div id={emptyStateAnchors ? "san-pham" : undefined} className="collection-products-anchor">
+        {emptyStateAnchors ? (
+          <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
+        ) : null}
         <ListingEmptyState
           titleId="category-empty-title"
           eyebrow="Không tìm thấy"
           title="Không tìm thấy sản phẩm phù hợp"
           copy="Nàng thử đổi bộ lọc hoặc bỏ bớt lựa chọn nhé."
-          action={{ href: categoryPath, label: "Xóa tất cả bộ lọc" }}
+          action={{ href: clearHref, label: "Xóa tất cả bộ lọc" }}
         />
       </div>
     );
@@ -69,7 +79,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
           <ProductCard
             key={`${model.href}-${idx}`}
             model={model}
-            tone={tones[idx % tones.length]!}
+            tone={tones[(toneOffset + idx) % tones.length]!}
             eager={idx < PRODUCT_CARD_EAGER_COUNT}
           />
         ))}

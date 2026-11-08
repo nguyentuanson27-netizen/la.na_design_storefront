@@ -462,7 +462,7 @@ export async function listConfiguredCategoryDiscoveryFacets({
   );
 }
 
-/** The size chips and Sale toggle of `/collections/[slug]`, narrowed by its other filters. */
+/** The size chips and the Sale toggle of `/collections/[slug]`, each narrowed by the other filters. */
 export async function listConfiguredCollectionDiscoveryFacets({
   discovery,
   now,
@@ -480,6 +480,7 @@ export async function listConfiguredCollectionDiscoveryFacets({
     discovery?.availability ?? "",
     discovery?.minPriceVnd ?? "",
     discovery?.maxPriceVnd ?? "",
+    discovery?.sale ? "1" : "0",
     discovery?.collection ?? "",
     discovery?.query ?? "",
   ]);
@@ -488,7 +489,6 @@ export async function listConfiguredCollectionDiscoveryFacets({
       shopId,
       discovery,
       allowCuratedComponents: true,
-      withSale: false,
       now: readAt,
     }),
   );

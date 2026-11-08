@@ -219,16 +219,26 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-async function visibleCollectionSizeNavigation(page: Page) {
+/**
+ * A collection draws the category listing's filter panel. From `md` its size chips sit inline in the
+ * desktop bar; on a phone they live in the "Bộ lọc" drawer. Either way they are plain links named by
+ * the size, so the one visible on this viewport is returned.
+ */
+async function visibleSizeLink(page: Page, size: string) {
   const mobileFilterButton = page.getByRole("button", { name: "Bộ lọc", exact: true });
   if (await mobileFilterButton.isVisible()) {
     await mobileFilterButton.click();
-    await expect(page.getByRole("dialog", { name: "Bộ lọc sản phẩm" })).toBeVisible();
+    const dialog = page.getByRole("dialog", { name: "Bộ lọc sản phẩm" });
+    await expect(dialog).toBeVisible();
+    return dialog.getByRole("link", { name: size, exact: true });
   }
+  const link = page.locator("#main-content").getByRole("link", { name: size, exact: true }).first();
+  await expect(link).toBeVisible();
+  return link;
+}
 
-  const navigation = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
-  await expect(navigation).toBeVisible();
-  return navigation;
+function sortSelect(page: Page) {
+  return page.getByRole("combobox", { name: "Sắp xếp sản phẩm" });
 }
 
 test("collection with configured hero uses the shared full-bleed header overlay without inventing a CTA", async ({
@@ -411,6 +421,7 @@ test("published collection exposes visible copy and deterministic website-owned 
 test("U3 collection controls emit route-local canonical hrefs and ignore forged collection query identity", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   const forgedResponse = await page.goto(
     `${BASE_URL}/collections/${publishedSlug}?collection=${draftSlug}`,
     { waitUntil: "networkidle" },
@@ -419,48 +430,39 @@ test("U3 collection controls emit route-local canonical hrefs and ignore forged 
   await expect(page.getByRole("heading", { level: 1, name: "Runtime City Uniform" })).toBeVisible();
   await expect(page.getByText("Runtime Draft Collection")).toHaveCount(0);
 
-  const sort = page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" });
-  await expect(sort).toBeVisible();
-  const sortSelect = sort.getByRole("combobox", { name: "Sắp xếp sản phẩm" });
-  await expect(sortSelect.getByRole("option", { name: "Tên A–Z", exact: true })).toHaveAttribute(
-    "value",
-    `/collections/${publishedSlug}`,
-  );
-  await expect(sortSelect.getByRole("option", { name: "Giá cao → thấp", exact: true })).toHaveAttribute(
-    "value",
-    `/collections/${publishedSlug}?sort=price-desc`,
-  );
-  await expect(sort.getByRole("link")).toHaveCount(0);
+  // The category listing's sort: the merchandiser's order first, then price and name.
+  await expect(sortSelect(page)).toHaveValue("default");
+  await expect(sortSelect(page).getByRole("option")).toHaveText([
+    "Thứ tự mặc định",
+    "Giá: Thấp đến Cao",
+    "Giá: Cao đến Thấp",
+    "Tên: A đến Z",
+    "Tên: Z đến A",
+  ]);
 
-  const sizes = await visibleCollectionSizeNavigation(page);
-  await expect(sizes.getByRole("link", { name: "S", exact: true })).toHaveAttribute(
+  await expect(await visibleSizeLink(page, "S")).toHaveAttribute("href", `/collections/${publishedSlug}?size=S`);
+  await expect(await visibleSizeLink(page, "M")).toHaveAttribute("href", `/collections/${publishedSlug}?size=M`);
+  await expect(page.getByRole("link", { name: "Còn hàng", exact: true })).toHaveAttribute(
     "href",
-    `/collections/${publishedSlug}?size=S`,
+    `/collections/${publishedSlug}?availability=in-stock`,
   );
-  await expect(sizes.getByRole("link", { name: "M", exact: true })).toHaveAttribute(
-    "href",
-    `/collections/${publishedSlug}?size=M`,
-  );
+  // Nothing in this collection is discounted, so the Sale toggle has nothing to find and is not drawn.
+  await expect(page.getByRole("link", { name: "Sale", exact: true })).toHaveCount(0);
   await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
 
   await page.goto(`${BASE_URL}/collections/${publishedSlug}?size=M&sort=price-desc`, {
     waitUntil: "networkidle",
   });
-  const combinedSort = page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" });
-  const combinedSortSelect = combinedSort.getByRole("combobox", { name: "Sắp xếp sản phẩm" });
-  await expect(combinedSortSelect.getByRole("option", { name: "Tên A–Z", exact: true })).toHaveAttribute(
-    "value",
-    `/collections/${publishedSlug}?size=M`,
-  );
-  await expect(combinedSort.getByRole("link")).toHaveCount(0);
-  const combinedSizes = await visibleCollectionSizeNavigation(page);
-  await expect(combinedSizes.getByRole("link", { name: "Tất cả kích cỡ", exact: true })).toHaveAttribute(
-    "href",
-    `/collections/${publishedSlug}?sort=price-desc`,
-  );
-  await expect(combinedSizes.getByRole("link", { name: "S", exact: true })).toHaveAttribute(
+  await expect(sortSelect(page)).toHaveValue("price-desc");
+  // The chosen size switches itself off and keeps the sort; another size swaps in and keeps it too.
+  await expect(await visibleSizeLink(page, "M")).toHaveAttribute("href", `/collections/${publishedSlug}?sort=price-desc`);
+  await expect(await visibleSizeLink(page, "S")).toHaveAttribute(
     "href",
     `/collections/${publishedSlug}?size=S&sort=price-desc`,
+  );
+  await expect(page.getByRole("link", { name: "Xóa bộ lọc size M" })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?sort=price-desc`,
   );
   await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
 
@@ -471,6 +473,28 @@ test("U3 collection controls emit route-local canonical hrefs and ignore forged 
   expect(accessibilityScan.violations).toEqual([]);
 });
 
+test("a collection loads its next page in place, ordered and filtered like the page's own URL", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${BASE_URL}/collections/${pagedSlug}`, { waitUntil: "networkidle" });
+  await expect(page.getByText("25 sản phẩm", { exact: true })).toBeAttached();
+
+  const cards = page.locator("#main-content article h2");
+  await expect(cards).toHaveCount(24);
+  const more = page.getByRole("button", { name: "Xem thêm (24/25)" });
+  await expect(more).toBeVisible();
+  await more.click();
+  await expect(cards).toHaveCount(25);
+  await expect(page.getByRole("button", { name: /Xem thêm/ })).toHaveCount(0);
+  // The 25 products are the collection's, each once, and the URL never moved off page one.
+  expect(new Set(await cards.allTextContents()).size).toBe(25);
+  expect(page.url()).not.toContain("page=");
+
+  // A crawlable page two still opens on its own and lists the one product it holds.
+  const pageTwo = await page.goto(`${BASE_URL}/collections/${pagedSlug}?page=2`, { waitUntil: "networkidle" });
+  expect(pageTwo?.status()).toBe(200);
+  await expect(cards).toHaveCount(1);
+});
+
 test("U3 changing Size from page 2 resets pagination and does not carry a stale page into 404", async ({
   page,
 }) => {
@@ -478,15 +502,9 @@ test("U3 changing Size from page 2 resets pagination and does not carry a stale 
     waitUntil: "networkidle",
   });
   expect(pageTwo?.status()).toBe(200);
-  // The count and the page number are two lines now -- the count above the grid, the page in the
-  // pager -- because every listing draws the same chrome. The facts asserted are the same two.
-  await expect(page.getByText("25 sản phẩm", { exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("navigation", { name: "Phân trang bộ sưu tập" }).getByText("Trang 2 / 2"),
-  ).toBeVisible();
+  await expect(page.getByText("25 sản phẩm", { exact: true })).toBeAttached();
 
-  const sizes = await visibleCollectionSizeNavigation(page);
-  const small = sizes.getByRole("link", { name: "S", exact: true });
+  const small = await visibleSizeLink(page, "S");
   await expect(small).toHaveAttribute("href", `/collections/${pagedSlug}?size=S`);
 
   await Promise.all([
@@ -494,12 +512,29 @@ test("U3 changing Size from page 2 resets pagination and does not carry a stale 
     small.click(),
   ]);
   await expect(page.getByRole("heading", { level: 1, name: "Runtime Paged Collection" })).toBeVisible();
-  await expect(page.getByText("1 sản phẩm", { exact: true })).toBeVisible();
-  // A single page has no pager at all, which is what "reset to page 1" looks like here.
-  await expect(page.getByRole("navigation", { name: "Phân trang bộ sưu tập" })).toHaveCount(0);
+  await expect(page.getByText("1 sản phẩm", { exact: true })).toBeAttached();
   await expect(page.getByRole("heading", { level: 2, name: `Paged Runtime Product 01 ${suffix}` })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Xem thêm/ })).toHaveCount(0);
   expect(page.url()).not.toContain("page=");
   await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
+});
+
+test("a price filter that matches nothing shows the listing's empty state with one way back", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${BASE_URL}/collections/${publishedSlug}`, { waitUntil: "networkidle" });
+
+  await page.getByRole("spinbutton", { name: "Giá tối thiểu" }).first().fill("5000000");
+  await Promise.all([
+    page.waitForURL(`${BASE_URL}/collections/${publishedSlug}?minPrice=5000000`),
+    page.getByRole("button", { name: "Lọc", exact: true }).click(),
+  ]);
+  await expect(page.getByRole("heading", { level: 2, name: "Không tìm thấy sản phẩm phù hợp" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Xóa tất cả bộ lọc" })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}`,
+  );
+  // The anchor the homepage hero lands on stays the title's; the empty grid does not add a second one.
+  await expect(page.locator("#san-pham")).toHaveCount(1);
 });
 
 /**
@@ -520,7 +555,7 @@ test("U3 changing Size from page 2 resets pagination and does not carry a stale 
 async function openCollectionScrolledDown(page: Page) {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${BASE_URL}/collections/${pagedSlug}`, { waitUntil: "networkidle" });
-  await expect(page.getByText("25 sản phẩm", { exact: true })).toBeVisible();
+  await expect(page.getByText("25 sản phẩm", { exact: true })).toBeAttached();
   await page.evaluate(() => {
     document.documentElement.style.scrollBehavior = "auto";
     document.documentElement.style.overflowAnchor = "none";
@@ -537,32 +572,27 @@ test("picking a Size on a collection keeps the scroll position", async ({ page }
   await openCollectionScrolledDown(page);
 
   // M keeps 24 products, so the page stays tall enough to hold the same offset.
-  const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  const medium = page.locator("#main-content").getByRole("link", { name: "M", exact: true }).first();
   await Promise.all([
     page.waitForURL(`${BASE_URL}/collections/${pagedSlug}?size=M`),
-    sizes.getByRole("link", { name: "M", exact: true }).dispatchEvent("click"),
+    medium.dispatchEvent("click"),
   ]);
-  await expect(page.getByText("24 sản phẩm", { exact: true })).toBeVisible();
-  await expect(sizes.getByRole("link", { name: "M", exact: true })).toHaveAttribute("aria-current", "true");
+  await expect(page.getByText("24 sản phẩm", { exact: true })).toBeAttached();
+  await expect(medium).toHaveAttribute("aria-current", "true");
   await expectScrollKept(page);
 });
 
 test("changing the sort on a collection keeps the scroll position", async ({ page }) => {
   await openCollectionScrolledDown(page);
 
-  const sortSelect = page
-    .getByRole("navigation", { name: "Sắp xếp bộ sưu tập" })
-    .getByRole("combobox", { name: "Sắp xếp sản phẩm" });
   await Promise.all([
     page.waitForURL(`${BASE_URL}/collections/${pagedSlug}?sort=price-desc`),
-    sortSelect.selectOption({ label: "Giá cao → thấp" }),
+    sortSelect(page).selectOption({ label: "Giá: Cao đến Thấp" }),
   ]);
-  // The select shows the new value as soon as it is picked; the pager's next link only carries the
-  // sort once the server's page has rendered, and that render is when the router would scroll.
-  await expect(
-    page.getByRole("navigation", { name: "Phân trang bộ sưu tập" }).getByRole("link", { name: "Trang sau →" }),
-  ).toHaveAttribute("href", /sort=price-desc/);
-  await expect(sortSelect).toHaveValue(`/collections/${pagedSlug}?sort=price-desc`);
+  // The select shows the new value as soon as it is picked; the active-sort clear link only appears
+  // once the server's page has rendered, and that render is when the router would scroll.
+  await expect(page.getByRole("link", { name: "Xóa bộ lọc", exact: true }).first()).toBeAttached();
+  await expect(sortSelect(page)).toHaveValue("price-desc");
   await expectScrollKept(page);
 });
 
@@ -599,56 +629,22 @@ test("a stored BST-prefixed title is shown without the prefix on the collection 
   await expect(card.getByRole("heading", { level: 2 })).toHaveText("Runtime Diệp Họa");
 });
 
-test("collection controls keep a 44px touch target in both directions without overlapping hit areas", async ({ page }) => {
+test("on a phone a collection's filters open in the listing drawer, sizes, price and stock together", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/collections/${publishedSlug}`, { waitUntil: "networkidle" });
-  const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
-  await expect(sizes).toBeVisible();
 
-  // The chip draws 32px tall; its `::after` layer is the touch target, so measure that, not the box.
-  const targets = await sizes.getByRole("link").evaluateAll((links) =>
-    links.map((link) => {
-      const box = link.getBoundingClientRect();
-      const after = getComputedStyle(link, "::after");
-      const left = box.left + parseFloat(after.left);
-      const top = box.top + parseFloat(after.top);
-      return {
-        name: link.textContent,
-        visibleHeight: box.height,
-        left,
-        right: left + parseFloat(after.width),
-        width: parseFloat(after.width),
-        height: parseFloat(after.height),
-        top,
-      };
-    }),
+  await page.getByRole("button", { name: "Bộ lọc", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Bộ lọc sản phẩm" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "S", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "M", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "Chỉ xem sản phẩm còn hàng" })).toHaveAttribute(
+    "href",
+    `/collections/${publishedSlug}?availability=in-stock`,
   );
-  expect(targets.length).toBeGreaterThanOrEqual(3);
-  for (const target of targets) {
-    expect(target.visibleHeight, `${target.name} draws compact`).toBeLessThanOrEqual(32.5);
-    expect(target.width, `${target.name} touch width`).toBeGreaterThanOrEqual(43.5);
-    expect(target.height, `${target.name} touch height`).toBeGreaterThanOrEqual(43.5);
-  }
-  for (let index = 1; index < targets.length; index += 1) {
-    expect(targets[index - 1].right, `${targets[index - 1].name} / ${targets[index].name} hit areas`).toBeLessThanOrEqual(
-      targets[index].left + 0.5,
-    );
-  }
-});
-
-test("Còn hàng rides the size row on a phone and keeps its own row from md", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${BASE_URL}/collections/${publishedSlug}`, { waitUntil: "networkidle" });
-  const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
-  await expect(sizes.getByRole("link", { name: "Còn hàng", exact: true })).toHaveCount(1);
-  await expect(page.getByRole("link", { name: "Còn hàng", exact: true })).toHaveCount(1);
-
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(sizes.getByRole("link", { name: "Còn hàng", exact: true })).toHaveCount(0);
-  const availability = page.getByRole("link", { name: "Còn hàng", exact: true });
-  await expect(availability).toHaveCount(1);
-  const [sizeBox, availabilityBox] = await Promise.all([sizes.boundingBox(), availability.boundingBox()]);
-  expect(availabilityBox!.y).toBeGreaterThanOrEqual(sizeBox!.y + sizeBox!.height - 1);
+  await expect(dialog.getByRole("spinbutton", { name: "Giá tối thiểu" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Xem 2 sản phẩm" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("the product page's collection badges stay on one line and fade only while they scroll", async ({ page }) => {

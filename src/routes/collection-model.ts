@@ -1,3 +1,5 @@
+import { buildCategoryDiscoveryHref, encodeCategoryCursor } from "../commerce/category-discovery-url.ts";
+import { collectionListingPath } from "../commerce/collection-discovery-url.ts";
 import {
   parseTrustedProductImageUrl,
   parseTrustedProductVideoUrl,
@@ -13,6 +15,7 @@ import {
   type ProductCardModel,
   type StorefrontFlashSalePresentation,
 } from "../components/headless/build-product-card-model.ts";
+import { hasActivePlpFilters, type PlpFilterState } from "../components/headless/plp-filter-model.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
 
 /**
@@ -60,51 +63,31 @@ export type CollectionEditorial = Readonly<{
   video: CollectionVideo | null;
 }>;
 
-export type CollectionSortOption = Readonly<{
-  value: string;
-  label: string;
-  href: string;
-  active: boolean;
-}>;
-
-export type CollectionSizeOption = Readonly<{
-  /** `null` is the "all sizes" entry. */
-  value: string | null;
-  label: string;
-  href: string;
-  active: boolean;
-}>;
-
-export type CollectionAvailabilityOption = Readonly<{
-  active: boolean;
-  /** Switches the "còn hàng" filter, keeping size and sort. */
-  href: string;
-}>;
-
 export type CollectionViewModel = Readonly<{
   slug: string;
   title: string;
   editorial: CollectionEditorial;
+  /** The path every filter, sort and paging link is written against: `/collections/<slug>`. */
+  basePath: string;
   cards: readonly Readonly<{ id: string; model: ProductCardModel }>[];
+  /** Where this page's cards start in the tone cycle, so a page opened by its URL continues it. */
   toneOffset: number;
   totalCount: number;
   page: number;
   totalPages: number;
-  previousHref: string | null;
+  hasNext: boolean;
+  /** The crawlable next page, keeping every filter; `null` on the last page. */
   nextHref: string | null;
-  /** Drops every filter (size and availability), keeping the sort. */
-  clearFilterHref: string;
-  /** Whether any filter is applied, which decides the empty state's wording. */
+  /** What the infinite grid sends to load the next page; `null` on the last page. */
+  nextCursor: string | null;
+  /** The category listing's filter state, so the shared panel and grid read it unchanged. */
+  filters: PlpFilterState;
+  /** Whether a filter narrows the list (a sort alone does not), which decides the empty state's wording. */
   filtered: boolean;
-  sortOptions: readonly CollectionSortOption[];
-  sizeOptions: readonly CollectionSizeOption[];
-  availabilityOption: CollectionAvailabilityOption;
-}>;
-
-export type CollectionDiscoveryState = Readonly<{
-  size: string | null;
-  sort: string;
-  availability?: "in-stock" | null;
+  /** The sizes still selectable under the other filters, canonical spelling, in clothing order. */
+  availableSizes: readonly string[];
+  /** Whether the other filters leave any discounted product for the Sale toggle to find. */
+  saleAvailable: boolean;
 }>;
 
 export type CollectionViewModelInput = Readonly<{
@@ -123,35 +106,16 @@ export type CollectionViewModelInput = Readonly<{
    */
   products: readonly CollectionProduct[];
   sizes: readonly string[];
-  discovery: CollectionDiscoveryState;
-  sortChoices: readonly Readonly<{ value: string; label: string }>[];
+  saleAvailable: boolean;
+  filters: PlpFilterState;
   totalCount: number;
   totalPages: number;
   page: number;
-  hasPrevious: boolean;
   hasNext: boolean;
   pageSize: number;
   pricingRule?: StorefrontPricingRule;
   selectEventBySlug: ReadonlyMap<string, TrackingEvent>;
-  /** Supplied by the loader, which owns the route's URL shape. */
-  hrefFor: (
-    state: Readonly<{
-      size: string | null;
-      sort: string;
-      page: number;
-      availability: "in-stock" | null;
-    }>,
-  ) => string;
 }>;
-
-/**
- * Sizes compare without case: the catalog has carried the same size as `XL` and `Xl`, and a link
- * typed as `?size=m` should still mark the `M` chip rather than filter silently with none lit.
- */
-function sameSize(a: string | null, b: string | null): boolean {
-  if (a === null || b === null) return a === b;
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
-}
 
 /**
  * The grid, with the merchandiser's pinned slugs first.
@@ -203,6 +167,33 @@ export function orderByFeaturedSlugs<T extends Readonly<{ slug: string }>>(
   return [...pinFirst(inStock), ...pinFirst(outOfStock)];
 }
 
+/**
+ * One page of a collection in the order it is shown: pins first and in-stock products ahead of
+ * sold-out ones, but only in the merchandiser's own order. The route's first page and every page the
+ * infinite grid loads after it go through this, so a page loaded by scrolling is ordered exactly like
+ * the same page opened by its URL.
+ */
+export function orderCollectionPage<T extends Readonly<{ id: string; slug: string }>>(
+  products: readonly T[],
+  {
+    featuredProductSlugs,
+    merchandiserOrder,
+    inStockProductIds,
+  }: Readonly<{
+    featuredProductSlugs: readonly string[];
+    merchandiserOrder: boolean;
+    inStockProductIds?: readonly string[] | null;
+  }>,
+): readonly T[] {
+  if (!merchandiserOrder) return products;
+  const inStock = inStockProductIds ? new Set(inStockProductIds) : null;
+  return orderByFeaturedSlugs(
+    products,
+    featuredProductSlugs,
+    inStock ? { isInStock: (product) => inStock.has(product.id) } : {},
+  );
+}
+
 /** Editorial media, with anything that fails the trusted-URL contract dropped. */
 export function resolveCollectionEditorial(
   input: Readonly<{
@@ -246,22 +237,15 @@ export function buildCollectionViewModel(input: CollectionViewModelInput): Colle
     ? { ...input, heroImageUrl: null, heroImageMobileUrl: null }
     : input;
 
-  const { size, sort } = input.discovery;
-  const availability = input.discovery.availability ?? null;
-  const href = (
-    next: Partial<Readonly<{ size: string | null; sort: string; page: number; availability: "in-stock" | null }>>,
-  ) =>
-    input.hrefFor({
-      size: next.size === undefined ? size : next.size,
-      sort: next.sort ?? sort,
-      page: next.page ?? 1,
-      availability: next.availability === undefined ? availability : next.availability,
-    });
+  const basePath = collectionListingPath(input.slug);
+  const { filters } = input;
+  const nextPage = input.page + 1;
 
   return Object.freeze({
     slug: input.slug,
     title: input.title,
     editorial: resolveCollectionEditorial(editorialInput),
+    basePath,
     cards: Object.freeze(
       input.products.map((product) =>
         Object.freeze({
@@ -283,39 +267,12 @@ export function buildCollectionViewModel(input: CollectionViewModelInput): Colle
     totalCount: input.totalCount,
     page: input.page,
     totalPages: input.totalPages,
-    previousHref: input.hasPrevious ? href({ page: input.page - 1 }) : null,
-    nextHref: input.hasNext ? href({ page: input.page + 1 }) : null,
-    clearFilterHref: href({ size: null, availability: null }),
-    filtered: size !== null || availability !== null,
-    sortOptions: Object.freeze(
-      input.sortChoices.map((choice) =>
-        Object.freeze({
-          value: choice.value,
-          label: choice.label,
-          href: href({ sort: choice.value }),
-          active: sort === choice.value,
-        }),
-      ),
-    ),
-    sizeOptions: Object.freeze([
-      Object.freeze({
-        value: null,
-        label: "Tất cả kích cỡ",
-        href: href({ size: null }),
-        active: size === null,
-      }),
-      ...input.sizes.map((option) =>
-        Object.freeze({
-          value: option,
-          label: option,
-          href: href({ size: option }),
-          active: sameSize(size, option),
-        }),
-      ),
-    ]),
-    availabilityOption: Object.freeze({
-      active: availability !== null,
-      href: href({ availability: availability === null ? "in-stock" : null }),
-    }),
+    hasNext: input.hasNext,
+    nextHref: input.hasNext ? buildCategoryDiscoveryHref(basePath, filters, nextPage) : null,
+    nextCursor: input.hasNext ? encodeCategoryCursor(nextPage) : null,
+    filters: Object.freeze({ ...filters }),
+    filtered: hasActivePlpFilters({ ...filters, sort: "default" }),
+    availableSizes: Object.freeze([...input.sizes]),
+    saleAvailable: input.saleAvailable,
   });
 }

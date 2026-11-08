@@ -7,10 +7,13 @@ import {
   buildCollectionViewModel,
   isDongGiaCollectionSlug,
   orderByFeaturedSlugs,
+  orderCollectionPage,
   resolveCollectionEditorial,
   type CollectionProduct,
   type CollectionViewModelInput,
 } from "../../src/routes/collection-model.ts";
+import { decodeCategoryCursor } from "../../src/commerce/category-discovery-url.ts";
+import type { PlpFilterState } from "../../src/components/headless/plp-filter-model.ts";
 import type { TrackingEvent } from "../../src/tracking/commerce-events.ts";
 
 /**
@@ -45,6 +48,16 @@ function product(slug: string): CollectionProduct & Readonly<{ pancakeProductId:
   };
 }
 
+const NO_FILTERS: PlpFilterState = {
+  size: null,
+  color: null,
+  availability: null,
+  minPriceVnd: null,
+  maxPriceVnd: null,
+  sale: null,
+  sort: "default",
+};
+
 function input(overrides: Partial<CollectionViewModelInput> = {}): CollectionViewModelInput {
   return {
     slug: "mua-he",
@@ -56,20 +69,14 @@ function input(overrides: Partial<CollectionViewModelInput> = {}): CollectionVie
     videoPosterUrl: null,
     products: [],
     sizes: [],
-    discovery: { size: null, sort: "name-asc" },
-    sortChoices: [
-      { value: "name-asc", label: "Tên A–Z" },
-      { value: "price-asc", label: "Giá thấp → cao" },
-    ],
+    saleAvailable: false,
+    filters: NO_FILTERS,
     totalCount: 0,
     totalPages: 1,
     page: 1,
-    hasPrevious: false,
     hasNext: false,
     pageSize: 24,
     selectEventBySlug: new Map<string, TrackingEvent>(),
-    hrefFor: ({ size, sort, page, availability }) =>
-      `/collections/mua-he?size=${size ?? "all"}&sort=${sort}&page=${page}&stock=${availability ?? "any"}`,
     ...overrides,
   };
 }
@@ -230,6 +237,30 @@ test("without isInStock the order is untouched, so a shopper's sort is not regro
   assert.deepEqual(orderByFeaturedSlugs([soldOut, onSale], []).map((p) => p.slug), ["sold-out", "on-sale"]);
 });
 
+test("a collection page leads with pins and in-stock products only in the merchandiser's order", () => {
+  const products = [product("sold-out"), product("a"), product("pinned")];
+  const facts = { featuredProductSlugs: ["pinned"], inStockProductIds: ["id-a", "id-pinned"] };
+
+  assert.deepEqual(
+    orderCollectionPage(products, { ...facts, merchandiserOrder: true }).map((p) => p.slug),
+    ["pinned", "a", "sold-out"],
+  );
+  assert.equal(
+    orderCollectionPage(products, { ...facts, merchandiserOrder: false }),
+    products,
+    "under a sort the shopper picked, the repository's order is the page's order",
+  );
+});
+
+test("a collection page without a stock classification still pins", () => {
+  const products = [product("a"), product("b")];
+  assert.deepEqual(
+    orderCollectionPage(products, { featuredProductSlugs: ["b"], merchandiserOrder: true, inStockProductIds: null })
+      .map((p) => p.slug),
+    ["b", "a"],
+  );
+});
+
 test("the grid renders exactly the order it was handed, without reordering again", () => {
   // The loader applies `orderByFeaturedSlugs` once, before building the grid's tracking. Reordering
   // a second time here is what would put the cards and the analytics indices out of step.
@@ -262,97 +293,71 @@ test("the rendered cards and the tracking impressions agree on every index", () 
   );
 });
 
-/* ----------------------------------------------------------------- filter links */
+/* --------------------------------------------------------- filters and paging */
 
-test("the size filter offers an all-sizes entry first, marked active when nothing is filtered", () => {
-  const model = buildCollectionViewModel(input({ sizes: ["S", "M"] }));
+test("the listing's links are written against the collection's own path", () => {
+  const model = buildCollectionViewModel(input());
 
-  assert.deepEqual(model.sizeOptions.map((option) => option.value), [null, "S", "M"]);
-  assert.equal(model.sizeOptions[0]?.active, true);
-  assert.equal(model.filtered, false);
+  assert.equal(model.basePath, "/collections/mua-he");
 });
 
-test("choosing a size marks it active and marks the page filtered", () => {
-  const model = buildCollectionViewModel(
-    input({ sizes: ["S", "M"], discovery: { size: "M", sort: "name-asc" } }),
-  );
+test("the filter state and the facets reach the shared panel unchanged", () => {
+  const filters: PlpFilterState = { ...NO_FILTERS, size: "M", sale: true, sort: "price-asc" };
+  const model = buildCollectionViewModel(input({ filters, sizes: ["S", "M"], saleAvailable: true }));
 
-  assert.equal(model.filtered, true);
-  assert.equal(model.sizeOptions.find((option) => option.value === "M")?.active, true);
-  assert.equal(model.sizeOptions[0]?.active, false);
+  assert.deepEqual(model.filters, filters);
+  assert.deepEqual(model.availableSizes, ["S", "M"]);
+  assert.equal(model.saleAvailable, true);
 });
 
-test("changing sort keeps the size filter, and changing size keeps the sort", () => {
-  const model = buildCollectionViewModel(
-    input({ sizes: ["M"], discovery: { size: "M", sort: "price-asc" } }),
+test("a sort alone does not count as filtered, any narrowing filter does", () => {
+  assert.equal(buildCollectionViewModel(input()).filtered, false);
+  assert.equal(
+    buildCollectionViewModel(input({ filters: { ...NO_FILTERS, sort: "price-desc" } })).filtered,
+    false,
+    "an empty collection under another sort is still an empty collection, not a filter miss",
   );
-
-  assert.match(model.sortOptions[0]?.href ?? "", /size=M/, "sort links keep the size");
-  assert.match(model.sizeOptions[1]?.href ?? "", /sort=price-asc/, "size links keep the sort");
-});
-
-test("every filter link returns to page one, so a narrower result cannot land past its last page", () => {
-  const model = buildCollectionViewModel(
-    input({ sizes: ["M"], page: 3, discovery: { size: null, sort: "name-asc" } }),
-  );
-
-  for (const href of [...model.sortOptions, ...model.sizeOptions].map((option) => option.href)) {
-    assert.match(href, /page=1/);
+  for (const narrowed of [
+    { size: "M" },
+    { availability: "in-stock" as const },
+    { minPriceVnd: 100_000 },
+    { maxPriceVnd: 500_000 },
+    { sale: true },
+    { color: "Đỏ" },
+  ]) {
+    assert.equal(
+      buildCollectionViewModel(input({ filters: { ...NO_FILTERS, ...narrowed } })).filtered,
+      true,
+      JSON.stringify(narrowed),
+    );
   }
 });
 
-test("the in-stock toggle flips on and off, and every other link keeps it", () => {
-  const off = buildCollectionViewModel(input({ sizes: ["M"] }));
-  assert.equal(off.availabilityOption.active, false);
-  assert.match(off.availabilityOption.href, /stock=in-stock/);
-  assert.equal(off.filtered, false);
-
-  const on = buildCollectionViewModel(
-    input({ sizes: ["M"], discovery: { size: null, sort: "price-asc", availability: "in-stock" } }),
-  );
-  assert.equal(on.availabilityOption.active, true);
-  assert.match(on.availabilityOption.href, /stock=any/, "the active toggle links to the unfiltered state");
-  assert.equal(on.filtered, true, "an in-stock filter alone counts as filtered for the empty state");
-  for (const option of [...on.sortOptions, ...on.sizeOptions]) {
-    assert.match(option.href, /stock=in-stock/, "sort and size links keep the in-stock filter");
-  }
-});
-
-test("clearing the size keeps the in-stock filter, while the clear-all link drops both", () => {
+test("the next page keeps every filter, as a crawlable link and as the grid's cursor", () => {
   const model = buildCollectionViewModel(
     input({
-      sizes: ["M"],
-      discovery: { size: "M", sort: "name-asc", availability: "in-stock" },
+      page: 2,
+      totalPages: 3,
+      hasNext: true,
+      filters: { ...NO_FILTERS, size: "M", availability: "in-stock", sort: "price-asc" },
     }),
   );
 
-  assert.match(model.sizeOptions[0]?.href ?? "", /size=all&.*stock=in-stock/);
-  assert.match(model.clearFilterHref, /size=all&.*stock=any/);
+  assert.equal(model.nextHref, "/collections/mua-he?size=M&availability=in-stock&sort=price-asc&page=3");
+  assert.deepEqual(decodeCategoryCursor(model.nextCursor ?? ""), { page: 3 });
 });
 
-test("a size typed in another case still marks its chip", () => {
-  const model = buildCollectionViewModel(
-    input({ sizes: ["S", "M"], discovery: { size: "m", sort: "name-asc" } }),
-  );
+test("the merchandiser's order writes no sort into the next page link", () => {
+  const model = buildCollectionViewModel(input({ hasNext: true, totalPages: 2 }));
 
-  assert.equal(model.sizeOptions.find((option) => option.value === "M")?.active, true);
-  assert.equal(model.sizeOptions[0]?.active, false);
-  assert.equal(model.filtered, true);
+  assert.equal(model.nextHref, "/collections/mua-he?page=2");
 });
 
-/* ------------------------------------------------------------------ pagination */
+test("the last page has no next link and no cursor", () => {
+  const model = buildCollectionViewModel(input({ page: 3, totalPages: 3, hasNext: false }));
 
-test("pagination links exist only for the directions that do, and keep the filters", () => {
-  const model = buildCollectionViewModel(
-    input({ page: 2, totalPages: 3, hasPrevious: true, hasNext: true, discovery: { size: "M", sort: "name-asc" } }),
-  );
-
-  assert.match(model.previousHref ?? "", /size=M&sort=name-asc&page=1/);
-  assert.match(model.nextHref ?? "", /size=M&sort=name-asc&page=3/);
-
-  const single = buildCollectionViewModel(input());
-  assert.equal(single.previousHref, null);
-  assert.equal(single.nextHref, null);
+  assert.equal(model.nextHref, null);
+  assert.equal(model.nextCursor, null);
 });
 
 test("the tone cycle continues across pages", () => {
