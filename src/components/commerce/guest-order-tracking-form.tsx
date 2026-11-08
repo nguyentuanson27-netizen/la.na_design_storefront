@@ -7,6 +7,7 @@ import { BrandHistoricalPreorderNotice } from "@/components/brand/historical-pre
 import type {
   GuestOrderPublicStatus,
 } from "@/commerce/guest-order-tracking";
+import { useT } from "@/i18n/client";
 
 const fieldClassName =
   "mt-2 w-full border border-black/25 bg-transparent px-4 py-3 text-base outline-none transition focus:border-black focus:ring-2 focus:ring-black/10";
@@ -38,6 +39,7 @@ function formatDate(value: string): string {
 export function GuestOrderTrackingForm({
   defaultOrderCode,
 }: Readonly<{ defaultOrderCode?: string | null }>) {
+  const t = useT();
   const [state, action, isPending] = useActionState(lookupGuestOrderAction, null);
 
   return (
@@ -45,7 +47,7 @@ export function GuestOrderTrackingForm({
       <form action={action} className="space-y-6">
         <div>
           <label className="block text-sm font-semibold" htmlFor="tracking-order-code">
-            Mã đơn hàng
+            {t("Mã đơn hàng")}
           </label>
           <input
             id="tracking-order-code"
@@ -62,13 +64,13 @@ export function GuestOrderTrackingForm({
             className={fieldClassName}
           />
           <p id="tracking-order-code-hint" className="mt-2 text-xs leading-5 text-black/60">
-            Mã gồm 8 ký tự sau “LA-”, có trên trang đặt hàng thành công. Không phân biệt chữ hoa, chữ thường.
+            {t("Mã gồm 8 ký tự sau “LA-”, có trên trang đặt hàng thành công. Không phân biệt chữ hoa, chữ thường.")}
           </p>
         </div>
 
         <div>
           <label className="block text-sm font-semibold" htmlFor="tracking-phone">
-            Số điện thoại
+            {t("Số điện thoại")}
           </label>
           <input
             id="tracking-phone"
@@ -98,33 +100,33 @@ export function GuestOrderTrackingForm({
           aria-live="polite"
           data-ui-state="success"
         >
-          <p className="eyebrow">Trạng thái đơn hàng</p>
+          <p className="eyebrow">{t("Trạng thái đơn hàng")}</p>
           <p className="mt-3 font-display text-3xl">{statusLabels[state.order.status]}</p>
           <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-3">
             <div>
-              <dt className="text-black/75">Mã đơn</dt>
+              <dt className="text-black/75">{t("Mã đơn")}</dt>
               <dd className="mt-1 font-semibold break-all">{state.order.orderCode}</dd>
             </div>
             <div>
-              <dt className="text-black/75">Thời điểm tạo</dt>
+              <dt className="text-black/75">{t("Thời điểm tạo")}</dt>
               <dd className="mt-1 font-semibold">{formatDate(state.order.createdAt)}</dd>
             </div>
             <div>
-              <dt className="text-black/75">Tổng tiền</dt>
+              <dt className="text-black/75">{t("Tổng tiền")}</dt>
               <dd className="mt-1 font-semibold">{formatVnd(state.order.totalVnd)}</dd>
             </div>
           </dl>
           {state.order.pricingHistory ? (
             <div className="mt-6 space-y-4">
-              <h3 className="font-semibold">Chi tiết sản phẩm</h3>
+              <h3 className="font-semibold">{t("Chi tiết sản phẩm")}</h3>
               <ul className="space-y-3">
                 {state.order.pricingHistory.lines.map((line, index) => (
                   <li key={index} className="border-t border-black/15 pt-3">
                     <p>{line.productName}{line.role === "GIFT" ? " — Quà tặng" : ""}</p>
                     <p className="text-sm">{[line.color, line.size].filter(Boolean).join(" / ")} · Số lượng: {line.quantity}</p>
                     <p className="flex flex-wrap items-baseline gap-2">
-                      {line.listUnitPriceVnd ? <s><span className="sr-only">Giá niêm yết </span>{formatVnd(line.listUnitPriceVnd)}</s> : null}
-                      <span><span className="sr-only">Giá bán </span>{formatVnd(line.unitPriceVnd)}</span>
+                      {line.listUnitPriceVnd ? <s><span className="sr-only">{t("Giá niêm yết")}</span>{formatVnd(line.listUnitPriceVnd)}</s> : null}
+                      <span><span className="sr-only">{t("Giá bán")}</span>{formatVnd(line.unitPriceVnd)}</span>
                       <span>· Thành tiền: {formatVnd(line.lineTotalVnd)}</span>
                     </p>
                   </li>
@@ -138,7 +140,7 @@ export function GuestOrderTrackingForm({
           ) : null}
           {state.order.status === "CHECKING" ? (
             <p className="mt-5 text-sm leading-6 text-black/75">
-              Hệ thống đang kiểm tra lại kết quả đồng bộ. Nàng đừng gửi lại đơn chỉ vì trạng thái này nhé.
+              {t("Hệ thống đang kiểm tra lại kết quả đồng bộ. Nàng đừng gửi lại đơn chỉ vì trạng thái này nhé.")}
             </p>
           ) : null}
         </section>

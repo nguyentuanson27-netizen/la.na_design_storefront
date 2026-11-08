@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
+import { useT } from "@/i18n/client";
 
 /** Native modal supplies inert background and focus containment, including Escape. */
 export function CheckoutGiftReminderDialog({ open, disabled, description, canChoose, onShown, onClose, onChoose, onContinue }: Readonly<{
   open: boolean; disabled: boolean; description: string; canChoose: boolean;
   onShown: () => void; onClose: () => void; onChoose: () => void; onContinue: () => void;
 }>) {
+  const t = useT();
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
@@ -29,9 +31,9 @@ export function CheckoutGiftReminderDialog({ open, disabled, description, canCho
     <h2 id={titleId} ref={heading} tabIndex={-1} className="font-display text-2xl">{canChoose ? "Nàng còn quà chưa chọn" : "Một phần quà chưa thể nhận"}</h2>
     <p id={descriptionId} className="mt-4 text-sm leading-6">{description} Nàng vẫn có thể đặt hàng ngay, quà đã lưu được giữ nguyên.</p>
     <div className="mt-5 flex flex-col gap-3">
-      {canChoose ? <button type="button" className="btn btn--primary min-h-11" onClick={onChoose}>Chọn quà ngay</button> : null}
-      <button type="button" className="btn btn--secondary min-h-11" disabled={disabled || !armed} onClick={onContinue}>Vẫn đặt hàng</button>
-      <button type="button" className="min-h-11 text-sm underline" onClick={onClose}>Đóng lời nhắc</button>
+      {canChoose ? <button type="button" className="btn btn--primary min-h-11" onClick={onChoose}>{t("Chọn quà ngay")}</button> : null}
+      <button type="button" className="btn btn--secondary min-h-11" disabled={disabled || !armed} onClick={onContinue}>{t("Vẫn đặt hàng")}</button>
+      <button type="button" className="min-h-11 text-sm underline" onClick={onClose}>{t("Đóng lời nhắc")}</button>
     </div>
   </dialog>;
 }

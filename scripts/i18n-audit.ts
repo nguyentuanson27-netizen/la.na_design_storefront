@@ -4,6 +4,8 @@
  *   pnpm i18n:audit            # summary + the files with the most untranslated Vietnamese
  *   pnpm i18n:audit --missing  # every t("...") source with no English entry
  *   pnpm i18n:audit --unwrapped <path>  # Vietnamese literals in a file that are not passed to t()
+ *   pnpm i18n:audit --literals <path>   # every Vietnamese string literal under a path with no English
+ *                                       # entry yet -- the list to translate, \${expr} shown as {expr}
  *
  * Two different gaps, both reported:
  *   - a *missing* entry: the code asks for `t("Giỏ hàng")` but the catalog has no English for it, so
@@ -95,6 +97,28 @@ if (unwrappedIndex !== -1) {
   source.split("\n").forEach((line, index) => {
     if (VIETNAMESE.test(line) && !/\b(?:t|rich)\(/.test(line)) console.log(`${target}:${index + 1}: ${line.trim()}`);
   });
+  process.exit(0);
+}
+
+const literalsIndex = args.indexOf("--literals");
+if (literalsIndex !== -1) {
+  const prefix = args[literalsIndex + 1]!;
+  const STRING = /"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g;
+  const seen = new Set<string>();
+  for (const file of files.filter((candidate) => candidate.startsWith(prefix))) {
+    const source = stripComments(readFileSync(path.join(ROOT, file), "utf8"));
+    for (const match of source.matchAll(STRING)) {
+      let text = match[1] ?? match[2] ?? match[3] ?? "";
+      if (!VIETNAMESE.test(text)) continue;
+      text = text.replace(/\$\{([^}]*)\}/g, (_whole, expr: string) => {
+        const name = expr.trim().split(/[^A-Za-z0-9_]+/).filter(Boolean).pop() ?? "value";
+        return `{${name}}`;
+      }).replace(/\\(["'`\\])/g, "$1").replace(/\\n/g, "\n");
+      if (Object.hasOwn(EN_MESSAGES, text) || seen.has(text)) continue;
+      seen.add(text);
+      console.log(JSON.stringify(text));
+    }
+  }
   process.exit(0);
 }
 

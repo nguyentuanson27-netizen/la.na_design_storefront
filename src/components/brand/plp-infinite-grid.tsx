@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/i18n/client";
 import type { ProductCardModel } from "@/components/headless/build-product-card-model";
 import {
   ListingEmptyState,
@@ -33,6 +34,7 @@ export type PlpInfiniteGridProps = {
 };
 
 export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
+  const t = useT();
   const { totalCount, clearHref, toneOffset = 0, emptyStateAnchors = true } = props;
   const {
     products,
@@ -54,9 +56,9 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
         ) : null}
         <ListingEmptyState
           titleId="category-empty-title"
-          eyebrow="Không tìm thấy"
-          title="Không tìm thấy sản phẩm phù hợp"
-          copy="Nàng thử đổi bộ lọc hoặc bỏ bớt lựa chọn nhé."
+          eyebrow={t("Không tìm thấy")}
+          title={t("Không tìm thấy sản phẩm phù hợp")}
+          copy={t("Nàng thử đổi bộ lọc hoặc bỏ bớt lựa chọn nhé.")}
           action={{ href: clearHref, label: "Xóa tất cả bộ lọc" }}
         />
       </div>
@@ -67,7 +69,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
     <div className="mt-4">
       {/* Screen reader live region */}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {announcement}
+        {t(announcement)}
       </div>
 
       {/* Product grid */}
@@ -98,13 +100,13 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
       {/* Error state with retry */}
       {error ? (
         <div role="alert" aria-live="assertive" className="mt-8 text-center text-xs text-[#70584B]">
-          <p>{error}</p>
+          <p>{t(error)}</p>
           <button
             type="button"
             onClick={() => void loadMore()}
             className="mt-2 text-xs font-semibold uppercase underline"
           >
-            Thử lại
+            {t("Thử lại")}
           </button>
         </div>
       ) : null}
@@ -138,11 +140,11 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
                 void loadMore();
               }}
             >
-              Xem thêm ({products.length}/{totalCount})
+              {t("Xem thêm ({loaded}/{total})", { loaded: products.length, total: totalCount })}
             </a>
           ) : (
             <button type="button" onClick={() => void loadMore()} className="btn btn--outline px-8">
-              Xem thêm ({products.length}/{totalCount})
+              {t("Xem thêm ({loaded}/{total})", { loaded: products.length, total: totalCount })}
             </button>
           )}
         </div>

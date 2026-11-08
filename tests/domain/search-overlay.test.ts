@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { readUntranslated } from "../support/untranslated-source.ts";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -51,7 +51,7 @@ test("F2b search overlay: builds accessible live region announcements", () => {
 });
 
 test("F2b search overlay component: enforces accessible dialog contracts and Escape dismissal", () => {
-  const source = readFileSync(
+  const source = readUntranslated(
     path.join(REPO_ROOT, "src/components/brand/search-overlay.tsx"),
     "utf8",
   );

@@ -11,6 +11,7 @@ import {
   type GuideSizeChoice,
 } from "@/components/headless/size-guide-sheet-model";
 import type { ProductMappedSizeGuide } from "@/routes/product-model";
+import { useT } from "@/i18n/client";
 
 /** Tailwind's `sm` breakpoint: at and above it the size guide keeps its centred dialog. */
 export const SIZE_GUIDE_SHEET_QUERY = "(max-width: 639.98px)";
@@ -55,6 +56,7 @@ export function SizeGuideSheet({
   closeButtonRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
 }>) {
+  const t = useT();
   const table = buildSizeGuideSheetTable(guide.chart);
   const title = buildSizeGuideSheetTitle(guide.chart.title, guide.productCode);
   /*
@@ -118,7 +120,7 @@ export function SizeGuideSheet({
   return (
     <dialog
       ref={dialogRef}
-      aria-label={`Hướng dẫn chọn size: ${guide.chart.title}`}
+      aria-label={t("Hướng dẫn chọn size: {title}", { title: t(guide.chart.title) })}
       data-size-guide-id={guide.id}
       data-size-guide-sheet=""
       tabIndex={-1}
@@ -136,7 +138,7 @@ export function SizeGuideSheet({
           <button
             ref={closeButtonRef}
             type="button"
-            aria-label="Đóng"
+            aria-label={t("Đóng")}
             className="-mr-1 -mt-1 inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-[#3B2219]/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
             onClick={() => dialogRef.current?.close()}
           >
@@ -155,7 +157,7 @@ export function SizeGuideSheet({
         </div>
 
         <table className="mt-3 w-full table-fixed border-collapse text-center text-[11px] leading-tight tabular-nums">
-          <caption className="sr-only">{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
+          <caption className="sr-only">{t("Dữ liệu bảng size {title}", { title: t(guide.chart.title) })}</caption>
           <thead>
             <tr className="border-b border-[#3B2219]/15">
               <th scope="col" className="w-[13%] px-1 py-2 text-left font-semibold">
@@ -236,7 +238,7 @@ export function SizeGuideSheet({
                 rel="noreferrer"
                 className="inline-flex min-h-12 flex-[1.2] items-center justify-center whitespace-nowrap rounded-full bg-[#3B2219]/8 px-2 text-center text-[13px] font-semibold leading-tight text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
               >
-                Nhắn Zalo nhờ chọn<span className="sr-only"> (mở trong tab mới)</span>
+                Nhắn Zalo nhờ chọn<span className="sr-only">{t("(mở trong tab mới)")}</span>
               </a>
             )}
             <button

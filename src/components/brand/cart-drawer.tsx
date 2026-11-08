@@ -28,6 +28,7 @@ import {
 } from "@/components/headless/cart-drawer-model";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import { useCartDrawer } from "@/components/headless/use-cart-drawer";
+import { useT } from "@/i18n/client";
 
 export type CartDrawerProps = Readonly<{
   isOpen: boolean;
@@ -36,6 +37,7 @@ export type CartDrawerProps = Readonly<{
 }>;
 
 export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
+  const t = useT();
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const previouslyFocusedElement = useRef<HTMLElement | null>(null);
@@ -153,7 +155,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
   const footerProgress = cart ? firstPromotionProgress(cart.promotions) : null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 overflow-hidden" role="region" aria-label="Giỏ hàng">
+    <div className="fixed inset-0 z-50 overflow-hidden" role="region" aria-label={t("Giỏ hàng")}>
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
@@ -166,7 +168,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
         ref={drawerRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Giỏ hàng"
+        aria-label={t("Giỏ hàng")}
         className="fixed inset-y-0 right-0 flex max-w-full pl-10"
       >
         <div className="flex w-screen max-w-md flex-col bg-[#FAF7F2] text-[#3B2219] shadow-2xl border-l border-[#3B2219]/15">
@@ -174,11 +176,11 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
           <div className="flex items-center justify-between border-b border-[#3B2219]/10 px-6 py-5">
             <div className="flex items-baseline gap-3">
               <h2 className="font-display text-xl font-bold tracking-tight text-[#2A1810]">
-                Giỏ hàng
+                {t("Giỏ hàng")}
               </h2>
               {cart && !cart.isEmpty ? (
                 <span className="text-xs uppercase tracking-wider text-[#70584B]">
-                  ({cart.lineCount} sản phẩm)
+                  ({t("{count} sản phẩm", { count: cart.lineCount })})
                 </span>
               ) : null}
             </div>
@@ -186,7 +188,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
               ref={closeButtonRef}
               type="button"
               onClick={dismiss}
-              aria-label="Đóng giỏ hàng"
+              aria-label={t("Đóng giỏ hàng")}
               className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#3B2219] hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
             >
               <svg className="h-5 w-5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="1.8" aria-hidden="true">
@@ -200,7 +202,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
           <div className="flex-1 overflow-y-auto px-6 py-6" tabIndex={-1}>
             {giftNotice ? <p className="mb-4 border border-amber-700/30 bg-amber-50 p-3 text-sm text-amber-900" data-gift-auto-reconciled role="status" aria-live="polite">{giftNotice}</p> : null}
             {isLoading && !cart ? (
-              <div className="space-y-6 animate-pulse" aria-label="Đang tải giỏ hàng">
+              <div className="space-y-6 animate-pulse" aria-label={t("Đang tải giỏ hàng")}>
                 {[1, 2].map((i) => (
                   <div key={i} className="flex gap-4">
                     <div className="h-24 w-20 rounded bg-[#3B2219]/10" />
@@ -214,13 +216,13 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
               </div>
             ) : error ? (
               <div className="py-12 text-center" role="alert">
-                <p className="text-sm text-red-700">{error}</p>
+                <p className="text-sm text-red-700">{t(error)}</p>
                 <button
                   type="button"
                   onClick={loadCart}
                   className="mt-4 inline-block text-xs font-semibold uppercase tracking-wider underline hover:text-[#2A1810]"
                 >
-                  Thử lại
+                  {t("Thử lại")}
                 </button>
               </div>
             ) : cart?.isEmpty ? (
@@ -233,17 +235,17 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                   </svg>
                 </div>
                 <h3 className="font-display text-lg font-medium text-[#2A1810]">
-                  Giỏ hàng của nàng đang trống
+                  {t("Giỏ hàng của nàng đang trống")}
                 </h3>
                 <p className="mt-2 max-w-xs text-xs text-[#70584B] leading-5">
-                  Nàng ghé xem những thiết kế mới nhất của La.na nhé.
+                  {t("Nàng ghé xem những thiết kế mới nhất của La.na nhé.")}
                 </p>
                 <Link
                   href="/shop"
                   onClick={onClose}
                   className="btn btn--outline mt-6"
                 >
-                  Tiếp tục mua sắm
+                  {t("Tiếp tục mua sắm")}
                 </Link>
               </div>
             ) : cart ? (
@@ -291,7 +293,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                                 {line.productName}
                               </span>
                             )}
-                            <p className="mt-0.5 text-xs text-[#70584B]">{line.optionLabel}</p>
+                            <p className="mt-0.5 text-xs text-[#70584B]">{t(line.optionLabel)}</p>
                             {line.paidSegmentPrices ? <LinePriceSegments segments={line.paidSegmentPrices} /> : <p className="mt-1 font-sans text-xs font-semibold text-[#2A1810]">
                               <LinePrice
                                 discountPercent={line.discountPercent}
@@ -302,13 +304,13 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                             </p>}
                             {line.paidSegments && !line.paidSegmentPrices ? (
                               <p className="mt-0.5 text-[0.7rem] text-[#70584B]" data-line-segments>
-                                Giá sau ưu đãi: {line.paidSegments.join(" + ")}
+                                {t("Giá sau ưu đãi: {prices}", { prices: line.paidSegments.join(" + ") })}
                               </p>
                             ) : null}
                             <CartLineUrgency className="mt-1" flashRemainingMs={line.flashRemainingMs} lowStockText={line.lowStockText} onExpired={reloadForExpiry} />
                             {!line.available ? (
                               <p className="mt-1 text-[0.7rem] font-medium text-amber-800">
-                                {line.availabilityLabel}
+                                {t(line.availabilityLabel)}
                               </p>
                             ) : null}
                           </div>
@@ -320,7 +322,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                                 type="button"
                                 disabled={isPending || line.quantity <= 1}
                                 onClick={() => updateQuantity(line.variantId, decrementTarget)}
-                                aria-label={`Giảm số lượng ${line.productName}${decrementTarget < line.quantity - 1 ? ` còn ${decrementTarget}` : ""}`}
+                                aria-label={decrementTarget < line.quantity - 1 ? t("Giảm số lượng {name} còn {count}", { name: line.productName, count: decrementTarget }) : t("Giảm số lượng {name}", { name: line.productName })}
                                 className="inline-flex h-11 w-11 items-center justify-center text-base text-[#3B2219] hover:bg-[#3B2219]/10 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
                               >
                                 -
@@ -332,7 +334,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                                 type="button"
                                 disabled={isPending || !line.canUpdate || atStockLimit}
                                 onClick={() => updateQuantity(line.variantId, line.quantity + 1)}
-                                aria-label={`Tăng số lượng ${line.productName}`}
+                                aria-label={t("Tăng số lượng {name}", { name: line.productName })}
                                 className="inline-flex h-11 w-11 items-center justify-center text-base text-[#3B2219] hover:bg-[#3B2219]/10 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
                               >
                                 +
@@ -343,10 +345,10 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                               type="button"
                               disabled={isPending}
                               onClick={() => removeItem(line.variantId)}
-                              aria-label={`Xóa ${line.productName} khỏi giỏ hàng`}
+                              aria-label={t("Xóa {name} khỏi giỏ hàng", { name: line.productName })}
                               className="inline-flex min-h-11 items-center px-2 text-xs text-[#70584B] hover:text-red-700 hover:underline transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                              Xóa
+                              {t("Xóa")}
                             </button>
                           </div>
                           <p className="mt-1.5 text-[0.72rem] font-medium text-amber-800 empty:hidden" aria-live="polite" data-line-notice>
@@ -379,22 +381,22 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                   <PromotionProgressLine item={footerProgress} lineRef={observeNudge} />
                 </div>
               ) : null}
-              {cart.listPriceSavingsText ? <p className="text-sm font-semibold" data-list-price-savings>Tiết kiệm so với giá niêm yết: {cart.listPriceSavingsText}</p> : null}
+              {cart.listPriceSavingsText ? <p className="text-sm font-semibold" data-list-price-savings>{t("Tiết kiệm so với giá niêm yết: {amount}", { amount: cart.listPriceSavingsText })}</p> : null}
               {cart.summary ? (
                 <OrderSummary summary={cart.summary} variant="compact" />
               ) : (
                 <>
                 <div className="flex items-baseline justify-between">
-                  <span className="text-xs uppercase tracking-wider text-[#70584B]">Tạm tính</span>
+                  <span className="text-xs uppercase tracking-wider text-[#70584B]">{t("Tạm tính")}</span>
                   <span className="font-sans text-base font-semibold text-[#2A1810]">
-                    {cart.subtotalText}
+                    {t(cart.subtotalText)}
                   </span>
                 </div>
                 <PromotionSavings rows={cart.promotions?.savings} />
                 <p className="text-[0.72rem] text-[#70584B] leading-relaxed">
                   {cart.promotions
-                    ? "Phí vận chuyển sẽ được tính toán tại bước thanh toán."
-                    : "Phí vận chuyển và ưu đãi sẽ được tính toán tại bước thanh toán."}
+                    ? t("Phí vận chuyển sẽ được tính toán tại bước thanh toán.")
+                    : t("Phí vận chuyển và ưu đãi sẽ được tính toán tại bước thanh toán.")}
                 </p>
                 </>
               )}
@@ -407,14 +409,14 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                       onClick={() => leave("checkout")}
                       className="btn btn--primary w-full"
                     >
-                      Tiến hành đặt hàng
+                      {t("Tiến hành đặt hàng")}
                     </Link>
                     <OrderTrustLine />
                   </>
                 ) : (
                   <div className="space-y-1 text-center text-xs leading-relaxed text-amber-800" role="status">
                     {checkoutBlockedMessages(cart).map((message) => (
-                      <p key={message}>{message}</p>
+                      <p key={message}>{t(message)}</p>
                     ))}
                   </div>
                 )}
@@ -426,7 +428,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                   onClick={() => leave("cart")}
                   className="mx-auto flex min-h-8 w-fit items-center text-xs text-[#70584B] underline underline-offset-4 hover:text-[#2A1810]"
                 >
-                  Xem chi tiết giỏ hàng
+                  {t("Xem chi tiết giỏ hàng")}
                 </Link>
               </div>
             </div>

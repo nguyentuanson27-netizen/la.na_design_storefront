@@ -2,7 +2,7 @@ import Link from "@/components/brand/localized-link";
 
 import { BRAND } from "@/brand";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { loadContactRoute, type ContactRouteProps } from "@/routes/contact";
 import type { ContactViewModel } from "@/routes/evergreen-model";
 import { buildContactMetadata } from "@/routes/metadata/contact";
@@ -32,13 +32,13 @@ import { ContactForm } from "./contact-form";
 const CONTACT_LINK =
   "underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4";
 
-function render(data: ContactViewModel) {
+function render(data: ContactViewModel, { t }: RequestI18n) {
   return (
     <PageShell>
       <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Liên hệ" }]} />
       <PageHeader
-        eyebrow="Hỗ trợ"
-        title="Liên hệ"
+        eyebrow={t("Hỗ trợ")}
+        title={t("Liên hệ")}
         lead={<>Các kênh liên hệ chính thức của {BRAND.identity.name}. Đội ngũ hỗ trợ trả lời trong giờ làm việc bên dưới.</>}
       />
 
@@ -63,17 +63,17 @@ function render(data: ContactViewModel) {
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
-            Địa chỉ kinh doanh &amp; nhận hàng đổi trả
+            {t("Địa chỉ kinh doanh & nhận hàng đổi trả")}
           </dt>
           <dd className="mt-2 text-black/70">{data.businessAddress}</dd>
         </div>
         <div>
-          <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Giờ hỗ trợ</dt>
+          <dt className="text-xs font-semibold uppercase tracking-[0.13em]">{t("Giờ hỗ trợ")}</dt>
           <dd className="mt-2 text-black/70">{data.supportHours}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
-            Tiếp nhận và giải quyết khiếu nại
+            {t("Tiếp nhận và giải quyết khiếu nại")}
           </dt>
           <dd className="mt-2 text-black/70">{data.complaintResponse}</dd>
         </div>
@@ -90,9 +90,9 @@ function render(data: ContactViewModel) {
       <p className="mt-12 max-w-2xl text-sm leading-6 text-black/65">
         Cần tra cứu một đơn hàng đã đặt?{" "}
         <Link className={CONTACT_LINK} href="/track-order">
-          Tra cứu đơn hàng
+          {t("Tra cứu đơn hàng")}
         </Link>{" "}
-        bằng mã đơn và số điện thoại đã dùng khi đặt.
+        {t("bằng mã đơn và số điện thoại đã dùng khi đặt.")}
       </p>
     </PageShell>
   );

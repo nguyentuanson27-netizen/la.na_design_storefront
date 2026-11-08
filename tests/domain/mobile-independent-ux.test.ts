@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { readUntranslated } from "../support/untranslated-source.ts";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const read = (relativePath: string) => readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
+const read = (relativePath: string) => readUntranslated(path.join(REPO_ROOT, relativePath), "utf8");
 
 test("mobile independent UX: header exposes menu, logo, search and cart with practical targets while Account stays in menu", () => {
   const header = read("src/components/brand/site-header.tsx");
@@ -38,7 +39,7 @@ test("mobile independent UX: PLP mobile drawer keeps URL-backed filter navigatio
 
   assert.match(panel, />Bộ lọc<\/span>[\s\S]*>\s*Sắp xếp:/, "the drawer button precedes the sort in one action row");
   assert.doesNotMatch(panel, /\{totalCount\} sản phẩm<\/span>\s*<ListingViewToggle \/>/, "the visible result count is not drawn in the action row");
-  assert.match(panel, /<span role="status" className="sr-only">\s*\{totalCount\} \{countLabel\}/, "the count stays available to assistive technology");
+  assert.match(panel, /<span role="status" className="sr-only">\s*\{totalCount\} \{t\(countLabel\)\}/, "the count stays available to assistive technology");
   assert.match(panel, /<ListingViewToggle compact/, "the action row uses the compact view toggle");
   assert.doesNotMatch(panel, /router\.push\(href\);\s*setIsMobileOpen\(false\)/);
   assert.doesNotMatch(panel, /href=\{saleHref\}[\s\S]{0,180}onClick=\{\(\) => setIsMobileOpen\(false\)\}/);
@@ -47,8 +48,8 @@ test("mobile independent UX: PLP mobile drawer keeps URL-backed filter navigatio
   assert.doesNotMatch(panel, /fixed inset-0 bg-black\/40 backdrop-blur-sm transition-opacity"[\s\S]{0,120}onClick=\{\(\) => setIsMobileOpen\(false\)\}/);
   assert.match(panel, /className="mobile-plp-filter-footer/);
   assert.match(panel, /Xóa bộ lọc/);
-  assert.match(panel, /Xem \{totalCount\} sản phẩm/);
-  assert.match(panel, /onClick=\{\(\) => setIsMobileOpen\(false\)\}[\s\S]{0,500}Xem \{totalCount\} sản phẩm/);
+  assert.match(panel, /t\("Xem \{count\} sản phẩm", \{ count: totalCount \}\)/);
+  assert.match(panel, /onClick=\{\(\) => setIsMobileOpen\(false\)\}[\s\S]{0,500}t\("Xem \{count\} sản phẩm", \{ count: totalCount \}\)/);
 });
 
 test("mobile independent UX: cart drawer quantity controls are practical touch targets and remove stays separate", () => {
@@ -57,8 +58,8 @@ test("mobile independent UX: cart drawer quantity controls are practical touch t
   const quantityBlock = drawer.slice(drawer.indexOf("Quantity & Remove"), drawer.indexOf("Footer"));
   assert.match(quantityBlock, /h-11 w-11/);
   assert.doesNotMatch(quantityBlock, /h-7 w-7/);
-  assert.match(quantityBlock, /aria-label=\{\`Giảm số lượng/);
-  assert.match(quantityBlock, /aria-label=\{\`Tăng số lượng/);
+  assert.match(quantityBlock, /aria-label=\{[^}]*t\("Giảm số lượng/);
+  assert.match(quantityBlock, /aria-label=\{t\("Tăng số lượng/);
   assert.match(quantityBlock, />\s*Xóa\s*<\/button>/);
 });
 
@@ -154,6 +155,6 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
     guide,
     /guide\.imageUrl \?[\s\S]*className="sr-only"[\s\S]*<SizeGuideFacts guide=\{guide\} \/>[\s\S]*src=\{guide\.imageUrl\}[\s\S]*<h2[\s\S]*<SizeGuideFacts guide=\{guide\} \/>/,
   );
-  assert.match(guide, /aria-label=\{\`Hướng dẫn chọn size: \$\{guide\.chart\.title\}\`\}/);
+  assert.match(guide, /aria-label=\{t\("Hướng dẫn chọn size: \{title\}", \{ title: t\(guide\.chart\.title\) \}\)\}/);
   assert.match(guide, /border-0 bg-transparent/);
 });

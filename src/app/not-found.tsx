@@ -1,5 +1,6 @@
 import Link from "@/components/brand/localized-link";
 import { BRAND } from "@/brand";
+import { getI18n } from "@/routes/factory";
 
 // U30 / W14a. Next answers 404 for an unmatched route on its own; what it answers *with* is an
 // unbranded default page with no way back. This is the route-level recovery surface: it keeps the
@@ -13,21 +14,22 @@ const RECOVERY_DESTINATIONS = [
   { href: "/search", label: "Tìm kiếm" },
 ] as const;
 
-export default function NotFound() {
+export default async function NotFound() {
+  const { t } = await getI18n();
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <section aria-labelledby="not-found-title" className="ui-state">
         <p className="eyebrow">{BRAND.identity.name} / 404</p>
         <h1 id="not-found-title" className="ui-state__title">
-          Không tìm thấy trang
+          {t("Không tìm thấy trang")}
         </h1>
         <p className="ui-state__copy">
-          Trang nàng tìm không tồn tại. Đường dẫn có thể đã được nhập sai hoặc không còn được dùng.
+          {t("Trang nàng tìm không tồn tại. Đường dẫn có thể đã được nhập sai hoặc không còn được dùng.")}
         </p>
-        <nav className="mt-8 flex flex-wrap gap-x-8 gap-y-4" aria-label="Điều hướng thay thế">
+        <nav className="mt-8 flex flex-wrap gap-x-8 gap-y-4" aria-label={t("Điều hướng thay thế")}>
           {RECOVERY_DESTINATIONS.map((destination) => (
             <Link className="text-link" key={destination.href} href={destination.href}>
-              {destination.label} <span aria-hidden="true">↗</span>
+              {t(destination.label)} <span aria-hidden="true">↗</span>
             </Link>
           ))}
         </nav>

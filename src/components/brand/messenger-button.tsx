@@ -1,3 +1,7 @@
+"use client";
+
+import { useT } from "@/i18n/client";
+
 /**
  * The floating Messenger chat button, bottom right: the chat entry point wherever the Pancake chat
  * widget does not load (see `SiteChat`).
@@ -12,8 +16,9 @@
  * masthead's promotion strip does, keeps every piece of page content inside a landmark.
  */
 export function MessengerButton({ href, brandName }: Readonly<{ href: string; brandName: string }>) {
+  const t = useT();
   return (
-    <aside aria-label="Chat với shop">
+    <aside aria-label={t("Chat với shop")}>
       <a
         className="messenger-fab"
         href={href}

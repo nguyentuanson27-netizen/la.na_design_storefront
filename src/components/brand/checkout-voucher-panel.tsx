@@ -7,6 +7,7 @@ import Link from "@/i18n/link";
 import { useVoucherHold } from "@/components/headless/use-voucher-hold";
 import type { CheckoutVoucherLine, CheckoutVoucherView } from "@/routes/checkout-model";
 import { VoucherIcon } from "./voucher-icons";
+import { useT } from "@/i18n/client";
 
 /**
  * Voucher v1 (V18): the vouchers' part of the checkout. It decides and prices nothing: a held voucher is already in the
@@ -79,6 +80,7 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
   /** The picker's "change" control, placed by the page. Null falls back to the link that sends the shopper to the cart. */
   change?: ReactNode;
 }>) {
+  const t = useT();
   const router = useRouter();
   const { hold } = useVoucherHold();
   const [pending, startTransition] = useTransition();
@@ -114,10 +116,10 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
 
   if (view.state === "HELD") {
     return (
-      <section aria-label="Ưu đãi" className="voucher-held text-sm" data-checkout-vouchers="held">
+      <section aria-label={t("Ưu đãi")} className="voucher-held text-sm" data-checkout-vouchers="held">
         <div className="voucher-held__head">
           <span className="voucher-held__ok"><VoucherIcon name="check" /></span>
-          <p className="font-semibold outline-none" data-voucher-focus tabIndex={-1}>Ưu đãi đang áp dụng cho đơn này</p>
+          <p className="font-semibold outline-none" data-voucher-focus tabIndex={-1}>{t("Ưu đãi đang áp dụng cho đơn này")}</p>
           {secondsLeft !== null && secondsLeft > 0 ? (
             <span aria-hidden="true" className="voucher-held__pill">
               <VoucherIcon name="clock" className="h-3.5 w-3.5" />
@@ -133,7 +135,7 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
           <p className="text-black/75" data-checkout-voucher-held-until>
             {left === null ? "Ưu đãi được giữ tối đa 10 phút." : left > 0 ? `Ưu đãi được giữ thêm khoảng ${left} phút.` : "Ưu đãi đã hết hạn, đang cập nhật giá…"}
           </p>
-          {change ?? <Link className="mt-1 inline-block min-h-11 content-center underline" href="/cart">Đổi ưu đãi ở giỏ hàng</Link>}
+          {change ?? <Link className="mt-1 inline-block min-h-11 content-center underline" href="/cart">{t("Đổi ưu đãi ở giỏ hàng")}</Link>}
         </div>
       </section>
     );
@@ -141,9 +143,9 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
 
   if (view.state === "STALE") {
     return (
-      <section aria-label="Ưu đãi" className="voucher-held px-3.5 py-3 text-sm" data-checkout-vouchers="stale">
-        <p className="outline-none" data-voucher-focus role="status" tabIndex={-1}>Ưu đãi giữ trước đó không còn khớp với lựa chọn hoặc giỏ hàng hiện tại, nên giá bên dưới chưa có ưu đãi.</p>
-        {change ?? <Link className="mt-1 inline-block min-h-11 content-center underline" href="/cart">Xem lại ở giỏ hàng</Link>}
+      <section aria-label={t("Ưu đãi")} className="voucher-held px-3.5 py-3 text-sm" data-checkout-vouchers="stale">
+        <p className="outline-none" data-voucher-focus role="status" tabIndex={-1}>{t("Ưu đãi giữ trước đó không còn khớp với lựa chọn hoặc giỏ hàng hiện tại, nên giá bên dưới chưa có ưu đãi.")}</p>
+        {change ?? <Link className="mt-1 inline-block min-h-11 content-center underline" href="/cart">{t("Xem lại ở giỏ hàng")}</Link>}
       </section>
     );
   }
@@ -169,12 +171,12 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
   };
 
   return (
-    <section aria-label="Ưu đãi" className="voucher-held text-sm" data-checkout-vouchers="offered">
+    <section aria-label={t("Ưu đãi")} className="voucher-held text-sm" data-checkout-vouchers="offered">
       <div className="voucher-held__head">
         <span className="voucher-held__ok voucher-held__ok--offer"><VoucherIcon name="tag" /></span>
         <p className="font-semibold outline-none" data-voucher-focus tabIndex={-1}>{view.afterStale ? "Nàng xác nhận lại ưu đãi" : "Nàng có ưu đãi cho đơn này"}</p>
       </div>
-      {view.afterStale ? <p className="px-3.5 pt-3 text-black/75">Ưu đãi giữ trước đó không còn khớp với lựa chọn hoặc giỏ hàng hiện tại.</p> : null}
+      {view.afterStale ? <p className="px-3.5 pt-3 text-black/75">{t("Ưu đãi giữ trước đó không còn khớp với lựa chọn hoặc giỏ hàng hiện tại.")}</p> : null}
       <ul className="grid gap-2.5 px-3.5 py-3">
         {view.lines.map((line) => <VoucherLine emphasis={false} key={line.id} line={line} />)}
       </ul>
@@ -186,16 +188,16 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
             {view.totalIncreaseText ? <p className="mt-1" data-checkout-voucher-increase>{view.totalIncreaseText}</p> : null}
             <label className="mt-2 flex min-h-11 items-start gap-3" htmlFor={consentId}>
               <input checked={accepted} className="mt-1 h-5 w-5" id={consentId} onChange={(event) => setAccepted(event.currentTarget.checked)} type="checkbox" />
-              <span>Tôi đồng ý với thay đổi trên và muốn dùng ưu đãi.</span>
+              <span>{t("Tôi đồng ý với thay đổi trên và muốn dùng ưu đãi.")}</span>
             </label>
           </div>
         ) : null}
-        <p className="mt-2 text-black/75">Ưu đãi được giữ 10 phút kể từ lúc nàng xác nhận.</p>
+        <p className="mt-2 text-black/75">{t("Ưu đãi được giữ 10 phút kể từ lúc nàng xác nhận.")}</p>
         <div className="mt-3 flex flex-wrap items-center gap-x-4">
           <button className="btn btn--primary px-5" data-checkout-voucher-confirm disabled={pending || (needsConsent && !accepted)} onClick={confirm} type="button">
             {pending ? "Đang giữ ưu đãi…" : "Áp dụng và giữ ưu đãi"}
           </button>
-          {change ?? <Link className="min-h-11 content-center underline" href="/cart">Đổi hoặc bỏ ưu đãi</Link>}
+          {change ?? <Link className="min-h-11 content-center underline" href="/cart">{t("Đổi hoặc bỏ ưu đãi")}</Link>}
         </div>
         <p aria-live="polite" className="mt-2 text-[#b42318] empty:hidden" data-checkout-voucher-error role="alert">{error}</p>
       </div>

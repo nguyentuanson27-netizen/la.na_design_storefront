@@ -1,4 +1,5 @@
 import type { HistoricalPreorderPresentation } from "@/commerce/historical-preorder-presentation";
+import { useT } from "@/i18n/client";
 
 function formatHistoricalDate(value: string): string {
   const date = new Date(value);
@@ -26,6 +27,7 @@ function formatWindow(minimumDays: number, maximumDays: number): string {
 export function BrandHistoricalPreorderNotice({
   history,
 }: Readonly<{ history: HistoricalPreorderPresentation }>) {
+  const t = useT();
   return (
     <section
       aria-labelledby="historical-preorder-title"
@@ -43,7 +45,7 @@ export function BrandHistoricalPreorderNotice({
         <time dateTime={history.preorderReadyAt}>
           {formatHistoricalDate(history.preorderReadyAt)}
         </time>
-        . Ngày này được lưu tại thời điểm đơn hàng được hệ thống xác nhận thành công.
+        {t(". Ngày này được lưu tại thời điểm đơn hàng được hệ thống xác nhận thành công.")}
       </p>
 
       {history.isMixedReadyAndPreorder ? (
@@ -57,7 +59,7 @@ export function BrandHistoricalPreorderNotice({
       {history.shippingWindows ? (
         <>
           <p className="mt-2 text-sm leading-6 text-black/75">
-            Sau thời điểm sẵn sàng, thời gian giao hàng dự kiến đã được lưu cùng đơn:
+            {t("Sau thời điểm sẵn sàng, thời gian giao hàng dự kiến đã được lưu cùng đơn:")}
           </p>
           <ul className="mt-2 space-y-1 text-sm leading-6 text-black/75">
             {history.shippingWindows.map((window) => (

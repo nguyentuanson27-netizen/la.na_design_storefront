@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import { formatFlashClock } from "@/components/headless/product-urgency";
 import { useElapsedMs } from "@/components/headless/use-elapsed-ms";
+import { useT } from "@/i18n/client";
 
 /**
  * A cart line's Flash Sale countdown and "Còn x", in the drawer and on the cart page.
@@ -25,6 +26,7 @@ export function CartLineUrgency({
   onExpired,
   className = "",
 }: Readonly<{ flashRemainingMs?: number; lowStockText?: string; onExpired?: () => void; className?: string }>) {
+  const t = useT();
   const router = useRouter();
   // One snapshot per server answer: a re-read restarts the elapsed count from the new duration.
   const snapshot = useMemo(() => (flashRemainingMs === undefined ? null : { flashRemainingMs }), [flashRemainingMs]);
@@ -60,7 +62,7 @@ export function CartLineUrgency({
         </p>
       ) : (
         <p className="text-[0.72rem] text-[#70584B]" data-cart-flash="ended">
-          Flash Sale đã kết thúc, giá sẽ được cập nhật.
+          {t("Flash Sale đã kết thúc, giá sẽ được cập nhật.")}
         </p>
       )}
       {lowStockText === undefined ? null : (

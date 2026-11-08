@@ -4,6 +4,7 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 
 import { DEFAULT_LOCALE, localizeHref, splitLocalePath, type Locale } from "./locale.ts";
+import { renderRich } from "./rich.tsx";
 import { createTranslator, type Messages, type Translator } from "./translate.ts";
 
 type I18nContextValue = Readonly<{ locale: Locale; messages: Messages }>;
@@ -30,6 +31,12 @@ export function useLocale(): Locale {
 export function useT(): Translator {
   const { locale, messages } = useContext(I18nContext);
   return useMemo(() => createTranslator(locale, messages), [locale, messages]);
+}
+
+/** Translated text with inline markup and `{slot}`s filled by React nodes; see `renderRich`. */
+export function useRich(): (source: string, values?: Readonly<Record<string, ReactNode>>) => ReactNode {
+  const t = useT();
+  return useMemo(() => (source, values) => renderRich(t(source), values), [t]);
 }
 
 /** Puts an in-site href under the current locale's prefix. */

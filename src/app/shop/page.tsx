@@ -18,7 +18,7 @@ import {
   ListingViewToggle,
 } from "@/components/brand/listing-chrome";
 import { LISTING_ACTION_BAR_CLASSES } from "@/components/headless/listing-view-model";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { buildShopMetadata } from "@/routes/metadata/shop";
 import { loadShopRoute, type ShopRouteProps } from "@/routes/shop";
 import type { ShopViewModel } from "@/routes/shop-model";
@@ -34,7 +34,7 @@ import type { ShopViewModel } from "@/routes/shop-model";
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
-function render(data: ShopViewModel) {
+function render(data: ShopViewModel, { t }: RequestI18n) {
   const { discovery } = data;
 
   let activeFilterCount = 0;
@@ -49,10 +49,10 @@ function render(data: ShopViewModel) {
   return (
     <ListingShell>
       <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Cửa hàng" }]} />
-      <ListingHeader eyebrow="Tất cả sản phẩm" title="Cửa hàng">
+      <ListingHeader eyebrow={t("Tất cả sản phẩm")} title={t("Cửa hàng")}>
         <p className="mt-3 max-w-2xl text-xs leading-5 text-[#3B2219]/70 md:mt-6 md:text-sm md:leading-6">
           {/* Kept on one source line: the copy inventory reads this promise as a whole string. */}
-          Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
+          {t("Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.")}
         </p>
       </ListingHeader>
 
@@ -62,7 +62,7 @@ function render(data: ShopViewModel) {
         aria-labelledby="shop-discovery-title"
       >
         <h2 id="shop-discovery-title" className="sr-only">
-          Bộ lọc cửa hàng
+          {t("Bộ lọc cửa hàng")}
         </h2>
 
         {/* Mobile: search, sort and drawer filters are one GET form authority. The first line is the
@@ -73,7 +73,7 @@ function render(data: ShopViewModel) {
           <div className="flex flex-col gap-3">
             <div className={LISTING_ACTION_BAR_CLASSES.bar}>
               <span role="status" className="sr-only">
-                {data.totalCount} sản phẩm
+                {t("{count} sản phẩm", { count: data.totalCount })}
               </span>
               <ListingViewToggle compact className="shrink-0" />
 
@@ -93,20 +93,20 @@ function render(data: ShopViewModel) {
                 <ShopFilterSelect
                   id="shop-sort-select-mobile"
                   name="sort"
-                  aria-label="Sắp xếp"
+                  aria-label={t("Sắp xếp")}
                   defaultValue={discovery.sort}
                   className={LISTING_ACTION_BAR_CLASSES.sortSelect}
                 >
-                  <option value="name-asc">Tên A–Z</option>
-                  <option value="name-desc">Tên Z–A</option>
-                  <option value="price-asc">Giá thấp → cao</option>
-                  <option value="price-desc">Giá cao → thấp</option>
+                  <option value="name-asc">{t("Tên A–Z")}</option>
+                  <option value="name-desc">{t("Tên Z–A")}</option>
+                  <option value="price-asc">{t("Giá thấp → cao")}</option>
+                  <option value="price-desc">{t("Giá cao → thấp")}</option>
                 </ShopFilterSelect>
               </div>
             </div>
 
             <label className="relative flex w-full items-center">
-              <span className="sr-only">Tìm sản phẩm</span>
+              <span className="sr-only">{t("Tìm sản phẩm")}</span>
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#3B2219]/40">
                 <svg
                   className="h-3.5 w-3.5"
@@ -126,8 +126,8 @@ function render(data: ShopViewModel) {
               <input
                 type="search"
                 name="q"
-                aria-label="Tìm sản phẩm"
-                placeholder="Tìm sản phẩm…"
+                aria-label={t("Tìm sản phẩm")}
+                placeholder={t("Tìm sản phẩm…")}
                 defaultValue={discovery.query ?? ""}
                 maxLength={data.limits.query}
                 className="h-9 w-full rounded-full border border-[#3B2219]/20 bg-transparent pl-8 pr-3 text-xs text-[#2A1810] placeholder:text-[#3B2219]/40 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
@@ -143,14 +143,14 @@ function render(data: ShopViewModel) {
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <span role="status" className="sr-only">
-                {data.totalCount} sản phẩm
+                {t("{count} sản phẩm", { count: data.totalCount })}
               </span>
               <ListingViewToggle compact />
             </div>
 
             <div className="flex items-center gap-4">
               <label className="relative flex w-64 items-center lg:w-72">
-                <span className="sr-only">Tìm sản phẩm</span>
+                <span className="sr-only">{t("Tìm sản phẩm")}</span>
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#3B2219]/40">
                   <svg
                     className="h-3.5 w-3.5"
@@ -170,8 +170,8 @@ function render(data: ShopViewModel) {
                 <input
                   type="search"
                   name="q"
-                  aria-label="Tìm sản phẩm"
-                  placeholder="Tìm sản phẩm…"
+                  aria-label={t("Tìm sản phẩm")}
+                  placeholder={t("Tìm sản phẩm…")}
                   defaultValue={discovery.query ?? ""}
                   maxLength={data.limits.query}
                   className="w-full rounded-full border border-[#3B2219]/20 bg-transparent py-1.5 pl-8 pr-3 text-xs text-[#2A1810] placeholder:text-[#3B2219]/40 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
@@ -183,47 +183,47 @@ function render(data: ShopViewModel) {
                   htmlFor="shop-sort-select-desktop"
                   className="text-xs uppercase tracking-wider text-[#3B2219]/70"
                 >
-                  Sắp xếp:
+                  {t("Sắp xếp:")}
                 </label>
                 <ShopFilterSelect
                   id="shop-sort-select-desktop"
                   name="sort"
-                  aria-label="Sắp xếp"
+                  aria-label={t("Sắp xếp")}
                   defaultValue={discovery.sort}
                   className="rounded border border-[#3B2219]/20 bg-transparent px-3 py-1.5 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
                 >
-                  <option value="name-asc">Tên A–Z</option>
-                  <option value="name-desc">Tên Z–A</option>
-                  <option value="price-asc">Giá thấp → cao</option>
-                  <option value="price-desc">Giá cao → thấp</option>
+                  <option value="name-asc">{t("Tên A–Z")}</option>
+                  <option value="name-desc">{t("Tên Z–A")}</option>
+                  <option value="price-asc">{t("Giá thấp → cao")}</option>
+                  <option value="price-desc">{t("Giá cao → thấp")}</option>
                 </ShopFilterSelect>
               </div>
             </div>
           </div>
 
           <div className="mt-5 flex flex-wrap items-center gap-4 text-xs text-[#3B2219]">
-            <span className="font-semibold uppercase tracking-wider text-[#70584B]">Bộ lọc</span>
+            <span className="font-semibold uppercase tracking-wider text-[#70584B]">{t("Bộ lọc")}</span>
 
             <label className="inline-flex items-center gap-1.5 rounded-md border border-[#3B2219]/25 px-3 py-1 font-medium cursor-pointer transition hover:border-[#3B2219] text-[#3B2219]">
               <ShopFilterCheckbox
                 name="availability"
                 value="in-stock"
                 defaultChecked={discovery.availability === "in-stock"}
-                aria-label="Chỉ còn hàng"
+                aria-label={t("Chỉ còn hàng")}
                 className="h-3.5 w-3.5 rounded border-[#3B2219]/30 accent-[#3B2219]"
               />
-              <span>Chỉ còn hàng</span>
+              <span>{t("Chỉ còn hàng")}</span>
             </label>
 
             <label className="flex items-center gap-1.5">
-              <span className="font-semibold uppercase tracking-wider text-[#70584B]">Bộ sưu tập</span>
+              <span className="font-semibold uppercase tracking-wider text-[#70584B]">{t("Bộ sưu tập")}</span>
               <ShopFilterSelect
                 name="collection"
-                aria-label="Bộ sưu tập"
+                aria-label={t("Bộ sưu tập")}
                 defaultValue={data.selectedCollection}
                 className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
-                <option value="">Tất cả</option>
+                <option value="">{t("Tất cả")}</option>
                 {data.collectionFacets.map((col) => (
                   <option key={col.value} value={col.value}>
                     {col.label}
@@ -233,14 +233,14 @@ function render(data: ShopViewModel) {
             </label>
 
             <label className="flex items-center gap-1.5">
-              <span className="font-semibold uppercase tracking-wider text-[#70584B]">Kích cỡ</span>
+              <span className="font-semibold uppercase tracking-wider text-[#70584B]">{t("Kích cỡ")}</span>
               <ShopFilterSelect
                 name="size"
-                aria-label="Kích cỡ"
+                aria-label={t("Kích cỡ")}
                 defaultValue={data.selectedSize}
                 className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
-                <option value="">Tất cả</option>
+                <option value="">{t("Tất cả")}</option>
                 {data.sizeFacets.map((size) => (
                   <option key={size} value={size}>
                     {size}
@@ -250,14 +250,14 @@ function render(data: ShopViewModel) {
             </label>
 
             <label className="flex items-center gap-1.5">
-              <span className="font-semibold uppercase tracking-wider text-[#70584B]">Màu</span>
+              <span className="font-semibold uppercase tracking-wider text-[#70584B]">{t("Màu")}</span>
               <ShopFilterSelect
                 name="color"
-                aria-label="Màu"
+                aria-label={t("Màu")}
                 defaultValue={data.selectedColor}
                 className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
-                <option value="">Tất cả</option>
+                <option value="">{t("Tất cả")}</option>
                 {data.colorFacets.map((col) => (
                   <option key={col} value={col}>
                     {col}
@@ -267,7 +267,7 @@ function render(data: ShopViewModel) {
             </label>
 
             <div className="flex items-center gap-1.5">
-              <span className="font-semibold uppercase tracking-wider text-[#70584B]">Giá:</span>
+              <span className="font-semibold uppercase tracking-wider text-[#70584B]">{t("Giá:")}</span>
               <ShopPriceRange
                 limitVnd={data.limits.priceVnd}
                 minPriceVnd={discovery.minPriceVnd}
@@ -278,7 +278,7 @@ function render(data: ShopViewModel) {
                 type="submit"
                 className="btn btn--primary btn--sm"
               >
-                Áp dụng
+                {t("Áp dụng")}
               </button>
             </div>
 
@@ -287,7 +287,7 @@ function render(data: ShopViewModel) {
                 href="/shop"
                 className="ml-auto font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 hover:text-[#2A1810]"
               >
-                Xóa bộ lọc
+                {t("Xóa bộ lọc")}
               </Link>
             ) : null}
           </div>
@@ -318,7 +318,7 @@ function render(data: ShopViewModel) {
       ) : (
         <section className="mt-8" aria-labelledby="shop-products-title">
           <h2 id="shop-products-title" className="sr-only">
-            Sản phẩm hiện tại
+            {t("Sản phẩm hiện tại")}
           </h2>
           <div>
             <ListingProductGrid>
@@ -333,7 +333,7 @@ function render(data: ShopViewModel) {
             </ListingProductGrid>
           </div>
           <ListingPagination
-            label="Phân trang sản phẩm"
+            label={t("Phân trang sản phẩm")}
             page={data.page}
             totalPages={data.totalPages}
             previousHref={data.previousHref}

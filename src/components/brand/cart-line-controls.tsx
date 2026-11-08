@@ -1,6 +1,7 @@
 "use client";
 
 import { useCartLine, type UseCartLineInput } from "@/components/headless/use-cart-line";
+import { useT } from "@/i18n/client";
 
 /**
  * Markup only. Every brand throws this file away and writes its own.
@@ -17,6 +18,7 @@ export function BrandCartLineControls({
   totalText,
   ...props
 }: UseCartLineInput & Readonly<{ productName: string; totalText?: string }>) {
+  const t = useT();
   const line = useCartLine(props);
   const stepClassName =
     "inline-flex h-10 w-10 items-center justify-center text-lg text-black/80 transition hover:text-black disabled:cursor-not-allowed disabled:opacity-35";
@@ -34,7 +36,7 @@ export function BrandCartLineControls({
           <span aria-hidden="true">−</span>
         </button>
         <label className="sr-only" htmlFor={line.inputId}>
-          Số lượng
+          {t("Số lượng")}
         </label>
         <input
           id={line.inputId}

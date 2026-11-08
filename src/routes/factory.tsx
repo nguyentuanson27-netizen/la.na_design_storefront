@@ -6,6 +6,11 @@ import { localizeMetadata } from "@/i18n/metadata";
 
 import { StorefrontRoute, type RouteHandle } from "./core.tsx";
 
+/** What a page's `render` receives about the request's language; see `RouteDefinition.render`. */
+export type { RequestI18n };
+/** For the few server components under `src/app` that are not routes (the not-found page). */
+export { getI18n };
+
 /**
  * Joins a loader to its markup, so a page module is left with wiring rather than decisions.
  *

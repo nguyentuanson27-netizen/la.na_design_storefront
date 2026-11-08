@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type Mous
 
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import type { HomeFeedbackSection } from "@/routes/home-model";
+import { useT } from "@/i18n/client";
 
 type FeedbackImage = HomeFeedbackSection["images"][number];
 
@@ -111,6 +112,7 @@ function FeedbackViewer({
   onClose: () => void;
   onStep: (delta: number) => void;
 }>) {
+  const t = useT();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const isOpen = openIndex !== null;
   useScrollLock(isOpen);
@@ -145,7 +147,7 @@ function FeedbackViewer({
     <dialog
       ref={dialogRef}
       className="feedback-viewer"
-      aria-label="Xem ảnh feedback"
+      aria-label={t("Xem ảnh feedback")}
       onCancel={(event) => {
         // Keep Escape on the same state-driven path as the close button. Native close()
         // queues a close event; it must not become a second state write after Enter reopens it.
@@ -157,7 +159,7 @@ function FeedbackViewer({
     >
       {image && openIndex !== null ? (
         <>
-          <button type="button" className="feedback-viewer__close" onClick={onClose} aria-label="Đóng">
+          <button type="button" className="feedback-viewer__close" onClick={onClose} aria-label={t("Đóng")}>
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <line x1="6" y1="6" x2="18" y2="18" />
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -197,7 +199,7 @@ function FeedbackViewer({
                 type="button"
                 className="feedback-viewer__nav feedback-viewer__nav--prev"
                 onClick={() => onStep(-1)}
-                aria-label="Ảnh trước"
+                aria-label={t("Ảnh trước")}
               >
                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
                   <polyline points="15 6 9 12 15 18" />
@@ -207,7 +209,7 @@ function FeedbackViewer({
                 type="button"
                 className="feedback-viewer__nav feedback-viewer__nav--next"
                 onClick={() => onStep(1)}
-                aria-label="Ảnh sau"
+                aria-label={t("Ảnh sau")}
               >
                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
                   <polyline points="9 6 15 12 9 18" />

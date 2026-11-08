@@ -17,7 +17,7 @@ import { PRODUCT_REVIEW_PHOTOS_ANCHOR } from "@/components/headless/product-revi
 import { VoucherTeaserChips } from "@/components/brand/voucher-teaser-chips";
 import { VoucherIcon } from "@/components/brand/voucher-icons";
 import type { PurchaseAssuranceItem } from "@/routes/evergreen-model";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { loadProductRoute, type ProductRouteData, type ProductRouteProps } from "@/routes/product";
 
 /**
@@ -66,7 +66,7 @@ function AssuranceIcon({ kind }: Readonly<{ kind: PurchaseAssuranceItem["key"] |
   );
 }
 
-function render(data: ProductRouteData) {
+function render(data: ProductRouteData, { t }: RequestI18n) {
   const { editorial } = data;
 
   // A product with its own review photographs shows those, not the shared brand gallery as well:
@@ -88,7 +88,7 @@ function render(data: ProductRouteData) {
 
   const identity = (
     <>
-      <p className="eyebrow hidden lg:block">{BRAND.identity.name} / Sản phẩm</p>
+      <p className="eyebrow hidden lg:block">{BRAND.identity.name} / {t("Sản phẩm")}</p>
       {/* Master spec §9: the product's name is a heading, so it wears the elegant serif the rest
           of the brand's headings wear rather than the condensed bold sans it used to shout in. */}
       <h1 className="mt-0 break-words font-display text-[28px] font-normal leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:mt-5 lg:text-[40px] lg:leading-[1.1]">
@@ -122,11 +122,11 @@ function render(data: ProductRouteData) {
 
   // F7e: a product with no approved editorial facts gets no empty block to explain itself with.
   const productInformation = !hasProductInformation ? null : (
-    <section aria-label="Chi tiết sản phẩm" className="border-t border-black/20">
+    <section aria-label={t("Chi tiết sản phẩm")} className="border-t border-black/20">
       {editorial.description || editorial.craftDetails.length > 0 ? (
         <section className="border-b border-[#3B2219]/25 py-6" aria-labelledby="pdp-description-title">
           <h2 id="pdp-description-title" className="pdp-section-title font-display text-xl font-normal tracking-[-0.02em] lg:text-2xl">
-            Mô tả sản phẩm
+            {t("Mô tả sản phẩm")}
           </h2>
           {/* Below `lg` the description opens on its first lines; the blocks after it fold. */}
           <PdpClampedContent>
@@ -145,7 +145,7 @@ function render(data: ProductRouteData) {
       ) : null}
 
       {editorial.material ? (
-        <PdpDisclosure titleId="pdp-material-title" title="Chất liệu">
+        <PdpDisclosure titleId="pdp-material-title" title={t("Chất liệu")}>
           <p className="max-w-xl text-sm leading-6 text-black/70 lg:mt-3">{editorial.material}</p>
         </PdpDisclosure>
       ) : null}
@@ -157,7 +157,7 @@ function render(data: ProductRouteData) {
       */}
 
       {editorial.careInstructions ? (
-        <PdpDisclosure titleId="pdp-care-title" title="Hướng dẫn bảo quản">
+        <PdpDisclosure titleId="pdp-care-title" title={t("Hướng dẫn bảo quản")}>
           <p className="max-w-xl whitespace-pre-line text-sm leading-6 text-black/70 lg:mt-3">
             {editorial.careInstructions}
           </p>
@@ -168,29 +168,29 @@ function render(data: ProductRouteData) {
 
   const purchaseInformation = (
     <section
-      aria-label="Giao hàng và đổi trả"
+      aria-label={t("Giao hàng và đổi trả")}
       // Below `lg` this stacks right under the product information, whose last row already closes
       // with a rule, so a second top rule would draw a doubled line.
       className={`border-black/20 lg:border-t ${hasProductInformation ? "" : "border-t"}`}
     >
-      <PdpDisclosure titleId="pdp-shipping-title" title="Giao hàng">
+      <PdpDisclosure titleId="pdp-shipping-title" title={t("Giao hàng")}>
         <div className="max-w-xl space-y-1 text-sm leading-6 text-black/70 lg:mt-3">
-          <p>{data.shipping.coverage}</p>
-          <p>{data.shipping.innerCityLabel}: {data.shipping.innerCityEstimate}</p>
-          <p>{data.shipping.otherProvinceLabel}: {data.shipping.otherProvinceEstimate}</p>
-          <p>{data.shipping.estimateCaveat}</p>
+          <p>{t(data.shipping.coverage)}</p>
+          <p>{t(data.shipping.innerCityLabel)}: {t(data.shipping.innerCityEstimate)}</p>
+          <p>{t(data.shipping.otherProvinceLabel)}: {t(data.shipping.otherProvinceEstimate)}</p>
+          <p>{t(data.shipping.estimateCaveat)}</p>
           <Link className="inline-block underline underline-offset-4" href="/shipping">
-            Xem chính sách vận chuyển
+            {t("Xem chính sách vận chuyển")}
           </Link>
         </div>
       </PdpDisclosure>
 
-      <PdpDisclosure titleId="pdp-returns-title" title="Đổi trả">
+      <PdpDisclosure titleId="pdp-returns-title" title={t("Đổi trả")}>
         <div className="max-w-xl space-y-1 text-sm leading-6 text-black/70 lg:mt-3">
-          <p>{data.returns.returnWindow}</p>
-          <p>{data.returns.refundWindow}</p>
+          <p>{t(data.returns.returnWindow)}</p>
+          <p>{t(data.returns.refundWindow)}</p>
           <Link className="inline-block underline underline-offset-4" href="/returns">
-            Xem chính sách đổi trả
+            {t("Xem chính sách đổi trả")}
           </Link>
         </div>
       </PdpDisclosure>
@@ -203,7 +203,7 @@ function render(data: ProductRouteData) {
   const zaloHref = zaloUrlFromTelephone(BRAND.contact.telephone);
   const sizeHelp = messengerHref === null && zaloHref === null ? null : (
     <p className="flex flex-wrap items-center gap-x-3 text-sm text-[#3B2219]/70" data-pdp-size-help="">
-      <span>Phân vân size? Hỏi shop qua</span>
+      <span>{t("Phân vân size? Hỏi shop qua")}</span>
       {messengerHref === null ? null : (
         <a
           className={`inline-flex min-h-11 items-center text-[#3B2219] ${PANEL_LINK}`}
@@ -211,7 +211,7 @@ function render(data: ProductRouteData) {
           target="_blank"
           rel="noreferrer"
         >
-          Messenger<span className="sr-only"> (mở trong tab mới)</span>
+          Messenger<span className="sr-only">{t("(mở trong tab mới)")}</span>
         </a>
       )}
       {zaloHref === null ? null : (
@@ -221,7 +221,7 @@ function render(data: ProductRouteData) {
           target="_blank"
           rel="noreferrer"
         >
-          Zalo<span className="sr-only"> (mở trong tab mới)</span>
+          Zalo<span className="sr-only">{t("(mở trong tab mới)")}</span>
         </a>
       )}
     </p>
@@ -233,7 +233,7 @@ function render(data: ProductRouteData) {
   const purchaseOffers = data.promotionOffers.length === 0 && data.voucherTeaser.length === 0 ? null : (
     <>
       {data.promotionOffers.length === 0 ? null : (
-        <ul aria-label="Ưu đãi áp dụng" className="mt-3 flex flex-col items-start gap-2" data-pdp-offers="">
+        <ul aria-label={t("Ưu đãi áp dụng")} className="mt-3 flex flex-col items-start gap-2" data-pdp-offers="">
           {/* The same ticket as the voucher chips below, so promotions and vouchers read as one family.
               A promotion is not a voucher type: the discount ticket takes the neutral ink tone, the gift the mocha one. */}
           {data.promotionOffers.map((offer) => (
@@ -242,7 +242,7 @@ function render(data: ProductRouteData) {
               className={`voucher-chip voucher-tone ${offer.kind === "GIFT" ? "voucher-tone--mocha" : "voucher-tone--ink"}`}
             >
               <span className="voucher-chip__icon"><VoucherIcon name={offer.kind === "GIFT" ? "gift" : "tag"} /></span>
-              <span className="voucher-chip__text">{offer.label}</span>
+              <span className="voucher-chip__text">{t(offer.label)}</span>
             </li>
           ))}
         </ul>
@@ -250,9 +250,9 @@ function render(data: ProductRouteData) {
       {/* Voucher teaser: states the voucher's own conditions only; whether a cart qualifies is decided in the cart. */}
       {data.voucherTeaser.length === 0 ? null : (
         <div className="mt-5 text-sm text-[#3B2219]" data-pdp-vouchers="">
-          <p className="pdp-voucher-label">Voucher có thể áp dụng cho giỏ hàng:</p>
+          <p className="pdp-voucher-label">{t("Voucher có thể áp dụng cho giỏ hàng:")}</p>
           <VoucherTeaserChips items={data.voucherTeaser} />
-          <p className="mt-1.5 text-xs text-[#3B2219]/70">Nàng chọn voucher trong giỏ hàng. Voucher chỉ áp dụng khi giỏ đủ điều kiện.</p>
+          <p className="mt-1.5 text-xs text-[#3B2219]/70">{t("Nàng chọn voucher trong giỏ hàng. Voucher chỉ áp dụng khi giỏ đủ điều kiện.")}</p>
         </div>
       )}
     </>
@@ -261,15 +261,15 @@ function render(data: ProductRouteData) {
   // The buying facts, repeated where the decision is made; the full policies stay further down.
   const purchaseAssurance = (
     <div className="mt-4 border-t border-[#3B2219]/15 pt-4">
-      <ul aria-label="Cam kết mua hàng" className="space-y-2 text-sm text-[#3B2219]/80">
+      <ul aria-label={t("Cam kết mua hàng")} className="space-y-2 text-sm text-[#3B2219]/80">
         {data.purchaseAssurance.map((item) => (
           <li key={item.key} className="flex items-center gap-2.5">
             <AssuranceIcon kind={item.key} />
             {item.href === null ? (
-              <span>{item.label}</span>
+              <span>{t(item.label)}</span>
             ) : (
               <Link className={PANEL_LINK} href={item.href}>
-                {item.label}
+                {t(item.label)}
               </Link>
             )}
           </li>
@@ -280,8 +280,8 @@ function render(data: ProductRouteData) {
           <AssuranceIcon kind="photos" />
           <a className={PANEL_LINK} href={`#${FEEDBACK_SECTION_ID}`}>
             {feedback.scope === "product"
-              ? `Xem ${feedback.images.length} ảnh khách hàng diện mẫu này`
-              : `Xem ảnh khách hàng diện ${BRAND.identity.name}`}
+              ? t("Xem {count} ảnh khách hàng diện mẫu này", { count: feedback.images.length })
+              : t("Xem ảnh khách hàng diện {name}", { name: BRAND.identity.name })}
           </a>
         </p>
       )}
@@ -343,8 +343,8 @@ function render(data: ProductRouteData) {
                 id={PRODUCT_REVIEW_PHOTOS_ANCHOR}
                 headingId="pdp-review-photos-title"
                 surface="product"
-                title="Ảnh khách diện mẫu này"
-                ctaLabel="Xem thêm"
+                title={t("Ảnh khách diện mẫu này")}
+                ctaLabel={t("Xem thêm")}
                 href={null}
                 images={data.reviews.photos.map((photo) => ({
                   src: photo.src,
@@ -365,8 +365,8 @@ function render(data: ProductRouteData) {
             id={FEEDBACK_SECTION_ID}
             headingId="pdp-feedback-title"
             surface="product"
-            title={feedback.title}
-            ctaLabel={feedback.ctaLabel}
+            title={t(feedback.title)}
+            ctaLabel={t(feedback.ctaLabel)}
             href={feedback.href}
             images={feedback.images}
           />
@@ -381,7 +381,7 @@ function render(data: ProductRouteData) {
                 The generic related source is manual overrides or a same-category fallback. Neither
                 proves the items complete an outfit, so the heading says what the data supports.
               */}
-              <h2 id="related-products-title">Nàng có thể thích</h2>
+              <h2 id="related-products-title">{t("Nàng có thể thích")}</h2>
             </div>
             <CommerceEventReporter event={data.relatedListEvent} />
             <div className="product-grid">

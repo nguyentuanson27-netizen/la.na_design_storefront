@@ -11,6 +11,7 @@ import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import { STOREFRONT_DISCOVERY_LIMITS } from "@/components/headless/search-overlay-model";
 import { useSearchOverlay } from "@/components/headless/use-search-overlay";
+import { useT } from "@/i18n/client";
 
 export type SearchOverlayProps = Readonly<{
   isOpen: boolean;
@@ -19,6 +20,7 @@ export type SearchOverlayProps = Readonly<{
 }>;
 
 export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProps) {
+  const t = useT();
   const router = useRouter();
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -90,7 +92,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
       ref={overlayRef}
       role="dialog"
       aria-modal="true"
-      aria-label="Tìm kiếm sản phẩm"
+      aria-label={t("Tìm kiếm sản phẩm")}
       className="fixed inset-0 z-50 flex flex-col overflow-y-auto overscroll-contain bg-[#FAF7F2] text-[#3B2219]"
     >
       {/* Live region for screen reader announcements */}
@@ -110,7 +112,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
         <button
           type="button"
           onClick={onClose}
-          aria-label="Đóng tìm kiếm"
+          aria-label={t("Đóng tìm kiếm")}
           className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#3B2219] hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
         >
           <svg className="h-6 w-6 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="1.8" aria-hidden="true">
@@ -141,15 +143,15 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               maxLength={STOREFRONT_DISCOVERY_LIMITS.query}
-              placeholder="Tìm kiếm sản phẩm..."
-              aria-label="Nhập từ khóa tìm kiếm"
+              placeholder={t("Tìm kiếm sản phẩm...")}
+              aria-label={t("Nhập từ khóa tìm kiếm")}
               className="w-full bg-transparent py-4 text-xl md:text-3xl font-display text-[#2A1810] outline-none placeholder:text-[#70584B]"
             />
             {query.length > 0 ? (
               <button
                 type="button"
                 onClick={clearQuery}
-                aria-label="Xóa từ khóa"
+                aria-label={t("Xóa từ khóa")}
                 className="p-2 text-[#70584B] hover:text-[#2A1810]"
               >
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -194,12 +196,12 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
                 {result.error}
               </p>
               <p className="mt-2 text-xs text-[#70584B]">
-                Nàng thử lại sau hoặc tìm với từ khóa khác nhé.
+                {t("Nàng thử lại sau hoặc tìm với từ khóa khác nhé.")}
               </p>
             </div>
           ) : result.products.length > 0 ? (
             <div>
-              <p className="eyebrow text-[#70584B] mb-4">Sản phẩm gợi ý</p>
+              <p className="eyebrow text-[#70584B] mb-4">{t("Sản phẩm gợi ý")}</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
                 {result.products.map((product) => (
                   <Link
@@ -241,7 +243,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
                 Không tìm thấy sản phẩm nào phù hợp với &ldquo;{query.trim()}&rdquo;
               </p>
               <p className="mt-2 text-xs text-[#70584B]">
-                Nàng kiểm tra lại chính tả hoặc thử từ khóa khác nhé.
+                {t("Nàng kiểm tra lại chính tả hoặc thử từ khóa khác nhé.")}
               </p>
             </div>
           ) : null}

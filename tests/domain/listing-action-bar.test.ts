@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { readUntranslated } from "../support/untranslated-source.ts";
 import { fileURLToPath } from "node:url";
 
 import { LISTING_ACTION_BAR_CLASSES } from "../../src/components/headless/listing-view-model.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const read = (relativePath: string) => readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
+const read = (relativePath: string) => readUntranslated(path.join(REPO_ROOT, relativePath), "utf8");
 
 test("the category listing, /sale and /shop draw their phone action bar from the same classes", () => {
   const panel = read("src/components/brand/plp-filter-panel.tsx");
@@ -28,10 +29,10 @@ test("the category listing, /sale and /shop draw their phone action bar from the
 
 test("the result count is not drawn on /shop; only a visually hidden live copy carries it", () => {
   const shopPage = read("src/app/shop/page.tsx");
-  const counts = shopPage.match(/\{data\.totalCount\} sản phẩm/g) ?? [];
+  const counts = shopPage.match(/\{t\("\{count\} sản phẩm", \{ count: data\.totalCount \}\)\}/g) ?? [];
   assert.equal(counts.length, 2, "one live copy in each of the two forms");
   assert.equal(
-    (shopPage.match(/<span role="status" className="sr-only">\s*\{data\.totalCount\} sản phẩm/g) ?? []).length,
+    (shopPage.match(/<span role="status" className="sr-only">\s*\{t\("\{count\} sản phẩm", \{ count: data\.totalCount \}\)\}/g) ?? []).length,
     2,
     "both copies are visually hidden status regions",
   );

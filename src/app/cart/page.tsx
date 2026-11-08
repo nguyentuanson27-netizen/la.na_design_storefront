@@ -18,7 +18,7 @@ import { voucherPickerKey } from "@/routes/voucher-picker-model";
 import { VoucherPicker } from "@/components/brand/voucher-picker";
 import { VoucherDiscountRows } from "@/components/brand/voucher-summary-lines";
 import type { CartLineView, CartViewModel } from "@/routes/cart-model";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { buildCartMetadata } from "@/routes/metadata/cart";
 
 /** Markup only. The lines, the subtotal and the `view_cart` event live in `@/routes/cart`. */
@@ -51,19 +51,19 @@ function LineVisual({ line, priority }: Readonly<{ line: CartLineView; priority:
   );
 }
 
-function render(data: CartRouteViewModel) {
+function render(data: CartRouteViewModel, { t }: RequestI18n) {
   if (data.isEmpty) {
     return (
       <PageShell>
-        <PageHeader align="center" title="Giỏ hàng của nàng" />
+        <PageHeader align="center" title={t("Giỏ hàng của nàng")} />
         <PageBreadcrumbs className="mt-3 [&_ol]:justify-center" items={CART_BREADCRUMBS} />
         <div className="mt-8" data-ui-state="empty">
-          <p className="font-display text-xl md:text-2xl">Giỏ hàng của nàng đang trống.</p>
+          <p className="font-display text-xl md:text-2xl">{t("Giỏ hàng của nàng đang trống.")}</p>
           <p className="mt-4 text-sm leading-6 text-black/75">
-            Nàng ghé xem những thiết kế mới nhất của La.na nhé.
+            {t("Nàng ghé xem những thiết kế mới nhất của La.na nhé.")}
           </p>
           {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
-          <Link className="text-link mt-6 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
+          <Link className="text-link mt-6 inline-block" href="/shop">{t("Tiếp tục mua sắm ↗")}</Link>
         </div>
       </PageShell>
     );
@@ -92,7 +92,7 @@ function render(data: CartRouteViewModel) {
 
   return (
     <PageShell>
-      <PageHeader align="center" title="Giỏ hàng của nàng" />
+      <PageHeader align="center" title={t("Giỏ hàng của nàng")} />
       <PageBreadcrumbs className="mt-3 [&_ol]:justify-center" items={CART_BREADCRUMBS} />
       <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.34fr)] lg:gap-16">
         <div className="min-w-0">
@@ -190,12 +190,12 @@ function render(data: CartRouteViewModel) {
         </div>
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
           {data.vouchers ? (
-            <section aria-label="Ưu đãi" className="mb-6" data-cart-vouchers>
+            <section aria-label={t("Ưu đãi")} className="mb-6" data-cart-vouchers>
               <VoucherPicker key={voucherPickerKey(data.vouchers)} initial={data.vouchers} linkOffer={data.voucherLinkOffer} />
-              <p className="mt-2 text-xs leading-5 text-black/65">Ưu đãi được xác nhận lại khi nàng đặt hàng.</p>
+              <p className="mt-2 text-xs leading-5 text-black/65">{t("Ưu đãi được xác nhận lại khi nàng đặt hàng.")}</p>
             </section>
           ) : null}
-          <p className="text-xs font-semibold uppercase tracking-[0.14em]">Tóm tắt</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em]">{t("Tóm tắt")}</p>
           {data.summary ? (
             <>
               <OrderSummary className="mt-5" summary={data.summary} totalLabel={voucherPreview ? "Tổng (chưa tính ưu đãi)" : "Tổng thanh toán"} />
@@ -206,10 +206,10 @@ function render(data: CartRouteViewModel) {
                     <VoucherDiscountRows part="shipping" summary={voucherPreview} />
                   </dl>
                   <p className="flex items-baseline justify-between gap-5">
-                    <span className="font-semibold">Dự kiến sau ưu đãi</span>
+                    <span className="font-semibold">{t("Dự kiến sau ưu đãi")}</span>
                     <strong className="text-xl font-semibold tracking-[-0.02em]">{voucherPreview.totalText}</strong>
                   </p>
-                  <p className="mt-1 text-xs leading-5 text-black/65">Ưu đãi chưa được giữ: nàng xác nhận ở bước thanh toán.</p>
+                  <p className="mt-1 text-xs leading-5 text-black/65">{t("Ưu đãi chưa được giữ: nàng xác nhận ở bước thanh toán.")}</p>
                 </div>
               ) : null}
             </>
@@ -224,7 +224,7 @@ function render(data: CartRouteViewModel) {
             <PromotionSavings className="mt-4" rows={data.promotions?.savings} />
             {data.shippingBaseFeeText ? (
               <div className="mt-4 flex items-baseline justify-between gap-6 text-sm" data-cart-shipping-estimate>
-                <span className="text-black/75">Phí vận chuyển (tạm tính)</span>
+                <span className="text-black/75">{t("Phí vận chuyển (tạm tính)")}</span>
                 <span>{data.shippingBaseFeeText}</span>
               </div>
             ) : null}
@@ -232,7 +232,7 @@ function render(data: CartRouteViewModel) {
           )}
           {data.hasUnavailableLines ? (
             <p className="mt-4 text-sm leading-6 text-black/75">
-              Sản phẩm không khả dụng chưa được tính vào tạm tính. Nàng giảm số lượng nếu không đủ hàng, hoặc xóa sản phẩm khỏi giỏ nhé.
+              {t("Sản phẩm không khả dụng chưa được tính vào tạm tính. Nàng giảm số lượng nếu không đủ hàng, hoặc xóa sản phẩm khỏi giỏ nhé.")}
             </p>
           ) : null}
           <p className="mt-4 text-sm leading-6 text-black/75">
@@ -254,7 +254,7 @@ function render(data: CartRouteViewModel) {
               href="/checkout"
               id={CHECKOUT_CTA_ID}
             >
-              Tiến hành đặt hàng
+              {t("Tiến hành đặt hàng")}
             </Link>
           ) : null}
           {data.canCheckout ? (
@@ -280,7 +280,7 @@ function render(data: CartRouteViewModel) {
               {data.benefitsNotice ? <p className="mt-3 text-black/75">{data.benefitsNotice}</p> : null}
             </div>
           )}
-          <Link className="text-link mt-7 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
+          <Link className="text-link mt-7 inline-block" href="/shop">{t("Tiếp tục mua sắm ↗")}</Link>
         </aside>
       </div>
       {data.canCheckout ? (
@@ -293,7 +293,7 @@ function render(data: CartRouteViewModel) {
             totalLabel={voucherPreview ? "Dự kiến sau ưu đãi" : data.summary ? "Tổng thanh toán" : "Tạm tính"}
             footnote={ORDER_TRUST_SHORT}
           >
-            <Link className="btn btn--primary px-4" href="/checkout">Thanh toán</Link>
+            <Link className="btn btn--primary px-4" href="/checkout">{t("Thanh toán")}</Link>
           </MobileStickyCta>
         </>
       ) : null}

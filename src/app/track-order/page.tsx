@@ -1,7 +1,7 @@
 import { BRAND } from "@/brand";
 import { BrandGuestOrderTrackingForm } from "@/components/brand/guest-order-tracking-form";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import {
   loadTrackOrderRoute,
   type TrackOrderRouteProps,
@@ -11,16 +11,16 @@ import { buildTrackOrderMetadata } from "@/routes/metadata/track-order";
 
 /** The order-lookup page's markup. The lookup itself is the form's server action. */
 
-function render(data: TrackOrderViewModel) {
+function render(data: TrackOrderViewModel, { t }: RequestI18n) {
   return (
     <PageShell>
       <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Tra cứu đơn hàng" }]} />
-      <PageHeader eyebrow="Đơn hàng" title="Tra cứu đơn hàng" />
+      <PageHeader eyebrow={t("Đơn hàng")} title={t("Tra cứu đơn hàng")} />
 
       <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.65fr)]">
         <div className="max-w-2xl">
           <p className="font-display text-xl md:text-2xl">
-            Nhập mã đơn và số điện thoại đã dùng khi đặt hàng.
+            {t("Nhập mã đơn và số điện thoại đã dùng khi đặt hàng.")}
           </p>
           <p className="mt-4 text-sm leading-6 text-black/75">
             Kết quả chỉ hiển thị trạng thái xử lý cơ bản của đơn hàng. {BRAND.identity.name} không hiển thị địa chỉ, ghi chú hoặc thông tin nội bộ của hệ thống bán hàng tại đây.
