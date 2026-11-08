@@ -29,7 +29,7 @@ function VoucherLine({ line, emphasis }: Readonly<{ line: CheckoutVoucherLine; e
           {line.group ? <small className="text-xs text-black/60">{line.group}</small> : null}
         </span>
       </span>
-      <span className={`shrink-0 font-semibold ${emphasis ? "text-[#b42318]" : "text-black/75"}`}>{line.amountText}</span>
+      <span className={`shrink-0 font-semibold ${emphasis ? "text-[#9a3324]" : "text-black/75"}`}>{line.amountText}</span>
     </li>
   );
 }
@@ -109,7 +109,7 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
           {view.lines.map((line) => <VoucherLine emphasis key={line.id} line={line} />)}
         </ul>
         <div className="px-3.5 pb-3">
-          {view.savingText ? <p className="mb-1" data-checkout-voucher-saving>Tổng giảm <strong className="text-[#b42318]">{view.savingText}</strong></p> : null}
+          {view.savingText ? <p className="mb-1" data-checkout-voucher-saving>Tổng giảm <strong className="text-[#9a3324]">{view.savingText}</strong></p> : null}
           <p className="text-black/75" data-checkout-voucher-held-until>
             {left === null ? "Ưu đãi được giữ tối đa 10 phút." : left > 0 ? `Ưu đãi được giữ thêm khoảng ${left} phút.` : "Ưu đãi đã hết hạn, đang cập nhật giá…"}
           </p>
