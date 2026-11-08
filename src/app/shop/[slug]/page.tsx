@@ -167,7 +167,12 @@ function render(data: ProductRouteData) {
   );
 
   const purchaseInformation = (
-    <section aria-label="Giao hàng và đổi trả" className="border-t border-black/20">
+    <section
+      aria-label="Giao hàng và đổi trả"
+      // Below `lg` this stacks right under the product information, whose last row already closes
+      // with a rule, so a second top rule would draw a doubled line.
+      className={`border-black/20 lg:border-t ${hasProductInformation ? "" : "border-t"}`}
+    >
       <PdpDisclosure titleId="pdp-shipping-title" title="Giao hàng">
         <div className="max-w-xl space-y-1 text-sm leading-6 text-black/70 lg:mt-3">
           <p>{data.shipping.coverage}</p>
