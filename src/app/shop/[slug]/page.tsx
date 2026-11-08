@@ -6,6 +6,7 @@ import { FeedbackRail } from "@/components/brand/feedback-gallery";
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import { PdpClampedContent, PdpDisclosure } from "@/components/brand/pdp-disclosure";
 import { BrandProductDetail } from "@/components/brand/product-detail";
+import { VoucherTeaserChips } from "@/components/brand/voucher-teaser-chips";
 import { VoucherIcon } from "@/components/brand/voucher-icons";
 import type { PurchaseAssuranceItem } from "@/routes/evergreen-model";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -217,14 +218,7 @@ function render(data: ProductRouteData) {
       {data.voucherTeaser.length === 0 ? null : (
         <div className="mt-5 text-sm text-[#3B2219]" data-pdp-vouchers="">
           <p className="pdp-voucher-label">Voucher có thể áp dụng cho giỏ hàng:</p>
-          <ul aria-label="Voucher" className="mt-2 flex flex-wrap gap-2">
-            {data.voucherTeaser.map((item) => (
-              <li className={`voucher-chip voucher-tone ${item.kind === "SHIPPING_FREE" ? "voucher-tone--teal" : "voucher-tone--ink"}`} key={item.id}>
-                <span className="voucher-chip__icon"><VoucherIcon name={item.kind === "SHIPPING_FREE" ? "truck" : "tag"} /></span>
-                <span className="voucher-chip__text">{item.text}</span>
-              </li>
-            ))}
-          </ul>
+          <VoucherTeaserChips items={data.voucherTeaser} />
           <p className="mt-1.5 text-xs text-[#3B2219]/70">Nàng chọn voucher trong giỏ hàng. Voucher chỉ áp dụng khi giỏ đủ điều kiện.</p>
         </div>
       )}

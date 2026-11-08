@@ -385,6 +385,53 @@ test("TG-05 / AC-31: the holds stop describing the cart (it changed) -> priced W
   assert.equal(await prisma.orderAcceptance.count({ where: { order: { sourceCartId: cartId } } }), 0);
 });
 
+test("PR 254 / P1: a choice saved AFTER the hold (the voucher removed, or swapped) sets the old hold aside; it is never applied, and only the new choice can be held", async () => {
+  await seed();
+  const a = await fixedVoucher(50_000, 600_000);
+  const b = await fixedVoucher(30_000, 600_000);
+  await hold();
+  assert.deepEqual((await holdsNow()).map((h) => [h.campaignId, h.state]), [[a.id, "HELD"]], "sanity: the best voucher is held");
+  const held = await render();
+  assert.equal(held.kind, "BENEFIT");
+  if (held.kind !== "BENEFIT") return;
+  const proof = issueBenefitQuoteProof({ quote: held.facts, cartId, secret: SECRET })!;
+  const commit = (voucherId: string | null) => commitVoucherDraft({
+    client: prisma, cartId, shopId: SHOP, env: ENV, attemptSecret: SECRET, expectedSelectionVersion: null,
+    draft: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId } }, shipping: null }, consentDigest: null,
+  });
+
+  // At checkout the shopper opens the picker and taps the held voucher again: "no voucher" is saved. The hold is still live.
+  assert.equal((await commit(null)).ok, true);
+  assert.deepEqual((await holdsNow()).map((h) => h.state), ["HELD"]);
+  const removed = await render();
+  assert.equal(removed.kind, "LEGACY", "priced without the voucher the shopper removed");
+  assert.equal(removed.kind === "LEGACY" && removed.voucherStale, true, "and the page is told the hold was set aside");
+  const pancake = fakePancake();
+  const refused = await submit(checkoutService(pancake, proof));
+  assert.equal(refused.ok === false && refused.status, "PRICE_CHANGED", "the proof of the held price cannot place the order");
+  assert.deepEqual(pancake.calls.create, []);
+
+  // Confirming "no voucher" releases the hold.
+  const none = await readVoucherPreview({ client: prisma, cartId, shopId: SHOP, now: new Date(), env: ENV, ownHolds: await holdService.readOwnLiveHolds(cartId) });
+  assert.ok(none.enabled && none.ok && none.quote.voucherCount === 0);
+  const released = await flow.hold({ cartId, expectedQuoteDigest: none.enabled && none.ok ? none.quoteDigest! : "" });
+  assert.equal(released.ok && released.state, "NONE");
+  assert.deepEqual((await holdsNow()).map((h) => h.state), ["RELEASED"]);
+
+  // Swapped instead: hold A again, then save B. A is set aside; B is what the shopper confirms and what is charged.
+  assert.equal((await commit(a.id)).ok, true);
+  await hold();
+  assert.equal((await render()).kind, "BENEFIT");
+  assert.equal((await commit(b.id)).ok, true);
+  const swapped = await render();
+  assert.equal(swapped.kind === "LEGACY" && swapped.voucherStale, true, "A is not applied once B is chosen");
+  await hold();
+  const rendered = await render();
+  assert.equal(rendered.kind, "BENEFIT");
+  assert.equal(rendered.kind === "BENEFIT" && rendered.facts.paidSubtotalVnd, 900_000 - 30_000);
+  assert.deepEqual((await holdsNow()).filter((h) => h.state === "HELD").map((h) => h.campaignId), [b.id]);
+});
+
 test("review f3eed3a: the gift/quantity gate is switched OFF inside the 10 minutes: the hold is set aside and SAID so, the old proof cannot place a plain order, nothing is consumed", async () => {
   await seed();
   await fixedVoucher(50_000, 600_000);

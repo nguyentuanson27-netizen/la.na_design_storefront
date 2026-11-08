@@ -49,3 +49,28 @@ test("no vouchers means an empty teaser, and the order is stable", () => {
   const b = fixed("a", 10_000, 100_000);
   assert.deepEqual(buildVoucherTeaser({ campaigns: [a, b], product: dress }).map((i) => i.id), buildVoucherTeaser({ campaigns: [b, a], product: dress }).map((i) => i.id));
 });
+
+test("the teaser chip is two short lines: a figure and its threshold, in the words a shopper says", () => {
+  const chip = (campaign: VoucherCampaign) => {
+    const item = buildVoucherTeaser({ campaigns: [campaign], product: dress })[0]!;
+    return [item.title, item.sub];
+  };
+  assert.deepEqual(chip(fixed("big", 200_000, 1_500_000)), ["Giảm 200K", "Đơn từ 1,5 triệu"]);
+  assert.deepEqual(chip(fixed("mid", 100_000, 900_000)), ["Giảm 100K", "Đơn từ 900K"]);
+  assert.deepEqual(chip(voucher("pct", { discount: { type: "PERCENTAGE", percent: 10, maxDiscountVnd: 150_000 }, minEligibleSubtotalVnd: 1_000_000 })), ["Giảm 10%", "Đơn từ 1 triệu · tối đa 150K"]);
+  assert.deepEqual(chip(voucher("open", { discount: { type: "PERCENTAGE", percent: 5, maxDiscountVnd: null }, minEligibleSubtotalVnd: null })), ["Giảm 5%", ""]);
+  const ship = buildVoucherTeaser({ campaigns: [voucher("ship", { kind: "SHIPPING_FREE", minEligibleSubtotalVnd: 500_000 })], product: dress })[0]!;
+  assert.deepEqual([ship.title, ship.sub, ship.kind], ["Freeship", "Đơn từ 500K", "SHIPPING_FREE"]);
+  // the long sentence stays: screen readers and the opened chip read it, and the wording tests above rely on it
+  assert.equal(ship.text, "Miễn phí vận chuyển cho đơn từ 500.000đ");
+});
+
+test("the teaser colours a voucher by its type with the picker's rule: priority order, free shipping teal", () => {
+  const typed = (id: string, typeId: string, priority: number, amountVnd: number): VoucherCampaign => ({ ...fixed(id, amountVnd, 100_000), type: { id: typeId, name: typeId, priority } });
+  const tones = (campaigns: VoucherCampaign[]) => Object.fromEntries(buildVoucherTeaser({ campaigns, product: dress }).map((i) => [i.id, i.tone]));
+  // B has the higher figure (so it is listed first) but A has the lower priority number, so A is applied first and takes the first colour.
+  assert.deepEqual(tones([typed("a1", "A", 1, 50_000), typed("b1", "B", 2, 90_000)]), { b1: "plum", a1: "clay" });
+  assert.deepEqual(tones([typed("a1", "A", 1, 90_000), voucher("s", { kind: "SHIPPING_FREE", minEligibleSubtotalVnd: 100_000 })]), { a1: "clay", s: "teal" });
+  // a plain v1 voucher is the untyped slot, applied before every typed one
+  assert.deepEqual(tones([fixed("plain", 40_000, 100_000), typed("b1", "B", 1, 30_000)]), { plain: "clay", b1: "plum" });
+});

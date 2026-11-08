@@ -92,7 +92,7 @@ test("the selected card follows the server's choice; the footer says what the vo
 test("the summary reconciles and words every line: subtotal, discounts, fee, total", () => {
   const { view } = model([fixed("m", 30_000, 100_000), freeship("s", null)], [line("a", 1, 620_000)]);
   assert.deepEqual(view.summary, {
-    paidBeforeText: "620.000đ", merchandiseDiscountText: "-30.000đ", merchandiseLines: [], shippingFeeText: "0đ", shippingDiscountText: "-30.000đ", totalText: "590.000đ", totalVnd: 590_000, savingText: "60.000đ", savingVnd: 60_000,
+    paidBeforeText: "620.000đ", merchandiseDiscountText: "-30.000đ", merchandiseLines: [], discountLines: [{ id: "m", label: "Voucher giảm tiền hàng", amountText: "-30.000đ", tone: "clay" }], shippingFeeText: "0đ", shippingDiscountText: "-30.000đ", totalText: "590.000đ", totalVnd: 590_000, savingText: "60.000đ", savingVnd: 60_000,
   });
 });
 
@@ -180,13 +180,15 @@ test("the card carries the shop's own voucher name, so the picker can show it", 
 
 test("compact figures fit the colour block: exact thousands drop their zeros, millions read as TR", () => {
   assert.deepEqual([30_000, 80_000, 150_000, 53_500, 1_000_000, 1_500_000, 2_250_000, 500].map(compactVoucherVnd), ["30K", "80K", "150K", "53,5K", "1TR", "1,5TR", "2,25TR", "500đ"]);
+  // Shortened only exactly: an amount the short form cannot carry is written out, never rounded (a rounded-down threshold would promise a lower minimum).
+  assert.deepEqual([1_004_000, 999_999, 12_345, 1_250_000].map(compactVoucherVnd), ["1004K", "999.999đ", "12.345đ", "1,25TR"]);
 });
 
 test("value label and sub-label: fixed amount, percentage with and without a cap, free shipping", () => {
   const { view } = model([fixed("f", 80_000, 100_000), percent("p10", 10, 150_000, null), percent("p5", 5, null, null), freeship("s", 500_000)], [line("a", 1, 620_000)]);
   const merch = Object.fromEntries(view.groups[0]!.items.map((i) => [i.id, [i.valueLabel, i.valueSub]]));
   assert.deepEqual(merch, { f: ["80K", "Giảm"], p10: ["10%", "Tối đa 150K"], p5: ["5%", "Giảm"] });
-  assert.deepEqual([view.groups[1]!.items[0]!.valueLabel, view.groups[1]!.items[0]!.valueSub], ["FREE", "Vận chuyển"]);
+  assert.deepEqual([view.groups[1]!.items[0]!.valueLabel, view.groups[1]!.items[0]!.valueSub], ["FREESHIP", ""]);
 });
 
 test("progress: a card below its minimum shows how far the cart is, 0..99; a usable card shows none", () => {
@@ -231,4 +233,12 @@ test("the cart entry never says a preview is settled: 'Dự kiến giảm', not 
   const manualNone = model([fixed("m", 30_000, 100_000)], [line("a", 1, 620_000)], { selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: null } }, shipping: { mode: "AUTO" } } }).view;
   assert.deepEqual(voucherEntryCopy(manualNone), { used: false, title: "Chọn hoặc nhập mã ưu đãi", sub: "1 voucher dùng được" });
   assert.deepEqual(voucherEntryCopy(model([], [line("a", 1, 100_000)]).view), { used: false, title: "Chọn hoặc nhập mã ưu đãi", sub: "Nhập mã để nhận ưu đãi" });
+});
+
+test("the summary lists every applied merchandise voucher with its type's name and colour, also when there is one", () => {
+  const two = model([tierOf("a1m", "A", "Theo đơn hàng", 1, 80_000, 1_000_000), tierOf("b1m", "B", "Theo danh mục", 2, 10_000, 1_000_000)], [line("a", 1, 1_020_000)]).view;
+  assert.deepEqual(two.summary.discountLines.map((l) => [l.label, l.amountText, l.tone]), [["Theo đơn hàng", "-80.000đ", "clay"], ["Theo danh mục", "-10.000đ", "plum"]]);
+  const one = model([tierOf("b1m", "B", "Theo danh mục", 2, 10_000, 1_000_000)], [line("a", 1, 1_020_000)]).view;
+  assert.deepEqual(one.summary.discountLines.map((l) => [l.label, l.tone]), [["Theo danh mục", "clay"]], "the only type is the first colour, as in the picker");
+  assert.deepEqual(model([], [line("a", 1, 100_000)]).view.summary.discountLines, []);
 });

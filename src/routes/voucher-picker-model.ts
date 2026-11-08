@@ -1,4 +1,5 @@
 import type { VoucherCard } from "../commerce/voucher-candidate-repository.ts";
+import { compactVoucherVnd, merchandiseToneAt, type VoucherTone } from "../commerce/voucher-format.ts";
 import type { VoucherSelectionIntent } from "../commerce/voucher-optimizer.ts";
 import type { VoucherCardReason, VoucherCardState, VoucherQuote } from "../commerce/voucher-quote.ts";
 
@@ -16,7 +17,7 @@ export type VoucherPickerItem = Readonly<{
   /** The name the shop gave this voucher in Admin (ADR 0020 tier name); shown on the card as its first line. */
   name: string;
   title: string;
-  /** The big figure on the card's colour block: "80K", "10%", "FREE". */
+  /** The big figure on the card's colour block: "80K", "10%", "FREESHIP". */
   valueLabel: string;
   /** The small word under it: "Giảm", "Tối đa 150K", "Vận chuyển". */
   valueSub: string;
@@ -35,9 +36,7 @@ export type VoucherPickerItem = Readonly<{
   endsAtIso: string | null;
 }>;
 
-/** One colour per voucher type: merchandise types take the next tone in application order, free shipping is always teal. */
-export type VoucherTone = "clay" | "plum" | "moss" | "navy" | "teal";
-const MERCHANDISE_TONES: readonly VoucherTone[] = ["clay", "plum", "moss", "navy"];
+export type { VoucherTone };
 
 export type VoucherPickerGroup = Readonly<{
   /** The slot this group chooses one voucher for: `SHIPPING_FREE`, `MERCHANDISE` (no type) or `MERCHANDISE:<typeId>`. */
@@ -61,6 +60,8 @@ export type VoucherPickerModel = Readonly<{
     merchandiseDiscountText: string | null;
     /** One line per chosen merchandise voucher, in application order, when more than one applies. */
     merchandiseLines: readonly Readonly<{ id: string; label: string; amountText: string }>[];
+    /** One line per applied merchandise voucher, always (also when there is one): its type's name, what it takes off, and its type's colour. */
+    discountLines: readonly Readonly<{ id: string; label: string; amountText: string; tone: VoucherTone }>[];
     shippingFeeText: string;
     shippingDiscountText: string | null;
     totalText: string;
@@ -84,13 +85,7 @@ export type VoucherPickerModel = Readonly<{
 const money = new Intl.NumberFormat("vi-VN");
 export const formatVoucherVnd = (value: number): string => `${money.format(value)}đ`;
 
-/** "80K", "1,5TR": the figure that fits the card's colour block. Exact thousands only lose their zeros; anything else keeps one decimal. */
-export function compactVoucherVnd(value: number): string {
-  const trim = (n: number, digits: number) => String(Number(n.toFixed(digits))).replace(".", ",");
-  if (value >= 1_000_000) return `${trim(value / 1_000_000, 2)}TR`;
-  if (value >= 1_000) return `${trim(value / 1_000, 1)}K`;
-  return `${value}đ`;
-}
+export { compactVoucherVnd };
 
 /** "Còn 2 ngày" for a voucher ending within three days, otherwise null. Pure: the caller supplies the clock (after mount, so server and client agree). */
 export const EXPIRY_WARNING_DAYS = 3;
@@ -104,7 +99,7 @@ export function voucherExpiryWarning(endsAtIso: string | null, nowMs: number): s
 }
 
 function valueOf(card: VoucherCard): { label: string; sub: string } {
-  if (card.kind === "SHIPPING_FREE") return { label: "FREE", sub: "Vận chuyển" };
+  if (card.kind === "SHIPPING_FREE") return { label: "FREESHIP", sub: "" };
   const discount = card.discount;
   if (discount === null) return { label: "ƯU ĐÃI", sub: "" };
   if (discount.type === "FIXED_AMOUNT_VND") return { label: compactVoucherVnd(discount.amountVnd), sub: "Giảm" };
@@ -203,7 +198,7 @@ export function buildVoucherPickerModel(input: Readonly<{
   const merchandiseGroups = [...slots.entries()]
     .sort(([slotA, a], [slotB, b]) => a.priority - b.priority || (slotA < slotB ? -1 : slotA > slotB ? 1 : 0))
     .map(([slot, info], index) => {
-      const tone = MERCHANDISE_TONES[index % MERCHANDISE_TONES.length]!;
+      const tone = merchandiseToneAt(index);
       return info.name === null
         ? slotGroup(slot, "MERCHANDISE", "Voucher giảm tiền hàng", "Chọn 1", tone, info.entries)
         : slotGroup(slot, "MERCHANDISE", info.name, "Chọn 1 mốc", tone, info.entries);
@@ -215,6 +210,9 @@ export function buildVoucherPickerModel(input: Readonly<{
     const card = entries.find((entry) => entry.card.id === line.campaignId)?.card;
     return Object.freeze({ id: line.campaignId, label: card?.type?.name ?? "Voucher giảm tiền hàng", amountText: `-${formatVoucherVnd(line.discountVnd)}` });
   });
+
+  const toneOf = new Map<string, VoucherTone>(merchandiseGroups.flatMap((group) => group.items.map((item): [string, VoucherTone] => [item.id, group.tone])));
+  const discountLines = merchandiseLines.map((line) => Object.freeze({ ...line, tone: toneOf.get(line.id) ?? ("clay" as const) }));
 
   const notices = quote.notices.map((notice) =>
     notice.group === "MERCHANDISE"
@@ -230,6 +228,7 @@ export function buildVoucherPickerModel(input: Readonly<{
       paidBeforeText: formatVoucherVnd(quote.paidBeforeVnd),
       merchandiseDiscountText: quote.merchandiseDiscountVnd > 0 ? `-${formatVoucherVnd(quote.merchandiseDiscountVnd)}` : null,
       merchandiseLines: Object.freeze(merchandiseLines.length > 1 ? merchandiseLines : []),
+      discountLines: Object.freeze(discountLines),
       shippingFeeText: formatVoucherVnd(quote.shippingFeeVnd),
       shippingDiscountText: quote.shippingDiscountVnd > 0 ? `-${formatVoucherVnd(quote.shippingDiscountVnd)}` : null,
       totalText: formatVoucherVnd(quote.totalPayableVnd),

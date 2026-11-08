@@ -5,7 +5,9 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 import { useCartGifts } from "@/components/headless/use-cart-gifts";
 import { readRecentAutoRemovedGiftCount, subscribeAutoRemovedGiftCount } from "@/components/headless/cart-gift-adjustment-notice";
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
-import { GiftProductCard } from "./gift-product-card";
+import { GiftProductCard, GiftProductDetail } from "./gift-product-card";
+import { giftGridCells } from "./gift-grid";
+import { VoucherIcon } from "./voucher-icons";
 
 /**
  * The version the buyer is looking at. `committed` marks a draft the server has confirmed saving at
@@ -145,10 +147,16 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   }, [present]);
   if (!present && !message) return null;
   const busy = pending || uncertain;
-  return <section ref={giftArea} id="cart-gifts" tabIndex={-1} className={present ? "my-6 min-w-0 scroll-mt-32 border border-black/20 bg-[#fcf8f6] p-4 sm:p-5" : "my-4 scroll-mt-32 text-sm"} aria-label="Quà tặng trong giỏ" aria-busy={busy}>
+  return <section ref={giftArea} id="cart-gifts" tabIndex={-1} className={present ? "gift-panel scroll-mt-32" : "my-4 scroll-mt-32 text-sm"} aria-label="Quà tặng trong giỏ" aria-busy={busy}>
+    {present ? <div className="gift-panel__head">
+      <span aria-hidden="true" className="gift-panel__icon"><VoucherIcon name="gift" /></span>
+      <h2 className="font-display text-xl">Quà dành cho nàng</h2>
+      {hasChoices && !model.invalid ? <span aria-hidden="true" className="gift-panel__pill">{selected}/{entitled}</span> : null}
+    </div> : null}
+    <div className={present ? "gift-panel__body" : undefined}>
     {present ? <>
-    <h2 className="font-display text-2xl">Quà dành cho nàng</h2>
-    {hasChoices ? <p className="mt-2 text-sm" data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p> : null}
+    {hasChoices ? <p className="text-sm" data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p> : null}
+    {hasChoices && !model.invalid && entitled > 0 ? <div aria-hidden="true" className="gift-bar"><i style={{ width: `${Math.min(100, Math.round((selected / entitled) * 100))}%` }} /></div> : null}
     {autoRemovedGiftCount > 0 ? <p className="mt-3 text-sm text-amber-900" data-gift-auto-reconciled role="status" aria-live="polite">
       Đã tự động bỏ {autoRemovedGiftCount} quà tặng vì giỏ hàng không còn đủ số lượng hoặc giá trị để nhận. Những quà còn đủ điều kiện vẫn được giữ; hệ thống không tự chọn quà thay thế.
     </p> : null}
@@ -158,38 +166,41 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     </>}
     {replaced.length > 0 ? <p className="mt-3 text-sm" data-gift-replaced-notice>Đơn của nàng đã lên mốc quà cao hơn nên quà đã chọn ở mốc trước không đi kèm đơn nữa. Nàng chọn quà của mốc mới, quà cũ sẽ được thay.</p> : null}
     {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Giỏ hàng của nàng đủ điều kiện nhận quà từ nhiều chương trình, nhưng các chương trình này không được dùng cùng lúc nên một số quà chưa được tặng. Nàng điều chỉnh lại giỏ hàng hoặc liên hệ shop để được hỗ trợ nhé.</p> : null}
-    {hasChoices ? <button type="button" ref={toggleRef} className="mt-3 block min-h-11 text-left text-sm font-semibold underline underline-offset-4" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
-      {expanded ? "Thu gọn quà tặng" : model.invalid ? "Kiểm tra quà đã chọn" : complete ? "Xem quà đã chọn" : available > 0 ? "Chọn quà ngay" : "Xem lựa chọn quà"}
+    {hasChoices ? <button type="button" ref={toggleRef} className="gift-entry mt-3" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
+      <span aria-hidden="true" className="gift-entry__icon"><VoucherIcon name="gift" /></span>
+      <span className="gift-entry__text">{expanded ? "Thu gọn quà tặng" : model.invalid ? "Kiểm tra quà đã chọn" : complete ? "Xem quà đã chọn" : available > 0 ? "Chọn quà ngay" : "Xem lựa chọn quà"}</span>
+      <VoucherIcon name="chevron" className="gift-entry__chev" />
     </button> : null}
     <div id={detailsId} ref={detailsRef} hidden={!expanded}>
-      {model.repairGroups?.map((group, index) => <div key={index} role="group" aria-label="Nhóm quà cần kiểm tra" className="mt-4 border border-[#b42318]/40 p-3 text-sm">
+      {model.repairGroups?.map((group, index) => <div key={index} role="group" aria-label="Nhóm quà cần kiểm tra" className="mt-4 rounded-lg border border-[#b42318]/40 p-3 text-sm">
         <p>{group.message}</p>
         <ul className="mt-2 list-disc pl-5">{model.selections.filter(row => group.selectionKeys.includes(`${row.campaignId}/${row.variantId}`)).map(row => <li key={`${row.campaignId}/${row.variantId}`}>{row.label} · {row.quantity} quà</li>)}</ul>
       </div>)}
-      {model.selections.map((row) => <div className="mt-4 border-t border-black/15 pt-4" key={`${row.campaignId}-${row.variantId}`} data-gift-selection={`${row.campaignId}/${row.variantId}`}>
+      {model.selections.map((row) => <div className="gift-item mt-3" key={`${row.campaignId}-${row.variantId}`} data-gift-selection={`${row.campaignId}/${row.variantId}`}>
         <div className="flex items-center gap-3">
-          {row.imageUrl ? <Image src={row.imageUrl} alt="" width={40} height={50} className="h-[50px] w-10 object-cover" /> : null}
-          <p className="min-w-0 break-words text-sm">{row.label} · {row.quantity} quà</p>
+          {row.imageUrl ? <Image src={row.imageUrl} alt="" width={40} height={50} className="h-[50px] w-10 rounded-md object-cover" /> : null}
+          <p className="min-w-0 flex-1 break-words text-sm">{row.label} · {row.quantity} quà</p>
+          <span aria-hidden="true" className="gift-item__tag">Quà tặng</span>
         </div>
         {row.problems?.map((problem, index) => <p key={index} data-gift-problem className="mt-2 text-sm text-[#b42318]">Cần xử lý: {problem}</p>)}
         <p className="mt-2 text-xs leading-5">Quà cũ sẽ được bỏ trước. Món chọn lại tùy tình trạng còn hàng.</p>
         <div className="mt-2 flex flex-wrap gap-3">
-          {row.quantity > 1 ? <button type="button" className="min-h-11 text-sm underline" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, row.quantity - 1, row.label, 1)}>Bỏ 1 chiếc để chọn lại: {row.label}</button> : null}
-          <button type="button" className="min-h-11 text-left text-sm underline" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, 0, row.label, row.quantity)}>{row.quantity > 1 ? `Bỏ toàn bộ ${row.quantity} chiếc` : "Bỏ quà để chọn lại"}: {row.label}</button>
+          {row.quantity > 1 ? <button type="button" className="gift-btn" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, row.quantity - 1, row.label, 1)}>Bỏ 1 chiếc để chọn lại: {row.label}</button> : null}
+          <button type="button" className="gift-btn text-left" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, 0, row.label, row.quantity)}>{row.quantity > 1 ? `Bỏ toàn bộ ${row.quantity} chiếc` : "Bỏ quà để chọn lại"}: {row.label}</button>
         </div>
       </div>)}
-      {replaced.map((row) => <div className="mt-4 border-t border-black/15 pt-4" key={`replaced-${row.campaignId}-${row.variantId}`} data-gift-replaced={`${row.campaignId}/${row.variantId}`}>
+      {replaced.map((row) => <div className="gift-item mt-3" key={`replaced-${row.campaignId}-${row.variantId}`} data-gift-replaced={`${row.campaignId}/${row.variantId}`}>
         <div className="flex items-center gap-3">
-          {row.imageUrl ? <Image src={row.imageUrl} alt="" width={40} height={50} className="h-[50px] w-10 object-cover opacity-60" /> : null}
+          {row.imageUrl ? <Image src={row.imageUrl} alt="" width={40} height={50} className="h-[50px] w-10 rounded-md object-cover opacity-60" /> : null}
           <p className="min-w-0 break-words text-sm">Quà mốc trước: {row.label} · {row.quantity} quà</p>
         </div>
         <p className="mt-2 text-xs leading-5">Không đi kèm đơn ở mốc hiện tại. Sẽ được thay khi nàng nhận quà của mốc mới.</p>
-        <button type="button" className="mt-2 min-h-11 text-left text-sm underline" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, 0, row.label, row.quantity)}>Bỏ hẳn quà mốc trước: {row.label}</button>
+        <button type="button" className="gift-btn mt-2 text-left" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, 0, row.label, row.quantity)}>Bỏ hẳn quà mốc trước: {row.label}</button>
       </div>)}
       {model.campaigns.filter((c) => c.entitled > 0).map((campaign, index) => <div className="mt-5 border-t border-black/15 pt-4" key={campaign.campaignId}>
-        <p className="text-sm font-semibold">Quà tặng theo giỏ hàng {index + 1} · Đã thêm {campaign.selected}/{campaign.entitled}</p>
+        <p className="font-display text-sm font-bold">Quà tặng theo giỏ hàng {index + 1} · Đã thêm {campaign.selected}/{campaign.entitled}</p>
         {!campaign.allowDuplicateGifts ? <p className="mt-2 text-xs">Mỗi mẫu được chọn 1 lần, kể cả khác màu hoặc kích cỡ.</p> : null}
-        <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-1">{campaign.products.map((product) => {
+        <div className="mt-3 grid grid-cols-3 gap-2" data-gift-grid>{giftGridCells(campaign.products.map((product) => {
           const key = `${campaign.campaignId}/${product.productId}`;
           const option = product.options.find((o) => o.variantId === draft?.variantId && draft.campaignId === campaign.campaignId);
           const chosen = model.selections.find((r) => r.campaignId === campaign.campaignId && r.variantId === option?.variantId)?.quantity ?? 0;
@@ -205,10 +216,12 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
             : option.stock <= stockChosen ? "Phiên bản này không còn đủ hàng để nhận thêm. Nàng chọn phiên bản khác nhé."
             : null;
           const receiveReasonId = `${detailsId}-${index}-${product.productId}-receive-reason`;
-          return <GiftProductCard key={product.productId} name={product.name} imageUrl={product.imageUrl} open={card === key} chips={<div className="flex flex-wrap gap-1" role="group" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-label={`${product.name} — ${o.label}`} aria-pressed={option?.variantId === o.variantId} className="group min-h-9 min-w-9 border border-black/30 px-2 py-0.5 text-xs leading-5 aria-pressed:bg-[#634936] aria-pressed:text-white sm:text-sm" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.color && o.size ? <>{o.color} <span className="text-black/40 group-aria-pressed:text-white/70">/</span> {o.size}</> : o.label}</button>)}</div>} onOpen={() => {
+          const chips = <div className="flex flex-wrap gap-1" role="group" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-label={`${product.name} — ${o.label}`} aria-pressed={option?.variantId === o.variantId} className="group min-h-9 min-w-9 rounded-md border border-black/30 px-2 py-0.5 text-xs leading-5 aria-pressed:border-[#8a5a2b] aria-pressed:bg-[#8a5a2b] aria-pressed:text-white sm:text-sm" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.color && o.size ? <>{o.color} <span className="text-black/40 group-aria-pressed:text-white/70">/</span> {o.size}</> : o.label}</button>)}</div>;
+          const onOpen = () => {
             setCard(card === key ? "" : key);
             if (product.options.length === 1) setDraft({campaignId: campaign.campaignId, variantId: product.options[0]!.variantId, label: `${product.name} — ${product.options[0]!.label}`});
-          }}>
+          };
+          const detail = card !== key ? null : <GiftProductDetail key={`${key}/detail`} name={product.name} imageUrl={product.imageUrl} chips={chips}>
             {option ? <p className="mt-3 text-sm">{uncertain ? "Đang chờ kiểm tra kết quả lưu quà…" : pending ? "Đang cập nhật quà…" : chosen > 0 ? "Đã thêm vào đơn" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">Chọn phiên bản để xem.</p>}
             {receiveBlockReason ? <p id={receiveReasonId} className="mt-2 text-xs" aria-live="polite">{receiveBlockReason}</p> : null}
             <button type="button" className="btn btn--secondary mt-3 min-h-10 w-full py-1.5" disabled={receiveBlockReason !== null} aria-describedby={receiveBlockReason ? receiveReasonId : undefined} onClick={() => {
@@ -217,15 +230,17 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
               if (draft?.committed) setDraft({ ...draft, committed: false });
               if (change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0)) setCollapseFromSave(savedCount);
             }}>Nhận quà này</button>
-          </GiftProductCard>;
-        })}</div>
+          </GiftProductDetail>;
+          return { tile: <GiftProductCard key={product.productId} name={product.name} imageUrl={product.imageUrl} open={card === key} onOpen={onOpen} />, detail };
+        }))}</div>
       </div>)}
     </div>
     {/* Outside the collapsible list: after a confirmed save collapses it, the way back to payment stays reachable. */}
-    {onReturnToPayment ? <button type="button" className="mt-2 block min-h-11 text-sm underline" onClick={onReturnToPayment}>Quay lại thanh toán</button> : null}
-    {draftNotice ? <p className="mt-3 text-sm" data-gift-draft>{draftNotice}</p> : null}
+    {onReturnToPayment ? <button type="button" className="gift-back mt-3" onClick={onReturnToPayment}><VoucherIcon name="chevron" className="gift-back__arrow" />Quay lại thanh toán</button> : null}
+    {draftNotice ? <p className="gift-note mt-3" data-gift-draft>{draftNotice}</p> : null}
     </> : null}
-    <p className="mt-3 text-sm" role="status" aria-live="polite" aria-atomic="true">{pending ? "Đang kiểm tra và làm mới báo giá…" : message}{present && !pending && !uncertain && message && !model.invalid ? ` Còn ${unclaimed} suất chưa chọn.` : ""}</p>
-    {uncertain ? <button type="button" className="mt-2 min-h-11 text-sm underline" disabled={pending} onClick={(event) => retryGiftRead(event.currentTarget)}>Kiểm tra lại quà trong đơn</button> : null}
+    <p className="gift-status" role="status" aria-live="polite" aria-atomic="true">{pending ? "Đang kiểm tra và làm mới báo giá…" : message}{present && !pending && !uncertain && message && !model.invalid ? ` Còn ${unclaimed} suất chưa chọn.` : ""}</p>
+    {uncertain ? <button type="button" className="gift-btn mt-2" disabled={pending} onClick={(event) => retryGiftRead(event.currentTarget)}>Kiểm tra lại quà trong đơn</button> : null}
+    </div>
   </section>;
 }

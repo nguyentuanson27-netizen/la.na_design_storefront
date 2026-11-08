@@ -14,6 +14,7 @@ import { parseVoucherCodeCommitInput, parseVoucherCommitInput, parseVoucherLinke
 import { createVoucherSelectionService } from "./voucher-selection-service.ts";
 import { readCartOwnVoucherHolds } from "./voucher-own-holds.ts";
 import { applyVoucherCode, commitVoucherDraft } from "./voucher-draft-commit.ts";
+import { createVoucherHoldFlow } from "./voucher-hold-flow.ts";
 import { readVoucherPreview } from "./voucher-preview.ts";
 import type { VoucherSelectionIntent } from "./voucher-optimizer.ts";
 
@@ -169,6 +170,27 @@ export async function previewStorefrontVoucherDraft(input: unknown) {
  * derives under the cart lock (`QUOTE_CHANGED` otherwise), the voucher intent AND the gift change are written together:
  * the choices the voucher makes unearned are removed or reduced in the same transaction (spec 4.1.4 / 7.3 / AC-35).
  */
+/**
+ * "No voucher" was just saved while this cart still holds some: release them now, through the hold flow's own "nothing chosen" path
+ * on the quote the server derives this moment. The quota goes back to other shoppers at once, and the checkout prices the cart
+ * plainly instead of showing a set-aside hold for up to ten minutes. Best effort: when it cannot (a gate is off, the attempt is
+ * rate-limited, the quote moved), the holds simply expire as before -- they are never applied, because the checkout only applies
+ * holds that match the saved choice. A swap is left alone: its holds are exchanged when the shopper confirms the new offer.
+ */
+async function releaseHoldsWhenNothingChosen(cartId: string) {
+  try {
+    const ownHolds = await readCartOwnVoucherHolds(prisma, cartId);
+    if (ownHolds.length === 0) return;
+    const shopId = readPancakeShopId();
+    const preview = await readVoucherPreview({ client: prisma, cartId, shopId, now: new Date(), ownHolds });
+    if (!preview.enabled || !preview.ok || preview.quote.voucherCount !== 0 || preview.quoteDigest === null) return;
+    const secret = readAuthServerConfig().secret;
+    await createVoucherHoldFlow(prisma, { shopId, attemptSecret: secret, proofSecret: secret }).hold({ cartId, expectedQuoteDigest: preview.quoteDigest });
+  } catch {
+    // The holds expire on their own; nothing the shopper chose depends on this.
+  }
+}
+
 export async function commitStorefrontVoucherDraft(input: unknown) {
   const parsed = parseVoucherCommitInput(input);
   const cartId = readAnonymousCartCookie(await cookies());
@@ -185,5 +207,6 @@ export async function commitStorefrontVoucherDraft(input: unknown) {
     return { ok: false, reason: result.reason, picker } as const;
   }
   if (!result.ok) return { ok: false, reason: result.reason } as const;
+  await releaseHoldsWhenNothingChosen(cartId);
   return { ok: true, ...(await respond(result, cartId)) } as const;
 }

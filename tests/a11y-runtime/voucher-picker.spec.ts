@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Locator } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
@@ -14,6 +14,13 @@ import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
  * keyboard and focus, the server-owned selection, that a draft is never saved until "Áp dụng", the private-code flow,
  * the marketing link that never lets the code reach a rendered document, and the PDP teaser.
  */
+
+/** The code box is one quiet row until asked for; open it once (a second press would close it) and hand back the input. */
+async function codeBox(dialog: Locator) {
+  const toggle = dialog.getByRole("button", { name: "Nhập mã khuyến mãi" });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  return dialog.getByLabel("Nhập mã khuyến mãi");
+}
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const PORT = 3361;
@@ -185,10 +192,10 @@ test("AC-13: a private code is applied through the picker; a wrong code gets one
   await trigger(page).click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
   await expect(dialog.getByText("KOL 70K")).toHaveCount(0);
-  await dialog.getByLabel("Nhập mã khuyến mãi").fill("WRONG123");
+  await (await codeBox(dialog)).fill("WRONG123");
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   await expect(dialog.getByRole("alert")).toContainText("Mã không hợp lệ hoặc đã hết hiệu lực");
-  await dialog.getByLabel("Nhập mã khuyến mãi").fill("kol70");
+  await (await codeBox(dialog)).fill("kol70");
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   await expect(dialog.getByRole("button", { name: /^Giảm 70\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(async () => (await selection())?.merchandiseVoucherId).toBe(ids.priv);
@@ -226,7 +233,7 @@ test("AC-40: a marketing link is redirected to a clean URL; the code is never in
   expect(await page.content()).not.toMatch(/KOL70/i);
   await trigger(page).click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await expect(dialog.getByLabel("Nhập mã khuyến mãi")).toHaveValue("");
+  await expect(await codeBox(dialog)).toHaveValue("");
   expect(await page.content()).not.toMatch(/KOL70/i);
   await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
   await expect.poll(async () => (await selection())?.merchandiseVoucherId).toBe(ids.priv);

@@ -16,6 +16,7 @@ import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulf
 import { loadCartRoute, type CartRouteProps, type CartRouteViewModel } from "@/routes/cart";
 import { voucherPickerKey } from "@/routes/voucher-picker-model";
 import { VoucherPicker } from "@/components/brand/voucher-picker";
+import { VoucherDiscountRows } from "@/components/brand/voucher-summary-lines";
 import type { CartLineView, CartViewModel } from "@/routes/cart-model";
 import { createStorefrontRoute } from "@/routes/factory";
 import { buildCartMetadata } from "@/routes/metadata/cart";
@@ -200,6 +201,10 @@ function render(data: CartRouteViewModel) {
               <OrderSummary className="mt-5" summary={data.summary} totalLabel={voucherPreview ? "Tổng (chưa tính ưu đãi)" : "Tổng thanh toán"} />
               {voucherPreview ? (
                 <div className="mt-4 border-t border-black/15 pt-4 text-sm" data-cart-voucher-total>
+                  <dl className="voucher-rows voucher-rows--plain mb-3">
+                    <VoucherDiscountRows part="merchandise" summary={voucherPreview} />
+                    <VoucherDiscountRows part="shipping" summary={voucherPreview} />
+                  </dl>
                   <p className="flex items-baseline justify-between gap-5">
                     <span className="font-semibold">Dự kiến sau ưu đãi</span>
                     <strong className="text-xl font-semibold tracking-[-0.02em]">{voucherPreview.totalText}</strong>
