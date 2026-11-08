@@ -13,7 +13,7 @@ import type { TrustedProductImage } from "../commerce/product-media.ts";
 import { buildCheckoutPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
 import { describeLineDiscount } from "./line-discount-model.ts";
 import { buildOrderSummary, type OrderSummaryView } from "./order-summary-model.ts";
-import type { VoucherPickerModel, VoucherTone } from "./voucher-picker-model.ts";
+import { formatVoucherVnd, type VoucherPickerModel, type VoucherTone } from "./voucher-picker-model.ts";
 
 /**
  * Everything the checkout route decides, as one pure function.
@@ -573,8 +573,8 @@ export function buildCheckoutVoucherView(input: Readonly<{
     // The held quote knows campaign names and amounts, not types; the picker (read in the same request) knows which colour each one wears.
     const groupOf = new Map<string, { tone: VoucherTone; heading: string }>(picker?.groups.flatMap((group) => group.items.map((item): [string, { tone: VoucherTone; heading: string }] => [item.id, { tone: group.tone, heading: group.heading }])) ?? []);
     const withTone = (id: string): { tone?: VoucherTone; group?: string } => { const found = groupOf.get(id); return found === undefined ? {} : { tone: found.tone, group: found.heading }; };
-    for (const entry of v.merchandise) lines.push({ id: entry.campaignId, title: v.names.get(entry.campaignId) ?? "Voucher giảm giá", amountText: `−${currency.format(entry.amountVnd)}`, kind: "MERCHANDISE", ...withTone(entry.campaignId) });
-    if (v.shippingCampaignId !== null) lines.push({ id: v.shippingCampaignId, title: v.names.get(v.shippingCampaignId) ?? "Voucher vận chuyển", amountText: `−${currency.format(v.shippingWaivedVnd)}`, kind: "SHIPPING_FREE", ...withTone(v.shippingCampaignId) });
+    for (const entry of v.merchandise) lines.push({ id: entry.campaignId, title: v.names.get(entry.campaignId) ?? "Voucher giảm giá", amountText: `−${formatVoucherVnd(entry.amountVnd)}`, kind: "MERCHANDISE", ...withTone(entry.campaignId) });
+    if (v.shippingCampaignId !== null) lines.push({ id: v.shippingCampaignId, title: v.names.get(v.shippingCampaignId) ?? "Voucher vận chuyển", amountText: `−${formatVoucherVnd(v.shippingWaivedVnd)}`, kind: "SHIPPING_FREE", ...withTone(v.shippingCampaignId) });
     return Object.freeze({ state: "HELD", lines: Object.freeze(lines), heldUntilMs: input.heldUntilMs, ...(picker?.summary.savingText ? { savingText: picker.summary.savingText } : {}) });
   }
   const stale = (render.kind === "LEGACY" || render.kind === "BENEFIT") && render.voucherStale === true;
