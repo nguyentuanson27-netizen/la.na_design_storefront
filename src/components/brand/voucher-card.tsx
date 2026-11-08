@@ -33,7 +33,7 @@ export function VoucherCard({ item, onToggle, disabled, nowMs }: Readonly<{
         data-voucher-id={item.id}
       >
         <span className="voucher-ticket__stub" aria-hidden="true">
-          <span className="voucher-ticket__val">{item.valueLabel}</span>
+          <span className="voucher-ticket__val" data-long={item.valueLabel.length > 5 ? "true" : undefined}>{item.valueLabel}</span>
           {item.valueSub ? <span className="voucher-ticket__sub">{item.valueSub}</span> : null}
         </span>
         <span className="voucher-ticket__body">

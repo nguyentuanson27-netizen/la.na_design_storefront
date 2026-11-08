@@ -186,7 +186,7 @@ test("value label and sub-label: fixed amount, percentage with and without a cap
   const { view } = model([fixed("f", 80_000, 100_000), percent("p10", 10, 150_000, null), percent("p5", 5, null, null), freeship("s", 500_000)], [line("a", 1, 620_000)]);
   const merch = Object.fromEntries(view.groups[0]!.items.map((i) => [i.id, [i.valueLabel, i.valueSub]]));
   assert.deepEqual(merch, { f: ["80K", "Giảm"], p10: ["10%", "Tối đa 150K"], p5: ["5%", "Giảm"] });
-  assert.deepEqual([view.groups[1]!.items[0]!.valueLabel, view.groups[1]!.items[0]!.valueSub], ["FREE", "Vận chuyển"]);
+  assert.deepEqual([view.groups[1]!.items[0]!.valueLabel, view.groups[1]!.items[0]!.valueSub], ["FREESHIP", ""]);
 });
 
 test("progress: a card below its minimum shows how far the cart is, 0..99; a usable card shows none", () => {

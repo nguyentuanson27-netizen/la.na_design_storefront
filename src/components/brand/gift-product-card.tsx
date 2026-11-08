@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
  */
 export function GiftProductCard({ name, imageUrl, open, onOpen, chips, children }: Readonly<{name: string; imageUrl: string | null; open: boolean; onOpen: () => void; chips?: ReactNode; children: ReactNode}>) {
   // The open card is the one being chosen from: the gift colour ring and a warm tint set it apart.
-  return <article className={`relative min-w-0 rounded-lg transition-colors ${open ? "p-3 col-span-3 bg-[#f7f1e6] shadow-[inset_0_0_0_2px_#7a5c14]" : "p-2 bg-[#fffdfa] shadow-[inset_0_0_0_1px_rgba(59,34,25,0.22)]"}`}>
+  return <article className={`relative min-w-0 rounded-lg transition-colors ${open ? "p-3 col-span-3 bg-[#f7f1e6] shadow-[inset_0_0_0_2px_#8a5a2b]" : "p-2 bg-[#fffdfa] shadow-[inset_0_0_0_1px_rgba(59,34,25,0.22)]"}`}>
     <div className={open ? "flex items-start gap-4" : "flex flex-col gap-2"}>
       {imageUrl
         ? <Image src={imageUrl} alt="" width={64} height={80} sizes={open ? "64px" : "(min-width: 640px) 220px, 45vw"} className={open ? "h-20 w-16 shrink-0 rounded-md object-cover" : "aspect-[4/5] h-auto w-full rounded-md object-cover"} />

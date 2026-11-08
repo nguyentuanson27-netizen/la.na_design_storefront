@@ -17,7 +17,7 @@ export type VoucherPickerItem = Readonly<{
   /** The name the shop gave this voucher in Admin (ADR 0020 tier name); shown on the card as its first line. */
   name: string;
   title: string;
-  /** The big figure on the card's colour block: "80K", "10%", "FREE". */
+  /** The big figure on the card's colour block: "80K", "10%", "FREESHIP". */
   valueLabel: string;
   /** The small word under it: "Giảm", "Tối đa 150K", "Vận chuyển". */
   valueSub: string;
@@ -99,7 +99,7 @@ export function voucherExpiryWarning(endsAtIso: string | null, nowMs: number): s
 }
 
 function valueOf(card: VoucherCard): { label: string; sub: string } {
-  if (card.kind === "SHIPPING_FREE") return { label: "FREE", sub: "Vận chuyển" };
+  if (card.kind === "SHIPPING_FREE") return { label: "FREESHIP", sub: "" };
   const discount = card.discount;
   if (discount === null) return { label: "ƯU ĐÃI", sub: "" };
   if (discount.type === "FIXED_AMOUNT_VND") return { label: compactVoucherVnd(discount.amountVnd), sub: "Giảm" };
