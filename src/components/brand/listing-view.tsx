@@ -270,7 +270,7 @@ export function ListingViewToggle({
             } ${
               active
                 ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                : "border-[#3B2219]/20 text-[#3B2219] hover:border-[#3B2219]"
+                : "border-[#3B2219]/30 bg-[#FFFDFA] text-[#3B2219] hover:border-[#3B2219]"
             }`}
           >
             <ViewGlyph columns={GLYPH_COLUMNS[option]} />

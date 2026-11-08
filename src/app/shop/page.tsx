@@ -130,7 +130,7 @@ function render(data: ShopViewModel) {
                 placeholder="Tìm sản phẩm…"
                 defaultValue={discovery.query ?? ""}
                 maxLength={data.limits.query}
-                className="h-9 w-full rounded-full border border-[#3B2219]/20 bg-transparent pl-8 pr-3 text-xs text-[#2A1810] placeholder:text-[#3B2219]/40 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                className="h-9 w-full rounded-full border border-[#3B2219]/30 bg-[#FFFDFA] pl-8 pr-3 text-xs text-[#2A1810] placeholder:text-[#3B2219]/40 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               />
             </label>
           </div>
@@ -174,7 +174,7 @@ function render(data: ShopViewModel) {
                   placeholder="Tìm sản phẩm…"
                   defaultValue={discovery.query ?? ""}
                   maxLength={data.limits.query}
-                  className="w-full rounded-full border border-[#3B2219]/20 bg-transparent py-1.5 pl-8 pr-3 text-xs text-[#2A1810] placeholder:text-[#3B2219]/40 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                  className="w-full rounded-full border border-[#3B2219]/30 bg-[#FFFDFA] py-1.5 pl-8 pr-3 text-xs text-[#2A1810] placeholder:text-[#3B2219]/40 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
                 />
               </label>
 
@@ -190,7 +190,7 @@ function render(data: ShopViewModel) {
                   name="sort"
                   aria-label="Sắp xếp"
                   defaultValue={discovery.sort}
-                  className="rounded border border-[#3B2219]/20 bg-transparent px-3 py-1.5 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                  className="rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-3 py-1.5 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
                 >
                   <option value="name-asc">Tên A–Z</option>
                   <option value="name-desc">Tên Z–A</option>
@@ -221,7 +221,7 @@ function render(data: ShopViewModel) {
                 name="collection"
                 aria-label="Bộ sưu tập"
                 defaultValue={data.selectedCollection}
-                className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                className="rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
                 <option value="">Tất cả</option>
                 {data.collectionFacets.map((col) => (
@@ -238,7 +238,7 @@ function render(data: ShopViewModel) {
                 name="size"
                 aria-label="Kích cỡ"
                 defaultValue={data.selectedSize}
-                className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                className="rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
                 <option value="">Tất cả</option>
                 {data.sizeFacets.map((size) => (
@@ -255,7 +255,7 @@ function render(data: ShopViewModel) {
                 name="color"
                 aria-label="Màu"
                 defaultValue={data.selectedColor}
-                className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                className="rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
                 <option value="">Tất cả</option>
                 {data.colorFacets.map((col) => (
@@ -272,7 +272,7 @@ function render(data: ShopViewModel) {
                 limitVnd={data.limits.priceVnd}
                 minPriceVnd={discovery.minPriceVnd}
                 maxPriceVnd={discovery.maxPriceVnd}
-                inputClassName="w-24 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
+                inputClassName="w-24 rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-2 py-1 text-xs text-[#2A1810]"
               />
               <button
                 type="submit"

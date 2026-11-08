@@ -129,7 +129,7 @@ export const LISTING_ACTION_BAR_CLASSES = {
   filterTriggerLabel: "max-[423px]:sr-only",
   filterBadge: "max-[423px]:absolute max-[423px]:-right-1 max-[423px]:-top-1",
   sortSelect:
-    "h-9 min-w-0 max-w-full rounded border border-[#3B2219]/20 bg-transparent pl-2 pr-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219] md:h-auto md:px-3 md:py-1.5",
+    "h-9 min-w-0 max-w-full rounded border border-[#3B2219]/30 bg-[#FFFDFA] pl-2 pr-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219] md:h-auto md:px-3 md:py-1.5",
 } as const;
 
 export function productGridClassName(view: ListingView): string {

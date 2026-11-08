@@ -65,7 +65,7 @@ export function CollectionFilterPanel({
     `${chipClassName} ${
       active
         ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-        : "border-[#3B2219]/20 hover:border-[#3B2219]"
+        : "border-[#3B2219]/30 bg-[#FFFDFA] hover:border-[#3B2219]"
     }`;
 
   // `hidden` is display:none, so only the placement for the current width is in the accessibility tree.
@@ -108,7 +108,7 @@ export function CollectionFilterPanel({
             aria-label="Sắp xếp sản phẩm"
             value={activeSortHref}
             onChange={handleSortChange}
-            className="h-9 min-w-0 max-w-full rounded border border-[#3B2219]/20 bg-transparent px-2 text-base text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219] md:h-auto md:py-1.5 md:text-xs"
+            className="h-9 min-w-0 max-w-full rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-2 text-base text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219] md:h-auto md:py-1.5 md:text-xs"
           >
             {sortOptions.map((opt) => (
               <option key={opt.value} value={opt.href}>
@@ -163,7 +163,7 @@ export function CollectionFilterPanel({
       {/* Active filter pills; each remove control is a 44px target on a phone like the chips. */}
       {sizeFiltered && activeSizeOption ? (
         <div className="mt-1 flex flex-wrap items-center gap-2 md:mt-3">
-          <span className="inline-flex items-center gap-1 rounded bg-[#3B2219]/10 py-0 pl-2.5 pr-0 text-xs text-[#2A1810] md:gap-1.5 md:py-1 md:pr-2.5">
+          <span className="inline-flex items-center gap-1 rounded bg-[#D4C7B8]/45 py-0 pl-2.5 pr-0 text-xs text-[#2A1810] md:gap-1.5 md:py-1 md:pr-2.5">
             <span>Size: {activeSizeOption.label}</span>
             <Link
               href={allSizesHref}

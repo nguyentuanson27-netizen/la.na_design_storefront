@@ -1,8 +1,9 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import Link from "next/link";
 
 import { LISTING_ACTION_BAR_CLASSES } from "@/components/headless/listing-view-model";
 
+import { PageHeader } from "./page-chrome";
 import { ListingViewToggle } from "./listing-view";
 
 /**
@@ -29,10 +30,14 @@ import { ListingViewToggle } from "./listing-view";
  */
 export {
   PageBreadcrumbs as ListingBreadcrumbs,
-  PageHeader as ListingHeader,
   PageShell as ListingShell,
   type PageCrumb as ListingCrumb,
 } from "./page-chrome";
+
+/** The listing heading: the shared page header with the caramel hairline mark on. */
+export function ListingHeader(props: ComponentProps<typeof PageHeader>) {
+  return <PageHeader mark {...props} />;
+}
 
 export type ListingSubnavItem = Readonly<{
   label: string;

@@ -332,7 +332,7 @@ export function ShopMobileDrawer({
                     name="collection"
                     aria-label="Bộ sưu tập"
                     defaultValue={selectedCollection}
-                    className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
+                    className="w-full rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-3 py-2 text-xs text-[#2A1810]"
                   >
                     <option value="">Tất cả bộ sưu tập</option>
                     {collectionFacets.map((col) => (
@@ -352,7 +352,7 @@ export function ShopMobileDrawer({
                     name="size"
                     aria-label="Kích cỡ"
                     defaultValue={selectedSize}
-                    className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
+                    className="w-full rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-3 py-2 text-xs text-[#2A1810]"
                   >
                     <option value="">Tất cả kích cỡ</option>
                     {sizeFacets.map((size) => (
@@ -372,7 +372,7 @@ export function ShopMobileDrawer({
                     name="color"
                     aria-label="Màu sắc"
                     defaultValue={selectedColor}
-                    className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
+                    className="w-full rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-3 py-2 text-xs text-[#2A1810]"
                   >
                     <option value="">Tất cả màu sắc</option>
                     {colorFacets.map((col) => (
@@ -393,7 +393,7 @@ export function ShopMobileDrawer({
                       limitVnd={limits.priceVnd}
                       minPriceVnd={discovery.minPriceVnd}
                       maxPriceVnd={discovery.maxPriceVnd}
-                      inputClassName="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
+                      inputClassName="w-full rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-3 py-2 text-xs text-[#2A1810]"
                       separatorClassName="text-xs text-[#70584B]"
                     />
                   </div>
@@ -444,7 +444,7 @@ export function ShopActiveFilters({
   return (
     <div className="mt-4 flex flex-wrap items-center gap-2">
       {discovery.query ? (
-        <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+        <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
           <span>Tìm: &ldquo;{discovery.query}&rdquo;</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, query: null, page: 1 })}
@@ -457,7 +457,7 @@ export function ShopActiveFilters({
       ) : null}
 
       {discovery.collection ? (
-        <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+        <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
           <span>BST: {activeCollectionFacet?.label ?? discovery.collection}</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, collection: null, page: 1 })}
@@ -470,7 +470,7 @@ export function ShopActiveFilters({
       ) : null}
 
       {discovery.size ? (
-        <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+        <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
           <span>Size: {discovery.size}</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, size: null, page: 1 })}
@@ -483,7 +483,7 @@ export function ShopActiveFilters({
       ) : null}
 
       {discovery.color ? (
-        <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+        <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
           <span>Màu: {discovery.color}</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, color: null, page: 1 })}
@@ -496,7 +496,7 @@ export function ShopActiveFilters({
       ) : null}
 
       {discovery.availability === "in-stock" ? (
-        <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+        <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
           <span>Chỉ còn hàng</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, availability: null, page: 1 })}
@@ -509,7 +509,7 @@ export function ShopActiveFilters({
       ) : null}
 
       {discovery.sale ? (
-        <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+        <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
           <span>Sale</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, sale: null, page: 1 })}
@@ -522,7 +522,7 @@ export function ShopActiveFilters({
       ) : null}
 
       {discovery.minPriceVnd !== null || discovery.maxPriceVnd !== null ? (
-        <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+        <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
           <span>
             Giá:{" "}
             {discovery.minPriceVnd !== null

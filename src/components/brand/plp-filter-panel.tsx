@@ -292,7 +292,7 @@ export function PlpFilterPanel({
               className={`inline-flex items-center rounded-md border px-3 py-1.5 font-medium transition ${
                 isInStockActive
                   ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                  : "border-[#3B2219]/20 hover:border-[#3B2219]"
+                  : "border-[#3B2219]/30 bg-[#FFFDFA] hover:border-[#3B2219]"
               }`}
             >
               Còn hàng
@@ -310,7 +310,7 @@ export function PlpFilterPanel({
                     className={`inline-flex items-center rounded-md border px-3 py-1.5 font-medium transition ${
                       isSaleActive
                         ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                        : "border-[#3B2219]/20 hover:border-[#3B2219]"
+                        : "border-[#3B2219]/30 bg-[#FFFDFA] hover:border-[#3B2219]"
                     }`}
                   >
                     Sale
@@ -337,7 +337,7 @@ export function PlpFilterPanel({
                   className={`min-w-7 text-center rounded-md border px-2 py-1 font-medium uppercase transition ${
                     isSelected
                       ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                      : "border-[#3B2219]/20 hover:border-[#3B2219]"
+                      : "border-[#3B2219]/30 bg-[#FFFDFA] hover:border-[#3B2219]"
                   }`}
                 >
                   {size}
@@ -363,7 +363,7 @@ export function PlpFilterPanel({
                 setMinPriceInput(e.target.value);
                 if (priceError) setPriceError(null);
               }}
-              className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
+              className="w-20 rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-2 py-1 text-xs text-[#2A1810]"
             />
             <span>-</span>
             <input
@@ -377,7 +377,7 @@ export function PlpFilterPanel({
                 setMaxPriceInput(e.target.value);
                 if (priceError) setPriceError(null);
               }}
-              className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
+              className="w-20 rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-2 py-1 text-xs text-[#2A1810]"
             />
             <button
               type="submit"
@@ -409,7 +409,7 @@ export function PlpFilterPanel({
       {hasFilters ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {isInStockActive ? (
-            <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+            <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
               <span>Còn hàng</span>
               <Link href={inStockHref} scroll={false} aria-label="Xóa bộ lọc còn hàng" className="hover:text-black">
                 ✕
@@ -418,7 +418,7 @@ export function PlpFilterPanel({
           ) : null}
 
           {activeFilters.sale ? (
-            <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+            <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
               <span>Sale</span>
               {(() => {
                 const href = buildToggleSaleHref(categoryPath, activeFilters);
@@ -432,7 +432,7 @@ export function PlpFilterPanel({
           ) : null}
 
           {activeFilters.size ? (
-            <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+            <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
               <span>Size: {activeFilters.size}</span>
               {(() => {
                 const href = buildToggleSizeHref(categoryPath, activeFilters, activeFilters.size!);
@@ -446,7 +446,7 @@ export function PlpFilterPanel({
           ) : null}
 
           {activeFilters.color ? (
-            <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+            <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
               <span>Màu: {activeFilters.color}</span>
               {(() => {
                 const href = buildToggleColorHref(categoryPath, activeFilters, activeFilters.color!);
@@ -460,7 +460,7 @@ export function PlpFilterPanel({
           ) : null}
 
           {activeFilters.minPriceVnd !== null || activeFilters.maxPriceVnd !== null ? (
-            <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+            <span className="inline-flex items-center gap-1.5 rounded bg-[#D4C7B8]/45 px-2.5 py-1 text-xs text-[#2A1810]">
               <span>
                 Giá:{" "}
                 {activeFilters.minPriceVnd !== null
@@ -534,7 +534,7 @@ export function PlpFilterPanel({
                       className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
                         isInStockActive
                           ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                          : "border-[#3B2219]/25 text-[#3B2219]"
+                          : "border-[#3B2219]/30 bg-[#FFFDFA] text-[#3B2219]"
                       }`}
                     >
                       Chỉ xem sản phẩm còn hàng
@@ -552,7 +552,7 @@ export function PlpFilterPanel({
                             className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
                               isSaleActive
                                 ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                                : "border-[#3B2219]/25 text-[#3B2219]"
+                                : "border-[#3B2219]/30 bg-[#FFFDFA] text-[#3B2219]"
                             }`}
                           >
                             Chỉ xem sản phẩm Sale
@@ -583,7 +583,7 @@ export function PlpFilterPanel({
                           className={`min-w-9 rounded-md border px-3 py-2 text-center text-xs font-medium uppercase transition ${
                             isSelected
                               ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                              : "border-[#3B2219]/25 text-[#3B2219]"
+                              : "border-[#3B2219]/30 bg-[#FFFDFA] text-[#3B2219]"
                           }`}
                         >
                           {size}
@@ -613,7 +613,7 @@ export function PlpFilterPanel({
                         setMinPriceInput(e.target.value);
                         if (priceError) setPriceError(null);
                       }}
-                      className="w-full rounded border border-[#3B2219]/25 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
+                      className="w-full rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-3 py-2 text-xs text-[#2A1810]"
                     />
                     <span>-</span>
                     <input
@@ -627,7 +627,7 @@ export function PlpFilterPanel({
                         setMaxPriceInput(e.target.value);
                         if (priceError) setPriceError(null);
                       }}
-                      className="w-full rounded border border-[#3B2219]/25 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
+                      className="w-full rounded border border-[#3B2219]/30 bg-[#FFFDFA] px-3 py-2 text-xs text-[#2A1810]"
                     />
                   </div>
                   <button

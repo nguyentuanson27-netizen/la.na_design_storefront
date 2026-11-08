@@ -71,6 +71,9 @@ export function PageBreadcrumbs({
  *
  * `align="center"` sets the title centred with no closing hairline, for a page (the cart) whose
  * breadcrumb sits under the title instead of above it.
+ *
+ * `mark` sets a short caramel hairline above the eyebrow, the logo's colour as a quiet signature. The
+ * listing surfaces turn it on (`ListingHeader`); account, checkout and content pages stay without.
  */
 export function PageHeader({
   eyebrow,
@@ -78,9 +81,11 @@ export function PageHeader({
   lead,
   meta,
   align = "start",
+  mark = false,
   children,
 }: Readonly<{
   align?: "start" | "center";
+  mark?: boolean;
   eyebrow?: string;
   title: string;
   lead?: ReactNode;
@@ -95,6 +100,7 @@ export function PageHeader({
 
   return (
     <div className={align === "center" ? "mt-6 text-center md:mt-10" : "mt-4 border-b border-[#3B2219]/15 pb-4"}>
+      {mark ? <span aria-hidden="true" className="page-header-mark" /> : null}
       {eyebrow ? <p className="eyebrow text-[#70584B]">{eyebrow}</p> : null}
       {meta ? (
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">

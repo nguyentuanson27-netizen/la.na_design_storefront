@@ -82,10 +82,13 @@ test("no listing surface keeps the oversized sans heading the shared header repl
 });
 
 test("the shared header is a normal-weight serif h1 under an eyebrow", () => {
-  // `ListingHeader` is `PageHeader` re-exported: the listings and every other page share one.
+  // `ListingHeader` is `PageHeader` with the caramel mark on: it renders the shared component, it is not
+  // a second copy of it, so the listings and every other page still share one heading.
+  const listingChrome = read("src/components/brand/listing-chrome.tsx");
+  assert.match(listingChrome, /import \{ PageHeader \} from "\.\/page-chrome"/);
   assert.match(
-    read("src/components/brand/listing-chrome.tsx"),
-    /PageHeader as ListingHeader[\s\S]*from "\.\/page-chrome"/,
+    listingChrome,
+    /function ListingHeader\(props: ComponentProps<typeof PageHeader>\)\s*\{\s*return <PageHeader mark \{\.\.\.props\} \/>;/,
     "the listing header is the page header, not a second copy of it",
   );
   const chrome = read("src/components/brand/page-chrome.tsx");

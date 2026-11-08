@@ -22,3 +22,18 @@ refined, image-first) and the homepage's own headings are the references.
 
 The Flash Sale strip and its gradient, the purchase panel's flat layout (no surrounding card), the primary and
 outline buttons, the typefaces, and every selection, pricing and voucher behaviour.
+
+## Listing pages (same direction)
+
+The product page's colour pass carried over to every listing (`/shop`, `/sale`, `/new-arrivals`, `/collections`,
+category and collection pages). Quiet, no new hues, no size or layout change.
+
+| Area | Change | Where |
+| --- | --- | --- |
+| Filter chips, size chips, view toggle | Unselected is warm white with a visible brown hairline (was transparent with a 20% line). Selected stays solid ink. | `plp-filter-panel`, `collection-filter-panel`, `listing-view` |
+| Inputs and sort select | Warm white fill, 30% brown line. | `shop-controls`, `plp-filter-panel`, `shop/page`, `LISTING_ACTION_BAR_CLASSES` |
+| Active-filter tags | Stone tint (`#D4C7B8` at 45%), the same tint as the try-on button. | filter components |
+| Sibling-listing tabs | Current underline is the logo's caramel (`#B8825F`); the label stays ink. | `.listing-subnav-link` |
+| Listing heading | A 24px caramel hairline above the eyebrow, only where `ListingHeader` is used (`PageHeader mark`). Account, checkout and content pages are unchanged. | `page-chrome`, `listing-chrome` |
+
+Unchanged on purpose: the Flash Sale and discount tags, the product cards, the photographs, the grid and every filter's behaviour.
