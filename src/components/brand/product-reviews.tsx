@@ -35,14 +35,26 @@ const COLUMN = "mx-auto max-w-3xl px-6";
 function SummaryBlock({ summary }: Readonly<{ summary: NonNullable<ProductReviewSection["summary"]> }>) {
   const fit = summary.fit === null ? null : fitShares(summary.fit);
   return (
-    <>
-      <div className="mt-8 flex items-center gap-6" data-review-summary="">
-        <div className="w-24 shrink-0 text-center">
-          <p className="font-display text-5xl leading-none text-[#2A1810]">{formatReviewAverage(summary.average)}</p>
-          <ReviewStars value={summary.average} className="mt-2 text-base" />
-          <p className="mt-1 text-xs text-[#70584B]">{summary.count} đánh giá</p>
-        </div>
-        <ul className="min-w-0 flex-1 space-y-1.5" aria-label="Số đánh giá theo từng mức sao">
+    <div className="mt-3 text-center" data-review-summary="">
+      {/* One line: the average, the stars, how many. The star breakdown folds away. */}
+      <p className="flex items-center justify-center gap-2">
+        <span className="font-display text-2xl leading-none text-[#2A1810]">{formatReviewAverage(summary.average)}</span>
+        <ReviewStars value={summary.average} className="text-sm" />
+        <span className="text-xs text-[#70584B]">{summary.count} đánh giá</span>
+      </p>
+
+      {fit === null ? null : (
+        <p className="mt-2 text-xs text-[#70584B]" data-review-fit="">
+          <span className="font-semibold text-[#3B2219]">Về size:</span> Vừa vặn {fit.trueToSize}% · Hơi chật{" "}
+          {fit.small}% · Hơi rộng {fit.large}%
+        </p>
+      )}
+
+      <details className="mx-auto mt-2 max-w-xs text-left" data-review-breakdown="">
+        <summary className="cursor-pointer list-none text-center text-xs text-[#70584B] underline underline-offset-4 [&::-webkit-details-marker]:hidden">
+          Xem theo từng mức sao
+        </summary>
+        <ul className="mt-3 space-y-1.5" aria-label="Số đánh giá theo từng mức sao">
           {summary.distribution.map((count, index) => (
             <li key={index} className="flex items-center gap-2 text-xs text-[#3B2219]">
               <span className="w-11 shrink-0">{5 - index} sao</span>
@@ -56,24 +68,8 @@ function SummaryBlock({ summary }: Readonly<{ summary: NonNullable<ProductReview
             </li>
           ))}
         </ul>
-      </div>
-
-      {fit === null ? null : (
-        <div className="mt-6 rounded-lg border border-[#3B2219]/12 bg-[#FFFDFA] px-4 py-3 text-xs" data-review-fit="">
-          <p className="font-semibold text-[#3B2219]">Khách nói về size</p>
-          <div aria-hidden="true" className="mt-2 flex h-2 overflow-hidden rounded-full">
-            <span style={{ width: `${fit.small}%` }} className="bg-[#B8825F]" />
-            <span style={{ width: `${fit.trueToSize}%` }} className="bg-[#46604F]" />
-            <span style={{ width: `${fit.large}%` }} className="bg-[#70584B]" />
-          </div>
-          <p className="mt-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-[#70584B]">
-            <span>Hơi chật {fit.small}%</span>
-            <span>Vừa vặn {fit.trueToSize}%</span>
-            <span>Hơi rộng {fit.large}%</span>
-          </p>
-        </div>
-      )}
-    </>
+      </details>
+    </div>
   );
 }
 
@@ -231,7 +227,7 @@ export function ProductReviews({
     <section
       id={PRODUCT_REVIEWS_ANCHOR}
       aria-labelledby="pdp-reviews-title"
-      className="collection-products-anchor border-t border-black/20 pt-12"
+      className="collection-products-anchor border-t border-black/20 pt-10"
       data-pdp-region="reviews"
     >
       <div className={COLUMN}>
@@ -245,9 +241,9 @@ export function ProductReviews({
         )}
       </div>
 
-      {photoRail}
+      {photoRail === null ? null : <div className="pdp-review-photos">{photoRail}</div>}
 
-      <div className={`${COLUMN} pb-14 pt-6`}>
+      <div className={`${COLUMN} pb-14 pt-2`}>
         {filters.length === 0 ? null : (
           <div className="-mx-6 overflow-x-auto px-6 py-2" role="group" aria-label="Lọc đánh giá">
             <div className="flex items-center gap-3.5">

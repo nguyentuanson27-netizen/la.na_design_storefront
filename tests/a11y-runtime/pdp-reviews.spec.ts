@@ -257,6 +257,10 @@ test("the review section computes its summary from the published reviews and hid
   const summary = section(page).locator("[data-review-summary]");
   await expect(summary).toContainText("4,6");
   await expect(summary).toContainText("7 đánh giá");
+  // The star breakdown is folded away so the reviews and photographs come first; opening shows it.
+  const breakdown = summary.locator("[data-review-breakdown]");
+  await expect(breakdown).not.toHaveAttribute("open", "");
+  await breakdown.getByText("Xem theo từng mức sao").click();
   const histogram = summary.getByRole("list", { name: "Số đánh giá theo từng mức sao" });
   await expect(histogram.getByRole("listitem")).toHaveCount(5);
   await expect(histogram.getByRole("listitem").first()).toContainText("5 sao");
