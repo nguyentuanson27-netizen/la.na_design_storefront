@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Locator } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
@@ -17,6 +17,13 @@ import { NEXT_SERVER_COMMAND, nextServerEnv } from "./next-server-mode";
  * The order itself (acceptance, consume, refund, POS body) is held to a real database in
  * `tests/database/voucher-checkout.test.ts`; this spec holds the browser to what the shopper sees and can do.
  */
+
+/** The code box is one quiet row until asked for; open it once (a second press would close it) and hand back the input. */
+async function codeBox(dialog: Locator) {
+  const toggle = dialog.getByRole("button", { name: "Nhập mã khuyến mãi" });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  return dialog.getByLabel("Nhập mã khuyến mãi");
+}
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const HOST = "127.0.0.1";
@@ -229,7 +236,7 @@ test("review f3eed3a: a code applied in the picker updates the cart's expected t
     await expect(expected).toContainText("880.000");
     await page.locator("[data-voucher-picker] > button").click();
     const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-    await dialog.getByLabel("Nhập mã khuyến mãi").fill("kol70");
+    await (await codeBox(dialog)).fill("kol70");
     await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
     await expect(dialog.getByRole("button", { name: /^Giảm 70\.000đ\./ })).toHaveAttribute("aria-pressed", "true");
     // The dialog is open on purpose and the page behind it is not touched yet; closing it settles the totals.
@@ -299,7 +306,7 @@ test("review 5a62d20 / AC-35: a typed code that costs the shopper a gift is show
   await page.goto(`${BASE}/cart`);
   await page.locator("[data-voucher-picker] > button").click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await dialog.getByLabel("Nhập mã khuyến mãi").fill("kol70");
+  await (await codeBox(dialog)).fill("kol70");
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   // Valid, but it costs the chosen gift: shown with the warning, NOT saved.
   await expect(dialog).toContainText("Mã hợp lệ");
@@ -339,7 +346,7 @@ test("review 8bdb2f0: editing the code box abandons a code waiting for the shopp
   await page.goto(`${BASE}/cart`);
   await page.locator("[data-voucher-picker] > button").click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  const box = dialog.getByLabel("Nhập mã khuyến mãi");
+  const box = await codeBox(dialog);
   await box.fill("kol71");
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   await expect(dialog).toContainText("Mã hợp lệ");
@@ -367,7 +374,7 @@ test("review 8bdb2f0: a choice that WAS saved but cannot be re-read right now is
   await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION vchr_co_empty_cart() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN DELETE FROM "CartItem" WHERE "cartId" = NEW."cartId"; RETURN NULL; END $$`);
   await prisma.$executeRawUnsafe(`CREATE TRIGGER vchr_co_empty_cart_t AFTER INSERT OR UPDATE ON "CartVoucherSelection" FOR EACH ROW EXECUTE FUNCTION vchr_co_empty_cart()`);
   try {
-    await dialog.getByLabel("Nhập mã khuyến mãi").fill("kol72");
+    await (await codeBox(dialog)).fill("kol72");
     await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
     await expect(dialog).toContainText("Đã áp dụng mã ưu đãi");
     await expect(dialog.getByRole("alert")).toHaveCount(0);
@@ -471,7 +478,7 @@ test("review 54cb476: a marketing link to a code that would cost a chosen gift s
   expect(await page.content()).not.toMatch(/KOL73/i);
   await page.locator("[data-voucher-picker] > button").click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await expect(dialog.getByLabel("Nhập mã khuyến mãi")).toHaveValue("");
+  await expect(await codeBox(dialog)).toHaveValue("");
   await dialog.getByRole("button", { name: "Dùng mã từ liên kết" }).click();
   // The code is valid but costs the gift: shown with the warning, still NOT saved.
   await expect(dialog).toContainText("quà đã chọn sẽ được bỏ khỏi giỏ hàng");
@@ -555,7 +562,7 @@ test("review 735ff62: a linked code that applies cleanly replaces a typed code w
   await page.locator("[data-voucher-picker] > button").click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
   // The shopper types KOL73, which costs the gift: it is shown and waits for their yes.
-  await dialog.getByLabel("Nhập mã khuyến mãi").fill("KOL73");
+  await (await codeBox(dialog)).fill("KOL73");
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   await expect(dialog.getByRole("button", { name: /Tiếp tục với voucher này/ })).toBeVisible();
   expect(await prisma.cartVoucherSelection.count({ where: { cartId } })).toBe(0);
@@ -582,7 +589,7 @@ test("review 735ff62: a replaced offer also drops a typed code that was waiting 
   await page.goto(`${BASE}/cart`);
   await page.locator("[data-voucher-picker] > button").click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await dialog.getByLabel("Nhập mã khuyến mãi").fill("KOL73");
+  await (await codeBox(dialog)).fill("KOL73");
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   await expect(dialog.getByRole("button", { name: /Tiếp tục với voucher này/ })).toBeVisible();
   // Another tab opens a newer link; this tab's offer is no longer the one the server holds.
@@ -641,7 +648,7 @@ test("review 5a22b12: closing the dialog while a TYPED code is being applied sti
   await expect(expected).toContainText("880.000");
   await page.locator("[data-voucher-picker] > button").click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await dialog.getByLabel("Nhập mã khuyến mãi").fill("KOL70");
+  await (await codeBox(dialog)).fill("KOL70");
   const action = await holdNextServerAction(page);
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   await action.reached;
@@ -696,7 +703,7 @@ test("review a772560: a typed code refused after the dialog was closed is not pr
   await page.goto(`${BASE}/cart`);
   await page.locator("[data-voucher-picker] > button").click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await dialog.getByLabel("Nhập mã khuyến mãi").fill("WRONG123");
+  await (await codeBox(dialog)).fill("WRONG123");
   const action = await holdNextServerAction(page);
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   await action.reached;
@@ -722,7 +729,7 @@ test("review a772560: a code that still needs the shopper's consent is not appli
   await page.goto(`${BASE}/cart`);
   await page.locator("[data-voucher-picker] > button").click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await dialog.getByLabel("Nhập mã khuyến mãi").fill("KOL73");
+  await (await codeBox(dialog)).fill("KOL73");
   const action = await holdNextServerAction(page);
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   await action.reached;
@@ -749,7 +756,7 @@ test("review 8bfe958: a typed code whose request never reaches the server, with 
   await expect(expected).toContainText("880.000");
   await page.locator("[data-voucher-picker] > button").click();
   const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
-  await dialog.getByLabel("Nhập mã khuyến mãi").fill("KOL70");
+  await (await codeBox(dialog)).fill("KOL70");
   const action = await holdNextServerAction(page, "abort");
   await dialog.getByRole("button", { name: "Áp dụng mã" }).click();
   await action.reached;

@@ -60,6 +60,8 @@ export type VoucherPickerModel = Readonly<{
     merchandiseDiscountText: string | null;
     /** One line per chosen merchandise voucher, in application order, when more than one applies. */
     merchandiseLines: readonly Readonly<{ id: string; label: string; amountText: string }>[];
+    /** One line per applied merchandise voucher, always (also when there is one): its type's name, what it takes off, and its type's colour. */
+    discountLines: readonly Readonly<{ id: string; label: string; amountText: string; tone: VoucherTone }>[];
     shippingFeeText: string;
     shippingDiscountText: string | null;
     totalText: string;
@@ -209,6 +211,9 @@ export function buildVoucherPickerModel(input: Readonly<{
     return Object.freeze({ id: line.campaignId, label: card?.type?.name ?? "Voucher giảm tiền hàng", amountText: `-${formatVoucherVnd(line.discountVnd)}` });
   });
 
+  const toneOf = new Map<string, VoucherTone>(merchandiseGroups.flatMap((group) => group.items.map((item): [string, VoucherTone] => [item.id, group.tone])));
+  const discountLines = merchandiseLines.map((line) => Object.freeze({ ...line, tone: toneOf.get(line.id) ?? ("clay" as const) }));
+
   const notices = quote.notices.map((notice) =>
     notice.group === "MERCHANDISE"
       ? "Voucher giảm tiền hàng đã chọn không còn dùng được cho giỏ này, nên đã chọn lại ưu đãi tốt nhất."
@@ -223,6 +228,7 @@ export function buildVoucherPickerModel(input: Readonly<{
       paidBeforeText: formatVoucherVnd(quote.paidBeforeVnd),
       merchandiseDiscountText: quote.merchandiseDiscountVnd > 0 ? `-${formatVoucherVnd(quote.merchandiseDiscountVnd)}` : null,
       merchandiseLines: Object.freeze(merchandiseLines.length > 1 ? merchandiseLines : []),
+      discountLines: Object.freeze(discountLines),
       shippingFeeText: formatVoucherVnd(quote.shippingFeeVnd),
       shippingDiscountText: quote.shippingDiscountVnd > 0 ? `-${formatVoucherVnd(quote.shippingDiscountVnd)}` : null,
       totalText: formatVoucherVnd(quote.totalPayableVnd),

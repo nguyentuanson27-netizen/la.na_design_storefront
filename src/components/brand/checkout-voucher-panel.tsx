@@ -24,7 +24,10 @@ function VoucherLine({ line, emphasis }: Readonly<{ line: CheckoutVoucherLine; e
     <li className={`voucher-tone ${line.tone ? `voucher-tone--${line.tone}` : ""} flex items-center justify-between gap-4`} data-checkout-voucher-line>
       <span className="flex min-w-0 items-center gap-2.5">
         <span aria-hidden="true" className="voucher-held__mi"><VoucherIcon name={line.kind === "SHIPPING_FREE" ? "truck" : "tag"} className="h-4 w-4" /></span>
-        <span className="min-w-0">{line.title}</span>
+        <span className="grid min-w-0 leading-snug">
+          {line.title}
+          {line.group ? <small className="text-xs text-black/60">{line.group}</small> : null}
+        </span>
       </span>
       <span className={`shrink-0 font-semibold ${emphasis ? "text-[#b42318]" : "text-black/75"}`}>{line.amountText}</span>
     </li>
@@ -64,6 +67,8 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
   // Time is read after mount only, so the server render and the first client render agree.
   const [left, setLeft] = useState<number | null>(null);
   const heldUntilMs = view.state === "HELD" ? view.heldUntilMs : null;
+  // The pill counts the seconds ("09:42"); the sentence below keeps the minutes. Both read the clock after mount only.
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const consentId = useId();
 
   useEffect(() => {
@@ -79,18 +84,32 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
     return () => window.clearInterval(timer);
   }, [heldUntilMs, router]);
 
+  useEffect(() => {
+    if (heldUntilMs === null) return;
+    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((heldUntilMs - Date.now()) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [heldUntilMs]);
+
   if (view.state === "HELD") {
     return (
       <section aria-label="Ưu đãi" className="voucher-held text-sm" data-checkout-vouchers="held">
         <div className="voucher-held__head">
           <span className="voucher-held__ok"><VoucherIcon name="check" /></span>
           <p className="font-semibold">Ưu đãi đang áp dụng cho đơn này</p>
-          {left !== null && left > 0 ? <span aria-hidden="true" className="voucher-held__pill">Còn {left} phút</span> : null}
+          {secondsLeft !== null && secondsLeft > 0 ? (
+            <span aria-hidden="true" className="voucher-held__pill">
+              <VoucherIcon name="clock" className="h-3.5 w-3.5" />
+              {String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:{String(secondsLeft % 60).padStart(2, "0")}
+            </span>
+          ) : null}
         </div>
         <ul className="grid gap-2.5 px-3.5 py-3">
           {view.lines.map((line) => <VoucherLine emphasis key={line.id} line={line} />)}
         </ul>
         <div className="px-3.5 pb-3">
+          {view.savingText ? <p className="mb-1" data-checkout-voucher-saving>Tổng giảm <strong className="text-[#b42318]">{view.savingText}</strong></p> : null}
           <p className="text-black/75" data-checkout-voucher-held-until>
             {left === null ? "Ưu đãi được giữ tối đa 10 phút." : left > 0 ? `Ưu đãi được giữ thêm khoảng ${left} phút.` : "Ưu đãi đã hết hạn, đang cập nhật giá…"}
           </p>

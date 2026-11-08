@@ -7,6 +7,7 @@ import { useVoucherPickerActions } from "@/components/headless/use-voucher-picke
 import { formatVoucherVnd, voucherEntryCopy, type VoucherPickerGroup, type VoucherPickerModel } from "@/routes/voucher-picker-model";
 import { VoucherCard } from "./voucher-card";
 import { VoucherIcon } from "./voucher-icons";
+import { VoucherDiscountRows } from "./voucher-summary-lines";
 
 /**
  * Voucher v1 (V16): the Grab-inspired picker (spec §7). Mobile is a full-screen sheet with a sticky footer, desktop a
@@ -103,6 +104,8 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
   // A code from a marketing link is OFFERED, never applied or even shown: it stays on the server, and "Dùng mã từ liên kết" asks the
   // server to use it (the same verify, quote and consent as a typed code).
   const [code, setCode] = useState("");
+  // The code box is one quiet row until the shopper asks for it; it stays open while there is something typed.
+  const [codeOpen, setCodeOpen] = useState(false);
   const [pendingLink, setPendingLink] = useState(false);
   // Once the linked code is used the offer disappears from the dialog at once; the server-side cookie is cleared when the dialog closes.
   const [linkUsed, setLinkUsed] = useState(false);
@@ -220,6 +223,7 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
     setError(null);
     setMessage(null);
     setCode("");
+    setCodeOpen(false);
     setModel(saved);
     setDraft(draftOf(saved));
   };
@@ -491,12 +495,18 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-4">
-            {/* Not a <form>: on the checkout this dialog sits inside the order form, and a nested form is invalid HTML (the parser drops it). Enter is handled below. */}
-            <div className="flex gap-2">
+            <button type="button" className="voucher-code-toggle" aria-expanded={codeOpen || code !== ""} aria-controls={`${titleId}-code-row`} onClick={() => setCodeOpen((value) => !value)}>
+              <span>Nhập mã khuyến mãi</span>
+              <VoucherIcon name="chevron" />
+            </button>
+            {codeOpen || code !== "" ? (
+            <div className="mt-2 flex gap-2" id={`${titleId}-code-row`}>
+              {/* Not a <form>: on the checkout this dialog sits inside the order form, and a nested form is invalid HTML (the parser drops it). Enter is handled below. */}
               <label className="sr-only" htmlFor={`${titleId}-code`}>Nhập mã khuyến mãi</label>
-              <input id={`${titleId}-code`} value={code} onChange={(event) => editCode(event.target.value)} maxLength={64} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Nhập mã khuyến mãi" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); if (code.trim() && !pending) submitCode(); } }} className="min-h-11 min-w-0 flex-1 rounded-md border border-black/30 bg-transparent px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2" />
+              <input autoFocus id={`${titleId}-code`} value={code} onChange={(event) => editCode(event.target.value)} maxLength={64} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Nhập mã khuyến mãi" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); if (code.trim() && !pending) submitCode(); } }} className="min-h-11 min-w-0 flex-1 rounded-md border border-black/30 bg-transparent px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2" />
               <button type="button" onClick={() => { if (code.trim()) submitCode(); }} disabled={pending || code.trim() === ""} className="min-h-11 rounded-md border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Áp dụng mã</button>
             </div>
+            ) : null}
 
             {error ? <p role="alert" className="mt-3 border-l-2 border-black bg-black/5 p-3 text-sm">{error}</p> : null}
             {model.warnings.notices.map((notice) => <p key={notice} role="status" className="mt-3 text-sm text-black/80">{notice}</p>)}
@@ -528,18 +538,14 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
               );
             })}
 
-            <dl className="mt-6 space-y-1.5 border-t border-black/15 pt-4 text-sm">
-              <div className="flex justify-between gap-4"><dt>Tiền hàng</dt><dd>{model.summary.paidBeforeText}</dd></div>
-              {model.summary.merchandiseLines.length > 0
-                ? model.summary.merchandiseLines.map((line) => <div key={line.id} className="flex justify-between gap-4"><dt>{line.label}</dt><dd>{line.amountText}</dd></div>)
-                : model.summary.merchandiseDiscountText
-                  ? <div className="flex justify-between gap-4"><dt>Voucher giảm tiền hàng</dt><dd>{model.summary.merchandiseDiscountText}</dd></div>
-                  : null}
-              <div className="flex justify-between gap-4"><dt>Phí vận chuyển</dt><dd>{model.summary.shippingFeeText}</dd></div>
-              {model.summary.shippingDiscountText ? <div className="flex justify-between gap-4"><dt>Voucher vận chuyển</dt><dd>{model.summary.shippingDiscountText}</dd></div> : null}
-              <div className="flex justify-between gap-4 text-base font-semibold"><dt>Dự kiến thanh toán</dt><dd>{model.summary.totalText}</dd></div>
+            <dl className="voucher-rows">
+              <div><dt>Tiền hàng</dt><dd>{model.summary.paidBeforeText}</dd></div>
+              <VoucherDiscountRows part="merchandise" summary={model.summary} />
+              <div><dt>Phí vận chuyển</dt><dd>{model.summary.shippingFeeText}</dd></div>
+              <VoucherDiscountRows part="shipping" summary={model.summary} />
+              <div className="voucher-rows__total"><dt>Dự kiến thanh toán</dt><dd>{model.summary.totalText}</dd></div>
             </dl>
-            <p className="mt-2 text-xs text-black/65">Đây là số dự kiến; ưu đãi chưa được giữ cho đến khi nàng đặt hàng.</p>
+            <p className="mt-2.5 text-xs text-black/65">Đây là số dự kiến; ưu đãi chưa được giữ cho đến khi nàng đặt hàng.</p>
 
             {warnings.length > 0 ? (
               <div role="alert" className="mt-4 border-l-2 border-black bg-black/5 p-3 text-sm leading-6">

@@ -129,6 +129,8 @@ export type CheckoutVoucherLine = Readonly<{
   title: string;
   amountText: string;
   kind: "MERCHANDISE" | "SHIPPING_FREE";
+  /** The voucher's type as the picker names it ("Theo đơn", "Voucher vận chuyển"): the small line under its name. Absent when the picker could not be read. */
+  group?: string;
   /** The voucher type's colour, the same one the picker gives it. Absent when the picker could not be read (the line is then neutral). */
   tone?: VoucherTone;
 }>;
@@ -142,7 +144,7 @@ export type CheckoutVoucherLine = Readonly<{
  *  - `STALE`   the cart held vouchers that no longer describe it and none is on offer; the shopper is told, not charged for them.
  */
 export type CheckoutVoucherView = Readonly<
-  | { state: "HELD"; lines: readonly CheckoutVoucherLine[]; heldUntilMs: number | null }
+  | { state: "HELD"; lines: readonly CheckoutVoucherLine[]; heldUntilMs: number | null; /** What the held vouchers take off in all ("250.000đ"), from the picker read in the same request. */ savingText?: string }
   | {
       state: "OFFERED";
       /** The quote the shopper saw; the hold POST sends it back and the server recomputes it. */
@@ -569,16 +571,16 @@ export function buildCheckoutVoucherView(input: Readonly<{
     const v = render.voucher;
     const lines: CheckoutVoucherLine[] = [];
     // The held quote knows campaign names and amounts, not types; the picker (read in the same request) knows which colour each one wears.
-    const toneOf = new Map<string, VoucherTone>(picker?.groups.flatMap((group) => group.items.map((item): [string, VoucherTone] => [item.id, group.tone])) ?? []);
-    const withTone = (id: string): { tone?: VoucherTone } => { const tone = toneOf.get(id); return tone === undefined ? {} : { tone }; };
+    const groupOf = new Map<string, { tone: VoucherTone; heading: string }>(picker?.groups.flatMap((group) => group.items.map((item): [string, { tone: VoucherTone; heading: string }] => [item.id, { tone: group.tone, heading: group.heading }])) ?? []);
+    const withTone = (id: string): { tone?: VoucherTone; group?: string } => { const found = groupOf.get(id); return found === undefined ? {} : { tone: found.tone, group: found.heading }; };
     for (const entry of v.merchandise) lines.push({ id: entry.campaignId, title: v.names.get(entry.campaignId) ?? "Voucher giảm giá", amountText: `−${currency.format(entry.amountVnd)}`, kind: "MERCHANDISE", ...withTone(entry.campaignId) });
     if (v.shippingCampaignId !== null) lines.push({ id: v.shippingCampaignId, title: v.names.get(v.shippingCampaignId) ?? "Voucher vận chuyển", amountText: `−${currency.format(v.shippingWaivedVnd)}`, kind: "SHIPPING_FREE", ...withTone(v.shippingCampaignId) });
-    return Object.freeze({ state: "HELD", lines: Object.freeze(lines), heldUntilMs: input.heldUntilMs });
+    return Object.freeze({ state: "HELD", lines: Object.freeze(lines), heldUntilMs: input.heldUntilMs, ...(picker?.summary.savingText ? { savingText: picker.summary.savingText } : {}) });
   }
   const stale = (render.kind === "LEGACY" || render.kind === "BENEFIT") && render.voucherStale === true;
   if (picker !== null && picker.quoteDigest !== null && picker.footer.count > 0) {
     // Named as the picker card names it (the shop's voucher name), so a voucher reads the same in the cart, the picker and here.
-    const lines = picker.groups.flatMap((group) => group.items.filter((item) => item.selected).map((item): CheckoutVoucherLine => ({ id: item.id, title: item.name, amountText: item.savingText ?? "", kind: group.kind, tone: group.tone })));
+    const lines = picker.groups.flatMap((group) => group.items.filter((item) => item.selected).map((item): CheckoutVoucherLine => ({ id: item.id, title: item.name, amountText: item.savingText ?? "", kind: group.kind, group: group.heading, tone: group.tone })));
     return Object.freeze({
       state: "OFFERED",
       digest: picker.quoteDigest,

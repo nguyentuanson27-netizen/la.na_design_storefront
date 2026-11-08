@@ -3510,6 +3510,23 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-ticket__progress { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: rgba(59, 34, 25, 0.12); }
   .voucher-ticket__progress > i { display: block; height: 100%; background: var(--vc); }
 
+  /* the bill: label on the left, amount on the right; a voucher line has its type's colour square and a red amount; the total is larger */
+  .voucher-rows { display: grid; gap: 0.5rem; margin: 1.5rem 0 0; border-top: 1px solid rgba(59, 34, 25, 0.22); padding-top: 1rem; font-size: 0.875rem; }
+  .voucher-rows > div { display: flex; justify-content: space-between; gap: 1rem; }
+  .voucher-rows dt, .voucher-rows dd { margin: 0; }
+  .voucher-rows__label { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .voucher-rows__neg dd { font-weight: 700; color: #b42318; }
+  .voucher-rows__total { align-items: baseline; margin-top: 0.25rem; border-top: 1px solid rgba(59, 34, 25, 0.22); padding-top: 0.75rem; font-family: var(--font-display); font-size: 0.9375rem; font-weight: 700; }
+  .voucher-rows__total dd { font-size: 1.1875rem; }
+  .voucher-rows--plain { margin-top: 0.875rem; border-top: 0; padding-top: 0; }
+
+  /* the code entry: one quiet row that opens to the input */
+  .voucher-code-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 2.75rem; border: 1px solid rgba(59, 34, 25, 0.22); border-radius: 0.375rem; background: #fffdfa; padding: 0 0.875rem; font-family: var(--font-display); font-size: 0.875rem; font-weight: 600; color: var(--ink); text-align: left; cursor: pointer; }
+  .voucher-code-toggle > svg { width: 1rem; height: 1rem; color: rgba(59, 34, 25, 0.72); transition: transform 0.15s; }
+  .voucher-code-toggle[aria-expanded="true"] > svg { transform: rotate(90deg); }
+  .voucher-code-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .voucher-code-toggle > svg { transition: none; } }
+
   /* the bar at the top of the dialog: how many vouchers, and what they take off */
   .voucher-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.875rem; margin: 0.75rem 1rem 0; border-radius: 0.625rem; background: var(--ink); padding: 0.625rem 0.875rem; color: #fff; box-shadow: 0 6px 16px -10px rgba(59, 34, 25, 0.6); }
   .voucher-bar__count { display: grid; min-width: 0; gap: 0.1875rem; }
@@ -3553,7 +3570,7 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-held__ok > svg { width: 0.9375rem; height: 0.9375rem; }
   .voucher-held__ok--offer { background: var(--ink); }
   .voucher-held__mi { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; flex: none; border-radius: 0.375rem; background: var(--vc, var(--ink)); color: #fff; }
-  .voucher-held__pill { margin-left: auto; border-radius: 999px; background: #fbe8cf; padding: 0.1875rem 0.625rem; font-family: var(--font-display); font-size: 0.75rem; font-weight: 700; color: #8a4a00; }
+  .voucher-held__pill { display: inline-flex; align-items: center; gap: 0.3125rem; font-variant-numeric: tabular-nums; margin-left: auto; border-radius: 999px; background: #fbe8cf; padding: 0.1875rem 0.625rem; font-family: var(--font-display); font-size: 0.75rem; font-weight: 700; color: #8a4a00; }
 
   /* PDP teaser: small tickets in one swipeable row, never a promise. Press one to read its full sentence. */
   .voucher-chips { display: flex; gap: 0.625rem; margin: 0.5rem -0.125rem 0; overflow-x: auto; padding: 0.25rem 0.125rem 0.5rem; scroll-snap-type: x proximity; list-style: none; }

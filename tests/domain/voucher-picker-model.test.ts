@@ -92,7 +92,7 @@ test("the selected card follows the server's choice; the footer says what the vo
 test("the summary reconciles and words every line: subtotal, discounts, fee, total", () => {
   const { view } = model([fixed("m", 30_000, 100_000), freeship("s", null)], [line("a", 1, 620_000)]);
   assert.deepEqual(view.summary, {
-    paidBeforeText: "620.000đ", merchandiseDiscountText: "-30.000đ", merchandiseLines: [], shippingFeeText: "0đ", shippingDiscountText: "-30.000đ", totalText: "590.000đ", totalVnd: 590_000, savingText: "60.000đ", savingVnd: 60_000,
+    paidBeforeText: "620.000đ", merchandiseDiscountText: "-30.000đ", merchandiseLines: [], discountLines: [{ id: "m", label: "Voucher giảm tiền hàng", amountText: "-30.000đ", tone: "clay" }], shippingFeeText: "0đ", shippingDiscountText: "-30.000đ", totalText: "590.000đ", totalVnd: 590_000, savingText: "60.000đ", savingVnd: 60_000,
   });
 });
 
@@ -231,4 +231,12 @@ test("the cart entry never says a preview is settled: 'Dự kiến giảm', not 
   const manualNone = model([fixed("m", 30_000, 100_000)], [line("a", 1, 620_000)], { selection: { merchandise: { MERCHANDISE: { mode: "MANUAL", voucherId: null } }, shipping: { mode: "AUTO" } } }).view;
   assert.deepEqual(voucherEntryCopy(manualNone), { used: false, title: "Chọn hoặc nhập mã ưu đãi", sub: "1 voucher dùng được" });
   assert.deepEqual(voucherEntryCopy(model([], [line("a", 1, 100_000)]).view), { used: false, title: "Chọn hoặc nhập mã ưu đãi", sub: "Nhập mã để nhận ưu đãi" });
+});
+
+test("the summary lists every applied merchandise voucher with its type's name and colour, also when there is one", () => {
+  const two = model([tierOf("a1m", "A", "Theo đơn hàng", 1, 80_000, 1_000_000), tierOf("b1m", "B", "Theo danh mục", 2, 10_000, 1_000_000)], [line("a", 1, 1_020_000)]).view;
+  assert.deepEqual(two.summary.discountLines.map((l) => [l.label, l.amountText, l.tone]), [["Theo đơn hàng", "-80.000đ", "clay"], ["Theo danh mục", "-10.000đ", "plum"]]);
+  const one = model([tierOf("b1m", "B", "Theo danh mục", 2, 10_000, 1_000_000)], [line("a", 1, 1_020_000)]).view;
+  assert.deepEqual(one.summary.discountLines.map((l) => [l.label, l.tone]), [["Theo danh mục", "clay"]], "the only type is the first colour, as in the picker");
+  assert.deepEqual(model([], [line("a", 1, 100_000)]).view.summary.discountLines, []);
 });
