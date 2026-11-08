@@ -447,7 +447,8 @@ test("U3 collection controls emit route-local canonical hrefs and ignore forged 
     `/collections/${publishedSlug}?availability=in-stock`,
   );
   // Nothing in this collection is discounted, so the Sale toggle has nothing to find and is not drawn.
-  await expect(page.getByRole("link", { name: "Sale", exact: true })).toHaveCount(0);
+  // (The site's own "Sale" menu link lives outside the main landmark.)
+  await expect(page.locator("#main-content").getByRole("link", { name: "Sale", exact: true })).toHaveCount(0);
   await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
 
   await page.goto(`${BASE_URL}/collections/${publishedSlug}?size=M&sort=price-desc`, {
