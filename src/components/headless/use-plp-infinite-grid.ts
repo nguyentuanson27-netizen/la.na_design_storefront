@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { loadCategoryNextPageAction } from "@/commerce/storefront-category-actions";
 import { loadCollectionNextPageAction } from "@/commerce/storefront-collection-actions";
+import type { TrackingEvent } from "@/tracking/commerce-events";
+import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 import type { ProductCardModel } from "./build-product-card-model";
 import type { PlpFilterState } from "./plp-filter-model";
 import { createPageRequestGuard, settleIfCurrent } from "./plp-page-request-guard";
@@ -102,6 +104,12 @@ export function usePlpInfiniteGrid({
         return;
       }
       const result = outcome.value;
+
+      // The page is accepted, so its cards are about to be shown: report them once, in the list and
+      // numbering the server built. A stale response returned above and an error never reach here.
+      // Only the collection action carries one; the publisher never throws.
+      const listEvent = "listEvent" in result ? (result.listEvent as TrackingEvent | null) : null;
+      if (listEvent) publishBrowserTrackingEvent(listEvent);
 
       setProducts((prev) => [...prev, ...result.products]);
       setCurrentPage(result.page);

@@ -12,6 +12,7 @@ import { collectionListingPath, parseCollectionListingSearchParams } from "./col
 import { CollectionDefinitionError } from "./collection-definition.ts";
 import { createCollectionDefinitionRepository } from "./collection-definition-repository.ts";
 import { listConfiguredStorefrontDiscoveryPage } from "./storefront-catalog-runtime.ts";
+import type { TrackingEvent } from "../tracking/commerce-events.ts";
 import { buildProductListTracking } from "../components/analytics/product-list-tracking.ts";
 import {
   buildProductCardModel,
@@ -48,6 +49,12 @@ export type CollectionNextPageActionResult = {
   hasNext: boolean;
   nextCursor: string | null;
   nextHref: string | null;
+  /**
+   * The `view_item_list` for exactly the products in this response, numbered on from the pages
+   * before it; `null` when this deployment publishes no commerce events. The grid publishes it once,
+   * when it accepts and appends this page, so a card shown by scrolling is an impression like any other.
+   */
+  listEvent: TrackingEvent | null;
 };
 
 const repository = createCollectionDefinitionRepository(prisma);
@@ -132,5 +139,6 @@ export async function loadCollectionNextPageAction(
     hasNext,
     nextCursor: hasNext ? encodeCategoryCursor(nextPage) : null,
     nextHref: hasNext ? buildCategoryDiscoveryHref(basePath, listing.filters, nextPage) : null,
+    listEvent: tracking.listEvent,
   };
 }

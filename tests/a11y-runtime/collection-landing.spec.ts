@@ -514,6 +514,34 @@ test("a product added by `Xem thêm` reports select_item in the collection's lis
   expect(ecommerce.items?.[0]?.index, "page 2 continues the list's numbering: 24 products precede it").toBe(24);
 });
 
+test("products added by `Xem thêm` are reported once in view_item_list, without a click on any card", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${BASE_URL}/collections/${pagedSlug}`, { waitUntil: "networkidle" });
+  const listEvents = () =>
+    page.evaluate(() =>
+      ((window as { dataLayer?: unknown[] }).dataLayer ?? []).filter(
+        (entry) => typeof entry === "object" && entry !== null && (entry as { event?: unknown }).event === "view_item_list",
+      ) as Array<{ ecommerce: { item_list_id?: string; items?: Array<Record<string, unknown>> } }>,
+    );
+  await expect.poll(async () => (await listEvents()).length).toBe(1);
+  expect((await listEvents())[0]?.ecommerce.items).toHaveLength(24);
+
+  await page.getByRole("link", { name: "Xem thêm (24/25)" }).click();
+  await expect(page.locator("#main-content article h2")).toHaveCount(25);
+
+  // The product the grid appended is an impression in its own list event, numbered on from page one.
+  await expect.poll(async () => (await listEvents()).length).toBe(2);
+  const appended = (await listEvents())[1]?.ecommerce;
+  expect(appended?.item_list_id).toBe(`collection:${pagedSlug}`);
+  expect(appended?.items).toHaveLength(1);
+  expect(appended?.items?.[0]?.item_id).toBe(`collection-paged-25-${suffix}`);
+  expect(appended?.items?.[0]?.index).toBe(24);
+
+  // Nothing re-reports it: not a re-render, not time passing.
+  await page.waitForTimeout(1_000);
+  expect(await listEvents()).toHaveLength(2);
+});
+
 test("Ctrl-click on `Xem thêm` keeps the link's own behaviour: page two opens in a new tab", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${BASE_URL}/collections/${pagedSlug}`, { waitUntil: "networkidle" });
