@@ -1,5 +1,5 @@
 import { toVoucherCard } from "./voucher-candidate-repository.ts";
-import { compactVoucherVnd, spokenVoucherVnd } from "./voucher-format.ts";
+import { compactVoucherVnd, merchandiseToneAt, spokenVoucherVnd, type VoucherTone } from "./voucher-format.ts";
 import type { VoucherCampaign } from "./voucher-campaign.ts";
 import { buildVoucherScopeResolver, type VoucherProductFacts } from "./voucher-scope.ts";
 
@@ -19,6 +19,8 @@ export type VoucherTeaserItem = Readonly<{
   title: string;
   sub: string;
   kind: VoucherCampaign["kind"];
+  /** The colour of the voucher's type, by the same rule as the picker (see `teaserTones`). */
+  tone: VoucherTone;
 }>;
 
 const money = new Intl.NumberFormat("vi-VN");
@@ -54,12 +56,28 @@ function weight(campaign: VoucherCampaign): number {
   return discount.type === "FIXED_AMOUNT_VND" ? discount.amountVnd : (discount.maxDiscountVnd ?? discount.percent * 10_000);
 }
 
+const slotOf = (campaign: VoucherCampaign): string => (campaign.type ? `MERCHANDISE:${campaign.type.id}` : "MERCHANDISE");
+
+/**
+ * The picker colours its merchandise groups in application order (type priority, then slot key) and free shipping teal. The teaser applies the
+ * same rule to the types of the vouchers that cover this product, so a type reads in the same colour here and in the cart whenever the same
+ * types are in play. A cart with other types in it can shift a colour; that is the accepted behaviour of the picker's rule.
+ */
+function teaserTones(campaigns: readonly VoucherCampaign[]): ReadonlyMap<string, VoucherTone> {
+  const slots = new Map<string, number>();
+  for (const campaign of campaigns) if (campaign.kind === "MERCHANDISE") slots.set(slotOf(campaign), campaign.type?.priority ?? 0);
+  const ordered = [...slots.entries()].sort(([slotA, a], [slotB, b]) => a - b || (slotA < slotB ? -1 : slotA > slotB ? 1 : 0));
+  return new Map(ordered.map(([slot], index) => [slot, merchandiseToneAt(index)]));
+}
+
 export function buildVoucherTeaser(input: Readonly<{ campaigns: readonly VoucherCampaign[]; product: VoucherProductFacts }>): readonly VoucherTeaserItem[] {
-  const items = input.campaigns
+  const covering = input.campaigns
     .filter((campaign) => campaign.visibility === "PUBLIC" && toVoucherCard(campaign).availability === "AVAILABLE")
-    .filter((campaign) => buildVoucherScopeResolver(campaign.scope, String(campaign.pancakeShopId))(input.product))
+    .filter((campaign) => buildVoucherScopeResolver(campaign.scope, String(campaign.pancakeShopId))(input.product));
+  const tones = teaserTones(covering);
+  const items = covering
     .sort((a, b) => weight(b) - weight(a) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .slice(0, MAX_VOUCHER_TEASER_ITEMS)
-    .map((campaign) => Object.freeze({ id: campaign.id, text: textOf(campaign), ...chipOf(campaign), kind: campaign.kind }));
+    .map((campaign) => Object.freeze({ id: campaign.id, text: textOf(campaign), ...chipOf(campaign), kind: campaign.kind, tone: campaign.kind === "SHIPPING_FREE" ? ("teal" as const) : (tones.get(slotOf(campaign)) ?? "clay") }));
   return Object.freeze(items);
 }

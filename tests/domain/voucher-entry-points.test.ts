@@ -64,3 +64,13 @@ test("the teaser chip is two short lines: a figure and its threshold, in the wor
   // the long sentence stays: screen readers and the opened chip read it, and the wording tests above rely on it
   assert.equal(ship.text, "Miễn phí vận chuyển cho đơn từ 500.000đ");
 });
+
+test("the teaser colours a voucher by its type with the picker's rule: priority order, free shipping teal", () => {
+  const typed = (id: string, typeId: string, priority: number, amountVnd: number): VoucherCampaign => ({ ...fixed(id, amountVnd, 100_000), type: { id: typeId, name: typeId, priority } });
+  const tones = (campaigns: VoucherCampaign[]) => Object.fromEntries(buildVoucherTeaser({ campaigns, product: dress }).map((i) => [i.id, i.tone]));
+  // B has the higher figure (so it is listed first) but A has the lower priority number, so A is applied first and takes the first colour.
+  assert.deepEqual(tones([typed("a1", "A", 1, 50_000), typed("b1", "B", 2, 90_000)]), { b1: "plum", a1: "clay" });
+  assert.deepEqual(tones([typed("a1", "A", 1, 90_000), voucher("s", { kind: "SHIPPING_FREE", minEligibleSubtotalVnd: 100_000 })]), { a1: "clay", s: "teal" });
+  // a plain v1 voucher is the untyped slot, applied before every typed one
+  assert.deepEqual(tones([fixed("plain", 40_000, 100_000), typed("b1", "B", 1, 30_000)]), { plain: "clay", b1: "plum" });
+});

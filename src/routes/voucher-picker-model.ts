@@ -1,5 +1,5 @@
 import type { VoucherCard } from "../commerce/voucher-candidate-repository.ts";
-import { compactVoucherVnd } from "../commerce/voucher-format.ts";
+import { compactVoucherVnd, merchandiseToneAt, type VoucherTone } from "../commerce/voucher-format.ts";
 import type { VoucherSelectionIntent } from "../commerce/voucher-optimizer.ts";
 import type { VoucherCardReason, VoucherCardState, VoucherQuote } from "../commerce/voucher-quote.ts";
 
@@ -36,9 +36,7 @@ export type VoucherPickerItem = Readonly<{
   endsAtIso: string | null;
 }>;
 
-/** One colour per voucher type: merchandise types take the next tone in application order, free shipping is always teal. */
-export type VoucherTone = "clay" | "plum" | "moss" | "navy" | "teal";
-const MERCHANDISE_TONES: readonly VoucherTone[] = ["clay", "plum", "moss", "navy"];
+export type { VoucherTone };
 
 export type VoucherPickerGroup = Readonly<{
   /** The slot this group chooses one voucher for: `SHIPPING_FREE`, `MERCHANDISE` (no type) or `MERCHANDISE:<typeId>`. */
@@ -198,7 +196,7 @@ export function buildVoucherPickerModel(input: Readonly<{
   const merchandiseGroups = [...slots.entries()]
     .sort(([slotA, a], [slotB, b]) => a.priority - b.priority || (slotA < slotB ? -1 : slotA > slotB ? 1 : 0))
     .map(([slot, info], index) => {
-      const tone = MERCHANDISE_TONES[index % MERCHANDISE_TONES.length]!;
+      const tone = merchandiseToneAt(index);
       return info.name === null
         ? slotGroup(slot, "MERCHANDISE", "Voucher giảm tiền hàng", "Chọn 1", tone, info.entries)
         : slotGroup(slot, "MERCHANDISE", info.name, "Chọn 1 mốc", tone, info.entries);

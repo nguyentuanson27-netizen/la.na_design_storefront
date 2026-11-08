@@ -11,19 +11,18 @@ import { VoucherIcon } from "./voucher-icons";
  * cart qualifies is decided in the cart.
  *
  * Screen readers get the full sentence from the button itself (the two short lines and the opened sentence are hidden from them), so nothing is
- * read twice. The tone is neutral for merchandise because a teaser knows no voucher type; free shipping keeps its teal.
+ * read twice. Each chip wears its voucher type's colour (`item.tone`, the picker's rule), free shipping teal.
  */
 export function VoucherTeaserChips({ items }: Readonly<{ items: readonly VoucherTeaserItem[] }>) {
   const [open, setOpen] = useState(0);
   const panelId = useId();
   const current = items[open] ?? items[0];
   if (current === undefined) return null;
-  const tone = (item: VoucherTeaserItem) => (item.kind === "SHIPPING_FREE" ? "voucher-tone--teal" : "voucher-tone--ink");
   return (
     <>
       <ul aria-label="Voucher" className="voucher-chips">
         {items.map((item, index) => (
-          <li className={`voucher-tone ${tone(item)}`} key={item.id}>
+          <li className={`voucher-tone voucher-tone--${item.tone}`} key={item.id}>
             <button type="button" className="voucher-chip" aria-pressed={index === open} aria-controls={panelId} onClick={() => setOpen(index)}>
               <span aria-hidden="true" className="voucher-chip__icon"><VoucherIcon name={item.kind === "SHIPPING_FREE" ? "truck" : "tag"} /></span>
               <span aria-hidden="true" className="voucher-chip__text">
@@ -35,7 +34,7 @@ export function VoucherTeaserChips({ items }: Readonly<{ items: readonly Voucher
           </li>
         ))}
       </ul>
-      <p aria-hidden="true" className={`voucher-chip-info voucher-tone ${tone(current)}`} id={panelId}>{current.text}</p>
+      <p aria-hidden="true" className={`voucher-chip-info voucher-tone voucher-tone--${current.tone}`} id={panelId}>{current.text}</p>
     </>
   );
 }
