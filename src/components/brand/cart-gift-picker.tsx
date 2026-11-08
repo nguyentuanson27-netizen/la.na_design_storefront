@@ -199,7 +199,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
       {model.campaigns.filter((c) => c.entitled > 0).map((campaign, index) => <div className="mt-5 border-t border-black/15 pt-4" key={campaign.campaignId}>
         <p className="font-display text-sm font-bold">Quà tặng theo giỏ hàng {index + 1} · Đã thêm {campaign.selected}/{campaign.entitled}</p>
         {!campaign.allowDuplicateGifts ? <p className="mt-2 text-xs">Mỗi mẫu được chọn 1 lần, kể cả khác màu hoặc kích cỡ.</p> : null}
-        <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-1">{campaign.products.map((product) => {
+        <div className="mt-3 grid grid-flow-dense grid-cols-2 gap-3">{campaign.products.map((product) => {
           const key = `${campaign.campaignId}/${product.productId}`;
           const option = product.options.find((o) => o.variantId === draft?.variantId && draft.campaignId === campaign.campaignId);
           const chosen = model.selections.find((r) => r.campaignId === campaign.campaignId && r.variantId === option?.variantId)?.quantity ?? 0;
