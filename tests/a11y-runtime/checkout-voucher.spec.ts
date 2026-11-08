@@ -221,6 +221,8 @@ test("PR 254 / P1: changing a HELD voucher at checkout sets the old hold aside -
   await expect(dialog).toBeHidden();
   await expect(panel(page)).toHaveAttribute("data-checkout-vouchers", "offered");
   await expect(panel(page)).toContainText("Giảm 30K");
+  // The "Đổi ưu đãi" control is gone with the HELD panel: focus moves to what the panel now says instead of the page body.
+  await expect(panel(page).locator("[data-voucher-focus]")).toBeFocused();
   await expect(bill()).not.toContainText("−50.000");
   await expect(submit(page)).toBeDisabled();
   await panel(page).getByRole("button", { name: "Áp dụng và giữ ưu đãi" }).click();
@@ -230,15 +232,19 @@ test("PR 254 / P1: changing a HELD voucher at checkout sets the old hold aside -
   expect(held).toHaveLength(1);
   expect((await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: held[0]!.campaignId } })).name).toBe("Giảm 30K");
 
-  // Removal: tap the held voucher again and apply. The hold is still live, but nothing is applied: 2 x 450.000 + the 30.000 fee.
+  // Removal: tap the held voucher again and apply. Nothing is applied (2 x 450.000 + the 30.000 fee), the hold is released at once
+  // (its quota goes back), and the checkout shows the picker's own ticket again, with focus on it rather than lost to the page.
   await panel(page).getByRole("button", { name: "Đổi ưu đãi" }).click();
   await dialog.getByRole("button", { name: /^Giảm 30\.000đ\./ }).click();
   await expect(dialog.getByRole("button", { name: /^Giảm 30\.000đ\./ })).toHaveAttribute("aria-pressed", "false");
   await dialog.getByRole("button", { name: /^(Áp dụng · Giảm |Bỏ qua ưu đãi và tiếp tục)/ }).click();
   await expect(dialog).toBeHidden();
-  await expect(panel(page)).not.toHaveAttribute("data-checkout-vouchers", "held");
+  await expect(panel(page)).toHaveCount(0);
   await expect(bill()).not.toContainText("−30.000");
   await expect(bill().locator("dd").last()).toContainText("930.000");
+  await expect.poll(async () => (await holds()).length).toBe(0);
+  await expect(page.locator("[data-checkout-voucher-picker] .voucher-entry")).toBeFocused();
+  await expect(submit(page)).toBeEnabled();
 });
 
 test("a hold that no longer describes the cart is not applied: the checkout says so and offers the voucher again", async ({ page }) => {

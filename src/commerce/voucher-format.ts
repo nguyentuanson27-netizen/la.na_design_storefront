@@ -10,14 +10,20 @@ const MERCHANDISE_TONES: readonly VoucherTone[] = ["clay", "plum", "moss", "navy
 /** The tone of the merchandise type at `index` in application order (by priority, then slot key); more types than colours wrap around. */
 export const merchandiseToneAt = (index: number): VoucherTone => MERCHANDISE_TONES[index % MERCHANDISE_TONES.length]!;
 
-/** "80K", "1,5TR": the figure that fits a ticket's colour block. Exact thousands only lose their zeros; anything else keeps one decimal. */
+const fullVnd = new Intl.NumberFormat("vi-VN");
+
+/**
+ * "80K", "12,5K", "1,5TR": the figure that fits a ticket's colour block. It is only ever shortened EXACTLY: millions with up to two
+ * decimals, thousands with up to one; any other amount is written out in full ("999.999đ"), never rounded to a figure the voucher
+ * does not have (a threshold rounded down would promise a lower minimum than the real one).
+ */
 export function compactVoucherVnd(value: number): string {
-  if (value >= 1_000_000) return `${trim(value / 1_000_000, 2)}TR`;
-  if (value >= 1_000) return `${trim(value / 1_000, 1)}K`;
-  return `${value}đ`;
+  if (value >= 1_000_000 && value % 10_000 === 0) return `${trim(value / 1_000_000, 2)}TR`;
+  if (value >= 1_000 && value % 100 === 0) return `${trim(value / 1_000, 1)}K`;
+  return `${fullVnd.format(value)}đ`;
 }
 
-/** "500K", "1 triệu", "1,5 triệu": a threshold read in a sentence ("Đơn từ 1,5 triệu"). */
+/** "500K", "1 triệu", "1,5 triệu": a threshold read in a sentence ("Đơn từ 1,5 triệu"), shortened only exactly (see above). */
 export function spokenVoucherVnd(value: number): string {
-  return value >= 1_000_000 ? `${trim(value / 1_000_000, 2)} triệu` : compactVoucherVnd(value);
+  return value >= 1_000_000 && value % 10_000 === 0 ? `${trim(value / 1_000_000, 2)} triệu` : compactVoucherVnd(value);
 }

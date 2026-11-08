@@ -495,7 +495,7 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-4">
-            <button type="button" className="voucher-code-toggle" aria-expanded={codeOpen || code !== ""} aria-controls={`${titleId}-code-row`} onClick={() => setCodeOpen((value) => !value)}>
+            <button type="button" className="voucher-code-toggle" aria-expanded={codeOpen || code !== ""} aria-controls={codeOpen || code !== "" ? `${titleId}-code-row` : undefined} onClick={() => setCodeOpen((value) => !value)}>
               <span>Nhập mã khuyến mãi</span>
               <VoucherIcon name="chevron" />
             </button>

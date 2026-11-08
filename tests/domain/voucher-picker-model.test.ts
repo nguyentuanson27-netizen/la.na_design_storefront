@@ -180,6 +180,8 @@ test("the card carries the shop's own voucher name, so the picker can show it", 
 
 test("compact figures fit the colour block: exact thousands drop their zeros, millions read as TR", () => {
   assert.deepEqual([30_000, 80_000, 150_000, 53_500, 1_000_000, 1_500_000, 2_250_000, 500].map(compactVoucherVnd), ["30K", "80K", "150K", "53,5K", "1TR", "1,5TR", "2,25TR", "500đ"]);
+  // Shortened only exactly: an amount the short form cannot carry is written out, never rounded (a rounded-down threshold would promise a lower minimum).
+  assert.deepEqual([1_004_000, 999_999, 12_345, 1_250_000].map(compactVoucherVnd), ["1004K", "999.999đ", "12.345đ", "1,25TR"]);
 });
 
 test("value label and sub-label: fixed amount, percentage with and without a cap, free shipping", () => {

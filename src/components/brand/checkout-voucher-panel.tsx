@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 
 import { useVoucherHold } from "@/components/headless/use-voucher-hold";
@@ -32,6 +32,26 @@ function VoucherLine({ line, emphasis }: Readonly<{ line: CheckoutVoucherLine; e
       <span className={`shrink-0 font-semibold ${emphasis ? "text-[#9a3324]" : "text-black/75"}`}>{line.amountText}</span>
     </li>
   );
+}
+
+/**
+ * Keeps keyboard and screen-reader users in the vouchers' place when the page re-renders it. Changing vouchers refreshes the page:
+ * the panel switches state (held, offered, stale, or back to the entry ticket) and the picker remounts, so the control that had focus
+ * is gone and focus would fall to the page body. When -- and only when -- focus was lost that way, it moves to what the vouchers now
+ * say (the panel's heading, or the entry ticket). A refresh that does not change the vouchers, or focus that is elsewhere (an address
+ * field), is never touched.
+ */
+export function CheckoutVoucherFocus({ stateKey, children }: Readonly<{ stateKey: string; children: ReactNode }>) {
+  const ref = useRef<HTMLDivElement>(null);
+  const last = useRef(stateKey);
+  useEffect(() => {
+    if (last.current === stateKey) return;
+    last.current = stateKey;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    ref.current?.querySelector<HTMLElement>("[data-voucher-focus], .voucher-entry")?.focus();
+  }, [stateKey]);
+  return <div ref={ref}>{children}</div>;
 }
 
 const HOLD_ERROR: Readonly<Record<string, string>> = {
@@ -97,7 +117,7 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
       <section aria-label="Ưu đãi" className="voucher-held text-sm" data-checkout-vouchers="held">
         <div className="voucher-held__head">
           <span className="voucher-held__ok"><VoucherIcon name="check" /></span>
-          <p className="font-semibold">Ưu đãi đang áp dụng cho đơn này</p>
+          <p className="font-semibold outline-none" data-voucher-focus tabIndex={-1}>Ưu đãi đang áp dụng cho đơn này</p>
           {secondsLeft !== null && secondsLeft > 0 ? (
             <span aria-hidden="true" className="voucher-held__pill">
               <VoucherIcon name="clock" className="h-3.5 w-3.5" />
@@ -122,7 +142,7 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
   if (view.state === "STALE") {
     return (
       <section aria-label="Ưu đãi" className="voucher-held px-3.5 py-3 text-sm" data-checkout-vouchers="stale">
-        <p role="status">Ưu đãi giữ trước đó không còn khớp với lựa chọn hoặc giỏ hàng hiện tại, nên giá bên dưới chưa có ưu đãi.</p>
+        <p className="outline-none" data-voucher-focus role="status" tabIndex={-1}>Ưu đãi giữ trước đó không còn khớp với lựa chọn hoặc giỏ hàng hiện tại, nên giá bên dưới chưa có ưu đãi.</p>
         {change ?? <Link className="mt-1 inline-block min-h-11 content-center underline" href="/cart">Xem lại ở giỏ hàng</Link>}
       </section>
     );
@@ -152,7 +172,7 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
     <section aria-label="Ưu đãi" className="voucher-held text-sm" data-checkout-vouchers="offered">
       <div className="voucher-held__head">
         <span className="voucher-held__ok voucher-held__ok--offer"><VoucherIcon name="tag" /></span>
-        <p className="font-semibold">{view.afterStale ? "Nàng xác nhận lại ưu đãi" : "Nàng có ưu đãi cho đơn này"}</p>
+        <p className="font-semibold outline-none" data-voucher-focus tabIndex={-1}>{view.afterStale ? "Nàng xác nhận lại ưu đãi" : "Nàng có ưu đãi cho đơn này"}</p>
       </div>
       {view.afterStale ? <p className="px-3.5 pt-3 text-black/75">Ưu đãi giữ trước đó không còn khớp với lựa chọn hoặc giỏ hàng hiện tại.</p> : null}
       <ul className="grid gap-2.5 px-3.5 py-3">

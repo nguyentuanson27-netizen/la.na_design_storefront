@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
-import { CheckoutVoucherPanel } from "@/components/brand/checkout-voucher-panel";
+import { CheckoutVoucherFocus, CheckoutVoucherPanel } from "@/components/brand/checkout-voucher-panel";
 import { VoucherPicker } from "@/components/brand/voucher-picker";
 import { voucherPickerKey } from "@/routes/voucher-picker-model";
 import { PageHeader, PageShell } from "@/components/brand/page-chrome";
@@ -168,16 +168,21 @@ function render(data: CheckoutViewModel) {
   // panel then offers the new choice for confirmation. With no panel (nothing chosen) the picker's own ticket lets the shopper choose here.
   const voucherPicker = data.voucherPicker ?? null;
   const changeVouchers = (label: string) => (voucherPicker ? <VoucherPicker initial={voucherPicker} key={voucherPickerKey(voucherPicker)} trigger="link" triggerLabel={label} /> : null);
-  const voucherSlot = data.vouchers ? (
+  // Without a panel the entry ticket only ever INVITES a choice: a choice with vouchers in it and no panel is one the checkout cannot
+  // hold (no quote digest, or holds cannot be granted here), and the ticket would announce a saving the order will not get.
+  const voucherBody = data.vouchers ? (
     <CheckoutVoucherPanel
       change={changeVouchers(data.vouchers.state === "HELD" ? "Đổi ưu đãi" : data.vouchers.state === "STALE" ? "Chọn lại ưu đãi" : "Đổi hoặc bỏ ưu đãi")}
       view={data.vouchers}
     />
-  ) : voucherPicker ? (
+  ) : voucherPicker && voucherPicker.footer.count === 0 ? (
     <section aria-label="Ưu đãi" data-checkout-voucher-picker="">
       <VoucherPicker initial={voucherPicker} key={voucherPickerKey(voucherPicker)} />
     </section>
   ) : null;
+  const voucherSlot = voucherBody === null ? null : (
+    <CheckoutVoucherFocus stateKey={`${data.vouchers?.state ?? "ENTRY"}|${voucherPicker ? voucherPickerKey(voucherPicker) : ""}`}>{voucherBody}</CheckoutVoucherFocus>
+  );
 
   const preorderNoticeFor = (surface: "mobile" | "desktop") => data.preorderNotice === null ? null : <BrandPreorderFulfillmentNotice notice={data.preorderNotice} titleId={`preorder-fulfillment-title-${surface}`} />;
 

@@ -129,7 +129,7 @@ export async function resolveHeldVoucherCheckout(input: Readonly<{
     quote.selection.shippingId === (shipping?.campaignId ?? null) &&
     quote.shippingDiscountVnd === (shipping?.heldDiscountVnd ?? 0) &&
     holds.every((hold) => hold.paidRevision === preview.paidRevision && hold.quoteDigest === preview.quoteDigest && campaign.get(hold.campaignId)?.revision === hold.campaignRevision);
-  if (!same || holds.length === 0) return { kind: "STALE", reason: "QUOTE_CHANGED" };
+  if (!same) return { kind: "STALE", reason: "QUOTE_CHANGED" };
 
   // Post-voucher groups: walk the vouchers in application order; each line a voucher lowered becomes price segments, and each
   // segment keeps the line's earlier steps plus one VOUCHER step for this voucher.
