@@ -551,8 +551,8 @@ test("Ctrl-click on `Xem thêm` keeps the link's own behaviour: page two opens i
   const popupPromise = page.context().waitForEvent("page");
   await more.click({ modifiers: ["Control"] });
   const popup = await popupPromise;
-  await popup.waitForLoadState("domcontentloaded");
-  expect(popup.url()).toBe(`${BASE_URL}/collections/${pagedSlug}?page=2`);
+  // A new tab starts at about:blank; wait for the navigation the link's own href starts.
+  await popup.waitForURL(`${BASE_URL}/collections/${pagedSlug}?page=2`);
   await popup.close();
 });
 
