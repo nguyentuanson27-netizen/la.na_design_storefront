@@ -29,7 +29,7 @@ const FEEDBACK_SECTION_ID = "pdp-feedback";
 const PANEL_LINK =
   "underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors hover:decoration-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219]";
 
-function AssuranceIcon({ kind }: Readonly<{ kind: PurchaseAssuranceItem["key"] | "photos" | "gift" | "tier" }>) {
+function AssuranceIcon({ kind }: Readonly<{ kind: PurchaseAssuranceItem["key"] | "photos" }>) {
   const paths: Record<typeof kind, string> = {
     // Banknote.
     cod: "M3 7h18v10H3z M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
@@ -39,10 +39,6 @@ function AssuranceIcon({ kind }: Readonly<{ kind: PurchaseAssuranceItem["key"] |
     "free-shipping": "M3 6h11v9H3z M14 9h4l3 3v3h-7 M7 18a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z M17 18a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z",
     // Camera.
     photos: "M4 8h3l2-2h6l2 2h3v11H4z M12 16.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
-    // Wrapped gift.
-    gift: "M3 8h18v5H3z M12 8v13 M5 13v8h14v-8 M7.5 8a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 0 1 0 5",
-    // Price tag.
-    tier: "M3 12V4h8l10 10-8 8z M7.5 8.5a1 1 0 1 0 0-.01",
   };
   return (
     <svg
@@ -99,8 +95,8 @@ function render(data: ProductRouteData) {
   const productInformation = !hasProductInformation ? null : (
     <section aria-label="Chi tiết sản phẩm" className="border-t border-black/20">
       {editorial.description || editorial.craftDetails.length > 0 ? (
-        <section className="border-b border-black/15 py-6" aria-labelledby="pdp-description-title">
-          <h2 id="pdp-description-title" className="font-display text-xl font-normal tracking-[-0.02em]">
+        <section className="border-b border-[#3B2219]/25 py-6" aria-labelledby="pdp-description-title">
+          <h2 id="pdp-description-title" className="pdp-section-title font-display text-xl font-normal tracking-[-0.02em] lg:text-2xl">
             Mô tả sản phẩm
           </h2>
           {/* Below `lg` the description opens on its first lines; the blocks after it fold. */}
@@ -203,19 +199,24 @@ function render(data: ProductRouteData) {
   const purchaseOffers = data.promotionOffers.length === 0 && data.voucherTeaser.length === 0 ? null : (
     <>
       {data.promotionOffers.length === 0 ? null : (
-        <ul aria-label="Ưu đãi áp dụng" className="mt-3 space-y-1.5 text-sm text-[#3B2219]" data-pdp-offers="">
+        <ul aria-label="Ưu đãi áp dụng" className="mt-3 flex flex-col items-start gap-2" data-pdp-offers="">
+          {/* The same ticket as the voucher chips below, so promotions and vouchers read as one family.
+              A promotion is not a voucher type: the discount ticket takes the neutral ink tone, the gift the mocha one. */}
           {data.promotionOffers.map((offer) => (
-            <li key={offer.id} className="flex items-start gap-2.5">
-              <AssuranceIcon kind={offer.kind === "GIFT" ? "gift" : "tier"} />
-              <span className="font-medium">{offer.label}</span>
+            <li
+              key={offer.id}
+              className={`voucher-chip voucher-tone ${offer.kind === "GIFT" ? "voucher-tone--mocha" : "voucher-tone--ink"}`}
+            >
+              <span className="voucher-chip__icon"><VoucherIcon name={offer.kind === "GIFT" ? "gift" : "tag"} /></span>
+              <span className="voucher-chip__text">{offer.label}</span>
             </li>
           ))}
         </ul>
       )}
       {/* Voucher teaser: states the voucher's own conditions only; whether a cart qualifies is decided in the cart. */}
       {data.voucherTeaser.length === 0 ? null : (
-        <div className="mt-3 text-sm text-[#3B2219]" data-pdp-vouchers="">
-          <p className="font-medium">Voucher có thể áp dụng cho giỏ hàng:</p>
+        <div className="mt-5 text-sm text-[#3B2219]" data-pdp-vouchers="">
+          <p className="pdp-voucher-label">Voucher có thể áp dụng cho giỏ hàng:</p>
           <ul aria-label="Voucher" className="mt-2 flex flex-wrap gap-2">
             {data.voucherTeaser.map((item) => (
               <li className={`voucher-chip voucher-tone ${item.kind === "SHIPPING_FREE" ? "voucher-tone--teal" : "voucher-tone--ink"}`} key={item.id}>
@@ -298,21 +299,24 @@ function render(data: ProductRouteData) {
       />
 
       {data.feedback === null ? null : (
-        <FeedbackRail
-          id={FEEDBACK_SECTION_ID}
-          headingId="pdp-feedback-title"
-          surface="product"
-          title={data.feedback.title}
-          ctaLabel={data.feedback.ctaLabel}
-          href={data.feedback.href}
-          images={data.feedback.images}
-        />
+        // A full-bleed linen band, so the customers' photographs, the page's strongest proof, set the rhythm.
+        <div className="pdp-feedback-band">
+          <FeedbackRail
+            id={FEEDBACK_SECTION_ID}
+            headingId="pdp-feedback-title"
+            surface="product"
+            title={data.feedback.title}
+            ctaLabel={data.feedback.ctaLabel}
+            href={data.feedback.href}
+            images={data.feedback.images}
+          />
+        </div>
       )}
 
       {data.relatedCards.length > 0 ? (
         <div className="mx-auto max-w-[1600px] px-6 pb-16">
           <section aria-labelledby="related-products-title" className="border-t border-black/20 pt-6">
-            <div className="section-heading-row">
+            <div className="section-heading-row section-heading-row--center">
               {/*
                 The generic related source is manual overrides or a same-category fallback. Neither
                 proves the items complete an outfit, so the heading says what the data supports.
