@@ -129,6 +129,14 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
   assert.match(panel, /renderSelectorLegend\(view\.colorDimensionLabel \?\? "Màu", selection\.color\)/);
   assert.match(panel, /function renderSizeGuideTrigger\(surface: "panel" \| "sheet"\)/);
   assert.match(panel, /\{renderSizeGuideTrigger\(surface\)\}/);
+  // The size-guide and try-on buttons share a row only while they fit: the row wraps and a label may wrap
+  // inside its button, so a larger text size or a 320px screen never clips, overlaps or scrolls sideways.
+  assert.match(panel, /<div className="mt-2 flex flex-wrap items-center gap-2">/);
+  const actionChip = /\.pdp-action-chip \{[^}]*\}/.exec(css)?.[0] ?? "";
+  assert.notEqual(actionChip, "");
+  assert.doesNotMatch(actionChip, /white-space:\s*nowrap/);
+  assert.match(actionChip, /max-width:\s*100%/);
+  assert.match(actionChip, /min-height:\s*2\.75rem/);
 
   const factsStart = panel.indexOf("function SizeGuideFacts");
   const guideStart = panel.indexOf("function MappedSizeGuideDialog");

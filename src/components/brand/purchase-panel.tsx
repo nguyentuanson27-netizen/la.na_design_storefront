@@ -581,7 +581,7 @@ export function PurchasePanelView({
     if (sizeGuide === null && extra === null) return null;
 
     return (
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         {sizeGuide === null ? null : (
           <button
             ref={isPanel ? mainSizeGuideTriggerRef : sheetSizeGuideTriggerRef}
