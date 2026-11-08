@@ -6,6 +6,12 @@ import { FeedbackRail } from "@/components/brand/feedback-gallery";
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import { PdpClampedContent, PdpDisclosure } from "@/components/brand/pdp-disclosure";
 import { BrandProductDetail } from "@/components/brand/product-detail";
+import { ProductReviews } from "@/components/brand/product-reviews";
+import { ProductRatingLink, ReviewPhotoStrip } from "@/components/brand/product-review-summary";
+import {
+  PRODUCT_REVIEW_PHOTOS_ANCHOR,
+  showsReviewPhotoStrip,
+} from "@/components/headless/product-review-model";
 import { VoucherIcon } from "@/components/brand/voucher-icons";
 import type { PurchaseAssuranceItem } from "@/routes/evergreen-model";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -64,6 +70,14 @@ function AssuranceIcon({ kind }: Readonly<{ kind: PurchaseAssuranceItem["key"] |
 function render(data: ProductRouteData) {
   const { editorial } = data;
 
+  // A product with its own review photographs shows those, not the shared brand gallery as well:
+  // two walls of customer photographs say the same thing twice, and the shared one is not about this
+  // product. The brand rail (and the link to it) stays for a product with no review photographs.
+  const reviewsHavePhotos = data.reviews !== null && data.reviews.photoCount > 0;
+  const feedback = data.feedback !== null && data.feedback.scope === "brand" && reviewsHavePhotos
+    ? null
+    : data.feedback;
+
   const identity = (
     <>
       <p className="eyebrow hidden lg:block">{BRAND.identity.name} / Sản phẩm</p>
@@ -72,6 +86,9 @@ function render(data: ProductRouteData) {
       <h1 className="mt-0 break-words font-display text-[28px] font-normal leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:mt-5 lg:text-[40px] lg:leading-[1.1]">
         {data.name}
       </h1>
+
+      {/* Stars and the average once there are enough reviews, else just how many. */}
+      {data.reviews === null ? null : <ProductRatingLink section={data.reviews} />}
 
       {data.collections.length > 0 ? (
         <div className="pdp-collection-row -mx-6 mt-3 flex gap-2 overflow-x-auto px-6 lg:mx-0 lg:mt-4 lg:flex-wrap lg:overflow-visible lg:px-0">
@@ -247,12 +264,12 @@ function render(data: ProductRouteData) {
           </li>
         ))}
       </ul>
-      {data.feedback === null ? null : (
+      {feedback === null ? null : (
         <p className="mt-2 flex items-center gap-2.5 text-sm text-[#3B2219]/80">
           <AssuranceIcon kind="photos" />
           <a className={PANEL_LINK} href={`#${FEEDBACK_SECTION_ID}`}>
-            {data.feedback.scope === "product"
-              ? `Xem ${data.feedback.images.length} ảnh khách hàng diện mẫu này`
+            {feedback.scope === "product"
+              ? `Xem ${feedback.images.length} ảnh khách hàng diện mẫu này`
               : `Xem ảnh khách hàng diện ${BRAND.identity.name}`}
           </a>
         </p>
@@ -293,19 +310,52 @@ function render(data: ProductRouteData) {
         sizeHelp={sizeHelp}
         sizeGuideZaloHref={zaloHref}
         purchaseAssurance={purchaseAssurance}
-        purchaseOffers={purchaseOffers}
+        purchaseOffers={
+          showsReviewPhotoStrip(data.reviews) && data.reviews !== null ? (
+            <>
+              <ReviewPhotoStrip section={data.reviews} />
+              {purchaseOffers}
+            </>
+          ) : (
+            purchaseOffers
+          )
+        }
         urgency={data.urgency}
       />
 
-      {data.feedback === null ? null : (
+      {data.reviews === null ? null : (
+        <ProductReviews
+          section={data.reviews}
+          photoRail={
+            data.reviews.photos.length === 0 ? null : (
+              <FeedbackRail
+                id={PRODUCT_REVIEW_PHOTOS_ANCHOR}
+                headingId="pdp-review-photos-title"
+                surface="product"
+                title="Ảnh khách diện mẫu này"
+                ctaLabel="Xem thêm"
+                href={null}
+                images={data.reviews.photos.map((photo) => ({
+                  src: photo.src,
+                  alt: photo.alt,
+                  width: null,
+                  height: null,
+                }))}
+              />
+            )
+          }
+        />
+      )}
+
+      {feedback === null ? null : (
         <FeedbackRail
           id={FEEDBACK_SECTION_ID}
           headingId="pdp-feedback-title"
           surface="product"
-          title={data.feedback.title}
-          ctaLabel={data.feedback.ctaLabel}
-          href={data.feedback.href}
-          images={data.feedback.images}
+          title={feedback.title}
+          ctaLabel={feedback.ctaLabel}
+          href={feedback.href}
+          images={feedback.images}
         />
       )}
 

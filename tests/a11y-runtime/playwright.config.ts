@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const adminDesktopTests = [
+  "admin-product-reviews.spec.ts",
   "admin-voucher.spec.ts",
   "admin-bulk-operations.spec.ts",
   "admin-commerce-v3.spec.ts",
@@ -18,6 +19,7 @@ export default defineConfig({
     "admin-editor.spec.ts",
     "admin-editor-compact.spec.ts",
     "admin-gift-quantity.spec.ts",
+    "admin-product-reviews.spec.ts",
     "admin-promotions.spec.ts",
     "admin-voucher.spec.ts",
     "checkout.spec.ts",
@@ -58,6 +60,7 @@ export default defineConfig({
     "list-price-display.spec.ts",
     "listing-action-bar.spec.ts",
     "pdp-promotion-offers.spec.ts",
+    "pdp-reviews.spec.ts",
     "related-products.spec.ts",
     "storefront-commerce.spec.ts",
     "storefront-listing-consistency.spec.ts",

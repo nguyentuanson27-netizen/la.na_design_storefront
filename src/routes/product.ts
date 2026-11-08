@@ -3,6 +3,8 @@ import { connection } from "next/server";
 
 import { isApprovedSizeGuideId } from "@/brand";
 import { readProductFeedback } from "@/commerce/feedback-repository";
+import type { ProductReviewSection } from "@/commerce/product-review";
+import { createProductReviewRepository } from "@/commerce/product-review-repository";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
 import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
 import type { ProductPromotionOffer } from "@/commerce/product-promotion-offers";
@@ -83,7 +85,14 @@ export type ProductRouteData = ProductViewModel &
     urgency: ProductUrgency;
     /** Up to two public vouchers covering this product; empty while the voucher feature is OFF. */
     voucherTeaser: readonly VoucherTeaserItem[];
+    /**
+     * Hand-entered customer reviews of this product, from published rows only; `null` when it has
+     * none (or the read failed), in which case the page renders exactly what it did before reviews.
+     */
+    reviews: ProductReviewSection | null;
   }>;
+
+const productReviews = createProductReviewRepository(prisma);
 
 export async function loadProductRoute({
   params,
@@ -106,7 +115,7 @@ export async function loadProductRoute({
   // Related selection is membership-driven (ADR 0013 §7), so it does not depend on the request
   // clock; the promotion pass below is what applies `requestNow` to the products it returns.
   const sizeGuideId = product.sizeGuide;
-  const [relatedProducts, sizeGuideImageUrl, tryOn, feedback, promotionOffers, voucherTeaser] = await Promise.all([
+  const [relatedProducts, sizeGuideImageUrl, tryOn, feedback, promotionOffers, voucherTeaser, reviews] = await Promise.all([
     listConfiguredRelatedStorefrontProducts(product),
     isApprovedSizeGuideId(sizeGuideId)
       ? createSizeGuideMediaRepository(prisma).readImageUrl(sizeGuideId)
@@ -115,6 +124,8 @@ export async function loadProductRoute({
     readProductFeedback({ productId: product.id }),
     readProductPromotionOffers({ productId: product.id, now: requestNow }),
     readProductVoucherTeaser({ productId: product.id, now: requestNow }),
+    // Optional content: a failed read must never take the product page down.
+    productReviews.readSection(product.id).catch(() => null),
   ]);
   const promotion = await resolveStorefrontPromotionForProducts({
     products: [product, ...relatedProducts],
@@ -183,6 +194,7 @@ export async function loadProductRoute({
       promotionOffers,
       urgency,
       voucherTeaser,
+      reviews,
     },
     refreshAfterMs: promotion.refreshAfterMs,
     trackingEvent: buildProductPageViewEvent({

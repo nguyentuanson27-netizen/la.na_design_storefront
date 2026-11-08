@@ -42,6 +42,26 @@ enum LocalOrderState {
   SYNC_UNKNOWN
 }
 
+/// Where a hand-entered customer review came from. The storefront prints it, so a shopper can tell a
+/// message the shop received from a review left on the site.
+enum ProductReviewSource {
+  ZALO
+  MESSENGER
+  FACEBOOK
+  DIRECT
+}
+
+enum ProductReviewFit {
+  SMALL
+  TRUE_TO_SIZE
+  LARGE
+}
+
+enum ProductReviewStatus {
+  DRAFT
+  PUBLISHED
+}
+
 enum ProductContentStatus {
   DRAFT
   REVIEWED
@@ -311,8 +331,46 @@ model ProductMirror {
   relatedOverrides     RelatedProductOverride[]    @relation("RelatedSource")
   relatedOverrideOf    RelatedProductOverride[]    @relation("RelatedTarget")
   sellingPolicy        ProductSellingPolicy?
+  reviews              ProductReview[]
 
   @@index([pancakeShopId, isPresent])
+}
+
+/// A real customer review, entered by hand in admin from a message or comment the customer sent and
+/// agreed to have published (Zalo, Messenger, Facebook, or in person).
+///
+/// Nothing here is generated or averaged by hand: the storefront computes the star summary from these
+/// rows. `consentConfirmedAt` is NOT NULL by design (the admin must state the customer agreed), and
+/// `orderPublicCode` is the only thing that earns a "Đã mua hàng" label -- it is checked against a
+/// CONFIRMED order that contains this product when saved, never typed in free.
+model ProductReview {
+  id                 String              @id @default(cuid())
+  productId          String
+  status             ProductReviewStatus @default(DRAFT)
+  /// 1..5, enforced by a CHECK in the migration.
+  rating             Int
+  /// What the page prints, e.g. "Lan A.". Never a phone number or a full name.
+  authorName         String
+  body               String?
+  source             ProductReviewSource
+  fit                ProductReviewFit?
+  sizeLabel          String?
+  colorLabel         String?
+  heightCm           Int?
+  weightKg           Int?
+  /// Trusted Pancake CDN photographs, in the order they are shown.
+  imageUrls          String[]            @default([])
+  /// The CONFIRMED order this review is verified against; null means no "Đã mua hàng" label.
+  orderPublicCode    String?
+  shopReply          String?
+  /// The date of the original review, not the day it was typed in.
+  reviewedAt         DateTime
+  consentConfirmedAt DateTime
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  product            ProductMirror       @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, status, reviewedAt])
 }
 
 /// Admin-selected products for /new-arrivals. No date-based membership or auto-expiry.
