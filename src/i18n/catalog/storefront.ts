@@ -565,4 +565,5 @@ export const STOREFRONT_EN: Readonly<Record<string, string>> = {
   "Đỏ đô": "Burgundy",
   "Hồng phấn": "Blush pink",
   "Trắng kem": "Off-white",
+  "Dung sai:": "Tolerance:",
 };

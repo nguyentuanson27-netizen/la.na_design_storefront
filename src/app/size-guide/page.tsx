@@ -41,7 +41,7 @@ function render(data: SizeGuideViewModel, { t }: RequestI18n) {
         </p>
         {data.tolerance === null ? null : (
           <p>
-            <strong>Dung sai:</strong> {data.tolerance.note}
+            <strong>{t("Dung sai:")}</strong> {t(data.tolerance.note)}
           </p>
         )}
         <p className="rounded-sm border border-black/10 bg-black/[0.02] p-4 text-sm leading-6 text-black/70">
@@ -53,10 +53,10 @@ function render(data: SizeGuideViewModel, { t }: RequestI18n) {
         {data.charts.map((chart) => (
           <section key={chart.id} aria-labelledby={`chart-${chart.id}-heading`} className="min-w-0">
             <h2 id={`chart-${chart.id}-heading`} className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
-              {chart.title}
+              {t(chart.title)}
             </h2>
             {data.tolerance === null ? null : (
-              <p className="mt-2 text-sm text-black/60">Dung sai: {data.tolerance.text}.</p>
+              <p className="mt-2 text-sm text-black/60">{t("Dung sai:")} {t(data.tolerance.text)}.</p>
             )}
 
             <div
@@ -65,7 +65,7 @@ function render(data: SizeGuideViewModel, { t }: RequestI18n) {
               aria-labelledby={`chart-${chart.id}-heading`}
             >
               <table className="w-full min-w-[560px] border-collapse text-left text-sm">
-                <caption className="sr-only">{chart.title}</caption>
+                <caption className="sr-only">{t(chart.title)}</caption>
                 <thead>
                   <tr className="border-b border-black/15 bg-black/[0.03]">
                     <th scope="col" className="py-3.5 pr-4 pl-3 font-semibold text-black">
@@ -82,7 +82,7 @@ function render(data: SizeGuideViewModel, { t }: RequestI18n) {
                   {chart.rows.map((row) => (
                     <tr key={row.parameter} className="hover:bg-black/[0.01]">
                       <th scope="row" className="py-3.5 pr-4 pl-3 font-medium text-black/80">
-                        {row.parameter}
+                        {t(row.parameter)}
                       </th>
                       {chart.sizes.map((size) => (
                         <td key={size} className="px-4 py-3.5 text-right tabular-nums text-black/70">

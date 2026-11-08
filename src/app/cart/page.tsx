@@ -146,7 +146,7 @@ function render(data: CartRouteViewModel, { t }: RequestI18n) {
                   ) : (
                     <h2 className="text-base font-medium uppercase tracking-[0.04em]">{line.productName}</h2>
                   )}
-                  <p className="mt-1 text-sm text-black/65">{line.optionLabel}</p>
+                  <p className="mt-1 text-sm text-black/65">{t(line.optionLabel)}</p>
                   {/* §30 — the marker has to survive the trip from the PDP, so it rides the line
                       it belongs to rather than only the basket-level notice below. */}
                   {line.preorderLabel === null ? null : (

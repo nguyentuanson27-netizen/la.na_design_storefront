@@ -158,7 +158,7 @@ function SizeGuideFacts({ guide }: { guide: ProductMappedSizeGuide }) {
       <p>{guide.circumferenceSemanticsNote}</p>
       {guide.tolerance ? (
         <p>
-          <strong>Dung sai:</strong> {guide.tolerance.note}
+          <strong>{t("Dung sai:")}</strong> {t(guide.tolerance.note)}
         </p>
       ) : null}
       <p>{guide.guidanceNote}</p>
@@ -473,7 +473,7 @@ export function PurchasePanelView({
       outline: text ? "outline outline-2 outline-offset-4 outline-[#3B2219]" : "",
       line: text ? (
         <p id={id} className="mt-2 text-sm font-medium text-[#8A3A35]" role="alert">
-          {text}
+          {t(text)}
         </p>
       ) : null,
     };
@@ -853,11 +853,11 @@ export function PurchasePanelView({
         {priceDisplay.compareAtText ? (
           <>
             <span className="sr-only">{t("Giá gốc")}</span>
-            <span className="tabular-nums line-through decoration-black/40">{priceDisplay.compareAtText}</span>
+            <span className="tabular-nums line-through decoration-black/40">{t(priceDisplay.compareAtText)}</span>
             {detail ? <span aria-hidden="true">{" · "}</span> : null}
           </>
         ) : null}
-        {detail}
+        {t(detail)}
       </span>
     );
   }

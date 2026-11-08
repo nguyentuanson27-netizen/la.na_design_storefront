@@ -33,6 +33,20 @@ pnpm release:check
 
 `pnpm prisma:migrate:deploy` applies checked-in production migrations.
 
+## Languages
+
+The storefront is Vietnamese at its own URLs and English under `/en/…` ([ADR 0024](docs/decisions/0024-english-locale.md)).
+Copy goes through `t("Vietnamese source text")`; the English lives in `src/i18n/catalog/*.ts`, and in
+`src/brand/messages*.en.ts` for text Brand Config owns. A missing entry shows the Vietnamese.
+
+```bash
+pnpm i18n:audit                        # coverage: sources with no English entry, files with unwrapped Vietnamese
+pnpm i18n:audit --missing              # every t("…") source that still needs an English entry
+pnpm i18n:audit --literals src/routes  # Vietnamese string literals under a path that the catalog does not have yet
+```
+
+Product names and editorial copy are translated per product in the admin (`/admin/products/<id>/translations`).
+
 ## Current project identity
 
 Committed deployment identity lives in `project.config.json`:

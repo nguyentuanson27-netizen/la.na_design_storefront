@@ -3,6 +3,15 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { unwrapTranslations } from "../support/untranslated-source.ts";
+
+/**
+ * A storefront source file as it read before its copy went through `t()` (see
+ * `tests/support/untranslated-source.ts`). These inventories pin the Vietnamese copy the page holds;
+ * wrapping that copy for English does not change what it says.
+ */
+const readBuyerSource = async (path: string): Promise<string> =>
+  unwrapTranslations(await readFile(path, "utf8"));
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -23,8 +32,8 @@ test("U1c cart finishes the Vietnamese transactional language contract", async (
   // decides what they say. Both files are read, so the contract still covers every string it did
   // before and a page that starts re-deciding this copy is still caught.
   const [pageSource, modelSource] = await Promise.all([
-    readFile(join(REPO_ROOT, "src/app/cart/page.tsx"), "utf8"),
-    readFile(join(REPO_ROOT, "src/routes/cart-model.ts"), "utf8"),
+    readBuyerSource(join(REPO_ROOT, "src/app/cart/page.tsx")),
+    readBuyerSource(join(REPO_ROOT, "src/routes/cart-model.ts")),
   ]);
   const cartSource = `${pageSource}\n${modelSource}`;
 

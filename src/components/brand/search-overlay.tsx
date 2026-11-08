@@ -182,7 +182,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
                     onClick={onClose}
                     className="font-display inline-flex items-center rounded-md border border-[#3B2219]/20 bg-white/60 px-4 py-2 text-xs font-medium text-[#3B2219] hover:border-[#3B2219] hover:bg-[#3B2219] hover:text-white transition-colors"
                   >
-                    {category.label}
+                    {t(category.label)}
                   </Link>
                 ))}
               </div>

@@ -216,7 +216,7 @@ export function SizeGuideSheet({
           <p>{guide.circumferenceSemanticsNote}</p>
           {guide.tolerance ? (
             <p>
-              <strong>Dung sai:</strong> {guide.tolerance.note}
+              <strong>{t("Dung sai:")}</strong> {t(guide.tolerance.note)}
             </p>
           ) : null}
           {/* The approved "tham khảo" note stays for assistive technology; sighted shoppers get the table. */}

@@ -562,7 +562,7 @@ export function GuestCheckoutForm({
               {...fieldA11y("name")}
             />
             <label className={inFieldLabelClassName} htmlFor="checkout-name">
-              Họ và tên <RequiredMark />
+              {t("Họ và tên")} <RequiredMark />
             </label>
           </div>
           {renderFieldError("name")}
@@ -585,7 +585,7 @@ export function GuestCheckoutForm({
               {...fieldA11y("phone")}
             />
             <label className={inFieldLabelClassName} htmlFor="checkout-phone">
-              Số điện thoại <RequiredMark />
+              {t("Số điện thoại")} <RequiredMark />
             </label>
           </div>
           {renderFieldError("phone")}
@@ -594,7 +594,7 @@ export function GuestCheckoutForm({
 
       <fieldset className="space-y-3" disabled={isSubmitting || lockSubmission}>
         <legend className="mb-3 text-sm font-semibold uppercase tracking-[0.12em]">
-          Địa chỉ giao hàng <span className="font-normal normal-case tracking-normal text-black/60">{t("(địa chỉ mới)")}</span>
+          {t("Địa chỉ giao hàng")} <span className="font-normal normal-case tracking-normal text-black/60">{t("(địa chỉ mới)")}</span>
         </legend>
 
         <div className="grid gap-3 md:grid-cols-2">
@@ -620,7 +620,7 @@ export function GuestCheckoutForm({
                 ))}
               </select>
               <label className={selectLabelClassName} htmlFor="checkout-province">
-                Tỉnh / Thành phố <RequiredMark />
+                {t("Tỉnh / Thành phố")} <RequiredMark />
               </label>
               <SelectChevron />
             </div>
@@ -658,7 +658,7 @@ export function GuestCheckoutForm({
                 ))}
               </select>
               <label className={selectLabelClassName} htmlFor="checkout-commune">
-                Phường / Xã <RequiredMark />
+                {t("Phường / Xã")} <RequiredMark />
               </label>
               <SelectChevron />
             </div>
@@ -698,7 +698,7 @@ export function GuestCheckoutForm({
               {...fieldA11y("detail")}
             />
             <label className={inFieldLabelClassName} htmlFor="checkout-detail">
-              Số nhà, tên đường <RequiredMark />
+              {t("Số nhà, tên đường")} <RequiredMark />
             </label>
           </div>
           {renderFieldError("detail")}

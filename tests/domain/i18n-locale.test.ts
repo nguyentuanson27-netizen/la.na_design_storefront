@@ -111,3 +111,17 @@ test("a catalog key with placeholders also translates text that was filled in by
   // Values passed alongside a template key still fill it.
   assert.equal(en("Còn {count}", { count: 7 }), "7 left");
 });
+
+test("a list of option labels is translated label by label, whichever separator joins it", () => {
+  const en = createTranslator("en", { "Đỏ": "Red", "Kích cỡ": "Size", "Màu": "Colour" });
+  assert.equal(en("Đỏ / M"), "Red / M");
+  assert.equal(en("Đỏ · M"), "Red · M");
+  assert.equal(en("Màu / Kích cỡ"), "Colour / Size");
+  assert.equal(en("Xanh / M"), "Xanh / M", "nothing to translate leaves the text as written");
+});
+
+test("a pattern slot does not swallow a longer title that merely starts the same way", () => {
+  const en = createTranslator("en", { "Về {name}": "About {name}" });
+  assert.equal(en("Về La.na Design"), "About La.na Design");
+  assert.equal(en("Về La.na Design | Thời Trang Nữ"), "Về La.na Design | Thời Trang Nữ");
+});

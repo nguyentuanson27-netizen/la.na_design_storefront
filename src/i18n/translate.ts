@@ -91,12 +91,13 @@ function lookup(messages: Messages, source: string, depth = 0): string | undefin
     });
     return interpolate(template.target, captured);
   }
-  // "Màu / Kích cỡ": a list of labels joined by " / " is translated label by label.
-  if (source.includes(" / ")) {
-    const parts = source.split(" / ");
+  // "Màu / Kích cỡ", "Đỏ · M": a list of labels joined by a separator is translated label by label.
+  for (const separator of [" / ", " · "]) {
+    if (!source.includes(separator)) continue;
+    const parts = source.split(separator);
     const translated = parts.map((part) => lookup(messages, part, depth + 1));
     if (translated.some((part) => part !== undefined)) {
-      return translated.map((part, index) => part ?? parts[index]!).join(" / ");
+      return translated.map((part, index) => part ?? parts[index]!).join(separator);
     }
   }
   return undefined;

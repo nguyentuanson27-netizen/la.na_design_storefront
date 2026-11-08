@@ -37,7 +37,7 @@ function render(data: ReturnsViewModel, { t, rich }: RequestI18n) {
           </p>
           <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
             {data.productConditions.map((condition) => (
-              <li key={condition}>{condition}</li>
+              <li key={condition}>{t(condition)}</li>
             ))}
           </ul>
         </section>
@@ -48,7 +48,7 @@ function render(data: ReturnsViewModel, { t, rich }: RequestI18n) {
           </h2>
           <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
             {data.supportedCases.map((supportedCase) => (
-              <li key={supportedCase}>{supportedCase}</li>
+              <li key={supportedCase}>{t(supportedCase)}</li>
             ))}
           </ul>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
@@ -61,7 +61,7 @@ function render(data: ReturnsViewModel, { t, rich }: RequestI18n) {
           ) : (
             <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
               {data.nonReturnableCategories.map((category) => (
-                <li key={category}>{category}</li>
+                <li key={category}>{t(category)}</li>
               ))}
             </ul>
           )}
