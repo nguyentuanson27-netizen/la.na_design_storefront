@@ -205,6 +205,10 @@ test.beforeAll(async () => {
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",
+      // Publishes the dataLayer so the infinite grid's `select_item` can be asserted. The synthetic
+      // container is unreviewed, so it must not load.
+      LA_TRACKING_MODE: "preview",
+      LA_GTM_CONTAINER_ID: "GTM-TESTONLY",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -472,6 +476,56 @@ test("U3 collection controls emit route-local canonical hrefs and ignore forged 
     .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("a product added by `Xem thêm` reports select_item in the collection's list, numbered on from page one", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${BASE_URL}/collections/${pagedSlug}`, { waitUntil: "networkidle" });
+  await page.getByRole("link", { name: "Xem thêm (24/25)" }).click();
+  const cards = page.locator("#main-content article h2");
+  await expect(cards).toHaveCount(25);
+
+  // Record what the page publishes as it publishes it: the click navigates away, and a document
+  // that is replaced takes its dataLayer with it.
+  await page.evaluate(() => {
+    const layer = (window as { dataLayer?: unknown[] }).dataLayer;
+    if (!layer) throw new Error("tracking is not publishing a dataLayer");
+    const push = layer.push.bind(layer);
+    layer.push = (...entries: unknown[]) => {
+      for (const entry of entries) {
+        if (typeof entry === "object" && entry !== null && (entry as { event?: unknown }).event === "select_item") {
+          const seen = JSON.parse(sessionStorage.getItem("select-events") ?? "[]") as unknown[];
+          sessionStorage.setItem("select-events", JSON.stringify([...seen, entry]));
+        }
+      }
+      return push(...entries);
+    };
+  });
+
+  // The 25th product exists only because the grid appended it; its click must publish like the first 24.
+  await page.getByRole("link", { name: new RegExp(`^Xem Paged Runtime Product 25 `) }).click();
+  await page.waitForURL(`${BASE_URL}/shop/collection-paged-25-${suffix}`);
+
+  const selects = await page.evaluate(() => JSON.parse(sessionStorage.getItem("select-events") ?? "[]") as unknown[]);
+  expect(selects).toHaveLength(1);
+  const ecommerce = (selects[0] as { ecommerce: { item_list_id?: string; items?: Array<Record<string, unknown>> } }).ecommerce;
+  expect(ecommerce.item_list_id).toBe(`collection:${pagedSlug}`);
+  expect(ecommerce.items?.[0]?.item_id).toBe(`collection-paged-25-${suffix}`);
+  expect(ecommerce.items?.[0]?.index, "page 2 continues the list's numbering: 24 products precede it").toBe(24);
+});
+
+test("Ctrl-click on `Xem thêm` keeps the link's own behaviour: page two opens in a new tab", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${BASE_URL}/collections/${pagedSlug}`, { waitUntil: "networkidle" });
+  await expect(page.locator("#main-content article h2")).toHaveCount(24);
+
+  const more = page.getByRole("link", { name: "Xem thêm (24/25)" });
+  const popupPromise = page.context().waitForEvent("page");
+  await more.click({ modifiers: ["Control"] });
+  const popup = await popupPromise;
+  await popup.waitForLoadState("domcontentloaded");
+  expect(popup.url()).toBe(`${BASE_URL}/collections/${pagedSlug}?page=2`);
+  await popup.close();
 });
 
 test("a collection loads its next page in place, ordered and filtered like the page's own URL", async ({ page }) => {

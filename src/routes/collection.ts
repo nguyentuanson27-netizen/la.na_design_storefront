@@ -80,6 +80,7 @@ export async function loadCollectionRoute({
     products: ordered,
     list: { listId: `collection:${collection.slug}`, listName: collection.title },
     pricingRule,
+    startIndex: (page - 1) * COLLECTION_PAGE_SIZE,
   });
 
   return sealRoute({

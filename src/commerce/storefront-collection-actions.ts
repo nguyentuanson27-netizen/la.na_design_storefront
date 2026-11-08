@@ -12,6 +12,7 @@ import { collectionListingPath, parseCollectionListingSearchParams } from "./col
 import { CollectionDefinitionError } from "./collection-definition.ts";
 import { createCollectionDefinitionRepository } from "./collection-definition-repository.ts";
 import { listConfiguredStorefrontDiscoveryPage } from "./storefront-catalog-runtime.ts";
+import { buildProductListTracking } from "../components/analytics/product-list-tracking.ts";
 import {
   buildProductCardModel,
   type ProductCardModel,
@@ -97,6 +98,16 @@ export async function loadCollectionNextPageAction(
     inStockProductIds: pageResult.inStockProductIds,
   });
 
+  // The same list identity, pricing rule and order the first page's tracking was built from, and
+  // numbered on from the pages before it, so a product added by scrolling reports `select_item`
+  // exactly as it would on its own page. Empty when this deployment publishes no commerce events.
+  const tracking = buildProductListTracking({
+    products: ordered,
+    list: { listId: `collection:${collection.slug}`, listName: collection.title },
+    pricingRule: pageResult.pricingRule,
+    startIndex: (pageResult.page - 1) * COLLECTION_PAGE_SIZE,
+  });
+
   const cards: ProductCardModel[] = ordered.map((product) =>
     buildProductCardModel({
       slug: product.slug,
@@ -106,7 +117,7 @@ export async function loadCollectionNextPageAction(
       productCapacity: product.productCapacity,
       flashSale: product.flashSale,
       pricingRule: pageResult.pricingRule,
-      selectEvent: null,
+      selectEvent: tracking.selectEventBySlug.get(product.slug) ?? null,
     }),
   );
 

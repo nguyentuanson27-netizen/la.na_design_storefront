@@ -131,14 +131,22 @@ export function buildStorefrontProductImpressions({
   products,
   list,
   pricingRule,
+  startIndex = 0,
 }: Readonly<{
   products: readonly StorefrontImpressionProduct[];
   list?: StorefrontProductListContext;
   pricingRule?: StorefrontPricingRule;
+  /** The position of the first product in the whole list, for a grid that shows a later page of it. */
+  startIndex?: number;
 }>): CommerceProductImpression[] {
   const impressions: CommerceProductImpression[] = [];
-  products.forEach((product, index) => {
-    const impression = buildStorefrontProductImpression({ product, list, index, pricingRule });
+  products.forEach((product, offset) => {
+    const impression = buildStorefrontProductImpression({
+      product,
+      list,
+      index: startIndex + offset,
+      pricingRule,
+    });
     if (impression !== null) impressions.push(impression);
   });
   return impressions;

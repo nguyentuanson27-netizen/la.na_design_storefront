@@ -122,6 +122,18 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
               rel="next"
               className="btn btn--outline px-8"
               onClick={(event) => {
+                // Only a plain primary click loads in place. Ctrl/Cmd/Shift/Alt-click and middle
+                // click keep the link's own behaviour (a new tab or window on the next page).
+                if (
+                  event.defaultPrevented ||
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                ) {
+                  return;
+                }
                 event.preventDefault();
                 void loadMore();
               }}
