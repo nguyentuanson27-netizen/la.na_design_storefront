@@ -3,16 +3,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { loadCategoryNextPageAction } from "@/commerce/storefront-category-actions";
+import { loadCollectionNextPageAction } from "@/commerce/storefront-collection-actions";
+import type { TrackingEvent } from "@/tracking/commerce-events";
+import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 import type { ProductCardModel } from "./build-product-card-model";
 import type { PlpFilterState } from "./plp-filter-model";
 import { createPageRequestGuard, settleIfCurrent } from "./plp-page-request-guard";
+
+/**
+ * Which listing the grid pages through. Each has its own server action because each validates its
+ * own scope (a taxonomy key, a published collection), but both take the same filter state.
+ */
+export type PlpGridSource =
+  | Readonly<{ kind: "category"; categoryKey: string; categoryPath: string }>
+  | Readonly<{ kind: "collection"; slug: string }>;
 
 export type UsePlpInfiniteGridOptions = {
   initialProducts: readonly ProductCardModel[];
   totalCount: number;
   initialPage: number;
-  categoryKey: string;
-  categoryPath: string;
+  source: PlpGridSource;
   activeFilters: PlpFilterState;
   hasNext: boolean;
   nextHref: string | null;
@@ -23,8 +33,7 @@ export function usePlpInfiniteGrid({
   initialProducts,
   totalCount,
   initialPage,
-  categoryKey,
-  categoryPath,
+  source,
   activeFilters,
   hasNext,
   nextHref,
@@ -69,20 +78,25 @@ export function usePlpInfiniteGrid({
     setAnnouncement("");
 
     try {
+      const request = {
+        cursor: cursor,
+        page: cursor ? undefined : currentPage + 1,
+        color: activeFilters.color,
+        size: activeFilters.size,
+        availability: activeFilters.availability,
+        minPriceVnd: activeFilters.minPriceVnd,
+        maxPriceVnd: activeFilters.maxPriceVnd,
+        sale: activeFilters.sale,
+        sort: activeFilters.sort,
+      };
       const outcome = await settleIfCurrent(guardRef.current, () =>
-        loadCategoryNextPageAction({
-          categoryKey,
-          categoryPath,
-          cursor: cursor,
-          page: cursor ? undefined : currentPage + 1,
-          color: activeFilters.color,
-          size: activeFilters.size,
-          availability: activeFilters.availability,
-          minPriceVnd: activeFilters.minPriceVnd,
-          maxPriceVnd: activeFilters.maxPriceVnd,
-          sale: activeFilters.sale,
-          sort: activeFilters.sort,
-        }),
+        source.kind === "collection"
+          ? loadCollectionNextPageAction({ slug: source.slug, ...request })
+          : loadCategoryNextPageAction({
+              categoryKey: source.categoryKey,
+              categoryPath: source.categoryPath,
+              ...request,
+            }),
       );
       if (outcome.stale) {
         // The shopper moved to another filter; the grid was already reset for it.
@@ -90,6 +104,12 @@ export function usePlpInfiniteGrid({
         return;
       }
       const result = outcome.value;
+
+      // The page is accepted, so its cards are about to be shown: report them once, in the list and
+      // numbering the server built. A stale response returned above and an error never reach here.
+      // Only the collection action carries one; the publisher never throws.
+      const listEvent = "listEvent" in result ? (result.listEvent as TrackingEvent | null) : null;
+      if (listEvent) publishBrowserTrackingEvent(listEvent);
 
       setProducts((prev) => [...prev, ...result.products]);
       setCurrentPage(result.page);
@@ -110,8 +130,7 @@ export function usePlpInfiniteGrid({
     }
   }, [
     activeFilters,
-    categoryKey,
-    categoryPath,
+    source,
     currentPage,
     cursor,
     hasNextPage,

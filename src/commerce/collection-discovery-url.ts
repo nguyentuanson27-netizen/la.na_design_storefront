@@ -1,15 +1,11 @@
+import type { PlpFilterState } from "../components/headless/plp-filter-model.ts";
+import { parseCategoryDiscoverySearchParams } from "./category-discovery-url.ts";
 import {
   parseStorefrontDiscoverySearchParams,
   type StorefrontDiscoveryQuery,
   type StorefrontDiscoverySearchParams,
   type StorefrontDiscoverySort,
 } from "./storefront-discovery.ts";
-
-export type CollectionDiscoveryUrlState = Pick<
-  StorefrontDiscoveryQuery,
-  "size" | "sort" | "page"
-> &
-  Partial<Pick<StorefrontDiscoveryQuery, "availability">>;
 
 const COLLECTION_DEFAULT_SORTS: Readonly<Record<string, StorefrontDiscoverySort>> = {
   "xa-hang-chao-thu": "price-asc",
@@ -20,10 +16,11 @@ export function resolveCollectionDefaultSort(routeSlug: string): StorefrontDisco
 }
 
 /**
- * Whether the shopper is looking at the collection in the order its merchandiser set.
+ * Whether a repository read is in the collection's own default order.
  *
- * Pinned products lead only then. Once someone picks another order (price, name) the pins would
- * sit above a list that claims to be sorted, so the route stops applying them.
+ * The catalog repository falls back to this when a caller does not say whether in-stock products
+ * lead. The collection route itself always says so, from whether the URL carried a sort at all
+ * (`CollectionListingState.merchandiserOrder`).
  */
 export function isCollectionDefaultSort(
   routeSlug: string,
@@ -32,51 +29,79 @@ export function isCollectionDefaultSort(
   return sort === resolveCollectionDefaultSort(routeSlug);
 }
 
+/** The listing path a collection's filter, sort and paging links are written against. */
+export function collectionListingPath(routeSlug: string): string {
+  const parsed = parseStorefrontDiscoverySearchParams({ collection: routeSlug });
+  if (!parsed.collection) throw new RangeError("Collection route slug is required");
+  return `/collections/${parsed.collection}`;
+}
+
+export type CollectionListingState = Readonly<{
+  /** What the catalog repository reads: the collection, its filters and the concrete order. */
+  discovery: StorefrontDiscoveryQuery;
+  /** What the shared filter panel and the infinite grid hold; `sort: "default"` is the merchandiser's order. */
+  filters: PlpFilterState;
+  /**
+   * Whether the shopper is looking at the collection in the order its merchandiser set (no sort in
+   * the URL). Pins and the in-stock-first partition apply only then: under a sort the shopper picked
+   * they would sit above a list that claims to be ordered by price or name.
+   */
+  merchandiserOrder: boolean;
+}>;
+
+/**
+ * What `/collections/<slug>` takes from the URL, in the category listing's vocabulary.
+ *
+ * A collection draws the category listing's own filter panel (size, price, "Còn hàng", "Sale",
+ * sort) and its infinite grid, so it reads the same parameters with the same rules: an absent sort
+ * is `default`, and a malformed value is a `RangeError`, which the route turns into a 404. The
+ * links the panel writes (`buildCategoryDiscoveryHref`) therefore round-trip. The one
+ * collection-specific step is what `default` means to the repository: the collection's own default
+ * order (`resolveCollectionDefaultSort`), with its pins and in-stock-first partition.
+ */
+export function parseCollectionListingSearchParams(
+  routeSlug: string,
+  searchParams: StorefrontDiscoverySearchParams,
+): CollectionListingState {
+  const collection = collectionListingPath(routeSlug).slice("/collections/".length);
+  const parsed = parseCategoryDiscoverySearchParams(collection, searchParams);
+  const merchandiserOrder = parsed.sort === "default";
+  // `sale=false` narrows nothing: only an affirmative toggle filters, as on the category listing.
+  const sale = parsed.sale === true ? true : null;
+
+  return Object.freeze({
+    discovery: Object.freeze({
+      query: null,
+      color: parsed.color,
+      size: parsed.size,
+      availability: parsed.availability,
+      minPriceVnd: parsed.minPriceVnd,
+      maxPriceVnd: parsed.maxPriceVnd,
+      sale,
+      collection,
+      sort: merchandiserOrder ? resolveCollectionDefaultSort(collection) : parsed.sort,
+      page: parsed.page,
+    }),
+    filters: Object.freeze({
+      size: parsed.size,
+      color: parsed.color,
+      availability: parsed.availability,
+      minPriceVnd: parsed.minPriceVnd,
+      maxPriceVnd: parsed.maxPriceVnd,
+      sale,
+      sort: parsed.sort,
+    }),
+    merchandiserOrder,
+  });
+}
+
+/**
+ * The repository query for a collection URL. The homepage mirrors the route's unfiltered first page
+ * through this (`buildCollectionFirstPageDiscovery`), so both read the same thing.
+ */
 export function parseCollectionDiscoverySearchParams(
   routeSlug: string,
   searchParams: StorefrontDiscoverySearchParams,
 ): StorefrontDiscoveryQuery {
-  const defaultSort = resolveCollectionDefaultSort(routeSlug);
-  const rawSort = searchParams.sort;
-  const sortParam =
-    rawSort === undefined || rawSort === ""
-      ? defaultSort
-      : rawSort;
-
-  return parseStorefrontDiscoverySearchParams({
-    collection: routeSlug,
-    size: searchParams.size,
-    availability: searchParams.availability,
-    sort: sortParam,
-    page: searchParams.page,
-  });
+  return parseCollectionListingSearchParams(routeSlug, searchParams).discovery;
 }
-
-export function buildCollectionDiscoveryHref(
-  routeSlug: string,
-  state: CollectionDiscoveryUrlState,
-): string {
-  const defaultSort = resolveCollectionDefaultSort(routeSlug);
-  const parsed = parseStorefrontDiscoverySearchParams({
-    collection: routeSlug,
-    size: state.size ?? undefined,
-    availability: state.availability ?? undefined,
-    sort: state.sort,
-    page: String(state.page),
-  });
-
-  if (!parsed.collection) {
-    throw new RangeError("Collection route slug is required");
-  }
-
-  const params = new URLSearchParams();
-  if (parsed.size) params.set("size", parsed.size);
-  if (parsed.availability) params.set("availability", parsed.availability);
-  if (parsed.sort !== defaultSort) params.set("sort", parsed.sort);
-  if (parsed.page !== 1) params.set("page", String(parsed.page));
-
-  const pathname = `/collections/${parsed.collection}`;
-  const serialized = params.toString();
-  return serialized.length > 0 ? `${pathname}?${serialized}` : pathname;
-}
-

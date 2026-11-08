@@ -232,3 +232,21 @@ test("T5 an unusable Flash representative price carries no money rather than a b
     });
   }
 });
+
+test("a grid showing a later page numbers its impressions on from the pages before it", () => {
+  const products = ["a", "b"].map((id) => ({
+    pancakeProductId: `pancake-product-${id}`,
+    name: `Shirt ${id}`,
+    variants: [variant({ id, pancakeVariationId: `pv-${id}` })],
+  }));
+
+  assert.deepEqual(
+    buildStorefrontProductImpressions({ products }).map((impression) => impression.index),
+    [0, 1],
+    "without a start index the list begins at 0",
+  );
+  assert.deepEqual(
+    buildStorefrontProductImpressions({ products, startIndex: 24 }).map((impression) => impression.index),
+    [24, 25],
+  );
+});

@@ -667,8 +667,9 @@ test("a collection keeps its editorial half above the shared listing", async ({ 
 
   // The header is title-only: the collection's story is no longer drawn under the heading.
   await expect(page.getByText("Bộ sưu tập kiểm thử bố cục danh sách.", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Lọc theo kích cỡ" })).toBeVisible();
+  // The listing half is the category listing's own panel, so its sort and price filter are there.
+  await expect(page.getByRole("combobox", { name: "Sắp xếp sản phẩm" })).toBeVisible();
+  await expect(page.getByRole("spinbutton", { name: "Giá tối thiểu" }).first()).toBeVisible();
 
   const main = page.locator("main");
   await expect(main.getByRole("link", { name: new RegExp(productName("newest")) })).toBeVisible();

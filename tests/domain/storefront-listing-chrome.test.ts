@@ -434,11 +434,13 @@ test("a collection page keeps its editorial content and featured ordering", () =
   for (const editorial of ["editorial.heroImage", "editorial.gallery", "editorial.video"]) {
     assert.ok(page.includes(editorial), `the collection page must keep ${editorial}`);
   }
-  assert.match(page, /data\.sortOptions/, "the collection's own sort links stay");
-  assert.match(page, /data\.sizeOptions/, "the collection's own size filter stays");
+  assert.match(page, /<PlpFilterPanel[\s\S]*categoryPath=\{data\.basePath\}/, "the category filter panel, on the collection's own path");
+  assert.match(page, /<PlpInfiniteGrid[\s\S]*source=\{\{ kind: "collection", slug: data\.slug \}\}/, "the infinite grid pages through the collection");
 
   const route = read("src/routes/collection.ts");
-  assert.match(route, /orderByFeaturedSlugs/, "featured ordering must survive the re-skin");
+  assert.match(route, /orderCollectionPage/, "featured ordering must survive the re-skin");
+  const action = read("src/commerce/storefront-collection-actions.ts");
+  assert.match(action, /orderCollectionPage/, "a page loaded by scrolling is ordered like the same page opened by its URL");
   assert.match(
     route,
     /buildCollectionBreadcrumbStructuredData/,

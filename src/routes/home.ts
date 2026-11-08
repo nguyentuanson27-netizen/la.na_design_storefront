@@ -89,8 +89,8 @@ async function loadSpecialDealsSection(now: Date) {
       readCollection: readPublishedCollection,
       listManual: () => listConfiguredHomepageFeaturedWithPricing(now),
       // The public collection route's own read, with the discovery state and page size it passes.
-      listCollectionPage: ({ discovery, pageSize }) =>
-        listConfiguredStorefrontDiscoveryPage({ discovery, pageSize, now }),
+      listCollectionPage: ({ discovery, pageSize, featuredProductSlugs }) =>
+        listConfiguredStorefrontDiscoveryPage({ discovery, pageSize, featuredProductSlugs, now }),
     });
   } catch (error) {
     // An unconfigured Pancake shop is a deployment state, not a broken page: the section omits

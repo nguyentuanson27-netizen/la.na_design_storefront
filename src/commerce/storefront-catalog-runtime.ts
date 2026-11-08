@@ -276,12 +276,15 @@ export async function listConfiguredStorefrontDiscoveryPage({
   pageSize,
   allowCuratedComponents = false,
   inStockFirst,
+  featuredProductSlugs,
   now,
 }: {
   discovery: StorefrontDiscoveryQuery;
   pageSize: number;
   allowCuratedComponents?: boolean;
   inStockFirst?: boolean;
+  /** A collection's pinned products; see `listDiscoveryPage`. */
+  featuredProductSlugs?: readonly string[];
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
@@ -293,6 +296,8 @@ export async function listConfiguredStorefrontDiscoveryPage({
     pageSize,
     allowCuratedComponents ? "1" : "0",
     inStockFirst ? "1" : "0",
+    // Slugs are lower-case words and hyphens, so a comma cannot occur inside one.
+    (featuredProductSlugs ?? []).join(","),
     discovery.size ?? "",
     discovery.color ?? "",
     discovery.availability ?? "",
@@ -309,6 +314,7 @@ export async function listConfiguredStorefrontDiscoveryPage({
       pageSize,
       allowCuratedComponents,
       inStockFirst,
+      featuredProductSlugs,
       now: readAt,
     }),
   );
@@ -462,7 +468,7 @@ export async function listConfiguredCategoryDiscoveryFacets({
   );
 }
 
-/** The size chips and Sale toggle of `/collections/[slug]`, narrowed by its other filters. */
+/** The size chips and the Sale toggle of `/collections/[slug]`, each narrowed by the other filters. */
 export async function listConfiguredCollectionDiscoveryFacets({
   discovery,
   now,
@@ -480,6 +486,7 @@ export async function listConfiguredCollectionDiscoveryFacets({
     discovery?.availability ?? "",
     discovery?.minPriceVnd ?? "",
     discovery?.maxPriceVnd ?? "",
+    discovery?.sale ? "1" : "0",
     discovery?.collection ?? "",
     discovery?.query ?? "",
   ]);
@@ -488,7 +495,6 @@ export async function listConfiguredCollectionDiscoveryFacets({
       shopId,
       discovery,
       allowCuratedComponents: true,
-      withSale: false,
       now: readAt,
     }),
   );

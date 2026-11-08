@@ -201,9 +201,14 @@ test("a product's own tagged photographs show under its own heading, an uncalibr
   await expect(photos).toHaveCount(3);
   await expect(section.getByRole("link", { name: /^Xem thêm/ })).toHaveAttribute("href", "/feedback");
 
-  // The in-panel link names the count and leads to the rail.
-  const jump = page.getByRole("link", { name: "Xem 3 ảnh khách hàng diện mẫu này" });
+  // The strip under the price names the count and leads to the rail; it replaces the link that used
+  // to sit under the purchase buttons.
+  const jump = page.locator("[data-pdp-photo-strip]");
+  await expect(jump).toHaveAttribute("data-strip-kind", "product");
   await expect(jump).toHaveAttribute("href", "#pdp-feedback");
+  await expect(jump).toContainText("Ảnh khách diện mẫu này");
+  await expect(jump).toContainText("3 ảnh thật");
+  await expect(page.getByRole("link", { name: "Xem 3 ảnh khách hàng diện mẫu này" })).toHaveCount(0);
 
   // The uncalibrated photograph opens contained in the viewer, and closing returns focus to it.
   await photos.nth(1).click();
@@ -239,6 +244,10 @@ test("a product without its own photographs shows the brand's under the brand ti
   // The two brand photographs and the calibrated tagged one, which joins the brand gallery.
   await expect(section.getByRole("button", { name: /^Phóng to ảnh/ })).toHaveCount(3);
   await expect(page.getByRole("heading", { name: "Khách hàng diện mẫu này" })).toHaveCount(0);
+  // Three shared photographs are enough for a strip, and it says whose they are.
+  const strip = page.locator("[data-pdp-photo-strip]");
+  await expect(strip).toHaveAttribute("data-strip-kind", "brand");
+  await expect(strip).not.toContainText("mẫu này");
   await assertPageQuality(page);
 });
 

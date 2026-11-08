@@ -202,8 +202,8 @@ export function renderCategoryRoute(data: CategoryViewModel) {
         totalCount={totalCount}
         totalPages={totalPages}
         initialPage={page}
-        categoryKey={categoryKey}
-        categoryPath={destination.href}
+        source={{ kind: "category", categoryKey, categoryPath: destination.href }}
+        clearHref={destination.href}
         activeFilters={activeFilters}
         hasNext={hasNext}
         nextHref={nextHref}

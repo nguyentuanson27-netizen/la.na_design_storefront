@@ -447,6 +447,14 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
           {product.name}
         </h1>
         <p className="mt-4 text-sm text-black/60">/{product.slug}</p>
+        <p className="mt-4">
+          <Link
+            className="text-xs font-semibold uppercase tracking-[0.14em] underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
+            href={`${editorPath}/reviews`}
+          >
+            Đánh giá khách →
+          </Link>
+        </p>
       </div>
 
       <AdminFormStatus

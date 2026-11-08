@@ -41,21 +41,32 @@ export function buildProductListTracking({
   products,
   list,
   pricingRule,
+  startIndex = 0,
 }: Readonly<{
   products: readonly TrackedListProduct[];
   list?: StorefrontProductListContext;
   pricingRule?: StorefrontPricingRule;
+  /**
+   * The position of the first product in the whole list. A grid that shows page 2 onward (opened by
+   * URL, or appended by infinite scroll) continues the list's numbering instead of restarting at 0.
+   */
+  startIndex?: number;
 }>): ProductListTracking {
   if (!isCommerceTrackingEnabled()) return EMPTY;
 
   const listEvent = buildProductListViewEvent({
-    impressions: buildStorefrontProductImpressions({ products, list, pricingRule }),
+    impressions: buildStorefrontProductImpressions({ products, list, pricingRule, startIndex }),
     list,
   });
 
   const selectEventBySlug = new Map<string, TrackingEvent>();
-  products.forEach((product, index) => {
-    const impression = buildStorefrontProductImpression({ product, list, index, pricingRule });
+  products.forEach((product, offset) => {
+    const impression = buildStorefrontProductImpression({
+      product,
+      list,
+      index: startIndex + offset,
+      pricingRule,
+    });
     if (impression === null) return;
     const selectEvent = buildProductSelectEvent({ impression, list });
     if (selectEvent !== null) selectEventBySlug.set(product.slug, selectEvent);

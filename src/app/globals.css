@@ -2635,6 +2635,16 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   margin-top: 1.5rem;
 }
 
+/* The photographs of this product's own reviews sit right under the one-line rating, so a shopper
+   reaches them without scrolling past a block of spacing meant for a stand-alone section. */
+.pdp-review-photos .feedback-rail--product {
+  padding: 1.25rem 0 0.75rem;
+}
+
+.pdp-review-photos .feedback-rail--product .section-heading-row {
+  margin-bottom: 0.75rem;
+}
+
 .category-discovery__intro {
   /* Centre the heading against the photographs, not against photographs plus their names. */
   padding-bottom: 3rem;

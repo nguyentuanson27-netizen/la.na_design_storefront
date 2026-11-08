@@ -38,7 +38,12 @@ test("category PLP routes expose #san-pham on grid and empty state, and #bo-loc 
 
   const plpGrid = read("src/components/brand/plp-infinite-grid.tsx");
   assert.match(plpGrid, /<ListingProductGrid/, "PLP grid uses shared ListingProductGrid");
-  assert.match(plpGrid, /id="san-pham"/, "PLP empty state carries #san-pham anchor");
+  assert.match(
+    plpGrid,
+    /id=\{emptyStateAnchors \? "san-pham" : undefined\}/,
+    "PLP empty state carries #san-pham anchor unless the listing placed it above the grid",
+  );
+  assert.match(plpGrid, /emptyStateAnchors = true/, "the category listing keeps the anchor by default");
 });
 
 test("collection #san-pham keeps landing on the title or the controls, never on the grid", () => {
@@ -52,7 +57,7 @@ test("collection #san-pham keeps landing on the title or the controls, never on 
   );
   assert.match(collectionPage, /productsAnchorOnTitle \? COLLECTION_PRODUCTS_ANCHOR : "bo-suu-tap"/, "title carries #san-pham, else #bo-suu-tap");
   assert.match(collectionPage, /productsAnchorOnTitle \? "bo-loc" : COLLECTION_PRODUCTS_ANCHOR/, "controls carry #san-pham when a gallery/video precedes them, else #bo-loc");
-  assert.match(collectionPage, /<ListingProductGrid anchor=\{false\}>/, "the grid must not add a second #san-pham");
+  assert.match(collectionPage, /emptyStateAnchors=\{false\}/, "the grid must not add a second #san-pham");
   assert.doesNotMatch(collectionPage, /<div id=\{COLLECTION_PRODUCTS_ANCHOR\}/, "the empty state must not add a second #san-pham");
 });
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -54,14 +54,11 @@ test("the classes keep the sizes the touch-target review settled on", () => {
   assert.match(classes.bar, /flex-wrap/);
 });
 
-test("a collection draws the same one-line bar, keeps its named sort region, and no longer draws the count", () => {
-  const panel = read("src/components/brand/collection-filter-panel.tsx");
-  assert.match(panel, /LISTING_ACTION_BAR_CLASSES\.bar/, "the bar is the shared one");
-  assert.match(panel, /<ListingViewToggle compact/, "the compact view toggle");
-  assert.match(panel, /<nav\s+aria-label="Sắp xếp bộ sưu tập"/, "the sort region keeps its name (specs and assistive technology use it)");
-  assert.match(panel, /<span role="status" className="sr-only">\s*\{totalCount\} sản phẩm/, "the count is a hidden live region");
-  assert.doesNotMatch(panel, /ListingResultCount/, "the visible count is gone");
-  assert.match(panel, /sr-only[^"]*sm:not-sr-only/, "the sort label is hidden on a phone so the select keeps its width");
+test("a collection draws the category listing's own bar and filters, not a second panel", () => {
+  const page = read("src/app/collections/[slug]/page.tsx");
+  assert.match(page, /<PlpFilterPanel/, "the shared category filter panel");
+  assert.doesNotMatch(page, /CollectionFilterPanel/, "the collection-only panel is gone");
+  assert.equal(existsSync(path.join(REPO_ROOT, "src/components/brand/collection-filter-panel.tsx")), false);
 });
 
 test("/new-arrivals, /offers/eligible and the collections index draw the shared view bar, with no visible count", () => {
