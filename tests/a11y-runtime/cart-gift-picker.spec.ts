@@ -737,3 +737,47 @@ test("UX-02/AC-18: the cart's mobile bottom bar shows only while the checkout bu
   await page.setViewportSize({ width: 1280, height: 400 });
   await expect(bar).toHaveCount(0);
 });
+test("PR 254 / P2: opening the third of four gifts keeps the grid, the DOM and the Tab order one sequence", async ({ page }) => {
+  const now = new Date();
+  for (const suffix of ["gift-b", "gift-c", "gift-d"]) {
+    const extra = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: `${PREFIX}${suffix}`, slug: `${PREFIX}${suffix}`, name: `Quà ${suffix.slice(-1).toUpperCase()}`,
+      syncedAt: now, variants: { create: { pancakeVariationId: `${PREFIX}${suffix}`, color: "Trắng", size: "M", syncedAt: now, pancakeRetailPrice: 100_000, pancakeRetailPriceAfterDiscount: 100_000,
+        warehouseStocks: { create: { pancakeWarehouseId: "gq14-wh", quantity: 10, syncedAt: now } } } } }, include: { variants: true } });
+    await prisma.giftOption.create({ data: { campaignId, variantId: extra.variants[0].id } });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${URL}/cart`);
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await openPicker(picker);
+  const grid = picker.locator("[data-gift-grid]");
+  const tiles = grid.locator("article button[aria-expanded]");
+  await expect(tiles).toHaveCount(4);
+  // Close whatever openPicker opened, then open the third gift.
+  for (const tile of await tiles.all()) if (await tile.getAttribute("aria-expanded") === "true") await tile.click();
+  await tiles.nth(2).click();
+  await expect(tiles.nth(2)).toHaveAttribute("aria-expanded", "true");
+  await expect(grid.locator("[data-gift-detail]")).toHaveCount(1);
+
+  // What is seen (top to bottom, left to right) is the DOM order: tiles 1-3, the third's details, then tile 4.
+  const cells = await grid.evaluate((element) => [...element.children].map((child, index) => {
+    const box = child.getBoundingClientRect();
+    return { index, top: Math.round(box.top), left: Math.round(box.left), detail: child.hasAttribute("data-gift-detail") };
+  }));
+  expect(cells.map((cell) => cell.detail)).toEqual([false, false, false, true, false]);
+  expect([...cells].sort((a, b) => a.top - b.top || a.left - b.left).map((cell) => cell.index)).toEqual([0, 1, 2, 3, 4]);
+
+  // The keyboard walks the same sequence: tiles 1-3, into the third's details (its one version, "Nhận quà này"), then tile 4.
+  const third = (await tiles.nth(2).textContent())!.replace(/[+−]/g, "").trim();
+  await tiles.nth(0).focus();
+  await page.keyboard.press("Tab");
+  await expect(tiles.nth(1)).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(tiles.nth(2)).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.locator(":focus")).toHaveAttribute("aria-label", `${third} — Trắng / M`);
+  await page.keyboard.press("Tab");
+  await expect(picker.getByRole("button", { name: "Nhận quà này" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(tiles.nth(3)).toBeFocused();
+  expect((await new AxeBuilder({ page }).include("#cart-gifts").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+});

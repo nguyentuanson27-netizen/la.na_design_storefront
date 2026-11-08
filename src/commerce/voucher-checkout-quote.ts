@@ -107,15 +107,13 @@ export async function resolveHeldVoucherCheckout(input: Readonly<{
 
   const merchandiseHolds = holds.filter((hold) => hold.kind === "MERCHANDISE");
   const shipping = holds.find((hold) => hold.kind === "SHIPPING_FREE") ?? null;
-  // Exactly the held vouchers: a slot without a hold is an explicit NONE, never an AUTO that could add a voucher the
-  // buyer was not shown (`unlistedMerchandise`), and shipping likewise.
-  const selectionOverride = {
-    merchandise: Object.fromEntries(merchandiseHolds.map((hold) => [hold.slot, { mode: "MANUAL" as const, voucherId: hold.campaignId }])),
-    shipping: { mode: "MANUAL" as const, voucherId: shipping?.campaignId ?? null },
-    unlistedMerchandise: "NONE" as const,
-  };
+  // The quote is derived from the shopper's SAVED choice, exactly as the hold flow derived the quote it held, and must come
+  // out as exactly the held vouchers (below). Saving a new choice (the picker, at checkout or in the cart) leaves the old
+  // holds to expire on their own; deriving from the holds instead would keep applying a voucher the shopper has just
+  // removed or swapped. A choice that would now add a voucher nobody holds fails the same comparison, so it is never
+  // applied unheld either: the holds are set aside and the page offers the choice for confirmation.
   const preview = await readVoucherPreviewWithin(tx, {
-    cartId, shopId, now, env, selectionOverride, giftState,
+    cartId, shopId, now, env, selectionOverride: undefined, giftState,
     ownHolds: holds.map((hold) => ({ campaignId: hold.campaignId, campaignRevision: hold.campaignRevision, heldDiscountVnd: hold.heldDiscountVnd })),
   });
   if (!preview.enabled || !preview.ok || preview.quoteDigest === null || !preview.giftState) return { kind: "STALE", reason: "PREVIEW_UNAVAILABLE" };

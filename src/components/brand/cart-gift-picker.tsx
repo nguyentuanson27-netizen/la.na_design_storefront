@@ -5,7 +5,8 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 import { useCartGifts } from "@/components/headless/use-cart-gifts";
 import { readRecentAutoRemovedGiftCount, subscribeAutoRemovedGiftCount } from "@/components/headless/cart-gift-adjustment-notice";
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
-import { GiftProductCard } from "./gift-product-card";
+import { GiftProductCard, GiftProductDetail } from "./gift-product-card";
+import { giftGridCells } from "./gift-grid";
 import { VoucherIcon } from "./voucher-icons";
 
 /**
@@ -199,7 +200,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
       {model.campaigns.filter((c) => c.entitled > 0).map((campaign, index) => <div className="mt-5 border-t border-black/15 pt-4" key={campaign.campaignId}>
         <p className="font-display text-sm font-bold">Quà tặng theo giỏ hàng {index + 1} · Đã thêm {campaign.selected}/{campaign.entitled}</p>
         {!campaign.allowDuplicateGifts ? <p className="mt-2 text-xs">Mỗi mẫu được chọn 1 lần, kể cả khác màu hoặc kích cỡ.</p> : null}
-        <div className="mt-3 grid grid-flow-dense grid-cols-3 gap-2">{campaign.products.map((product) => {
+        <div className="mt-3 grid grid-cols-3 gap-2" data-gift-grid>{giftGridCells(campaign.products.map((product) => {
           const key = `${campaign.campaignId}/${product.productId}`;
           const option = product.options.find((o) => o.variantId === draft?.variantId && draft.campaignId === campaign.campaignId);
           const chosen = model.selections.find((r) => r.campaignId === campaign.campaignId && r.variantId === option?.variantId)?.quantity ?? 0;
@@ -215,10 +216,12 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
             : option.stock <= stockChosen ? "Phiên bản này không còn đủ hàng để nhận thêm. Nàng chọn phiên bản khác nhé."
             : null;
           const receiveReasonId = `${detailsId}-${index}-${product.productId}-receive-reason`;
-          return <GiftProductCard key={product.productId} name={product.name} imageUrl={product.imageUrl} open={card === key} chips={<div className="flex flex-wrap gap-1" role="group" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-label={`${product.name} — ${o.label}`} aria-pressed={option?.variantId === o.variantId} className="group min-h-9 min-w-9 rounded-md border border-black/30 px-2 py-0.5 text-xs leading-5 aria-pressed:border-[#8a5a2b] aria-pressed:bg-[#8a5a2b] aria-pressed:text-white sm:text-sm" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.color && o.size ? <>{o.color} <span className="text-black/40 group-aria-pressed:text-white/70">/</span> {o.size}</> : o.label}</button>)}</div>} onOpen={() => {
+          const chips = <div className="flex flex-wrap gap-1" role="group" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-label={`${product.name} — ${o.label}`} aria-pressed={option?.variantId === o.variantId} className="group min-h-9 min-w-9 rounded-md border border-black/30 px-2 py-0.5 text-xs leading-5 aria-pressed:border-[#8a5a2b] aria-pressed:bg-[#8a5a2b] aria-pressed:text-white sm:text-sm" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.color && o.size ? <>{o.color} <span className="text-black/40 group-aria-pressed:text-white/70">/</span> {o.size}</> : o.label}</button>)}</div>;
+          const onOpen = () => {
             setCard(card === key ? "" : key);
             if (product.options.length === 1) setDraft({campaignId: campaign.campaignId, variantId: product.options[0]!.variantId, label: `${product.name} — ${product.options[0]!.label}`});
-          }}>
+          };
+          const detail = card !== key ? null : <GiftProductDetail key={`${key}/detail`} name={product.name} imageUrl={product.imageUrl} chips={chips}>
             {option ? <p className="mt-3 text-sm">{uncertain ? "Đang chờ kiểm tra kết quả lưu quà…" : pending ? "Đang cập nhật quà…" : chosen > 0 ? "Đã thêm vào đơn" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">Chọn phiên bản để xem.</p>}
             {receiveBlockReason ? <p id={receiveReasonId} className="mt-2 text-xs" aria-live="polite">{receiveBlockReason}</p> : null}
             <button type="button" className="btn btn--secondary mt-3 min-h-10 w-full py-1.5" disabled={receiveBlockReason !== null} aria-describedby={receiveBlockReason ? receiveReasonId : undefined} onClick={() => {
@@ -227,8 +230,9 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
               if (draft?.committed) setDraft({ ...draft, committed: false });
               if (change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0)) setCollapseFromSave(savedCount);
             }}>Nhận quà này</button>
-          </GiftProductCard>;
-        })}</div>
+          </GiftProductDetail>;
+          return { tile: <GiftProductCard key={product.productId} name={product.name} imageUrl={product.imageUrl} open={card === key} onOpen={onOpen} />, detail };
+        }))}</div>
       </div>)}
     </div>
     {/* Outside the collapsible list: after a confirmed save collapses it, the way back to payment stays reachable. */}

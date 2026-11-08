@@ -122,7 +122,7 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
   if (view.state === "STALE") {
     return (
       <section aria-label="Ưu đãi" className="voucher-held px-3.5 py-3 text-sm" data-checkout-vouchers="stale">
-        <p role="status">Ưu đãi nàng đã chọn đã hết hạn hoặc giỏ hàng đã thay đổi, nên giá bên dưới chưa có ưu đãi.</p>
+        <p role="status">Ưu đãi giữ trước đó không còn khớp với lựa chọn hoặc giỏ hàng hiện tại, nên giá bên dưới chưa có ưu đãi.</p>
         {change ?? <Link className="mt-1 inline-block min-h-11 content-center underline" href="/cart">Xem lại ở giỏ hàng</Link>}
       </section>
     );
@@ -154,7 +154,7 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
         <span className="voucher-held__ok voucher-held__ok--offer"><VoucherIcon name="tag" /></span>
         <p className="font-semibold">{view.afterStale ? "Nàng xác nhận lại ưu đãi" : "Nàng có ưu đãi cho đơn này"}</p>
       </div>
-      {view.afterStale ? <p className="px-3.5 pt-3 text-black/75">Ưu đãi trước đó đã hết hạn hoặc giỏ hàng đã thay đổi.</p> : null}
+      {view.afterStale ? <p className="px-3.5 pt-3 text-black/75">Ưu đãi giữ trước đó không còn khớp với lựa chọn hoặc giỏ hàng hiện tại.</p> : null}
       <ul className="grid gap-2.5 px-3.5 py-3">
         {view.lines.map((line) => <VoucherLine emphasis={false} key={line.id} line={line} />)}
       </ul>

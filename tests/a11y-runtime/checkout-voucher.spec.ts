@@ -202,6 +202,45 @@ test("the checkout changes the vouchers in place with the cart's own picker, nev
   expect(await holds()).toHaveLength(0);
 });
 
+test("PR 254 / P1: changing a HELD voucher at checkout sets the old hold aside -- a swap must be confirmed before it is held, a removal is priced without any voucher", async ({ page }) => {
+  await prisma.voucherCampaign.create({
+    data: { pancakeShopId: SHOP, kind: "MERCHANDISE", issuance: "AUTO", visibility: "PUBLIC", discountType: "FIXED_AMOUNT_VND", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(), name: "Giảm 30K", fixedAmountVnd: BigInt(30_000), minEligibleSubtotalVnd: BigInt(600_000) },
+  });
+  const bill = () => page.locator('dl[data-order-summary="page"]:visible').first();
+  await page.goto(`${BASE}/checkout`);
+  await fillReceiving(page);
+  await panel(page).getByRole("button", { name: "Áp dụng và giữ ưu đãi" }).click();
+  await expect(panel(page)).toHaveAttribute("data-checkout-vouchers", "held");
+  await expect(bill()).toContainText("−50.000");
+
+  // Swap: the held 50K for the 30K. The 50K is no longer applied, and the 30K is only an offer until the shopper confirms it.
+  await panel(page).getByRole("button", { name: "Đổi ưu đãi" }).click();
+  const dialog = page.getByRole("dialog", { name: "Ưu đãi" });
+  await dialog.getByRole("button", { name: /^Giảm 30\.000đ\./ }).click();
+  await dialog.getByRole("button", { name: /^Áp dụng · Giảm / }).click();
+  await expect(dialog).toBeHidden();
+  await expect(panel(page)).toHaveAttribute("data-checkout-vouchers", "offered");
+  await expect(panel(page)).toContainText("Giảm 30K");
+  await expect(bill()).not.toContainText("−50.000");
+  await expect(submit(page)).toBeDisabled();
+  await panel(page).getByRole("button", { name: "Áp dụng và giữ ưu đãi" }).click();
+  await expect(panel(page)).toHaveAttribute("data-checkout-vouchers", "held");
+  await expect(bill()).toContainText("−30.000");
+  const held = await holds();
+  expect(held).toHaveLength(1);
+  expect((await prisma.voucherCampaign.findUniqueOrThrow({ where: { id: held[0]!.campaignId } })).name).toBe("Giảm 30K");
+
+  // Removal: tap the held voucher again and apply. The hold is still live, but nothing is applied: 2 x 450.000 + the 30.000 fee.
+  await panel(page).getByRole("button", { name: "Đổi ưu đãi" }).click();
+  await dialog.getByRole("button", { name: /^Giảm 30\.000đ\./ }).click();
+  await expect(dialog.getByRole("button", { name: /^Giảm 30\.000đ\./ })).toHaveAttribute("aria-pressed", "false");
+  await dialog.getByRole("button", { name: /^(Áp dụng · Giảm |Bỏ qua ưu đãi và tiếp tục)/ }).click();
+  await expect(dialog).toBeHidden();
+  await expect(panel(page)).not.toHaveAttribute("data-checkout-vouchers", "held");
+  await expect(bill()).not.toContainText("−30.000");
+  await expect(bill().locator("dd").last()).toContainText("930.000");
+});
+
 test("a hold that no longer describes the cart is not applied: the checkout says so and offers the voucher again", async ({ page }) => {
   await page.goto(`${BASE}/checkout`);
   await panel(page).getByRole("button", { name: "Áp dụng và giữ ưu đãi" }).click();
