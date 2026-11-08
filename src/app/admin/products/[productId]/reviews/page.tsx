@@ -40,7 +40,7 @@ const secondaryButton =
 const FIELD_MESSAGES: Record<ProductReviewInputField, string> = {
   rating: "Chọn số sao từ 1 đến 5.",
   authorName:
-    "Tên hiển thị chưa hợp lệ. Dùng dạng ngắn như “Lan A.”, tối đa 40 ký tự, không ghi số điện thoại hay email.",
+    "Tên hiển thị chưa hợp lệ. Dùng tên gọi và chữ cái đầu của họ, ví dụ “Lan A.” hoặc “Thu Hà T.”. Không ghi họ tên đầy đủ, số điện thoại, email hay số.",
   body: `Nội dung dài quá ${PRODUCT_REVIEW_LIMITS.body} ký tự.`,
   source: "Chọn nguồn của đánh giá.",
   fit: "Mức vừa vặn chưa hợp lệ.",
@@ -237,7 +237,9 @@ export default async function AdminProductReviewsPage({ params, searchParams }: 
               required
               type="text"
             />
-            <span className={hintClassName}>Dạng ngắn, không ghi số điện thoại hay email.</span>
+            <span className={hintClassName}>
+              Tên gọi + chữ cái đầu của họ, ví dụ “Lan A.”. Không ghi họ tên đầy đủ, số điện thoại hay email.
+            </span>
           </label>
           <label className="block">
             <span className={labelClassName}>Ngày khách gửi</span>

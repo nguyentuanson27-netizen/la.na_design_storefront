@@ -52,6 +52,8 @@ export async function loadCollectionRoute({
         pageSize: COLLECTION_PAGE_SIZE,
         allowCuratedComponents: true,
         inStockFirst: listing.merchandiserOrder,
+        // Pins are ranked in the query, before it cuts a page; only in the merchandiser's own order.
+        featuredProductSlugs: listing.merchandiserOrder ? collection.featuredProductSlugs : [],
         now: requestNow,
       }),
       listConfiguredCollectionDiscoveryFacets({ discovery: listing.discovery, now: requestNow }),

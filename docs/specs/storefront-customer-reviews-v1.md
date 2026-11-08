@@ -10,8 +10,8 @@
 - **Đồng ý đăng:** không lưu được nếu chưa tick xác nhận khách đồng ý (`consentConfirmedAt` NOT NULL ở DB).
 - **Nguồn hiển thị công khai:** mỗi đánh giá in nguồn ("Gửi qua Zalo"…), để người đọc phân biệt với đánh giá để lại trên website.
 - **"Đã mua hàng"** chỉ hiện khi đánh giá gắn một mã đơn mà hệ thống kiểm tra được: đơn tồn tại, `CONFIRMED`, và có dòng thuộc sản phẩm này (theo slug PDP đã đóng băng trên dòng đơn, hoặc theo sản phẩm của biến thể). Không gắn được thì không có nhãn.
-- **Ngày** là ngày của đánh giá gốc (không được ở tương lai), không phải ngày nhập.
-- **Tên hiển thị** dạng ngắn ("Lan A."); từ chối chuỗi giống số điện thoại hoặc email.
+- **Ngày** là ngày của đánh giá gốc, không phải ngày nhập, và không được sau hôm nay theo lịch Việt Nam (so ngày lịch, không so thời điểm).
+- **Tên hiển thị** chỉ nhận đúng dạng: tên gọi, hoặc một đến hai từ kèm chữ cái đầu của họ ("Lan", "Lan A.", "Thu Hà T."). Hệ thống từ chối họ tên đầy đủ ("Nguyen Thi Mai": từ cuối không phải chữ cái đầu), số điện thoại, email, chữ số và dấu ngoặc; chữ cái đầu viết thiếu dấu chấm được chuẩn hóa thành "A.".
 - **Ảnh** chỉ nhận link CDN Pancake đã được tin cậy (cùng luật với ảnh bảng size), tối đa 6 ảnh; link không hợp lệ bị từ chối, không bị bỏ im lặng.
 - **Điểm trung bình, biểu đồ sao, tỉ lệ vừa vặn** do hệ thống tính từ các đánh giá đang hiển thị. Chỉ hiện khi có **từ 5 đánh giá** (`MIN_REVIEWS_FOR_SUMMARY`); dưới ngưỡng chỉ hiện từng đánh giá. Tỉ lệ vừa vặn cần ≥ 5 người trả lời.
 - **Không phát `aggregateRating`/`Review` trong JSON-LD.** Đánh giá nhập tay không đủ điều kiện để đưa lên dữ liệu có cấu trúc; chỉ cân nhắc khi có luồng khách tự gửi gắn đơn.

@@ -720,6 +720,24 @@ function buildDiscoveryOrder(
   }
 }
 
+/** More pins than this are ignored: each is a `WHEN` in the query, and no collection pins this many. */
+const MAX_FEATURED_PINS = 100;
+
+/**
+ * The rank of a pinned product, as an `ORDER BY` term: pinned products first, in the order they were
+ * pinned (the first mention of a slug wins), everything else after them in the sort's own order.
+ * Empty when nothing is pinned, so an unpinned collection's query is exactly what it was.
+ */
+export function buildFeaturedOrder(featuredProductSlugs: readonly string[] | undefined) {
+  const slugs = [...new Set(featuredProductSlugs ?? [])].slice(0, MAX_FEATURED_PINS);
+  if (slugs.length === 0) return Prisma.empty;
+  const whens = Prisma.join(
+    slugs.map((slug, index) => Prisma.sql`WHEN ${slug}::text THEN ${index}::int`),
+    " ",
+  );
+  return Prisma.sql`CASE p."slug" ${whens} END ASC NULLS LAST,`;
+}
+
 const CATEGORY_DEFAULT_ORDERS: ReadonlyMap<string, CategoryDefaultOrder> = new Map(
   FLATTENED_CATEGORIES.flatMap((category) =>
     category.defaultOrder ? [[category.key, category.defaultOrder] as const] : [],
@@ -959,6 +977,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     discovery,
     allowCuratedComponents = false,
     inStockFirst,
+    featuredProductSlugs,
     now = new Date(),
   }: {
     shopId: number;
@@ -966,6 +985,14 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     discovery: StorefrontDiscoveryQuery;
     /** Trusted collection-route opt-in; never derived from URL search parameters. */
     allowCuratedComponents?: boolean;
+    /**
+     * A collection's pinned products, in the merchandiser's order. They are ranked in the query,
+     * after stock and before the sort's own order, so `LIMIT`/`OFFSET` cuts a list that already has
+     * them first: a pin on what would have been page two leads page one, and no page repeats or
+     * skips a product. Pass it only for the collection's own order; under a sort the shopper picked
+     * the pins would sit above a list that claims to be ordered by price or name.
+     */
+    featuredProductSlugs?: readonly string[];
     /**
      * Whether in-stock products lead before out-of-stock products.
      * Defaults to true for collections under their default sort.
@@ -989,6 +1016,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     const inStockSelect = inStockRank ? Prisma.sql`, ${inStockRank} AS "stockRank"` : Prisma.sql``;
     const inStockOrder = inStockRank ? Prisma.sql`${inStockRank} ASC,` : Prisma.sql``;
     const orderBy = buildDiscoveryOrder(discovery.sort, discovery.categoryKey);
+    const featuredOrder = buildFeaturedOrder(featuredProductSlugs);
     const variantStockCte = buildVariantStockCte(now);
 
     const [countRows, idRows, transitionRows] = await Promise.all([
@@ -1005,7 +1033,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
         FROM "ProductMirror" p
         LEFT JOIN "ProductContent" pc ON pc."productId" = p."id"
         WHERE ${productPredicate}
-        ORDER BY ${inStockOrder} ${orderBy}
+        ORDER BY ${inStockOrder} ${featuredOrder} ${orderBy}
         LIMIT ${safePageSize}
         OFFSET ${offset}
       `),

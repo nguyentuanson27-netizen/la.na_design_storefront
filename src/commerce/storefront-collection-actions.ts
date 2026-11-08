@@ -87,6 +87,7 @@ export async function loadCollectionNextPageAction(
     pageSize: COLLECTION_PAGE_SIZE,
     allowCuratedComponents: true,
     inStockFirst: listing.merchandiserOrder,
+    featuredProductSlugs: listing.merchandiserOrder ? collection.featuredProductSlugs : [],
     now: new Date(),
   });
 

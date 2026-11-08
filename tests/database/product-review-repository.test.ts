@@ -143,8 +143,8 @@ test("a product with no published review has no section", async () => {
 });
 
 test("an average appears once enough published reviews exist", async () => {
-  for (const rating of ["5", "5", "5", "4", "3"]) {
-    await repository.create(productId, value({ rating, authorName: `Khách ${rating}` }));
+  for (const [index, rating] of ["5", "5", "5", "4", "3"].entries()) {
+    await repository.create(productId, value({ rating, authorName: `Khách ${String.fromCharCode(65 + index)}.` }));
   }
   const section = await repository.readSection(productId);
   assert.equal(section?.summary?.average, 4.4);

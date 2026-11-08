@@ -176,9 +176,13 @@ export type SpecialDealsReads<P extends SpecialDealsProduct> = Readonly<{
   readCollection: (slug: string) => Promise<HomeCollectionFacts | null>;
   /** The existing ordered `HomepageFeaturedProduct` authority, visible products only. */
   listManual: () => Promise<SpecialDealsGrid<P>>;
-  /** The public collection route's own discovery read. */
+  /** The public collection route's own discovery read, pins included. */
   listCollectionPage: (
-    input: Readonly<{ discovery: StorefrontDiscoveryQuery; pageSize: number }>,
+    input: Readonly<{
+      discovery: StorefrontDiscoveryQuery;
+      pageSize: number;
+      featuredProductSlugs: readonly string[];
+    }>,
   ) => Promise<SpecialDealsGrid<P>>;
 }>;
 
@@ -218,9 +222,10 @@ export function selectManualSpecialDeals<P extends SpecialDealsProduct>(
  * The collection fallback: the public collection page's own visible first four.
  *
  * `pageProducts` is the route's unfiltered first page (its full `COLLECTION_PAGE_SIZE` window, in
- * its default order). The route pins `featuredProductSlugs` within that page and nothing else, so
- * this does the same and only then takes four. Taking four *before* pinning -- or reading a
- * four-product page -- would drop a pinned product that the collection page shows first.
+ * its default order, with `featuredProductSlugs` already ranked first by the query). Pinning again
+ * here is a no-op on such a page; it stays so a page read without the pins still ends up the way the
+ * collection page shows it. Taking four *before* pinning -- or reading a four-product page -- would
+ * drop a pinned product that the collection page shows first.
  */
 export function selectCollectionFallbackSpecialDeals<P extends Readonly<{ slug: string }>>(
   pageProducts: readonly P[],
@@ -272,6 +277,7 @@ export async function loadSpecialDeals<P extends SpecialDealsProduct>(
   const page = await reads.listCollectionPage({
     discovery: buildCollectionFirstPageDiscovery(collection.slug),
     pageSize: COLLECTION_PAGE_SIZE,
+    featuredProductSlugs: collection.featuredProductSlugs,
   });
   const products = selectCollectionFallbackSpecialDeals(
     page.products,

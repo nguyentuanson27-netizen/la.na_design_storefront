@@ -10,8 +10,10 @@ import {
   formatReviewAverage,
   formatReviewDate,
   isSafeReviewAuthorName,
+  normalizeReviewAuthorName,
   parseProductReviewInput,
   parseReviewDate,
+  vietnamToday,
   summarizeProductReviews,
   type ProductReviewRow,
 } from "../../src/commerce/product-review.ts";
@@ -89,15 +91,49 @@ test("the star count is a whole number from one to five", () => {
   for (const rating of ["1", "2", "3", "4", "5"]) assert.equal(parse({ rating }).ok, true);
 });
 
-test("a display name that could identify a customer by phone or mail is refused", () => {
-  assert.equal(isSafeReviewAuthorName("Lan A."), true);
-  assert.equal(isSafeReviewAuthorName("Minh T"), true);
-  assert.equal(isSafeReviewAuthorName("Chị Hoa (Q7)"), true);
-  assert.equal(isSafeReviewAuthorName("0987654321"), false);
-  assert.equal(isSafeReviewAuthorName("Lan 098 765 4321"), false);
-  assert.equal(isSafeReviewAuthorName("lan@example.com"), false);
-  assert.equal(isSafeReviewAuthorName(""), false);
-  assert.equal(isSafeReviewAuthorName("x".repeat(41)), false);
+test("a display name is a given name plus the family name's initial, never a full name", () => {
+  for (const [input, normalized] of [
+    ["Lan A.", "Lan A."],
+    ["Lan A", "Lan A."],
+    ["  lan   a  ", "lan A."],
+    ["Minh T", "Minh T."],
+    ["Thu Hà T.", "Thu Hà T."],
+    ["Lan", "Lan"],
+    ["Hà", "Hà"],
+    ["Ngọc Ánh Đ", "Ngọc Ánh Đ."],
+  ] as const) {
+    assert.equal(normalizeReviewAuthorName(input), normalized, input);
+    assert.equal(isSafeReviewAuthorName(input), true, input);
+  }
+
+  for (const input of [
+    "Nguyen Thi Mai", // a full name: the last word is not an initial
+    "Nguyễn Thị Mai",
+    "Mai Nguyen",
+    "Chị Hoa",
+    "Chị Hoa (Q7)",
+    "Lan A. B. C.",
+    "A.", // a lone initial says nothing
+    "L A.", // a one-letter given name is an initial too
+    "0987654321",
+    "Lan 098 765 4321",
+    "Lan 2",
+    "lan@example.com",
+    "",
+    "   ",
+    "x".repeat(41),
+  ]) {
+    assert.equal(normalizeReviewAuthorName(input), null, JSON.stringify(input));
+    assert.equal(isSafeReviewAuthorName(input), false, JSON.stringify(input));
+  }
+  assert.equal(normalizeReviewAuthorName(undefined), null);
+  assert.equal(normalizeReviewAuthorName(42), null);
+});
+
+test("the stored name is the normalised one, and a full name is refused by the form's own parser", () => {
+  const stored = parse({ authorName: "Lan A" });
+  assert.equal(stored.ok && stored.value.authorName, "Lan A.");
+  assert.deepEqual(parse({ authorName: "Nguyen Thi Mai" }), { ok: false, field: "authorName" });
   assert.deepEqual(parse({ authorName: "0987654321" }), { ok: false, field: "authorName" });
 });
 
@@ -119,7 +155,7 @@ test("a review needs words or a photograph, not only stars", () => {
   assert.equal(parse({ body: "Đẹp lắm", imageUrls: "" }).ok, true);
 });
 
-test("a review date is a real day, not in the future, and printed in Vietnam time", () => {
+test("a review date is a real day, not after today in Vietnam, and printed in Vietnam time", () => {
   assert.equal(parseReviewDate("2026-02-30", NOW), null);
   assert.equal(parseReviewDate("05/11/2026", NOW), null);
   assert.equal(parseReviewDate("2019-12-31", NOW), null);
@@ -128,6 +164,28 @@ test("a review date is a real day, not in the future, and printed in Vietnam tim
   assert.equal(parseReviewDate("2026-11-09", NOW), null, "tomorrow is not");
   assert.equal(formatReviewDate(parseReviewDate("2026-11-05", NOW)!), "05/11/2026");
   assert.deepEqual(parse({ reviewedAt: "" }), { ok: false, field: "reviewedAt" });
+});
+
+test("tomorrow is refused in the evening too: the day is compared as a calendar date, not an instant", () => {
+  // 22:10 in Vietnam on 8 November. Noon tomorrow is under 24 hours away, which an instant test lets through.
+  const evening = new Date("2026-11-08T15:10:00.000Z");
+  assert.equal(vietnamToday(evening), "2026-11-08");
+  assert.equal(parseReviewDate("2026-11-09", evening), null);
+  assert.equal(parseReviewDate("2026-11-08", evening)?.toISOString(), "2026-11-08T05:00:00.000Z");
+  assert.deepEqual(parseProductReviewInput({ ...VALID, reviewedAt: "2026-11-09" }, evening), { ok: false, field: "reviewedAt" });
+});
+
+test("shortly after midnight in Vietnam the new day is today, and the day after is not", () => {
+  // 00:30 in Vietnam on 9 November is still 8 November in UTC.
+  const justAfterMidnight = new Date("2026-11-08T17:30:00.000Z");
+  assert.equal(vietnamToday(justAfterMidnight), "2026-11-09");
+  assert.equal(parseReviewDate("2026-11-09", justAfterMidnight)?.toISOString(), "2026-11-09T05:00:00.000Z");
+  assert.equal(parseReviewDate("2026-11-10", justAfterMidnight), null);
+
+  // Just before midnight in Vietnam it is still the old day.
+  const justBeforeMidnight = new Date("2026-11-08T16:59:00.000Z");
+  assert.equal(vietnamToday(justBeforeMidnight), "2026-11-08");
+  assert.equal(parseReviewDate("2026-11-09", justBeforeMidnight), null);
 });
 
 test("body facts stay inside plausible ranges and may be left empty", () => {

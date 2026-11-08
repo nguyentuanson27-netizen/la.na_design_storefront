@@ -128,19 +128,57 @@ function oneOf<T extends string>(raw: unknown, allowed: readonly T[]): T | null 
   return (allowed as readonly string[]).includes(value) ? (value as T) : null;
 }
 
+const NAME_WORD = /^\p{L}[\p{L}'’-]*$/u;
+const NAME_INITIAL = /^\p{L}\.?$/u;
+
 /**
- * A name that could identify a customer by phone or mail is refused: reviews print `authorName`
- * as typed, and the shop's rule is a short form such as "Lan A.".
+ * The form a review's display name must take: a given name, or one or two words and the initial of
+ * the family name ("Lan", "Lan A.", "Thu Hà T."). `null` when it is anything else.
+ *
+ * Reviews print the name as stored, so the shop's rule is enforced here and not left to the form's
+ * hint: a full name such as "Nguyen Thi Mai" (the last word is not an initial), a phone number, an
+ * e-mail address, digits or brackets are all refused. A bare initial is normalised to carry its
+ * period ("Lan A" becomes "Lan A.").
  */
-export function isSafeReviewAuthorName(name: string): boolean {
-  if (name.length === 0 || name.length > PRODUCT_REVIEW_LIMITS.authorName) return false;
-  if (name.includes("@")) return false;
-  return name.replace(/[\s.\-()+]/g, "").replace(/\D/g, "").length < 6;
+export function normalizeReviewAuthorName(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const name = raw.trim().replace(/\s+/g, " ");
+  if (name.length === 0 || name.length > PRODUCT_REVIEW_LIMITS.authorName) return null;
+
+  const words = name.split(" ");
+  if (words.length > 3) return null;
+
+  if (words.length === 1) {
+    // A given name alone; a lone initial says nothing.
+    const only = words[0]!;
+    return NAME_WORD.test(only) && Array.from(only).length >= 2 ? only : null;
+  }
+
+  const initial = words[words.length - 1]!;
+  const given = words.slice(0, -1);
+  if (!NAME_INITIAL.test(initial)) return null;
+  if (!given.every((word) => NAME_WORD.test(word) && Array.from(word).length >= 2)) return null;
+  const letter = Array.from(initial)[0]!.toLocaleUpperCase("vi");
+  return `${given.join(" ")} ${letter}.`;
 }
 
-/** `YYYY-MM-DD` as the shop's local noon (Vietnam, UTC+7), so the printed day never shifts. */
+export function isSafeReviewAuthorName(name: string): boolean {
+  return normalizeReviewAuthorName(name) !== null;
+}
+
+/** Today's calendar date in Vietnam (UTC+7, no daylight saving) as `YYYY-MM-DD`. */
+export function vietnamToday(now: Date): string {
+  return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * `YYYY-MM-DD` as the shop's local noon (Vietnam, UTC+7), so the printed day never shifts. A day
+ * after today in Vietnam is refused by comparing calendar dates, not instants: an instant test
+ * lets tomorrow through in the evening, when noon tomorrow is under a day away.
+ */
 export function parseReviewDate(raw: unknown, now: Date): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text(raw));
+  const value = text(raw);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
   const date = new Date(Date.UTC(year, month - 1, day, 5, 0, 0));
@@ -152,8 +190,7 @@ export function parseReviewDate(raw: unknown, now: Date): Date | null {
     return null;
   }
   if (year < 2020) return null;
-  // Today is allowed even though its stored noon may be ahead of the clock; tomorrow is not.
-  return date.getTime() > now.getTime() + 24 * 60 * 60 * 1000 ? null : date;
+  return value > vietnamToday(now) ? null : date;
 }
 
 function parseImageUrls(raw: unknown): readonly string[] | null {
@@ -177,8 +214,8 @@ export function parseProductReviewInput(raw: RawFields, now: Date): ProductRevie
   const rating = optionalInteger(raw.rating, 1, 5);
   if (rating === null || rating === undefined) return fail("rating");
 
-  const authorName = text(raw.authorName);
-  if (!isSafeReviewAuthorName(authorName)) return fail("authorName");
+  const authorName = normalizeReviewAuthorName(raw.authorName);
+  if (authorName === null) return fail("authorName");
 
   const body = optionalText(raw.body, PRODUCT_REVIEW_LIMITS.body);
   if (body === undefined) return fail("body");
