@@ -15,7 +15,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
  * desktop composition never waits on script. The content itself stays server-rendered children.
  */
 
-const HEADING = "font-display text-xl font-normal tracking-[-0.02em]";
+const HEADING = "font-display text-xl font-normal tracking-[-0.02em] lg:text-2xl";
 
 function Chevron({ open }: Readonly<{ open: boolean }>) {
   return (
@@ -56,8 +56,8 @@ export function PdpDisclosure({
   const panelId = useId();
 
   return (
-    <section className="border-b border-black/15 lg:py-6" aria-labelledby={titleId}>
-      <h2 id={titleId} className={`hidden lg:block ${HEADING}`}>
+    <section className="border-b border-[#3B2219]/25 lg:py-6" aria-labelledby={titleId}>
+      <h2 id={titleId} className={`pdp-section-title hidden lg:block ${HEADING}`}>
         {title}
       </h2>
       <h2 className={`lg:hidden ${HEADING}`}>

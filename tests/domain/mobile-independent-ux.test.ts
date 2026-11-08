@@ -114,8 +114,9 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
 
   // One compact selector system now spans mobile, desktop and the quick sheet. Chips are drawn
   // 32px tall and 44px wide, and each sits in a label padded to the 44px practical touch target,
-  // while desktop no longer re-expands the group spacing.
-  assert.match(panel, /min-h-8 min-w-11[^"]*bg-\[#3B2219\]\/5[^"]*px-4/);
+  // while desktop no longer re-expands the group spacing. The unselected chip is a warm white with
+  // a visible brown hairline (it was a 5% tint with no border); the size and target are unchanged.
+  assert.match(panel, /min-h-8 min-w-11[^"]*border-\[#3B2219\]\/30 bg-\[#FFFDFA\][^"]*px-4/);
   assert.match(panel, /function choiceTarget\(disabled: boolean\) \{\s*return `py-1\.5 /);
   assert.doesNotMatch(panel, /lg:mt-7/);
   assert.match(panel, /function renderSelectorLegend/);
