@@ -31,8 +31,7 @@ const syncedAt = new Date("2026-11-01T00:00:00.000Z");
 const reviewedAt = (day: number) => new Date(Date.UTC(2026, 9, day, 5, 0, 0));
 const photo = (n: number) => `https://content.pancake.vn/2-2611/2026/11/8/pdp-review-${n}.jpg`;
 
-const BRAND_1 = HOMEPAGE_CONFIG.feedback.images[0]!.src;
-const BRAND_2 = HOMEPAGE_CONFIG.feedback.images[1]!.src;
+const BRAND_URLS = HOMEPAGE_CONFIG.feedback.images.slice(0, 4).map((image) => image.src);
 
 const products = {
   rich: { slug: `pdp-reviews-rich-${runId}`, name: `PDP Reviews Rich ${runId}`, code: "RVRICH1" },
@@ -170,7 +169,7 @@ const cards = (page: Page) => section(page).locator("[data-review-id]");
 
 test.beforeAll(async () => {
   await cleanup();
-  await seedFeedbackMirror(prisma, { shopId: SHOP_ID, runId, urls: [BRAND_1, BRAND_2] });
+  await seedFeedbackMirror(prisma, { shopId: SHOP_ID, runId, urls: BRAND_URLS });
   const ids = {
     rich: await createProduct(products.rich),
     few: await createProduct(products.few),
@@ -235,7 +234,7 @@ test("a product with reviews shows the rating under its name and its own photogr
   await expect(rating).toContainText("3 có ảnh");
   await expect(rating.getByRole("img", { name: "4,6 trên 5 sao" })).toBeVisible();
 
-  const strip = page.locator("[data-pdp-review-strip]");
+  const strip = page.locator("[data-pdp-photo-strip]");
   await expect(strip).toBeVisible();
   await expect(strip).toContainText("Ảnh khách diện mẫu này");
   await expect(strip).toContainText("6 ảnh thật");
@@ -345,20 +344,50 @@ test("with too few reviews the page lists them but claims no average, filter or 
   const rating = page.locator("[data-pdp-rating]");
   await expect(rating).toContainText("2 đánh giá");
   await expect(rating.getByRole("img")).toHaveCount(0);
-  await expect(page.locator("[data-pdp-review-strip]")).toHaveCount(0);
+  // No review photographs, so the strip is the shop's shared gallery, worded as the brand's.
+  await expect(page.locator("[data-pdp-photo-strip]")).toHaveAttribute("data-strip-kind", "brand");
   await expect(section(page).locator("[data-review-summary]")).toHaveCount(0);
   await expect(section(page).getByRole("group", { name: "Lọc đánh giá" })).toHaveCount(0);
   await expect(cards(page)).toHaveCount(2);
   await assertPageQuality(page);
 });
 
-test("a product with no reviews renders exactly what it did before, and keeps the brand gallery", async ({ page }) => {
+test("a product with no reviews shows the shared gallery's strip under the price, worded as the brand's", async ({ page }) => {
   await page.goto(`${BASE_URL}/shop/${products.none.slug}`, { waitUntil: "networkidle" });
 
   await expect(page.locator("[data-pdp-rating]")).toHaveCount(0);
   await expect(page.locator("#pdp-reviews")).toHaveCount(0);
-  await expect(page.locator("[data-pdp-review-strip]")).toHaveCount(0);
-  // The shared brand gallery stands in, as it did before reviews existed.
+
+  const strip = page.locator("[data-pdp-photo-strip]");
+  await expect(strip).toHaveAttribute("data-strip-kind", "brand");
+  await expect(strip).toHaveAttribute("href", "#pdp-feedback");
+  await expect(strip).toContainText("Khách hàng La.na Design");
+  await expect(strip).toContainText("Xem ảnh khách mặc thật · 4 ảnh");
+  await expect(strip).not.toContainText("mẫu này");
+
+  // Under the price and above the purchase buttons; the link it replaces is gone from the panel.
+  const priceBox = await page.getByText("1.290.000", { exact: false }).first().boundingBox();
+  const stripBox = await strip.boundingBox();
+  const buyBox = await page.getByRole("button", { name: /Mua ngay/ }).first().boundingBox();
+  expect(stripBox!.y).toBeGreaterThan(priceBox!.y);
+  expect(stripBox!.y).toBeLessThan(buyBox!.y);
+  await expect(page.getByRole("link", { name: /^Xem ảnh khách hàng diện/ })).toHaveCount(0);
+
+  // It leads to the shared brand rail, which is still there.
   await expect(page.locator('[data-pdp-region="feedback"]')).toHaveCount(1);
-  await expect(page.getByRole("link", { name: /ảnh khách hàng diện/i })).toHaveCount(1);
+  await expect(page.locator("#pdp-feedback")).toBeAttached();
+  await assertPageQuality(page);
+});
+
+test("the shared gallery's strip keeps the same four photographs for a product from one visit to the next", async ({ page }) => {
+  const thumbnails = async (slug: string) => {
+    await page.goto(`${BASE_URL}/shop/${slug}`, { waitUntil: "networkidle" });
+    return page.locator("[data-pdp-photo-strip] img").evaluateAll((images) =>
+      images.map((image) => new URL((image as HTMLImageElement).currentSrc || (image as HTMLImageElement).src).searchParams.get("url")),
+    );
+  };
+  const one = await thumbnails(products.none.slug);
+  const again = await thumbnails(products.none.slug);
+  expect(again, "a product keeps its selection from one visit to the next").toEqual(one);
+  expect(one.length).toBe(4);
 });

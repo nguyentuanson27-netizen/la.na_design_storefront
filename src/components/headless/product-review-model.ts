@@ -1,6 +1,5 @@
 import {
   MIN_REVIEWS_FOR_SUMMARY,
-  MIN_REVIEW_PHOTOS_FOR_STRIP,
   formatReviewAverage,
   type ProductReviewSection,
   type ProductReviewView,
@@ -82,11 +81,6 @@ export function distributionPercent(count: number, total: number): number {
 /** The words next to the stars under the product name. */
 export function ratingLinkText(section: ProductReviewSection): string {
   return `${section.count} đánh giá`;
-}
-
-/** Whether the strip under the price has enough of this product's own photographs to be shown. */
-export function showsReviewPhotoStrip(section: ProductReviewSection | null): boolean {
-  return section !== null && section.photoCount >= MIN_REVIEW_PHOTOS_FOR_STRIP;
 }
 
 /** Share of the fit bar, as rounded whole percents that always add up to 100. */

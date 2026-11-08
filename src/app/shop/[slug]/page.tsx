@@ -7,11 +7,13 @@ import { ProductCard, type ProductCardTone } from "@/components/brand/product-ca
 import { PdpClampedContent, PdpDisclosure } from "@/components/brand/pdp-disclosure";
 import { BrandProductDetail } from "@/components/brand/product-detail";
 import { ProductReviews } from "@/components/brand/product-reviews";
-import { ProductRatingLink, ReviewPhotoStrip } from "@/components/brand/product-review-summary";
+import { CustomerPhotoStrip, ProductRatingLink } from "@/components/brand/product-review-summary";
 import {
-  PRODUCT_REVIEW_PHOTOS_ANCHOR,
-  showsReviewPhotoStrip,
-} from "@/components/headless/product-review-model";
+  PRODUCT_FEEDBACK_ANCHOR,
+  resolveCustomerPhotoStrip,
+  stripReplacesFeedbackLink,
+} from "@/components/headless/customer-photo-strip-model";
+import { PRODUCT_REVIEW_PHOTOS_ANCHOR } from "@/components/headless/product-review-model";
 import { VoucherIcon } from "@/components/brand/voucher-icons";
 import type { PurchaseAssuranceItem } from "@/routes/evergreen-model";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -30,7 +32,7 @@ import { loadProductRoute, type ProductRouteData, type ProductRouteProps } from 
 const relatedTones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
 /** The in-page target of the "see customer photographs" link under the purchase buttons. */
-const FEEDBACK_SECTION_ID = "pdp-feedback";
+const FEEDBACK_SECTION_ID = PRODUCT_FEEDBACK_ANCHOR;
 
 const PANEL_LINK =
   "underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors hover:decoration-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219]";
@@ -77,6 +79,15 @@ function render(data: ProductRouteData) {
   const feedback = data.feedback !== null && data.feedback.scope === "brand" && reviewsHavePhotos
     ? null
     : data.feedback;
+  // The photographs under the price: this product's review photographs, its own tagged ones, or the
+  // shop's shared gallery -- each worded for what it is. A product or brand strip also carries the
+  // link the purchase panel used to hold, so that link steps aside for it.
+  const photoStrip = resolveCustomerPhotoStrip({
+    reviews: data.reviews,
+    feedback,
+    slug: data.slug,
+    brandName: BRAND.identity.name,
+  });
 
   const identity = (
     <>
@@ -264,7 +275,7 @@ function render(data: ProductRouteData) {
           </li>
         ))}
       </ul>
-      {feedback === null ? null : (
+      {feedback === null || stripReplacesFeedbackLink(photoStrip) ? null : (
         <p className="mt-2 flex items-center gap-2.5 text-sm text-[#3B2219]/80">
           <AssuranceIcon kind="photos" />
           <a className={PANEL_LINK} href={`#${FEEDBACK_SECTION_ID}`}>
@@ -311,13 +322,13 @@ function render(data: ProductRouteData) {
         sizeGuideZaloHref={zaloHref}
         purchaseAssurance={purchaseAssurance}
         purchaseOffers={
-          showsReviewPhotoStrip(data.reviews) && data.reviews !== null ? (
+          photoStrip === null ? (
+            purchaseOffers
+          ) : (
             <>
-              <ReviewPhotoStrip section={data.reviews} />
+              <CustomerPhotoStrip strip={photoStrip} />
               {purchaseOffers}
             </>
-          ) : (
-            purchaseOffers
           )
         }
         urgency={data.urgency}
