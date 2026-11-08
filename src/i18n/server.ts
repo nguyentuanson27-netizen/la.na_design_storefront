@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { headers } from "next/headers";
 
-import { EN_MESSAGES } from "./catalog/en.ts";
+import { EN_CLIENT_MESSAGES, EN_MESSAGES } from "./catalog/en.ts";
 import { DEFAULT_LOCALE, LOCALE_REQUEST_HEADER, localizeHref, parseLocale, type Locale } from "./locale.ts";
 import { renderRich } from "./rich.tsx";
 import { createTranslator, type Messages, type Translator } from "./translate.ts";
@@ -20,6 +20,11 @@ export async function getLocale(): Promise<Locale> {
 
 export function messagesFor(locale: Locale): Messages {
   return locale === "en" ? EN_MESSAGES : {};
+}
+
+/** The part of the catalog a client component may need; this is what goes to the browser. */
+export function clientMessagesFor(locale: Locale): Messages {
+  return locale === "en" ? EN_CLIENT_MESSAGES : {};
 }
 
 export type RequestI18n = Readonly<{

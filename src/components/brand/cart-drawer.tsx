@@ -352,7 +352,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                             </button>
                           </div>
                           <p className="mt-1.5 text-[0.72rem] font-medium text-amber-800 empty:hidden" aria-live="polite" data-line-notice>
-                            {notice?.message}
+                            {notice?.message ? t(notice.message) : null}
                           </p>
                         </div>
                       </li>

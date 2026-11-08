@@ -4,7 +4,7 @@ import {
   ListingShell,
 } from "@/components/brand/listing-chrome";
 import { SaleListingBody, SaleListingSubnav } from "@/components/brand/sale-listing";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
 import { buildSaleMetadata, SALE_DESCRIPTION, SALE_TITLE } from "@/routes/metadata/sale";
 import { loadSaleRoute, type SaleRouteProps } from "@/routes/sale";
@@ -14,11 +14,11 @@ import { loadSaleRoute, type SaleRouteProps } from "@/routes/sale";
  * stay in `@/routes/sale`: this page changed how the listing looks, not what it selects.
  */
 
-function render(data: FlashSaleViewModel) {
+function render(data: FlashSaleViewModel, { t }: RequestI18n) {
   return (
     <ListingShell>
       <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: SALE_TITLE }]} />
-      <ListingHeader eyebrow="Khuyến mãi" title={SALE_TITLE}>
+      <ListingHeader eyebrow={t("Khuyến mãi")} title={SALE_TITLE}>
         <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">{SALE_DESCRIPTION}</p>
         <SaleListingSubnav currentHref="/sale" />
       </ListingHeader>

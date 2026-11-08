@@ -26,7 +26,7 @@ import {
   parseListingView,
   type ListingView,
 } from "@/components/headless/listing-view-model";
-import { getLocale, messagesFor } from "@/i18n/server";
+import { clientMessagesFor, getLocale } from "@/i18n/server";
 import { type Locale } from "@/i18n/locale";
 import { createTranslator } from "@/i18n/translate";
 import { readRequestScriptNonce } from "@/security/script-nonce-policy";
@@ -121,7 +121,7 @@ export function SiteChrome({
   children,
 }: Readonly<{ model: SiteChromeModel; children: ReactNode }>) {
   return (
-    <SiteDocument locale={model.locale} messages={messagesFor(model.locale)}>
+    <SiteDocument locale={model.locale} messages={clientMessagesFor(model.locale)}>
       <TrackingBootstrap nonce={model.scriptNonce} />
       <GoogleTagManager nonce={model.scriptNonce} />
       <ChatGptAdsPixel nonce={model.scriptNonce} />

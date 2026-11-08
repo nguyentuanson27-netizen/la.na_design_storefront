@@ -117,7 +117,7 @@ function render(data: CartRouteViewModel, { t }: RequestI18n) {
                 id={lineAnchor(line)}
                 key={line.variantId}
                 tabIndex={line.available ? undefined : -1}
-                aria-label={line.available ? undefined : `${line.productName}, cần xử lý: ${line.availabilityLabel}`}
+                aria-label={line.available ? undefined : t("{name}, cần xử lý: {reason}", { name: line.productName, reason: t(line.availabilityLabel) })}
               >
                 <div>
                   {line.productSlug ? (
@@ -167,11 +167,11 @@ function render(data: CartRouteViewModel, { t }: RequestI18n) {
                       priceText={line.priceText}
                     />
                   </p>}
-                  {line.paidSegments && !line.paidSegmentPrices ? <p className="mt-1 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
+                  {line.paidSegments && !line.paidSegmentPrices ? <p className="mt-1 text-sm">{t("Giá sau ưu đãi: {prices}", { prices: line.paidSegments.join(" + ") })}</p> : null}
                   <CartLineUrgency className="mt-1.5" flashRemainingMs={line.flashRemainingMs} lowStockText={line.lowStockText} />
                   {line.available ? null : (
                     <p className="mt-1.5 text-xs font-semibold uppercase tracking-[0.12em]" data-line-problem="">
-                      {`Cần xử lý: ${line.availabilityLabel}`}
+                      {t("Cần xử lý: {reason}", { reason: t(line.availabilityLabel) })}
                     </p>
                   )}
                   <BrandCartLineControls
@@ -217,9 +217,9 @@ function render(data: CartRouteViewModel, { t }: RequestI18n) {
             <>
             <div className="mt-5 flex items-baseline justify-between gap-6 border-b border-black/15 pb-5">
               <span className="text-sm text-black/75">
-                {data.hasUnavailableLines ? "Tạm tính khả dụng" : "Tạm tính"}
+                {t(data.hasUnavailableLines ? "Tạm tính khả dụng" : "Tạm tính")}
               </span>
-              <strong className="text-xl font-medium tracking-[-0.02em]">{data.subtotalText}</strong>
+              <strong className="text-xl font-medium tracking-[-0.02em]">{t(data.subtotalText)}</strong>
             </div>
             <PromotionSavings className="mt-4" rows={data.promotions?.savings} />
             {data.shippingBaseFeeText ? (
@@ -236,11 +236,13 @@ function render(data: CartRouteViewModel, { t }: RequestI18n) {
             </p>
           ) : null}
           <p className="mt-4 text-sm leading-6 text-black/75">
-            {data.summary
-              ? "Giá, tồn kho và phí vận chuyển sẽ được kiểm tra lại trước khi tạo đơn."
-              : data.shippingBaseFeeText
-                ? "Phí vận chuyển chính xác sẽ hiện ở bước thanh toán."
-                : "Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây."}
+            {t(
+              data.summary
+                ? "Giá, tồn kho và phí vận chuyển sẽ được kiểm tra lại trước khi tạo đơn."
+                : data.shippingBaseFeeText
+                  ? "Phí vận chuyển chính xác sẽ hiện ở bước thanh toán."
+                  : "Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây.",
+            )}
           </p>
           {data.preorderNotice === null ? null : (
             <BrandPreorderFulfillmentNotice
@@ -261,14 +263,14 @@ function render(data: CartRouteViewModel, { t }: RequestI18n) {
             <OrderTrustLine className="mt-3" />
           ) : problemLines.length === 0 ? (
             <p className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6 text-black/75">
-              {data.benefitsNotice ?? "Hãy xử lý các dòng chưa khả dụng trước khi thanh toán."}
+              {t(data.benefitsNotice ?? "Hãy xử lý các dòng chưa khả dụng trước khi thanh toán.")}
             </p>
           ) : (
             /* UX-08 / AC-19: every line that blocks checkout, by name and reason, each a way to that line --
                shown even when a benefits notice also applies, which then follows the list. */
             <div className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6" data-cart-problem-lines>
               <p className="font-semibold">
-                {`Nàng xem lại ${problemLines.length} sản phẩm trước khi đặt hàng nhé:`}
+                {t("Nàng xem lại {count} sản phẩm trước khi đặt hàng nhé:", { count: problemLines.length })}
               </p>
               <ul className="mt-2 space-y-1">
                 {problemLines.map((line) => (
@@ -301,7 +303,12 @@ function render(data: CartRouteViewModel, { t }: RequestI18n) {
   );
 }
 
-const route = createStorefrontRoute<CartRouteProps, CartRouteViewModel>({ load: loadCartRoute, render });
+const route = createStorefrontRoute<CartRouteProps, CartRouteViewModel>({
+  load: loadCartRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: () => buildCartMetadata(),
+  render,
+});
 
-export const metadata = buildCartMetadata();
+export const generateMetadata = route.generateMetadata;
 export default route.Page;

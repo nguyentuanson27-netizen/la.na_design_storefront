@@ -54,7 +54,9 @@ function compileTemplates(messages: Messages): readonly CompiledTemplate[] {
     for (const match of source.matchAll(PLACEHOLDER)) {
       const before = source.slice(cursor, match.index);
       literal += before.length;
-      pattern += escapeRegExp(before) + "(.+?)";
+      // A slot never reaches across a " | " title separator or a line break, so a short pattern
+      // ("Về {name}") cannot swallow a longer title that merely starts the same way.
+      pattern += escapeRegExp(before) + "([^|\\n]+?)";
       names.push(match[1]!);
       cursor = match.index! + match[0].length;
     }
@@ -63,7 +65,7 @@ function compileTemplates(messages: Messages): readonly CompiledTemplate[] {
     pattern += escapeRegExp(rest);
     // A template made only of placeholders would match everything.
     if (literal === 0) continue;
-    compiled.push({ pattern: new RegExp(`^${pattern}$`, "s"), names, target, weight: literal });
+    compiled.push({ pattern: new RegExp(`^${pattern}$`), names, target, weight: literal });
   }
   // Most specific first: the template with the most fixed text wins.
   compiled.sort((a, b) => b.weight - a.weight);
@@ -75,16 +77,27 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function lookup(messages: Messages, source: string): string | undefined {
+function lookup(messages: Messages, source: string, depth = 0): string | undefined {
   if (Object.hasOwn(messages, source)) return messages[source];
+  if (depth > 3) return undefined;
   for (const template of compileTemplates(messages)) {
     const match = template.pattern.exec(source);
     if (match === null) continue;
     const captured: Record<string, string> = {};
     template.names.forEach((name, index) => {
-      captured[name] = match[index + 1]!;
+      // A captured piece can itself be catalog text ("1 quà", "2 giờ 5 phút"): translate it too.
+      const piece = match[index + 1]!;
+      captured[name] = lookup(messages, piece, depth + 1) ?? piece;
     });
     return interpolate(template.target, captured);
+  }
+  // "Màu / Kích cỡ": a list of labels joined by " / " is translated label by label.
+  if (source.includes(" / ")) {
+    const parts = source.split(" / ");
+    const translated = parts.map((part) => lookup(messages, part, depth + 1));
+    if (translated.some((part) => part !== undefined)) {
+      return translated.map((part, index) => part ?? parts[index]!).join(" / ");
+    }
   }
   return undefined;
 }

@@ -5,7 +5,7 @@ import {
   ListingShell,
 } from "@/components/brand/listing-chrome";
 import { SaleListingBody, SaleListingSubnav } from "@/components/brand/sale-listing";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
 import { buildSaleMetadata, SALE_LISTING_DESCRIPTIONS, SALE_TITLE } from "@/routes/metadata/sale";
 import { loadSaleRoute, type SaleRouteProps } from "@/routes/sale";
@@ -15,7 +15,7 @@ import { loadSaleRoute, type SaleRouteProps } from "@/routes/sale";
 const KIND = "PROMOTION";
 const listing = saleListingByKind(KIND);
 
-function render(data: FlashSaleViewModel) {
+function render(data: FlashSaleViewModel, { t }: RequestI18n) {
   return (
     <ListingShell>
       <ListingBreadcrumbs

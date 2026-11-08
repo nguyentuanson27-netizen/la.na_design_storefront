@@ -23,7 +23,7 @@ function render(data: TrackOrderViewModel, { t }: RequestI18n) {
             {t("Nhập mã đơn và số điện thoại đã dùng khi đặt hàng.")}
           </p>
           <p className="mt-4 text-sm leading-6 text-black/75">
-            Kết quả chỉ hiển thị trạng thái xử lý cơ bản của đơn hàng. {BRAND.identity.name} không hiển thị địa chỉ, ghi chú hoặc thông tin nội bộ của hệ thống bán hàng tại đây.
+            {t("Kết quả chỉ hiển thị trạng thái xử lý cơ bản của đơn hàng. {name} không hiển thị địa chỉ, ghi chú hoặc thông tin nội bộ của hệ thống bán hàng tại đây.", { name: BRAND.identity.name })}
           </p>
         </div>
 
@@ -35,8 +35,10 @@ function render(data: TrackOrderViewModel, { t }: RequestI18n) {
 
 const route = createStorefrontRoute<TrackOrderRouteProps, TrackOrderViewModel>({
   load: loadTrackOrderRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: () => buildTrackOrderMetadata(),
   render,
 });
 
-export const metadata = buildTrackOrderMetadata();
+export const generateMetadata = route.generateMetadata;
 export default route.Page;

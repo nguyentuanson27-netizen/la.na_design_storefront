@@ -97,7 +97,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
     >
       {/* Live region for screen reader announcements */}
       <div aria-live="polite" className="sr-only">
-        {announcement}
+        {t(announcement)}
       </div>
 
       {/* Top Header Bar */}
@@ -172,7 +172,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
           {result.categories.length > 0 ? (
             <div>
               <p className="eyebrow text-[#70584B] mb-4">
-                {query.trim().length > 0 ? "Danh mục phù hợp" : "Danh mục nổi bật"}
+                {t(query.trim().length > 0 ? "Danh mục phù hợp" : "Danh mục nổi bật")}
               </p>
               <div className="flex flex-wrap gap-2.5">
                 {result.categories.map((category) => (
@@ -240,7 +240,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
           ) : query.trim().length > 0 && !isLoading ? (
             <div className="py-8 text-center">
               <p className="font-display text-lg text-[#2A1810]">
-                Không tìm thấy sản phẩm nào phù hợp với &ldquo;{query.trim()}&rdquo;
+                {t("Không tìm thấy sản phẩm nào phù hợp với “{query}”", { query: query.trim() })}
               </p>
               <p className="mt-2 text-xs text-[#70584B]">
                 {t("Nàng kiểm tra lại chính tả hoặc thử từ khóa khác nhé.")}
@@ -256,7 +256,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
                 onClick={onClose}
                 className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.14em] text-[#2A1810] underline underline-offset-4"
               >
-                Xem tất cả kết quả cho &ldquo;{query.trim()}&rdquo; →
+                {t("Xem tất cả kết quả cho “{query}” →", { query: query.trim() })}
               </Link>
             </div>
           ) : null}

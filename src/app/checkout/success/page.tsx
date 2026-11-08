@@ -27,14 +27,14 @@ function render(data: CheckoutSuccessViewModel, { t }: RequestI18n) {
           <div role="status">
             <p className="font-display text-xl md:text-2xl">{t("Cảm ơn nàng đã đặt hàng.")}</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
-              Mã đơn{" "}
+              {t("Mã đơn")}{" "}
               <strong className="whitespace-nowrap text-lg font-semibold tracking-[0.08em] text-black">
                 {data.orderCode}
               </strong>
               .{" "}
               {data.paymentMethod === "BANK_TRANSFER"
-                ? `${BRAND.identity.name} sẽ xác nhận đơn và giao hàng sau khi nhận được tiền chuyển khoản.`
-                : `${BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.`}
+                ? t("{name} sẽ xác nhận đơn và giao hàng sau khi nhận được tiền chuyển khoản.", { name: BRAND.identity.name })
+                : t("{name} sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.", { name: BRAND.identity.name })}
             </p>
             {data.bankTransfer ? (
               <section className="mt-6 border border-black/20 p-5" aria-labelledby="bank-transfer-title" data-bank-transfer>
@@ -71,7 +71,7 @@ function render(data: CheckoutSuccessViewModel, { t }: RequestI18n) {
               </section>
             ) : data.paymentMethod === "BANK_TRANSFER" ? (
               <p className="mt-6 border border-black/20 p-5 text-sm leading-6" data-bank-transfer-unavailable>
-                Đây là đơn chuyển khoản. {BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để gửi thông tin chuyển khoản cho nàng.
+                {t("Đây là đơn chuyển khoản. {name} sẽ liên hệ qua số điện thoại đã cung cấp để gửi thông tin chuyển khoản cho nàng.", { name: BRAND.identity.name })}
               </p>
             ) : null}
             <p className="mt-2 text-sm leading-6 text-black/75">
@@ -121,8 +121,10 @@ function render(data: CheckoutSuccessViewModel, { t }: RequestI18n) {
 
 const route = createStorefrontRoute<CheckoutSuccessRouteProps, CheckoutSuccessViewModel>({
   load: loadCheckoutSuccessRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: () => buildCheckoutSuccessMetadata(),
   render,
 });
 
-export const metadata = buildCheckoutSuccessMetadata();
+export const generateMetadata = route.generateMetadata;
 export default route.Page;

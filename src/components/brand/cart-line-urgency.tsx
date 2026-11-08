@@ -57,7 +57,7 @@ export function CartLineUrgency({
             </svg>
             FLASH SALE ·
           </span>
-          <span aria-hidden="true" className="whitespace-nowrap">Còn {clock.text}</span>
+          <span aria-hidden="true" className="whitespace-nowrap">{t("Còn {time}", { time: t(clock.text) })}</span>
           <span className="sr-only">{clock.spoken}</span>
         </p>
       ) : (

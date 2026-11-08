@@ -25,8 +25,10 @@ function render(_data: unknown, { t }: RequestI18n) {
 
 const route = createStorefrontRoute<AccountRouteProps, AccountViewModel>({
   load: loadAccountRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: () => buildAccountMetadata(),
   render,
 });
 
-export const metadata = buildAccountMetadata();
+export const generateMetadata = route.generateMetadata;
 export default route.Page;

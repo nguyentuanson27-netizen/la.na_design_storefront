@@ -408,7 +408,7 @@ export function GuestCheckoutForm({
     const message = visibleErrors[field];
     return message ? (
       <span className="mt-2 block text-sm font-normal text-[#b42318]" id={errorId(field)}>
-        {message}
+        {t(message)}
       </span>
     ) : null;
   }
@@ -515,7 +515,7 @@ export function GuestCheckoutForm({
             onClick={() => setIsSummaryOpen((open) => !open)}
             className="flex min-h-11 w-full items-center justify-between gap-4 text-left text-sm font-semibold"
           >
-            <span>{summaryLabel}</span>
+            <span>{t(summaryLabel)}</span>
             <span aria-hidden="true">{isSummaryOpen ? "−" : "＋"}</span>
           </button>
           <div id={summaryContentId} className={`${isSummaryOpen ? "block" : "hidden"} pt-5`}>
@@ -611,7 +611,7 @@ export function GuestCheckoutForm({
                 {...fieldA11y("province")}
               >
                 <option value="">
-                  {provinceLoading ? "Đang tải tỉnh/thành…" : "Chọn tỉnh/thành phố"}
+                  {t(provinceLoading ? "Đang tải tỉnh/thành…" : "Chọn tỉnh/thành phố")}
                 </option>
                 {provinces.map((province) => (
                   <option key={province.id} value={province.id}>
@@ -643,11 +643,13 @@ export function GuestCheckoutForm({
                 {...fieldA11y("commune")}
               >
                 <option value="">
-                  {communeLoading
-                    ? "Đang tải phường/xã…"
-                    : provinceRef
-                      ? "Chọn phường/xã"
-                      : "Chọn tỉnh/thành phố trước"}
+                  {t(
+                    communeLoading
+                      ? "Đang tải phường/xã…"
+                      : provinceRef
+                        ? "Chọn phường/xã"
+                        : "Chọn tỉnh/thành phố trước",
+                  )}
                 </option>
                 {communes.map((commune) => (
                   <option key={commune.id} value={commune.id}>
@@ -669,7 +671,7 @@ export function GuestCheckoutForm({
             className="flex flex-wrap items-center justify-between gap-3 border border-black/25 px-4 py-3 text-sm"
             role="status"
           >
-            <span>{geoError.message}</span>
+            <span>{t(geoError.message)}</span>
             <button
               className="font-semibold uppercase tracking-[0.1em] underline underline-offset-4"
               onClick={retryGeoRead}
@@ -755,8 +757,8 @@ export function GuestCheckoutForm({
           className={`border px-5 py-4 ${feedbackTone}`}
           role="status"
         >
-          <p className="font-semibold">{feedback.title}</p>
-          <p className="mt-1 text-sm leading-6 opacity-80">{feedback.message}</p>
+          <p className="font-semibold">{t(feedback.title)}</p>
+          <p className="mt-1 text-sm leading-6 opacity-80">{t(feedback.message)}</p>
           {!feedback.mayRetry && !submitState?.ok ? (
             <Link className="mt-3 inline-block text-sm font-semibold underline underline-offset-4" href="/cart">
               {t("Quay lại giỏ hàng")}
@@ -778,13 +780,13 @@ export function GuestCheckoutForm({
 
       {giftHint ? (
         <div className="flex flex-wrap items-center justify-between gap-x-4 border-t border-black/15 pt-2 text-sm" data-checkout-gift-hint>
-          <p>{giftHint.text}</p>
+          <p>{t(giftHint.text)}</p>
           {giftHint.canChoose ? <button type="button" className="min-h-11 font-semibold underline underline-offset-4" onClick={openGiftPicker}>{t("Chọn quà")}</button> : null}
         </div>
       ) : null}
 
       {/* Always mounted, so a reason that appears later is announced; empty and out of layout otherwise. */}
-      <p id={submitReasonId} className="text-sm empty:hidden" aria-live="polite" data-checkout-submit-reason>{submitLockReason}</p>
+      <p id={submitReasonId} className="text-sm empty:hidden" aria-live="polite" data-checkout-submit-reason>{submitLockReason ? t(submitLockReason) : ""}</p>
 
       <button
         aria-describedby={submitLockReason ? submitReasonId : undefined}
@@ -794,7 +796,7 @@ export function GuestCheckoutForm({
         ref={submitButton}
         type="submit"
       >
-        {isSubmitting ? "Đang đặt hàng…" : paymentMethod === "BANK_TRANSFER" ? "Đặt hàng và chuyển khoản" : "Đặt hàng COD"}
+        {t(isSubmitting ? "Đang đặt hàng…" : paymentMethod === "BANK_TRANSFER" ? "Đặt hàng và chuyển khoản" : "Đặt hàng COD")}
       </button>
       <OrderTrustLine facts={orderTrust.facts} />
 
@@ -808,11 +810,11 @@ export function GuestCheckoutForm({
               order all run through `handleSubmit` exactly as the primary button does. */}
           {/* Named apart from the primary button so assistive tech and tests can tell the two apart. */}
           <button type="button" className="btn btn--primary px-4" disabled={submitDisabled} onClick={() => formRef.current?.requestSubmit()}>
-            {isSubmitting ? "Đang gửi…" : "Đặt hàng"}
+            {t(isSubmitting ? "Đang gửi…" : "Đặt hàng")}
           </button>
         </MobileStickyCta>
       ) : null}
-      <CheckoutGiftReminderDialog open={reminder.state === "open"} disabled={submitDisabled} description={benefit?.unclaimedText ?? "Nàng còn quà chưa chọn."} canChoose={Boolean(giftPicker?.campaigns.some((c) => (c.selectable ?? 0) > 0))} onShown={reminder.recordShown} onClose={() => { reminder.markSeen(); submitButton.current?.focus(); }} onChoose={chooseGifts} onContinue={() => { reminder.markSeen(); formRef.current?.requestSubmit(); }} />
+      <CheckoutGiftReminderDialog open={reminder.state === "open"} disabled={submitDisabled} description={t(benefit?.unclaimedText ?? "Nàng còn quà chưa chọn.")} canChoose={Boolean(giftPicker?.campaigns.some((c) => (c.selectable ?? 0) > 0))} onShown={reminder.recordShown} onClose={() => { reminder.markSeen(); submitButton.current?.focus(); }} onChoose={chooseGifts} onContinue={() => { reminder.markSeen(); formRef.current?.requestSubmit(); }} />
     </form>
   );
 }

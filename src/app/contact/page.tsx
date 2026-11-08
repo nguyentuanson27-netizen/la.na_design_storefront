@@ -39,7 +39,7 @@ function render(data: ContactViewModel, { t }: RequestI18n) {
       <PageHeader
         eyebrow={t("Hỗ trợ")}
         title={t("Liên hệ")}
-        lead={<>Các kênh liên hệ chính thức của {BRAND.identity.name}. Đội ngũ hỗ trợ trả lời trong giờ làm việc bên dưới.</>}
+        lead={t("Các kênh liên hệ chính thức của {name}. Đội ngũ hỗ trợ trả lời trong giờ làm việc bên dưới.", { name: BRAND.identity.name })}
       />
 
       <ContactForm />
@@ -69,26 +69,26 @@ function render(data: ContactViewModel, { t }: RequestI18n) {
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">{t("Giờ hỗ trợ")}</dt>
-          <dd className="mt-2 text-black/70">{data.supportHours}</dd>
+          <dd className="mt-2 text-black/70">{t(data.supportHours)}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
             {t("Tiếp nhận và giải quyết khiếu nại")}
           </dt>
-          <dd className="mt-2 text-black/70">{data.complaintResponse}</dd>
+          <dd className="mt-2 text-black/70">{t(data.complaintResponse)}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Fanpage</dt>
           <dd className="mt-2">
             <a className={CONTACT_LINK} href={data.fanpageUrl} rel="noreferrer" target="_blank">
-              {data.fanpageLabel}
+              {t(data.fanpageLabel)}
             </a>
           </dd>
         </div>
       </dl>
 
       <p className="mt-12 max-w-2xl text-sm leading-6 text-black/65">
-        Cần tra cứu một đơn hàng đã đặt?{" "}
+        {t("Cần tra cứu một đơn hàng đã đặt?")}{" "}
         <Link className={CONTACT_LINK} href="/track-order">
           {t("Tra cứu đơn hàng")}
         </Link>{" "}

@@ -19,7 +19,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { EN_MESSAGES } from "../src/i18n/catalog/en.ts";
+import { EN_CLIENT_MESSAGES, EN_MESSAGES } from "../src/i18n/catalog/en.ts";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const VIETNAMESE = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i;
@@ -31,6 +31,7 @@ const SKIPPED = [
   "src/generated",
   "src/i18n/catalog",
   "src/brand/messages.en.ts",
+  "src/brand/messages.policy.en.ts",
 ];
 const SKIPPED_FILE = /(admin|gift-quantity-admin-feedback|voucher-admin-feedback|promotion-admin-feedback|shipping-campaign-admin-feedback)/;
 
@@ -56,6 +57,8 @@ function literal(raw: string): string {
 
 const files = [...walk("src")];
 const missing = new Map<string, string[]>();
+/** Keys a client component asks for that exist only in the server catalog: the browser would never find them. */
+const serverOnlyInClient = new Map<string, string[]>();
 const unwrapped = new Map<string, number>();
 let called = 0;
 
@@ -64,11 +67,17 @@ for (const file of files) {
   for (const match of source.matchAll(CALL)) {
     const key = literal(match[1]!);
     if (!VIETNAMESE.test(key) && !key.includes("{")) continue;
+    // A template literal is built at run time; its text is matched by the catalog's pattern keys.
+    if (key.includes("${")) continue;
     called += 1;
     if (!Object.hasOwn(EN_MESSAGES, key)) {
       const list = missing.get(key) ?? [];
       list.push(file);
       missing.set(key, list);
+    } else if (/^\s*["']use client["']/.test(source) && !Object.hasOwn(EN_CLIENT_MESSAGES, key)) {
+      const list = serverOnlyInClient.get(key) ?? [];
+      list.push(file);
+      serverOnlyInClient.set(key, list);
     }
   }
   const wrappedRanges: Array<[number, number]> = [];
@@ -88,7 +97,10 @@ for (const file of files) {
 const args = process.argv.slice(2);
 if (args.includes("--missing")) {
   for (const [key, where] of [...missing].sort()) console.log(`${JSON.stringify(key)}  <- ${[...new Set(where)].join(", ")}`);
-  process.exit(missing.size === 0 ? 0 : 1);
+  for (const [key, where] of [...serverOnlyInClient].sort()) {
+    console.log(`${JSON.stringify(key)}  <- CLIENT-ONLY GAP, move to a client catalog: ${[...new Set(where)].join(", ")}`);
+  }
+  process.exit(missing.size + serverOnlyInClient.size === 0 ? 0 : 1);
 }
 const unwrappedIndex = args.indexOf("--unwrapped");
 if (unwrappedIndex !== -1) {
@@ -124,7 +136,7 @@ if (literalsIndex !== -1) {
 
 const totalUnwrapped = [...unwrapped.values()].reduce((sum, n) => sum + n, 0);
 console.log(`catalog entries:         ${Object.keys(EN_MESSAGES).length}`);
-console.log(`t()/rich() sources:      ${called} (${missing.size} distinct with no English entry)`);
+console.log(`t()/rich() sources:      ${called} (${missing.size} distinct with no English entry, ${serverOnlyInClient.size} used by client code but server-only)`);
 console.log(`files with unwrapped vi: ${unwrapped.size} (${totalUnwrapped} lines)`);
 console.log("");
 console.log("most unwrapped Vietnamese lines:");

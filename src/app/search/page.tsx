@@ -31,8 +31,10 @@ function render(_data: unknown, { t }: RequestI18n) {
 
 const route = createStorefrontRoute<SearchRouteProps, SearchViewModel>({
   load: loadSearchRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: () => buildSearchMetadata(),
   render,
 });
 
-export const metadata = buildSearchMetadata();
+export const generateMetadata = route.generateMetadata;
 export default route.Page;

@@ -32,7 +32,7 @@ export function BrandAccountAuthPanel() {
   const feedbackParagraph = (className: string) =>
     feedback ? (
       <p className={className} role={feedback.tone === "error" ? "alert" : "status"}>
-        {feedback.message}
+        {t(feedback.message)}
       </p>
     ) : null;
 
@@ -49,7 +49,7 @@ export function BrandAccountAuthPanel() {
       <section className="pt-8" aria-labelledby="account-session-title">
         <p className="eyebrow text-[#70584B]">{t("Đã đăng nhập")}</p>
         <h2 id="account-session-title" className={formHeadingClassName}>
-          Xin chào, {session.user.name}
+          {t("Xin chào, {name}", { name: session.user.name })}
         </h2>
         <p className="mt-2 text-sm text-[#3B2219]/65">{session.user.email}</p>
         <p className="mt-6 max-w-xl text-sm leading-6 text-[#3B2219]/75">
@@ -61,7 +61,7 @@ export function BrandAccountAuthPanel() {
           onClick={handleSignOut}
           disabled={view.signOutDisabled}
         >
-          {view.signOutLabel}
+          {t(view.signOutLabel)}
         </button>
         {feedbackParagraph("mt-4 text-sm text-[#2A1810]")}
       </section>
@@ -118,7 +118,7 @@ export function BrandAccountAuthPanel() {
           </div>
 
           <button className={primaryButtonClassName} type="submit" disabled={view.formsDisabled}>
-            {view.signInLabel}
+            {t(view.signInLabel)}
           </button>
         </form>
 
@@ -187,7 +187,7 @@ export function BrandAccountAuthPanel() {
           </div>
 
           <button className={secondaryButtonClassName} type="submit" disabled={view.formsDisabled}>
-            {view.signUpLabel}
+            {t(view.signUpLabel)}
           </button>
         </form>
       </div>

@@ -89,7 +89,7 @@ export function GuestOrderTrackingForm({
           disabled={isPending}
           className="btn btn--primary"
         >
-          {isPending ? "Đang tra cứu…" : "Tra cứu đơn hàng"}
+          {isPending ? t("Đang tra cứu…") : t("Tra cứu đơn hàng")}
         </button>
       </form>
 
@@ -101,7 +101,7 @@ export function GuestOrderTrackingForm({
           data-ui-state="success"
         >
           <p className="eyebrow">{t("Trạng thái đơn hàng")}</p>
-          <p className="mt-3 font-display text-3xl">{statusLabels[state.order.status]}</p>
+          <p className="mt-3 font-display text-3xl">{t(statusLabels[state.order.status])}</p>
           <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-3">
             <div>
               <dt className="text-black/75">{t("Mã đơn")}</dt>
@@ -122,17 +122,17 @@ export function GuestOrderTrackingForm({
               <ul className="space-y-3">
                 {state.order.pricingHistory.lines.map((line, index) => (
                   <li key={index} className="border-t border-black/15 pt-3">
-                    <p>{line.productName}{line.role === "GIFT" ? " — Quà tặng" : ""}</p>
-                    <p className="text-sm">{[line.color, line.size].filter(Boolean).join(" / ")} · Số lượng: {line.quantity}</p>
+                    <p>{line.productName}{line.role === "GIFT" ? t(" — Quà tặng") : ""}</p>
+                    <p className="text-sm">{[line.color, line.size].filter(Boolean).join(" / ")} · {t("Số lượng: {count}", { count: line.quantity })}</p>
                     <p className="flex flex-wrap items-baseline gap-2">
                       {line.listUnitPriceVnd ? <s><span className="sr-only">{t("Giá niêm yết")}</span>{formatVnd(line.listUnitPriceVnd)}</s> : null}
                       <span><span className="sr-only">{t("Giá bán")}</span>{formatVnd(line.unitPriceVnd)}</span>
-                      <span>· Thành tiền: {formatVnd(line.lineTotalVnd)}</span>
+                      <span>· {t("Thành tiền: {amount}", { amount: formatVnd(line.lineTotalVnd) })}</span>
                     </p>
                   </li>
                 ))}
               </ul>
-              {state.order.pricingHistory.savingVnd ? <p className="font-semibold">Bạn đã tiết kiệm: {formatVnd(state.order.pricingHistory.savingVnd)}</p> : null}
+              {state.order.pricingHistory.savingVnd ? <p className="font-semibold">{t("Bạn đã tiết kiệm: {amount}", { amount: formatVnd(state.order.pricingHistory.savingVnd) })}</p> : null}
             </div>
           ) : null}
           {state.order.preorderHistory ? (
@@ -150,9 +150,11 @@ export function GuestOrderTrackingForm({
           role="alert"
           data-ui-state="empty"
         >
-          {state.reason === "NOT_FOUND"
-            ? "Không tìm thấy đơn hàng khớp với thông tin đã nhập."
-            : "Chưa tra cứu được lúc này. Nàng thử lại sau nhé."}
+          {t(
+            state.reason === "NOT_FOUND"
+              ? "Không tìm thấy đơn hàng khớp với thông tin đã nhập."
+              : "Chưa tra cứu được lúc này. Nàng thử lại sau nhé.",
+          )}
         </div>
       ) : null}
     </div>

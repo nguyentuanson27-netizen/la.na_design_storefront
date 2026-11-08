@@ -23,8 +23,10 @@ function render(_data: unknown, { t }: RequestI18n) {
 
 const route = createStorefrontRoute<LoginRouteProps, LoginViewModel>({
   load: loadLoginRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: () => buildLoginMetadata(),
   render,
 });
 
-export const metadata = buildLoginMetadata();
+export const generateMetadata = route.generateMetadata;
 export default route.Page;

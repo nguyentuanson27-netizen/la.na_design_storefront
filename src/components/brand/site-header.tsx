@@ -412,8 +412,8 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                   onClick={() => setCartDrawerOpen(true)}
                   aria-label={
                     cartSummary.count > 0
-                      ? `${t(item.label)}, ${cartSummary.count} sản phẩm trong giỏ`
-                      : item.label
+                      ? t("{label}, {count} sản phẩm trong giỏ", { label: t(item.label), count: cartSummary.count })
+                      : t(item.label)
                   }
                   aria-haspopup="dialog"
                   className="relative"

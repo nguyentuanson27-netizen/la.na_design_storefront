@@ -62,7 +62,7 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold uppercase tracking-[0.05em]">{line.productName}</p>
             <p className="mt-1 text-xs leading-5 text-black/75">
-              {line.optionLabel} · SL {line.quantity}
+              {t(line.optionLabel)} · {t("SL {count}", { count: line.quantity })}
               {line.unitPriceText === null || line.originalPriceText ? null : ` × ${line.unitPriceText}`}
             </p>
             {line.originalPriceText ? (
@@ -75,7 +75,7 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
                 />
                 {line.promotionPriceText && line.unitPriceText ? (
                   <span className="ml-1.5" data-line-after-offers>
-                    · Giá sau ưu đãi: {line.unitPriceText}
+                    · {t("Giá sau ưu đãi: {prices}", { prices: line.unitPriceText })}
                   </span>
                 ) : null}
               </p>
@@ -108,7 +108,7 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
           )}
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold uppercase tracking-[0.05em]">{gift.label}</p>
-            <p className="mt-1 text-xs leading-5 text-black/75">Quà tặng · SL {gift.quantity}</p>
+            <p className="mt-1 text-xs leading-5 text-black/75">{t("Quà tặng · SL {count}", { count: gift.quantity })}</p>
           </div>
           <p className="shrink-0 text-sm font-medium">{gift.priceText}</p>
         </div>
@@ -123,21 +123,21 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
     <dl className="space-y-3 text-sm">
       <div className="flex justify-between gap-5">
         <dt className="text-black/75">{t("Tạm tính")}</dt>
-        <dd>{totals.subtotalText}</dd>
+        <dd>{t(totals.subtotalText)}</dd>
       </div>
       {benefit && benefit.giftQuantity > 0 ? (
         <div className="flex justify-between gap-5">
-          <dt className="text-black/75">Quà tặng ({benefit.giftQuantity})</dt>
+          <dt className="text-black/75">{t("Quà tặng ({count})", { count: benefit.giftQuantity })}</dt>
           <dd>0 ₫</dd>
         </div>
       ) : null}
       <div className="flex justify-between gap-5">
         <dt className="text-black/75">{t("Phí vận chuyển")}</dt>
-        <dd>{totals.shippingText}</dd>
+        <dd>{t(totals.shippingText)}</dd>
       </div>
       <div className="flex items-baseline justify-between gap-5 border-t border-black pt-4">
         <dt className="font-semibold uppercase tracking-[0.08em]">{t("Tổng thanh toán")}</dt>
-        <dd className="text-xl font-semibold tracking-[-0.02em]">{totals.totalText}</dd>
+        <dd className="text-xl font-semibold tracking-[-0.02em]">{t(totals.totalText)}</dd>
       </div>
     </dl>
   );
@@ -146,7 +146,7 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
   const totalsBlock = (
     <>
       {data.summary ? <OrderSummary summary={data.summary} /> : fallbackTotals}
-      {data.listPriceSavingsText ? <p className="mt-3 font-semibold" data-list-price-savings>Tiết kiệm so với giá niêm yết: {data.listPriceSavingsText}</p> : null}
+      {data.listPriceSavingsText ? <p className="mt-3 font-semibold" data-list-price-savings>{t("Tiết kiệm so với giá niêm yết: {amount}", { amount: data.listPriceSavingsText })}</p> : null}
     </>
   );
 
@@ -200,7 +200,7 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
           giftPicker={data.giftPicker}
           attemptKey={data.attemptKey}
           quoteRenderId={data.quoteRenderId}
-          unavailableNotice={data.state === "unquotable" ? data.unavailableNotice ?? "Có sản phẩm, giá hoặc tồn kho cần được kiểm tra lại trước khi đặt hàng." : null}
+          unavailableNotice={data.state === "unquotable" ? t(data.unavailableNotice ?? "Có sản phẩm, giá hoặc tồn kho cần được kiểm tra lại trước khi đặt hàng.") : null}
           upsellEnabled={data.upsellEnabled}
           benefit={
             benefit === null
@@ -213,13 +213,13 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
                   tierNotice: benefit.tierNotice,
                 }
           }
-          summaryLabel={`Đơn hàng (${itemCount}) · ${totals.totalText}`}
+          summaryLabel={t("Đơn hàng ({count}) · {total}", { count: itemCount, total: t(totals.totalText) })}
           summarySlot={summaryContent}
           totalsSlot={totalsContent}
           preorderSlot={preorderNoticeFor("mobile")}
           desktopPreorderSlot={preorderNoticeFor("desktop")}
           voucherSlot={voucherSlot}
-          submitBlockedReason={data.vouchers?.state === "OFFERED" ? "Nàng xác nhận ưu đãi ở trên (hoặc đổi, bỏ ưu đãi) trước khi đặt hàng nhé." : null}
+          submitBlockedReason={data.vouchers?.state === "OFFERED" ? t("Nàng xác nhận ưu đãi ở trên (hoặc đổi, bỏ ưu đãi) trước khi đặt hàng nhé.") : null}
           bankTransferEnabled={bankTransferEnabled}
         />
 
@@ -231,8 +231,10 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
 
 const route = createStorefrontRoute<CheckoutRouteProps, CheckoutViewModel>({
   load: loadCheckoutRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: () => buildCheckoutMetadata(),
   render,
 });
 
-export const metadata = buildCheckoutMetadata();
+export const generateMetadata = route.generateMetadata;
 export default route.Page;

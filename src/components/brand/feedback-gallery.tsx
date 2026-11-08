@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type Mous
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import type { HomeFeedbackSection } from "@/routes/home-model";
 import { useT } from "@/i18n/client";
+import type { Translator } from "@/i18n/translate";
 
 type FeedbackImage = HomeFeedbackSection["images"][number];
 
@@ -77,8 +78,8 @@ function FeedbackPhoto({
 }
 
 /** The button's name: the photograph's own alt when it has one, its position when it is decorative. */
-function zoomLabel(image: ViewableFeedbackImage, index: number, total: number) {
-  return image.alt ? `Phóng to ảnh: ${image.alt}` : `Phóng to ảnh ${index + 1} trên ${total}`;
+function zoomLabel(image: ViewableFeedbackImage, index: number, total: number, t: Translator) {
+  return image.alt ? t("Phóng to ảnh: {alt}", { alt: image.alt }) : t("Phóng to ảnh {index} trên {total}", { index: index + 1, total });
 }
 
 /** Which photograph, if any, is open in the viewer. */
@@ -304,6 +305,7 @@ export function FeedbackRail({
   /** The section's own id, for an in-page link to it. */
   id?: string;
 }>) {
+  const t = useT();
   const viewer = useFeedbackViewer(images.length);
   const { viewportRef, revealed } = useRailReveal(images.length);
 
@@ -331,7 +333,7 @@ export function FeedbackRail({
               <button
                 type="button"
                 className="feedback-zoom"
-                aria-label={zoomLabel(image, index, images.length)}
+                aria-label={zoomLabel(image, index, images.length, t)}
                 aria-haspopup="dialog"
                 onClick={() => viewer.open(index)}
               >
@@ -360,6 +362,7 @@ export function FeedbackRail({
 
 /** The `/feedback` page's full gallery, in the configured order. */
 export function FeedbackGallery({ images }: Readonly<{ images: readonly FeedbackImage[] }>) {
+  const t = useT();
   const viewer = useFeedbackViewer(images.length);
 
   return (
@@ -370,7 +373,7 @@ export function FeedbackGallery({ images }: Readonly<{ images: readonly Feedback
             <button
               type="button"
               className="feedback-zoom"
-              aria-label={zoomLabel(image, index, images.length)}
+              aria-label={zoomLabel(image, index, images.length, t)}
               aria-haspopup="dialog"
               onClick={() => viewer.open(index)}
             >

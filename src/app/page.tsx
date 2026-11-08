@@ -6,7 +6,7 @@ import { CollectionPromoRow } from "@/components/brand/collection-promo-row";
 import { FeedbackRail } from "@/components/brand/feedback-gallery";
 import { BrandHeroSlider } from "@/components/brand/hero-slider";
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { loadHomeRoute, type HomeRouteData, type HomeRouteProps } from "@/routes/home";
 import { buildHomeMetadata } from "@/routes/metadata/home";
 
@@ -24,7 +24,7 @@ import { buildHomeMetadata } from "@/routes/metadata/home";
 
 const tones: readonly ProductCardTone[] = ["stone", "ink", "olive", "sand"];
 
-function render(data: HomeRouteData) {
+function render(data: HomeRouteData, { t }: RequestI18n) {
   const { specialDeals, categoryDiscovery, feedback } = data;
 
   return (
@@ -32,7 +32,7 @@ function render(data: HomeRouteData) {
       {/* The hero carries image and CTA only (§17), so the page's one h1 cannot live inside it.
           It reads the approved homepage title rather than restating it, and is available to
           assistive technology without putting a heading over the campaign art. */}
-      <h1 className="sr-only" data-homepage-root="">{BRAND.identity.homeTitle}</h1>
+      <h1 className="sr-only" data-homepage-root="">{t(BRAND.identity.homeTitle)}</h1>
 
       <BrandHeroSlider slides={data.heroSlides} />
 
@@ -43,10 +43,10 @@ function render(data: HomeRouteData) {
           data-homepage-region="special-deals"
         >
           <div className="section-heading-row">
-            <h2 id="home-special-deals-title">{specialDeals.title}</h2>
+            <h2 id="home-special-deals-title">{t(specialDeals.title)}</h2>
           </div>
           {specialDeals.supportingCopy ? (
-            <p className="special-deals__copy">{specialDeals.supportingCopy}</p>
+            <p className="special-deals__copy">{t(specialDeals.supportingCopy)}</p>
           ) : null}
           <div className="product-grid">
             {specialDeals.cards.map((card, index) => (
@@ -55,7 +55,7 @@ function render(data: HomeRouteData) {
           </div>
           <p className="home-more">
             <Link href={specialDeals.href}>
-              {specialDeals.ctaLabel}
+              {t(specialDeals.ctaLabel)}
               <span className="sr-only">: {specialDeals.collectionTitle}</span>
             </Link>
           </p>
@@ -70,8 +70,8 @@ function render(data: HomeRouteData) {
 
       {feedback ? (
         <FeedbackRail
-          title={feedback.title}
-          ctaLabel={feedback.ctaLabel}
+          title={t(feedback.title)}
+          ctaLabel={t(feedback.ctaLabel)}
           href={feedback.href}
           images={feedback.images}
         />

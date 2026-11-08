@@ -24,7 +24,7 @@ export function MessengerButton({ href, brandName }: Readonly<{ href: string; br
         href={href}
         rel="noreferrer"
         target="_blank"
-        aria-label={`Nhắn tin với ${brandName} qua Messenger`}
+        aria-label={t("Nhắn tin với {brandName} qua Messenger", { brandName })}
       >
         <svg aria-hidden focusable={false} viewBox="0 0 24 24" width={30} height={30}>
           <defs>

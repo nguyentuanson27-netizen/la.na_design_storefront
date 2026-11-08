@@ -9,7 +9,7 @@ import {
   ListingShell,
   ListingViewBar,
 } from "@/components/brand/listing-chrome";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import {
   loadNewArrivalsRoute,
   type NewArrivalsRouteProps,
@@ -22,15 +22,15 @@ import { buildNewArrivalsMetadata } from "@/routes/metadata/new-arrivals";
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
-function render(data: NewArrivalsViewModel) {
+function render(data: NewArrivalsViewModel, { t }: RequestI18n) {
   return (
     <ListingShell>
       <ListingBreadcrumbs
         items={[{ label: "Trang chủ", href: "/" }, { label: "Hàng mới về" }]}
       />
-      <ListingHeader eyebrow="Tuyển chọn" title="Hàng mới về">
+      <ListingHeader eyebrow={t("Tuyển chọn")} title={t("Hàng mới về")}>
         <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
-          {`Những thiết kế được ${BRAND.identity.name} chọn giới thiệu trong danh mục Hàng mới về.`}
+          {t("Những thiết kế được {name} chọn giới thiệu trong danh mục Hàng mới về.", { name: BRAND.identity.name })}
         </p>
       </ListingHeader>
 
@@ -39,16 +39,16 @@ function render(data: NewArrivalsViewModel) {
           <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
           <ListingEmptyState
             titleId="new-arrivals-empty-title"
-            eyebrow="Sản phẩm hiện tại"
-            title="Chưa có sản phẩm trong danh mục Hàng mới về."
-            copy={`Các thiết kế được ${BRAND.identity.name} chọn giới thiệu sẽ xuất hiện tại đây.`}
+            eyebrow={t("Sản phẩm hiện tại")}
+            title={t("Chưa có sản phẩm trong danh mục Hàng mới về.")}
+            copy={t("Các thiết kế được {name} chọn giới thiệu sẽ xuất hiện tại đây.", { name: BRAND.identity.name })}
             action={{ href: "/shop", label: "Xem toàn bộ cửa hàng" }}
           />
         </div>
       ) : (
         <section aria-labelledby="new-arrivals-products-title" className="mt-8">
           <h2 id="new-arrivals-products-title" className="sr-only">
-            Sản phẩm được chọn
+            {t("Sản phẩm được chọn")}
           </h2>
           <ListingViewBar totalCount={data.totalCount} />
           <div className="mt-8">
@@ -64,7 +64,7 @@ function render(data: NewArrivalsViewModel) {
             </ListingProductGrid>
           </div>
           <ListingPagination
-            label="Phân trang hàng mới về"
+            label={t("Phân trang hàng mới về")}
             page={data.page}
             totalPages={data.totalPages}
             previousHref={data.previousHref}

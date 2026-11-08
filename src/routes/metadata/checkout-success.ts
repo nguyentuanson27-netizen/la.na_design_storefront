@@ -7,7 +7,7 @@ import { BRAND } from "@/brand";
  * page is reached with an order code in the query string, and a title carrying it would put a
  * customer's order number into browser history and any referrer that follows.
  */
-export function buildCheckoutSuccessMetadata(): Metadata {
+export async function buildCheckoutSuccessMetadata(): Promise<Metadata> {
   return {
     title: "Đặt hàng thành công",
     description: `Xác nhận đơn hàng COD của ${BRAND.identity.name}.`,

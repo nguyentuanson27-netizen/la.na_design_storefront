@@ -6,7 +6,10 @@
  * declared here, beside the Vietnamese it translates, and merged into the catalog by
  * `src/i18n/catalog/en.ts`. Keys are the Vietnamese source text, as everywhere in the catalog.
  */
+import { BRAND_FACT_MESSAGES_EN } from "./messages.policy.en.ts";
+
 export const BRAND_MESSAGES_EN: Readonly<Record<string, string>> = {
+  ...BRAND_FACT_MESSAGES_EN,
   "La.na Design — Trang chủ": "La.na Design — Home",
   "08:00 - 22:00 hằng ngày (UTC+7)": "08:00 - 22:00 daily (UTC+7)",
   "Về La.na Design": "About La.na Design",
