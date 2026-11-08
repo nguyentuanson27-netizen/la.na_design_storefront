@@ -1,4 +1,5 @@
 import type { VoucherCard } from "../commerce/voucher-candidate-repository.ts";
+import { compactVoucherVnd } from "../commerce/voucher-format.ts";
 import type { VoucherSelectionIntent } from "../commerce/voucher-optimizer.ts";
 import type { VoucherCardReason, VoucherCardState, VoucherQuote } from "../commerce/voucher-quote.ts";
 
@@ -84,13 +85,7 @@ export type VoucherPickerModel = Readonly<{
 const money = new Intl.NumberFormat("vi-VN");
 export const formatVoucherVnd = (value: number): string => `${money.format(value)}đ`;
 
-/** "80K", "1,5TR": the figure that fits the card's colour block. Exact thousands only lose their zeros; anything else keeps one decimal. */
-export function compactVoucherVnd(value: number): string {
-  const trim = (n: number, digits: number) => String(Number(n.toFixed(digits))).replace(".", ",");
-  if (value >= 1_000_000) return `${trim(value / 1_000_000, 2)}TR`;
-  if (value >= 1_000) return `${trim(value / 1_000, 1)}K`;
-  return `${value}đ`;
-}
+export { compactVoucherVnd };
 
 /** "Còn 2 ngày" for a voucher ending within three days, otherwise null. Pure: the caller supplies the clock (after mount, so server and client agree). */
 export const EXPIRY_WARNING_DAYS = 3;
