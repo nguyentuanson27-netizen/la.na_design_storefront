@@ -37,7 +37,7 @@ function SummaryBlock({ summary }: Readonly<{ summary: NonNullable<ProductReview
   return (
     <div className="mt-3 text-center" data-review-summary="">
       {/* One line: the average, the stars, how many. The star breakdown folds away. */}
-      <p className="flex items-center justify-center gap-2">
+      <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
         <span className="font-display text-2xl leading-none text-[#2A1810]">{formatReviewAverage(summary.average)}</span>
         <ReviewStars value={summary.average} className="text-sm" />
         <span className="text-xs text-[#70584B]">{summary.count} đánh giá</span>
