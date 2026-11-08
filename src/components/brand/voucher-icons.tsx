@@ -10,6 +10,7 @@ const PATHS = {
   down: <><circle cx="12" cy="12" r="9" /><path d="M12 7.5v8M8.5 12.5l3.5 3.5 3.5-3.5" /></>,
   chevron: <path d="M9 5l7 7-7 7" />,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  gift: <><rect x="3" y="8" width="18" height="13" /><path d="M12 8v13M3 12.5h18M12 8C10 4 6 4.5 6 6.5S9.5 8 12 8zM12 8c2-4 6-3.5 6-1.5S14.5 8 12 8z" /></>,
 } as const;
 
 export type VoucherIconName = keyof typeof PATHS;

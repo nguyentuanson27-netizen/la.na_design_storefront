@@ -3590,4 +3590,40 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-chip__text > b { font-family: var(--font-display); font-size: 0.9375rem; font-weight: 700; line-height: 1.2; }
   .voucher-chip__text > small { font-size: 0.71875rem; line-height: 1.35; color: rgba(59, 34, 25, 0.72); }
   .voucher-chip-info { margin: 0.375rem 0 0; border-left: 3px solid var(--vc); border-radius: 0.375rem; background: var(--vc-tint); padding: 0.625rem 0.75rem; font-size: 0.8125rem; line-height: 1.45; }
+
+  /*
+   * Gifts (UI refresh): the "Quà dành cho nàng" panel in the cart and at checkout, in the same ticket language as the vouchers. Gifts have their
+   * own colour (bronze gold, white on it is about 6.7:1) so they never read as one of the voucher types. Only the look changed: the words, the
+   * roles and the data-gift-* hooks are the ones the gift flow and its specs already use.
+   */
+  .gift-panel { --gift: #7a5c14; --gift-tint: color-mix(in srgb, var(--gift) 8%, #fffdfa); min-width: 0; margin: 1.5rem 0; overflow: hidden; border-radius: 0.5rem; background: #fffdfa; box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); color: var(--ink); }
+  .gift-panel__head { display: flex; align-items: center; gap: 0.625rem; border-bottom: 1.5px dashed rgba(59, 34, 25, 0.22); padding: 0.75rem 1rem; }
+  .gift-panel__icon { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; flex: none; border-radius: 50%; background: var(--gift); color: #fff; }
+  .gift-panel__icon > svg { width: 1rem; height: 1rem; }
+  .gift-panel__pill { margin-left: auto; border-radius: 999px; background: color-mix(in srgb, var(--gift) 12%, #fffdfa); padding: 0.1875rem 0.625rem; font-family: var(--font-display); font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--gift); }
+  .gift-panel__body { padding: 0.875rem 1rem 1rem; }
+  .gift-bar { height: 4px; margin-top: 0.5rem; overflow: hidden; border-radius: 999px; background: rgba(59, 34, 25, 0.12); }
+  .gift-bar > i { display: block; height: 100%; border-radius: 999px; background: var(--gift); }
+
+  /* the control that opens the list: the cart entry's ticket, in the gift colour */
+  .gift-entry { position: relative; display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: stretch; width: 100%; min-height: 3.25rem; overflow: hidden; border: 0; padding: 0; border-radius: 0.5rem; background: var(--gift-tint); box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); color: var(--ink); text-align: left; cursor: pointer; font-family: var(--font-sans); }
+  .gift-entry:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .gift-entry__icon { display: grid; place-items: center; background: var(--gift); color: #fff; }
+  .gift-entry__icon > svg { width: 1.25rem; height: 1.25rem; }
+  .gift-entry__text { display: flex; align-items: center; margin-left: -1px; border-left: 1.5px dashed rgba(59, 34, 25, 0.22); padding: 0.5rem 0.75rem 0.5rem 1rem; font-family: var(--font-display); font-size: 0.9375rem; font-weight: 700; }
+  .gift-entry__chev { align-self: center; width: 1rem; height: 1rem; margin-right: 0.875rem; transition: transform 0.15s; }
+  .gift-entry[aria-expanded="true"] .gift-entry__chev { transform: rotate(90deg); }
+
+  .gift-item { border-radius: 0.5rem; background: var(--gift-tint); padding: 0.75rem; }
+  .gift-item__tag { flex: none; border-radius: 0.1875rem; background: var(--gift); padding: 0.125rem 0.375rem; font-family: var(--font-display); font-size: 0.59375rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #fff; }
+  .gift-btn { display: inline-flex; align-items: center; min-height: 2.75rem; border: 1px solid rgba(59, 34, 25, 0.35); border-radius: 0.375rem; background: transparent; padding: 0.25rem 0.875rem; font-size: 0.8125rem; font-weight: 600; color: var(--ink); cursor: pointer; }
+  .gift-btn:hover:not(:disabled) { border-color: var(--ink); }
+  .gift-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .gift-btn:focus-visible, .gift-back:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .gift-back { display: inline-flex; align-items: center; gap: 0.375rem; min-height: 2.75rem; border: 0; background: none; padding: 0; font-family: var(--font-display); font-size: 0.875rem; font-weight: 600; color: var(--ink); cursor: pointer; text-decoration: underline; text-underline-offset: 4px; }
+  .gift-back__arrow { width: 0.9375rem; height: 0.9375rem; transform: rotate(180deg); }
+  .gift-note { border-radius: 0.375rem; background: #fbe8cf; padding: 0.5rem 0.75rem; font-size: 0.8125rem; color: #6b3a00; }
+  /* "Đã thêm vào đơn: …": a confirmation, not a loose paragraph */
+  .gift-status:not(:empty) { margin-top: 0.75rem; border-left: 3px solid var(--gift, #7a5c14); border-radius: 0.375rem; background: color-mix(in srgb, var(--gift, #7a5c14) 8%, #fffdfa); padding: 0.5rem 0.75rem; font-size: 0.875rem; line-height: 1.45; }
+  @media (prefers-reduced-motion: reduce) { .gift-entry__chev { transition: none; } }
 }
