@@ -25,6 +25,7 @@ import { useTryOn } from "@/components/headless/use-try-on";
 
 import { BrandTryOnResult } from "./try-on-result";
 import { BrandTryOnWaiting } from "./try-on-waiting";
+import { useT } from "@/i18n/client";
 
 /**
  * Virtual try-on on the PDP (`docs/specs/storefront-virtual-try-on.md` §6, §13, §14).
@@ -97,6 +98,7 @@ export function BrandTryOnTrigger({
   onOpen,
   triggerRef,
 }: Readonly<{ onOpen: () => void; triggerRef: RefObject<HTMLButtonElement | null> }>) {
+  const t = useT();
   return (
     <button
       ref={triggerRef}
@@ -106,8 +108,8 @@ export function BrandTryOnTrigger({
       onClick={onOpen}
     >
       <PersonIcon />
-      <span>Thử đồ AI</span>
-      <span className="sr-only"> bằng ảnh của nàng, hoàn toàn miễn phí,</span>
+      <span>{t("Thử đồ AI")}</span>
+      <span className="sr-only">{t("bằng ảnh của nàng, hoàn toàn miễn phí,")}</span>
       <span className="rounded-[3px] bg-[#3B2219] px-1.5 text-[9px] font-semibold uppercase leading-[14px] tracking-[0.12em] text-white">
         Beta
       </span>
@@ -130,6 +132,7 @@ export function BrandTryOnNudge({
   /** The coordinator's handle on the button that opens the dialog, so focus can come back to it. */
   openRef: RefObject<HTMLButtonElement | null>;
 }>) {
+  const t = useT();
   return (
     <div className="absolute bottom-full left-4 mb-2 flex max-w-[calc(100%-5.5rem)] items-stretch border border-[#3B2219] bg-[#FAF7F2] shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
       <button
@@ -141,12 +144,12 @@ export function BrandTryOnNudge({
       >
         <PersonIcon />
         <span>
-          Chưa chắc hợp? <span className="font-semibold underline underline-offset-4">Thử đồ bằng ảnh của nàng</span>
+          Chưa chắc hợp? <span className="font-semibold underline underline-offset-4">{t("Thử đồ bằng ảnh của nàng")}</span>
         </span>
       </button>
       <button
         type="button"
-        aria-label="Ẩn gợi ý thử đồ"
+        aria-label={t("Ẩn gợi ý thử đồ")}
         className={`min-h-11 min-w-11 shrink-0 border-l border-[#3B2219]/20 text-lg leading-none text-[#3B2219]/70 ${FOCUS_RING}`}
         onClick={onDismiss}
       >
@@ -172,6 +175,7 @@ export function BrandTryOnDialog({
   /** Whatever opened the dialog: focus goes back there, so it must be the control the shopper used. */
   returnFocusRef: RefObject<HTMLElement | null>;
 }>) {
+  const t = useT();
   const ids = useId();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -179,7 +183,7 @@ export function BrandTryOnDialog({
   const shownStepRef = useRef<number | null>(null);
   const tryOn = useTryOn({ productSlug, productName, fileInputRef, active: open });
   const { step, phase, result } = tryOn;
-  const privacyDisclosure = resolveTryOnPrivacyDisclosure(provider, BRAND.identity.name);
+  const privacyDisclosure = resolveTryOnPrivacyDisclosure(provider, BRAND.identity.name, t);
 
   // The coordinator owns `open`; the native dialog is brought in line with it.
   useEffect(() => {
@@ -277,7 +281,7 @@ export function BrandTryOnDialog({
           />
         ))}
         <span className="ml-1.5">
-          Bước {tryOn.stepNumber}/{TRY_ON_STEP_COUNT}
+          {t("Bước {step}/{total}", { step: tryOn.stepNumber, total: TRY_ON_STEP_COUNT })}
         </span>
       </div>
     );
@@ -287,11 +291,11 @@ export function BrandTryOnDialog({
     return (
       <>
         <h3 ref={headingRef} tabIndex={-1} className={headingClass}>
-          Chọn ảnh của nàng
+          {t("Chọn ảnh của nàng")}
         </h3>
         {phase === "error" && tryOn.errorMessage ? (
           <p role="alert" className={`mb-3 text-sm font-semibold ${ERROR_TEXT}`}>
-            {tryOn.errorMessage}
+            {t(tryOn.errorMessage)}
           </p>
         ) : null}
         {/* The native control reads "Choose File / No file chosen" in the browser's language, so it is
@@ -303,7 +307,7 @@ export function BrandTryOnDialog({
           type="file"
           accept="image/jpeg,image/png,image/webp"
           className="peer sr-only"
-          aria-label="Ảnh của nàng (JPG, PNG hoặc WebP, tối đa 7 MB)"
+          aria-label={t("Ảnh của nàng (JPG, PNG hoặc WebP, tối đa 7 MB)")}
           aria-describedby={tryOn.fileError ? `${fileHelpId} ${fileErrorId}` : fileHelpId}
           aria-invalid={tryOn.fileError ? "true" : undefined}
           onChange={tryOn.chooseFile}
@@ -317,18 +321,18 @@ export function BrandTryOnDialog({
               {/* eslint-disable-next-line @next/next/no-img-element -- a local blob preview; next/image cannot optimise it. */}
               <img
                 src={tryOn.previewUrl}
-                alt="Ảnh nàng đã chọn"
+                alt={t("Ảnh nàng đã chọn")}
                 className="max-h-44 w-auto max-w-full object-contain"
               />
-              <span className="text-sm font-semibold underline underline-offset-4">Đổi ảnh</span>
+              <span className="text-sm font-semibold underline underline-offset-4">{t("Đổi ảnh")}</span>
             </>
           ) : (
             <>
               <span aria-hidden="true" className="text-3xl leading-none">
                 +
               </span>
-              <span className="text-sm font-semibold">Chọn ảnh</span>
-              <span className="text-xs">JPG, PNG hoặc WebP, tối đa 7 MB</span>
+              <span className="text-sm font-semibold">{t("Chọn ảnh")}</span>
+              <span className="text-xs">{t("JPG, PNG hoặc WebP, tối đa 7 MB")}</span>
             </>
           )}
         </label>
@@ -339,7 +343,7 @@ export function BrandTryOnDialog({
         ) : null}
         <div id={fileHelpId} className="mt-3 grid grid-cols-2 gap-x-4 text-[13px] leading-5">
           <div>
-            <p className="font-semibold">Nên chọn</p>
+            <p className="font-semibold">{t("Nên chọn")}</p>
             <ul className="mt-1 space-y-1 text-black/70">
               {TRY_ON_PHOTO_DOS.map((tip) => (
                 <li key={tip} className="flex gap-1.5">
@@ -352,7 +356,7 @@ export function BrandTryOnDialog({
             </ul>
           </div>
           <div>
-            <p className="font-semibold">Nên tránh</p>
+            <p className="font-semibold">{t("Nên tránh")}</p>
             <ul className="mt-1 space-y-1 text-black/70">
               {TRY_ON_PHOTO_DONTS.map((tip) => (
                 <li key={tip} className="flex gap-1.5">
@@ -366,16 +370,16 @@ export function BrandTryOnDialog({
           </div>
         </div>
         <p className="mt-3 text-xs leading-5 text-black/60">
-          Chỉ 3 bước nhẹ nhàng: chọn ảnh, xác nhận, nhận ảnh thử đồ sau khoảng 30–60 giây.
+          {t("Chỉ 3 bước nhẹ nhàng: chọn ảnh, xác nhận, nhận ảnh thử đồ sau khoảng 30–60 giây.")}
         </p>
         {tryOn.quotaLine ? (
           <p className="mt-3 border-t border-black/10 pt-3 text-[13px] leading-5 text-black/75">
-            {tryOn.quotaLine}
+            {t(tryOn.quotaLine)}
             {tryOn.quota?.audience === "guest" ? (
               <>
                 {" "}
                 <a href={tryOn.loginHref} className={`font-semibold underline underline-offset-4 ${FOCUS_RING}`}>
-                  Tạo tài khoản
+                  {t("Tạo tài khoản")}
                 </a>
               </>
             ) : null}
@@ -387,7 +391,7 @@ export function BrandTryOnDialog({
           disabled={!tryOn.canContinue}
           onClick={tryOn.continueToConfirm}
         >
-          Tiếp tục
+          {t("Tiếp tục")}
         </button>
       </>
     );
@@ -397,7 +401,7 @@ export function BrandTryOnDialog({
     return (
       <>
         <h3 ref={headingRef} tabIndex={-1} className={headingClass}>
-          Độ tuổi và xác nhận
+          {t("Độ tuổi và xác nhận")}
         </h3>
         <div className="flex items-center justify-between gap-3 rounded-lg border border-black/15 bg-white/50 px-3 py-2 text-sm">
           <span className="flex min-w-0 items-center gap-2.5">
@@ -405,19 +409,19 @@ export function BrandTryOnDialog({
               // eslint-disable-next-line @next/next/no-img-element -- a local blob preview; next/image cannot optimise it.
               <img
                 src={tryOn.previewUrl}
-                alt="Ảnh nàng đã chọn"
+                alt={t("Ảnh nàng đã chọn")}
                 className="h-10 w-8 shrink-0 rounded-[3px] border border-black/15 object-cover"
               />
             ) : null}
-            <span className="truncate">Ảnh đã chọn</span>
+            <span className="truncate">{t("Ảnh đã chọn")}</span>
           </span>
           <button type="button" className={TEXT_BUTTON} onClick={tryOn.changePhoto}>
-            Đổi
+            {t("Đổi")}
           </button>
         </div>
 
         <fieldset className="mt-4">
-          <legend className="text-sm font-semibold">Độ tuổi của nàng</legend>
+          <legend className="text-sm font-semibold">{t("Độ tuổi của nàng")}</legend>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {TRY_ON_AGE_OPTIONS.map((option) => {
               const selected = tryOn.ageState === option.value;
@@ -435,7 +439,7 @@ export function BrandTryOnDialog({
                   <span
                     className={`flex min-h-11 cursor-pointer items-center rounded-full border border-[#3B2219] px-3.5 text-[13px] ${PEER_FOCUS_RING} peer-checked:bg-[#3B2219] peer-checked:text-[#FAF7F2]`}
                   >
-                    {option.shortLabel}
+                    {t(option.shortLabel)}
                   </span>
                 </label>
               );
@@ -443,16 +447,16 @@ export function BrandTryOnDialog({
           </div>
           {tryOn.isBlockedAge ? (
             <p role="alert" className={`mt-2 text-sm font-semibold ${ERROR_TEXT}`}>
-              {TRY_ON_BLOCKED_AGE_MESSAGE}
+              {t(TRY_ON_BLOCKED_AGE_MESSAGE)}
             </p>
           ) : null}
           {tryOn.isTeen ? (
             <div id={attestationId} className="mt-3 border-l-[3px] border-[#3B2219] bg-[#3B2219]/5 px-3 py-2 text-[13px] leading-5 text-black/80">
-              <p className="font-semibold">{TRY_ON_TEEN_ATTESTATION_LEAD}</p>
+              <p className="font-semibold">{t(TRY_ON_TEEN_ATTESTATION_LEAD)}</p>
               <p className="mt-1">
-                {TRY_ON_AGE_OPTIONS.find((option) => option.value === tryOn.ageState)?.label}
+                {t(TRY_ON_AGE_OPTIONS.find((option) => option.value === tryOn.ageState)?.label ?? "")}
               </p>
-              <p className="mt-2">{TRY_ON_TEEN_DISCLOSURE}</p>
+              <p className="mt-2">{t(TRY_ON_TEEN_DISCLOSURE)}</p>
             </div>
           ) : null}
         </fieldset>
@@ -470,14 +474,14 @@ export function BrandTryOnDialog({
         <p className="mt-2 text-xs leading-5 text-black/60">{privacyDisclosure.summary}</p>
         <details className="text-xs leading-5 text-black/60">
           <summary className={`inline-block min-h-6 cursor-pointer underline underline-offset-2 ${FOCUS_RING}`}>
-            Chi tiết
+            {t("Chi tiết")}
           </summary>
           <p className="mt-1">{privacyDisclosure.detail}</p>
         </details>
 
         {tryOn.busyMessage ? (
           <p id={hintId} className="mt-4 border-l-[3px] border-[#3B2219] bg-[#3B2219]/5 px-3 py-2 text-[13px] leading-5 text-black/80">
-            {tryOn.busyMessage}
+            {t(tryOn.busyMessage)}
           </p>
         ) : null}
         <button
@@ -487,11 +491,11 @@ export function BrandTryOnDialog({
           aria-describedby={showHint || tryOn.busyMessage ? hintId : undefined}
           onClick={tryOn.generate}
         >
-          Tạo ảnh thử đồ
+          {t("Tạo ảnh thử đồ")}
         </button>
         {showHint ? (
           <p id={hintId} className="mt-2 text-xs text-black/60">
-            Để tạo ảnh, hãy {tryOn.missingSteps.join(", ")}.
+            {t("Để tạo ảnh, hãy {steps}.", { steps: tryOn.missingSteps.map((step) => t(step)).join(", ") })}
           </p>
         ) : null}
       </>
@@ -502,12 +506,12 @@ export function BrandTryOnDialog({
     return (
       <>
         <h3 ref={headingRef} tabIndex={-1} className={headingClass}>
-          {phase === "loading" ? "Đang tạo ảnh" : phase === "error" ? "Chưa tạo được ảnh" : "Ảnh thử đồ"}
+          {t(phase === "loading" ? "Đang tạo ảnh" : phase === "error" ? "Chưa tạo được ảnh" : "Ảnh thử đồ")}
         </h3>
         <div role="status" aria-live="polite" className="min-h-6 text-sm">
           {phase === "loading" ? (
             <>
-              <p>Đang tạo ảnh thử đồ cho nàng…</p>
+              <p>{t("Đang tạo ảnh thử đồ cho nàng…")}</p>
               <p className="mt-1 text-black/70">{TRY_ON_WAIT_NOTE}</p>
             </>
           ) : null}
@@ -524,11 +528,10 @@ export function BrandTryOnDialog({
               className="btn btn--outline mt-4 w-full px-4"
               onClick={closeDialog}
             >
-              Xem tiếp sản phẩm trong lúc chờ
+              {t("Xem tiếp sản phẩm trong lúc chờ")}
             </button>
             <p className="mt-2 text-center text-xs leading-5 text-black/60">
-              Chọn size, xem chất liệu hay hướng dẫn chọn size ngay trên trang. Ảnh xong sẽ hiện ở góc
-              màn hình.
+              {t("Chọn size, xem chất liệu hay hướng dẫn chọn size ngay trên trang. Ảnh xong sẽ hiện ở góc màn hình.")}
             </p>
           </>
         ) : null}
@@ -542,13 +545,13 @@ export function BrandTryOnDialog({
               isTeen={tryOn.isTeen}
               secondaryAction={
                 <button type="button" className="btn btn--outline px-4" onClick={tryOn.backToConfirm}>
-                  Tạo lại
+                  {t("Tạo lại")}
                 </button>
               }
             />
             <div className="mt-2 text-center">
               <button type="button" className={TEXT_BUTTON} onClick={tryOn.changePhoto}>
-                Dùng ảnh khác
+                {t("Dùng ảnh khác")}
               </button>
             </div>
           </>
@@ -557,17 +560,17 @@ export function BrandTryOnDialog({
         {phase === "error" && tryOn.errorMessage ? (
           <>
             <p role="alert" className={`mt-2 text-sm font-semibold ${ERROR_TEXT}`}>
-              {tryOn.errorMessage}
+              {t(tryOn.errorMessage)}
             </p>
             {tryOn.quotaUpsell ? (
               <div className="mt-4 border-l-[3px] border-[#3B2219] bg-[#3B2219]/5 px-3 py-2 text-[13px] leading-5 text-black/80">
-                <p className="font-semibold">{tryOn.quotaUpsell.title}</p>
-                <p className="mt-1">{tryOn.quotaUpsell.body}</p>
+                <p className="font-semibold">{t(tryOn.quotaUpsell.title)}</p>
+                <p className="mt-1">{t(tryOn.quotaUpsell.body)}</p>
               </div>
             ) : null}
             {isLoginRequired(tryOn.errorReason) || tryOn.quotaUpsell ? (
               <a href={tryOn.loginHref} className="btn btn--primary mt-4 w-full px-4">
-                Đăng ký hoặc đăng nhập
+                {t("Đăng ký hoặc đăng nhập")}
               </a>
             ) : null}
             {isLoginRequired(tryOn.errorReason) ? null : (
@@ -576,7 +579,7 @@ export function BrandTryOnDialog({
                 className={`btn btn--outline w-full px-4 ${tryOn.quotaUpsell ? "mt-3" : "mt-4"}`}
                 onClick={tryOn.backToConfirm}
               >
-                Quay lại
+                {t("Quay lại")}
               </button>
             )}
           </>
@@ -599,7 +602,7 @@ export function BrandTryOnDialog({
         <div className="flex items-start justify-between gap-4">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h2 id={titleId} className="font-display text-2xl font-normal tracking-[-0.02em]">
-              Thử đồ
+              {t("Thử đồ")}
             </h2>
             <span className="border border-[#3B2219]/50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#3B2219]">
               {TRY_ON_BETA_BADGE}
@@ -610,11 +613,11 @@ export function BrandTryOnDialog({
             className={`shrink-0 px-2 ${TEXT_BUTTON}`}
             onClick={closeDialog}
           >
-            Đóng
+            {t("Đóng")}
           </button>
         </div>
         <p className="mb-3 text-xs leading-5 text-black/60">
-          Xem {productName} trên ảnh của nàng. Kết quả do AI tạo, chỉ mang tính tham khảo.
+          {t("Xem {productName} trên ảnh của nàng. Kết quả do AI tạo, chỉ mang tính tham khảo.", { productName })}
         </p>
         {step === "photo" ? (
           <p className="mb-3 whitespace-pre-line border-l-[3px] border-[#3B2219]/40 bg-[#3B2219]/5 px-3 py-2 text-xs leading-5 text-black/70">

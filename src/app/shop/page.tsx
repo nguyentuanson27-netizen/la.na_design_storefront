@@ -34,7 +34,7 @@ import type { ShopViewModel } from "@/routes/shop-model";
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
-function render(data: ShopViewModel, { t }: RequestI18n) {
+function render(data: ShopViewModel, { t, href }: RequestI18n) {
   const { discovery } = data;
 
   let activeFilterCount = 0;
@@ -69,7 +69,7 @@ function render(data: ShopViewModel, { t }: RequestI18n) {
             same action bar every listing draws (view size, filter button, sort); the result count is
             not drawn, and a visually hidden live copy keeps it announced. The search is a line of
             its own under it, which the category listing has no use for. */}
-        <form method="get" action="/shop" className="md:hidden">
+        <form method="get" action={href("/shop")} className="md:hidden">
           <div className="flex flex-col gap-3">
             <div className={LISTING_ACTION_BAR_CLASSES.bar}>
               <span role="status" className="sr-only">
@@ -137,7 +137,7 @@ function render(data: ShopViewModel, { t }: RequestI18n) {
         </form>
 
         {/* Desktop keeps the same native GET semantics without rendering mobile duplicate fields. */}
-        <form method="get" action="/shop" className="hidden md:block">
+        <form method="get" action={href("/shop")} className="hidden md:block">
           {/* Sale has no control on /shop, but a link can filter by it: the form must carry it. */}
           {discovery.sale ? <input type="hidden" name="sale" value="true" /> : null}
           <div className="flex items-center justify-between gap-4">

@@ -13,6 +13,8 @@ import { useTryOnSession, type TryOnJob } from "@/components/headless/try-on-ses
 
 import { BrandTryOnResult } from "./try-on-result";
 import { BrandTryOnWaiting, useTryOnElapsedSeconds } from "./try-on-waiting";
+import { useT } from "@/i18n/client";
+import type { Translator } from "@/i18n/translate";
 
 /**
  * The try-on the shopper started, minimised: a small card bottom left on every page while the picture
@@ -33,13 +35,14 @@ function productHref(job: TryOnJob): string {
   return `/shop/${encodeURIComponent(job.productSlug)}`;
 }
 
-function announcement(job: TryOnJob): string {
-  if (job.status === "loading") return `Đang tạo ảnh thử đồ cho ${job.productName}.`;
-  if (job.status === "success") return `Ảnh thử đồ cho ${job.productName} đã xong.`;
-  return `Chưa tạo được ảnh thử đồ cho ${job.productName}.`;
+function announcement(job: TryOnJob, t: Translator): string {
+  if (job.status === "loading") return t("Đang tạo ảnh thử đồ cho {productName}.", { productName: job.productName });
+  if (job.status === "success") return t("Ảnh thử đồ cho {productName} đã xong.", { productName: job.productName });
+  return t("Chưa tạo được ảnh thử đồ cho {productName}.", { productName: job.productName });
 }
 
 export function BrandTryOnDock() {
+  const t = useT();
   const session = useTryOnSession();
   const { job, discard, markSeen, openJob } = session;
   const viewerRef = useRef<HTMLDialogElement | null>(null);
@@ -81,7 +84,7 @@ export function BrandTryOnDock() {
       {job === null ? null : (
         <div className={`tryon-dock ${loading ? "" : "tryon-dock--ready"}`} data-testid="try-on-dock">
           <p role="status" className="sr-only">
-            {announcement(job)}
+            {announcement(job, t)}
           </p>
           <div className="relative flex items-stretch border border-[#3B2219] bg-[#FAF7F2] shadow-[0_4px_16px_rgba(0,0,0,0.14)]">
             <button
@@ -100,22 +103,24 @@ export function BrandTryOnDock() {
               ) : null}
               <span className="min-w-0">
                 <span className="block truncate text-[13px] font-semibold leading-5">
-                  {loading
-                    ? "Đang tạo ảnh thử đồ"
-                    : job.status === "success"
-                      ? "Ảnh thử đồ đã xong"
-                      : "Chưa tạo được ảnh"}
+                  {t(
+                    loading
+                      ? "Đang tạo ảnh thử đồ"
+                      : job.status === "success"
+                        ? "Ảnh thử đồ đã xong"
+                        : "Chưa tạo được ảnh",
+                  )}
                 </span>
                 <span className="block truncate text-xs leading-4 text-black/60">
                   {loading ? (
                     <>
                       <span aria-hidden="true">{tryOnElapsedLabel(elapsed)} · </span>
-                      Bấm để xem
+                      {t("Bấm để xem")}
                     </>
                   ) : job.status === "success" ? (
-                    "Bấm để xem ảnh"
+                    t("Bấm để xem ảnh")
                   ) : (
-                    "Bấm để xem chi tiết"
+                    t("Bấm để xem chi tiết")
                   )}
                 </span>
               </span>
@@ -123,7 +128,7 @@ export function BrandTryOnDock() {
             {loading ? null : (
               <button
                 type="button"
-                aria-label="Bỏ ảnh thử đồ"
+                aria-label={t("Bỏ ảnh thử đồ")}
                 className={`min-h-11 min-w-11 shrink-0 border-l border-[#3B2219]/20 text-lg leading-none text-[#3B2219]/70 ${FOCUS_RING}`}
                 onClick={() => discard(job.id)}
               >
@@ -141,29 +146,29 @@ export function BrandTryOnDock() {
 
       <dialog
         ref={viewerRef}
-        aria-label="Ảnh thử đồ"
+        aria-label={t("Ảnh thử đồ")}
         className="m-0 mt-auto max-h-[92dvh] w-full max-w-none overflow-y-auto rounded-t-2xl border-0 bg-[#FAF7F2] p-0 text-black shadow-2xl backdrop:bg-black/45 sm:m-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-[440px] sm:rounded-lg"
         onClose={handleViewerClosed}
       >
         {viewerOpen && job !== null ? (
           <div className="px-5 pb-5 pt-4">
             <div className="flex items-start justify-between gap-4">
-              <h2 className="font-display text-2xl font-normal tracking-[-0.02em]">Thử đồ</h2>
+              <h2 className="font-display text-2xl font-normal tracking-[-0.02em]">{t("Thử đồ")}</h2>
               <button type="button" className={`shrink-0 px-2 ${TEXT_BUTTON}`} onClick={() => viewerRef.current?.close()}>
-                Đóng
+                {t("Đóng")}
               </button>
             </div>
             <p className="mb-3 text-xs leading-5 text-black/60">
-              {job.productName}. Kết quả do AI tạo, chỉ mang tính tham khảo.
+              {t("{productName}. Kết quả do AI tạo, chỉ mang tính tham khảo.", { productName: job.productName })}
             </p>
 
             {job.status === "loading" ? (
               <>
-                <p className="text-sm">Đang tạo ảnh thử đồ cho nàng…</p>
+                <p className="text-sm">{t("Đang tạo ảnh thử đồ cho nàng…")}</p>
                 <p className="mt-1 text-sm text-black/70">{TRY_ON_WAIT_NOTE}</p>
                 <BrandTryOnWaiting photoUrl={job.photoUrl} startedAt={job.startedAt} />
                 <button type="button" className="btn btn--outline mt-4 w-full px-4" onClick={() => viewerRef.current?.close()}>
-                  Xem tiếp trong lúc chờ
+                  {t("Xem tiếp trong lúc chờ")}
                 </button>
               </>
             ) : null}
@@ -176,7 +181,7 @@ export function BrandTryOnDock() {
                 isTeen={isTeenAgeState(job.ageState)}
                 secondaryAction={
                   <Link href={productHref(job)} className="btn btn--outline px-4" onClick={leaveForProduct}>
-                    Xem sản phẩm
+                    {t("Xem sản phẩm")}
                   </Link>
                 }
               />
@@ -188,7 +193,7 @@ export function BrandTryOnDock() {
                   {job.errorMessage}
                 </p>
                 <Link href={productHref(job)} className="btn btn--outline mt-4 w-full px-4" onClick={leaveForProduct}>
-                  Về trang sản phẩm
+                  {t("Về trang sản phẩm")}
                 </Link>
               </>
             ) : null}

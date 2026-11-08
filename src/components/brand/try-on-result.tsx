@@ -1,7 +1,10 @@
+"use client";
+
 import type { ReactNode } from "react";
 
 import { TRY_ON_TEEN_DISCLOSURE } from "@/components/headless/try-on-model";
 import type { TryOnResult } from "@/components/headless/try-on-session";
+import { useT } from "@/i18n/client";
 
 const RESULT_EXTENSION: Readonly<Record<TryOnResult["mimeType"], string>> = {
   "image/png": "png",
@@ -29,12 +32,13 @@ export function BrandTryOnResult({
   /** Beside the download: "Tạo lại" in the dialog, "Xem sản phẩm" elsewhere. */
   secondaryAction: ReactNode;
 }>) {
+  const t = useT();
   return (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element -- a generated blob; next/image cannot optimise it. */}
       <img
         src={result.url}
-        alt={`Ảnh thử đồ do AI tạo cho ${productName}, chỉ mang tính tham khảo`}
+        alt={t("Ảnh thử đồ do AI tạo cho {productName}, chỉ mang tính tham khảo", { productName })}
         className="mx-auto mt-2 max-h-[22rem] w-auto max-w-full border border-black/15 object-contain"
       />
       <div className="mt-3 grid grid-cols-2 gap-2">
@@ -43,13 +47,12 @@ export function BrandTryOnResult({
           download={`thu-do-${productSlug}.${RESULT_EXTENSION[result.mimeType]}`}
           className="btn btn--primary px-4"
         >
-          Tải ảnh
+          {t("Tải ảnh")}
         </a>
         {secondaryAction}
       </div>
       <p className="mt-3 text-xs leading-5 text-black/65">
-        Ảnh do AI tạo, chỉ mang tính tham khảo — không đảm bảo kích cỡ, độ vừa vặn, chất liệu hay màu
-        sắc thật.
+        {t("Ảnh do AI tạo, chỉ mang tính tham khảo — không đảm bảo kích cỡ, độ vừa vặn, chất liệu hay màu sắc thật.")}
       </p>
       {isTeen ? (
         <p className="mt-2 border-l-[3px] border-[#3B2219] pl-3 text-xs leading-5 text-black/75">

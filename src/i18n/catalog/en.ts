@@ -5,6 +5,7 @@ import { CONTENT_EN } from "./content.ts";
 import { FLOWS_EN } from "./flows.ts";
 import { PROSE_EN } from "./prose.ts";
 import { STOREFRONT_EN } from "./storefront.ts";
+import { TRYON_EN } from "./tryon.ts";
 
 /**
  * The English catalog: Vietnamese source text -> English. One file per area of the site, merged
@@ -23,6 +24,7 @@ export const EN_CLIENT_MESSAGES: Readonly<Record<string, string>> = Object.freez
   ...CONTENT_EN,
   ...STOREFRONT_EN,
   ...FLOWS_EN,
+  ...TRYON_EN,
 });
 
 export const EN_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
