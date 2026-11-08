@@ -7,6 +7,7 @@ import { useVoucherPickerActions } from "@/components/headless/use-voucher-picke
 import { formatVoucherVnd, voucherEntryCopy, type VoucherPickerGroup, type VoucherPickerModel } from "@/routes/voucher-picker-model";
 import { VoucherCard } from "./voucher-card";
 import { VoucherIcon } from "./voucher-icons";
+import { VoucherDiscountRows } from "./voucher-summary-lines";
 
 /**
  * Voucher v1 (V16): the Grab-inspired picker (spec §7). Mobile is a full-screen sheet with a sticky footer, desktop a
@@ -65,7 +66,13 @@ let pendingOfferClearingAt = 0;
 const PENDING_CLEARING_TTL_MS = 5 * 60_000;
 const livePendingClearing = () => (pendingOfferClearing !== null && Date.now() - pendingOfferClearingAt < PENDING_CLEARING_TTL_MS ? pendingOfferClearing : null);
 
-export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial: VoucherPickerModel; linkOffer?: string | null }>) {
+export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", triggerLabel = "Đổi ưu đãi" }: Readonly<{
+  initial: VoucherPickerModel;
+  linkOffer?: string | null;
+  /** "entry": the ticket that opens the picker (cart, and checkout when nothing is chosen). "link": a text button, for placing the same picker inside another panel (checkout). */
+  trigger?: "entry" | "link";
+  triggerLabel?: string;
+}>) {
   const { previewDraft, commitDraft, applyCode, applyLinkedCode, dismissLinkedOffer } = useVoucherPickerActions();
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -97,6 +104,8 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
   // A code from a marketing link is OFFERED, never applied or even shown: it stays on the server, and "Dùng mã từ liên kết" asks the
   // server to use it (the same verify, quote and consent as a typed code).
   const [code, setCode] = useState("");
+  // The code box is one quiet row until the shopper asks for it; it stays open while there is something typed.
+  const [codeOpen, setCodeOpen] = useState(false);
   const [pendingLink, setPendingLink] = useState(false);
   // Once the linked code is used the offer disappears from the dialog at once; the server-side cookie is cleared when the dialog closes.
   const [linkUsed, setLinkUsed] = useState(false);
@@ -198,6 +207,12 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
     if (!openRef.current) settleCodeApplied();
   };
 
+  const openDialog = () => {
+    setLateRefusal(false);
+    setUnknownOutcome(false);
+    setOpen(true);
+  };
+
   const close = () => {
     openRef.current = false;
     settleCodeApplied();
@@ -208,6 +223,7 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
     setError(null);
     setMessage(null);
     setCode("");
+    setCodeOpen(false);
     setModel(saved);
     setDraft(draftOf(saved));
   };
@@ -429,7 +445,10 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
 
   return (
     <div data-voucher-picker>
-      <button type="button" className="voucher-entry" aria-haspopup="dialog" onClick={() => { setLateRefusal(false); setUnknownOutcome(false); setOpen(true); }}>
+      {trigger === "link" ? (
+        <button type="button" className="inline-flex min-h-11 items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4" aria-haspopup="dialog" onClick={openDialog}>{triggerLabel}</button>
+      ) : (
+      <button type="button" className="voucher-entry" aria-haspopup="dialog" onClick={openDialog}>
         <span className="voucher-entry__icon"><VoucherIcon name={entry.used ? "check" : "tag"} /></span>
         <span className="voucher-entry__text">
           <span className="voucher-entry__title">
@@ -440,7 +459,8 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
         </span>
         <span className="voucher-entry__go">{entry.used ? "Đổi" : "Chọn"}<VoucherIcon name="chevron" /></span>
       </button>
-      {nudge ? (
+      )}
+      {trigger === "entry" && nudge ? (
         <div className={`voucher-tone voucher-tone--${nudge.tone} voucher-nudge`} data-voucher-nudge>
           <span>Mua thêm <b>{formatVoucherVnd(nudge.item.shortfallVnd!)}</b> để dùng voucher <b>{nudge.item.name}</b></span>
           <span className="voucher-nudge__bar" role="progressbar" aria-label="Tiến độ đạt điều kiện" aria-valuemin={0} aria-valuemax={100} aria-valuenow={nudge.item.progressPercent!}><i style={{ width: `${nudge.item.progressPercent!}%` }} /></span>
@@ -475,14 +495,18 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-4">
-            <form
-              className="flex gap-2"
-              onSubmit={(event) => { event.preventDefault(); if (code.trim()) submitCode(); }}
-            >
+            <button type="button" className="voucher-code-toggle" aria-expanded={codeOpen || code !== ""} aria-controls={codeOpen || code !== "" ? `${titleId}-code-row` : undefined} onClick={() => setCodeOpen((value) => !value)}>
+              <span>Nhập mã khuyến mãi</span>
+              <VoucherIcon name="chevron" />
+            </button>
+            {codeOpen || code !== "" ? (
+            <div className="mt-2 flex gap-2" id={`${titleId}-code-row`}>
+              {/* Not a <form>: on the checkout this dialog sits inside the order form, and a nested form is invalid HTML (the parser drops it). Enter is handled below. */}
               <label className="sr-only" htmlFor={`${titleId}-code`}>Nhập mã khuyến mãi</label>
-              <input id={`${titleId}-code`} value={code} onChange={(event) => editCode(event.target.value)} maxLength={64} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Nhập mã khuyến mãi" className="min-h-11 min-w-0 flex-1 rounded-md border border-black/30 bg-transparent px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2" />
-              <button type="submit" disabled={pending || code.trim() === ""} className="min-h-11 rounded-md border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Áp dụng mã</button>
-            </form>
+              <input autoFocus id={`${titleId}-code`} value={code} onChange={(event) => editCode(event.target.value)} maxLength={64} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Nhập mã khuyến mãi" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); if (code.trim() && !pending) submitCode(); } }} className="min-h-11 min-w-0 flex-1 rounded-md border border-black/30 bg-transparent px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2" />
+              <button type="button" onClick={() => { if (code.trim()) submitCode(); }} disabled={pending || code.trim() === ""} className="min-h-11 rounded-md border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Áp dụng mã</button>
+            </div>
+            ) : null}
 
             {error ? <p role="alert" className="mt-3 border-l-2 border-black bg-black/5 p-3 text-sm">{error}</p> : null}
             {model.warnings.notices.map((notice) => <p key={notice} role="status" className="mt-3 text-sm text-black/80">{notice}</p>)}
@@ -514,18 +538,14 @@ export function VoucherPicker({ initial, linkOffer = null }: Readonly<{ initial:
               );
             })}
 
-            <dl className="mt-6 space-y-1.5 border-t border-black/15 pt-4 text-sm">
-              <div className="flex justify-between gap-4"><dt>Tiền hàng</dt><dd>{model.summary.paidBeforeText}</dd></div>
-              {model.summary.merchandiseLines.length > 0
-                ? model.summary.merchandiseLines.map((line) => <div key={line.id} className="flex justify-between gap-4"><dt>{line.label}</dt><dd>{line.amountText}</dd></div>)
-                : model.summary.merchandiseDiscountText
-                  ? <div className="flex justify-between gap-4"><dt>Voucher giảm tiền hàng</dt><dd>{model.summary.merchandiseDiscountText}</dd></div>
-                  : null}
-              <div className="flex justify-between gap-4"><dt>Phí vận chuyển</dt><dd>{model.summary.shippingFeeText}</dd></div>
-              {model.summary.shippingDiscountText ? <div className="flex justify-between gap-4"><dt>Voucher vận chuyển</dt><dd>{model.summary.shippingDiscountText}</dd></div> : null}
-              <div className="flex justify-between gap-4 text-base font-semibold"><dt>Dự kiến thanh toán</dt><dd>{model.summary.totalText}</dd></div>
+            <dl className="voucher-rows">
+              <div><dt>Tiền hàng</dt><dd>{model.summary.paidBeforeText}</dd></div>
+              <VoucherDiscountRows part="merchandise" summary={model.summary} />
+              <div><dt>Phí vận chuyển</dt><dd>{model.summary.shippingFeeText}</dd></div>
+              <VoucherDiscountRows part="shipping" summary={model.summary} />
+              <div className="voucher-rows__total"><dt>Dự kiến thanh toán</dt><dd>{model.summary.totalText}</dd></div>
             </dl>
-            <p className="mt-2 text-xs text-black/65">Đây là số dự kiến; ưu đãi chưa được giữ cho đến khi nàng đặt hàng.</p>
+            <p className="mt-2.5 text-xs text-black/65">Đây là số dự kiến; ưu đãi chưa được giữ cho đến khi nàng đặt hàng.</p>
 
             {warnings.length > 0 ? (
               <div role="alert" className="mt-4 border-l-2 border-black bg-black/5 p-3 text-sm leading-6">

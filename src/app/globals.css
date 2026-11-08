@@ -42,6 +42,7 @@
   --white: #fffdfa;
   --stone: #d4c7b8;
   --olive: #70584b;
+  --linen: #f0e9de;
   --chocolate: #3b2219;
   --line: rgba(59, 34, 25, 0.15);
 }
@@ -2576,22 +2577,58 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   padding: 0 var(--shell-gutter);
 }
 
-/* On the product page the rail sits between the information row and the related grid, inside the
-   page's 1600px column, with the related grid's own rule above it instead of a rule below. */
+/* On the product page the rail sits on a full-bleed linen band (`.pdp-feedback-band`, a wrapper in the product
+   route) between the information row and the related grid, inside the page's 1600px column. The band, not a
+   rule, separates it: the customers' photographs are the page's strongest proof, so they set the rhythm.
+   The heading follows the homepage's: centred, small capitals, wide tracking. */
+.pdp-feedback-band {
+  margin-top: 2.5rem;
+  background: var(--linen);
+}
+
 .feedback-rail--product {
-  /* The page column's own gutter (`px-6`), so the heading and photographs line up with the
-     information row above and the related grid below. */
+  /* The page column's own gutter (`px-6`), so the photographs line up with the information row above
+     and the related grid below. */
   --shell-gutter: 1.5rem;
   max-width: 1600px;
   margin: 0 auto;
-  padding: 1.5rem 0 3rem;
+  padding: 3rem 0 3.5rem;
   border-bottom: 0;
 }
 
 .feedback-rail--product .section-heading-row {
   margin-inline: var(--shell-gutter);
-  padding: 1.5rem 0 0;
-  border-top: 1px solid rgb(0 0 0 / 20%);
+  margin-bottom: 2rem;
+  padding: 0;
+  border-top: 0;
+  justify-content: center;
+  text-align: center;
+}
+
+.feedback-rail--product .section-heading-row h2,
+.section-heading-row--center h2 {
+  font-size: 1.0625rem;
+  font-weight: 400;
+  letter-spacing: 0.3em;
+}
+
+.section-heading-row--center {
+  justify-content: center;
+  text-align: center;
+}
+
+/* From `lg` the product page's reading blocks (description, material, care, shipping, returns) are titled
+   sections: a hairline of the logo's caramel above each title marks where one starts. Below `lg` they are
+   fold-away rows and carry no mark. */
+@media (min-width: 64rem) {
+  .pdp-section-title::before {
+    content: "";
+    display: block;
+    width: 1.5rem;
+    height: 1px;
+    margin-bottom: 0.875rem;
+    background: #b8825f;
+  }
 }
 
 .feedback-rail--product .home-more {
@@ -3432,13 +3469,14 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
  */
 @layer components {
   .voucher-tone { --vc-tint: color-mix(in srgb, var(--vc) 9%, #fffdfa); }
-  .voucher-tone--clay { --vc: #94452f; }
-  .voucher-tone--plum { --vc: #6a3a62; }
-  .voucher-tone--moss { --vc: #4d5b39; }
-  .voucher-tone--navy { --vc: #34476b; }
-  .voucher-tone--teal { --vc: #2f5d62; }
-  /* a voucher whose type is not known (the PDP teaser): neutral, so it never claims a type colour it will not have in the picker */
+  .voucher-tone--clay { --vc: #9a4a32; }
+  .voucher-tone--plum { --vc: #8c3f55; }
+  .voucher-tone--moss { --vc: #5c5a2e; }
+  .voucher-tone--navy { --vc: #5e3b2c; }
+  .voucher-tone--teal { --vc: #46604f; }
+  /* not a voucher type: a PDP promotion ticket takes the neutral ink, a gift promotion the page's own mocha (--olive) */
   .voucher-tone--ink { --vc: #3b2219; }
+  .voucher-tone--mocha { --vc: #70584b; }
 
   .voucher-swatch { display: inline-block; width: 0.625rem; height: 0.625rem; flex: none; border-radius: 0.1875rem; background: var(--vc); }
   .voucher-dots { display: inline-flex; gap: 0.1875rem; }
@@ -3491,6 +3529,8 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   /* a voucher the cart cannot use yet: a muted block with DARK text (white on this tint is only ~2.4:1, and this is the figure the shopper weighs) */
   .voucher-ticket:disabled .voucher-ticket__stub { background: color-mix(in srgb, var(--vc) 32%, #d8cfc7); color: var(--ink); }
   .voucher-ticket__val { font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; line-height: 1; }
+  /* a word rather than a figure ("FREESHIP", "ƯU ĐÃI") is set smaller so it fits the 68px block on one line */
+  .voucher-ticket__val[data-long="true"] { font-size: 0.6875rem; letter-spacing: 0.01em; }
   /* no `opacity` here: with it axe (4.12) reads the page behind the block instead of the block's own colour on wide viewports and reports white text at 1.06:1 */
   .voucher-ticket__sub { font-family: var(--font-display); font-size: 0.5625rem; font-weight: 600; letter-spacing: 0.08em; line-height: 1.15; text-transform: uppercase; }
 
@@ -3500,9 +3540,9 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-ticket__name { font-family: var(--font-display); font-size: 0.84375rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
   .voucher-ticket__cond { font-size: 0.71875rem; line-height: 1.35; color: rgba(59, 34, 25, 0.72); }
   .voucher-ticket__line { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.625rem; font-size: 0.8125rem; line-height: 1.5; }
-  .voucher-ticket__save { font-weight: 800; color: #b42318; }
+  .voucher-ticket__save { font-weight: 800; color: #9a3324; }
   .voucher-ticket__need { font-size: 0.75rem; line-height: 1.35; color: rgba(59, 34, 25, 0.8); }
-  .voucher-ticket__warn { display: inline-flex; align-items: center; gap: 0.1875rem; font-size: 0.71875rem; font-weight: 700; color: #8a4a00; }
+  .voucher-ticket__warn { display: inline-flex; align-items: center; gap: 0.1875rem; font-size: 0.71875rem; font-weight: 700; color: #9a3324; }
   .voucher-ticket__code { font-size: 0.71875rem; font-weight: 700; text-decoration: underline dotted; text-underline-offset: 3px; }
   .voucher-ticket__mark { display: grid; place-items: center; width: 1.375rem; height: 1.375rem; border: 2px solid rgba(59, 34, 25, 0.4); border-radius: 50%; color: #fff; }
   .voucher-ticket__mark > svg { width: 0.75rem; height: 0.75rem; opacity: 0; }
@@ -3512,8 +3552,25 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-ticket__progress { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: rgba(59, 34, 25, 0.12); }
   .voucher-ticket__progress > i { display: block; height: 100%; background: var(--vc); }
 
+  /* the bill: label on the left, amount on the right; a voucher line has its type's colour square and a red amount; the total is larger */
+  .voucher-rows { display: grid; gap: 0.5rem; margin: 1.5rem 0 0; border-top: 1px solid rgba(59, 34, 25, 0.22); padding-top: 1rem; font-size: 0.875rem; }
+  .voucher-rows > div { display: flex; justify-content: space-between; gap: 1rem; }
+  .voucher-rows dt, .voucher-rows dd { margin: 0; }
+  .voucher-rows__label { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .voucher-rows__neg dd { font-weight: 700; color: #9a3324; }
+  .voucher-rows__total { align-items: baseline; margin-top: 0.25rem; border-top: 1px solid rgba(59, 34, 25, 0.22); padding-top: 0.75rem; font-family: var(--font-display); font-size: 0.9375rem; font-weight: 700; }
+  .voucher-rows__total dd { font-size: 1.1875rem; }
+  .voucher-rows--plain { margin-top: 0.875rem; border-top: 0; padding-top: 0; }
+
+  /* the code entry: one quiet row that opens to the input */
+  .voucher-code-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 2.75rem; border: 1px solid rgba(59, 34, 25, 0.22); border-radius: 0.375rem; background: #fffdfa; padding: 0 0.875rem; font-family: var(--font-display); font-size: 0.875rem; font-weight: 600; color: var(--ink); text-align: left; cursor: pointer; }
+  .voucher-code-toggle > svg { width: 1rem; height: 1rem; color: rgba(59, 34, 25, 0.72); transition: transform 0.15s; }
+  .voucher-code-toggle[aria-expanded="true"] > svg { transform: rotate(90deg); }
+  .voucher-code-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .voucher-code-toggle > svg { transition: none; } }
+
   /* the bar at the top of the dialog: how many vouchers, and what they take off */
-  .voucher-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.875rem; margin: 0.75rem 1rem 0; border-radius: 0.625rem; background: var(--ink); padding: 0.625rem 0.875rem; color: #fff; box-shadow: 0 6px 16px -10px rgba(59, 34, 25, 0.6); }
+  .voucher-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.875rem; margin: 0.75rem 1rem 0; border-radius: 0.5rem; background: var(--ink); padding: 0.625rem 0.875rem; color: #fff; box-shadow: 0 6px 16px -10px rgba(59, 34, 25, 0.6); }
   .voucher-bar__count { display: grid; min-width: 0; gap: 0.1875rem; }
   .voucher-bar__label { display: flex; align-items: center; gap: 0.4375rem; font-family: var(--font-display); font-size: 0.625rem; font-weight: 600; letter-spacing: 0.14em; line-height: 1; text-transform: uppercase; white-space: nowrap; color: rgba(255, 255, 255, 0.72); }
   .voucher-bar__label .voucher-dots > i { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8); }
@@ -3538,7 +3595,7 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-entry__icon > svg { width: 1.375rem; height: 1.375rem; }
   .voucher-entry__text { display: grid; min-width: 0; gap: 1px; border-left: 1.5px dashed rgba(59, 34, 25, 0.22); padding: 0.625rem 0.75rem 0.625rem 1rem; }
   .voucher-entry__title { display: flex; align-items: center; gap: 0.4375rem; font-family: var(--font-display); font-size: 0.9375rem; font-weight: 700; line-height: 1.25; }
-  .voucher-entry__sub { font-size: 0.78125rem; font-weight: 700; color: #b42318; }
+  .voucher-entry__sub { font-size: 0.78125rem; font-weight: 700; color: #9a3324; }
   .voucher-entry__sub[data-quiet="true"] { font-weight: 500; color: rgba(59, 34, 25, 0.72); }
   .voucher-entry__go { display: flex; align-items: center; gap: 0.125rem; padding-right: 0.75rem; font-family: var(--font-display); font-size: 0.8125rem; font-weight: 700; }
   .voucher-entry__go > svg { width: 0.9375rem; height: 0.9375rem; }
@@ -3553,15 +3610,89 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-held__head { display: flex; align-items: center; gap: 0.625rem; border-bottom: 1.5px dashed rgba(59, 34, 25, 0.22); padding: 0.75rem 0.875rem; }
   .voucher-held__ok { display: grid; place-items: center; width: 1.625rem; height: 1.625rem; flex: none; border-radius: 50%; background: #24472d; color: #fff; }
   .voucher-held__ok > svg { width: 0.9375rem; height: 0.9375rem; }
-  .voucher-held__pill { margin-left: auto; border-radius: 999px; background: #fbe8cf; padding: 0.1875rem 0.625rem; font-family: var(--font-display); font-size: 0.75rem; font-weight: 700; color: #8a4a00; }
+  .voucher-held__ok--offer { background: var(--ink); }
+  .voucher-held__mi { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; flex: none; border-radius: 0.375rem; background: var(--vc, var(--ink)); color: #fff; }
+  .voucher-held__pill { display: inline-flex; align-items: center; gap: 0.3125rem; font-variant-numeric: tabular-nums; margin-left: auto; border-radius: 999px; background: var(--cream); box-shadow: inset 0 0 0 1px var(--line); padding: 0.1875rem 0.625rem; font-family: var(--font-display); font-size: 0.75rem; font-weight: 700; color: var(--ink); }
 
-  /* PDP teaser: small tickets, never a promise */
+  /* PDP teaser: small tickets in one swipeable row, never a promise. Press one to read its full sentence. */
+  .voucher-chips { display: flex; gap: 0.625rem; margin: 0.5rem -0.125rem 0; overflow-x: auto; padding: 0.25rem 0.125rem 0.5rem; scroll-snap-type: x proximity; list-style: none; }
+  .voucher-chips > li { flex: none; scroll-snap-align: start; }
+  /* one ticket for the PDP's promotion offers (a list item) and its voucher teaser (a toggle button) */
   .voucher-chip { position: relative; display: inline-flex; align-items: stretch; max-width: 100%; overflow: hidden; border-radius: 0.5rem; background: #fffdfa; box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); --voucher-notch: var(--paper); }
+  button.voucher-chip { min-height: 3.25rem; border: 0; padding: 0; color: var(--ink); font-family: var(--font-sans); text-align: left; cursor: pointer; }
   .voucher-chip::before,
   .voucher-chip::after { content: ""; position: absolute; left: 1.9375rem; width: 0.75rem; height: 0.75rem; border-radius: 50%; background: var(--voucher-notch); box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); }
   .voucher-chip::before { top: -0.375rem; }
   .voucher-chip::after { bottom: -0.375rem; }
-  .voucher-chip__icon { display: grid; place-items: center; width: 2.25rem; flex: none; background: var(--vc, #94452f); color: #fff; }
+  .voucher-chip__icon { display: grid; place-items: center; width: 2.25rem; flex: none; background: var(--vc, #9a4a32); color: #fff; }
   .voucher-chip__icon > svg { width: 1.125rem; height: 1.125rem; }
   .voucher-chip__text { margin-left: -1px; border-left: 1.5px dashed rgba(59, 34, 25, 0.22); padding: 0.4375rem 0.75rem 0.4375rem 0.875rem; font-size: 0.8125rem; font-weight: 600; line-height: 1.35; }
+
+  /* the PDP teaser's chips: toggle buttons with a title over a short condition */
+  .voucher-chip__text--stack { display: grid; align-content: center; font-weight: 400; white-space: nowrap; }
+  .voucher-chip[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--vc); }
+  .voucher-chip[aria-pressed="true"]::before,
+  .voucher-chip[aria-pressed="true"]::after { box-shadow: inset 0 0 0 2px var(--vc); }
+  .voucher-chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .voucher-chip__text > b { font-family: var(--font-display); font-size: 0.9375rem; font-weight: 700; line-height: 1.2; }
+  .voucher-chip__text > small { font-size: 0.71875rem; line-height: 1.35; color: rgba(59, 34, 25, 0.72); }
+  .voucher-chip-info { margin: 0.375rem 0 0; border-left: 3px solid var(--vc); border-radius: 0.375rem; background: var(--vc-tint); padding: 0.625rem 0.75rem; font-size: 0.8125rem; line-height: 1.45; }
+
+  /*
+   * Gifts (UI refresh): the "Quà dành cho nàng" panel in the cart and at checkout, in the same ticket language as the vouchers. Gifts have their
+   * own colour (caramel, white on it is about 5.9:1) so they never read as one of the voucher types. Only the look changed: the words, the
+   * roles and the data-gift-* hooks are the ones the gift flow and its specs already use.
+   */
+  .gift-panel { --gift: #8a5a2b; --gift-tint: color-mix(in srgb, var(--gift) 8%, #fffdfa); min-width: 0; margin: 1.5rem 0; overflow: hidden; border-radius: 0.5rem; background: #fffdfa; box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); color: var(--ink); }
+  .gift-panel__head { display: flex; align-items: center; gap: 0.625rem; border-bottom: 1.5px dashed rgba(59, 34, 25, 0.22); padding: 0.75rem 1rem; }
+  .gift-panel__icon { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; flex: none; border-radius: 50%; background: var(--gift); color: #fff; }
+  .gift-panel__icon > svg { width: 1rem; height: 1rem; }
+  .gift-panel__pill { margin-left: auto; border-radius: 999px; background: color-mix(in srgb, var(--gift) 12%, #fffdfa); padding: 0.1875rem 0.625rem; font-family: var(--font-display); font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--gift); }
+  .gift-panel__body { padding: 0.875rem 1rem 1rem; }
+  .gift-bar { height: 4px; margin-top: 0.5rem; overflow: hidden; border-radius: 999px; background: rgba(59, 34, 25, 0.12); }
+  .gift-bar > i { display: block; height: 100%; border-radius: 999px; background: var(--gift); }
+
+  /* the control that opens the list: the cart entry's ticket, in the gift colour */
+  .gift-entry { position: relative; display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: stretch; width: 100%; min-height: 3.25rem; overflow: hidden; border: 0; padding: 0; border-radius: 0.5rem; background: var(--gift-tint); box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); color: var(--ink); text-align: left; cursor: pointer; font-family: var(--font-sans); }
+  .gift-entry:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .gift-entry__icon { display: grid; place-items: center; background: var(--gift); color: #fff; }
+  .gift-entry__icon > svg { width: 1.25rem; height: 1.25rem; }
+  .gift-entry__text { display: flex; align-items: center; margin-left: -1px; border-left: 1.5px dashed rgba(59, 34, 25, 0.22); padding: 0.5rem 0.75rem 0.5rem 1rem; font-family: var(--font-display); font-size: 0.9375rem; font-weight: 700; }
+  .gift-entry__chev { align-self: center; width: 1rem; height: 1rem; margin-right: 0.875rem; transition: transform 0.15s; }
+  .gift-entry[aria-expanded="true"] .gift-entry__chev { transform: rotate(90deg); }
+
+  .gift-item { border-radius: 0.5rem; background: var(--gift-tint); padding: 0.75rem; }
+  .gift-item__tag { flex: none; border-radius: 0.1875rem; background: var(--gift); padding: 0.125rem 0.375rem; font-family: var(--font-display); font-size: 0.59375rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #fff; }
+  .gift-btn { display: inline-flex; align-items: center; min-height: 2.75rem; border: 1px solid rgba(59, 34, 25, 0.35); border-radius: 0.375rem; background: transparent; padding: 0.25rem 0.875rem; font-size: 0.8125rem; font-weight: 600; color: var(--ink); cursor: pointer; }
+  .gift-btn:hover:not(:disabled) { border-color: var(--ink); }
+  .gift-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .gift-btn:focus-visible, .gift-back:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .gift-back { display: inline-flex; align-items: center; gap: 0.375rem; min-height: 2.75rem; border: 0; background: none; padding: 0; font-family: var(--font-display); font-size: 0.875rem; font-weight: 600; color: var(--ink); cursor: pointer; text-decoration: underline; text-underline-offset: 4px; }
+  .gift-back__arrow { width: 0.9375rem; height: 0.9375rem; transform: rotate(180deg); }
+  .gift-note { border-radius: 0.375rem; background: #fbe8cf; padding: 0.5rem 0.75rem; font-size: 0.8125rem; color: #6b3a00; }
+  /* "Đã thêm vào đơn: …": a confirmation, not a loose paragraph */
+  .gift-status:not(:empty) { margin-top: 0.75rem; border-left: 3px solid var(--gift, #8a5a2b); border-radius: 0.375rem; background: color-mix(in srgb, var(--gift, #8a5a2b) 8%, #fffdfa); padding: 0.5rem 0.75rem; font-size: 0.875rem; line-height: 1.45; }
+  @media (prefers-reduced-motion: reduce) { .gift-entry__chev { transition: none; } }
+  /* PDP: the group name above the voucher tickets, in the page's small-label voice */
+  .pdp-voucher-label { margin: 0; font-family: var(--font-display); font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--olive); }
+
+  /*
+   * PDP "Hướng dẫn chọn size" and "Thử đồ AI": two outlined buttons that share one row when they fit, a phone
+   * included. The type and padding step down on narrow phones so both fit at 360px, where the ruler icon goes
+   * too. When they do not fit (a larger text size, a 320px screen) the row wraps and a label wraps inside its
+   * own button, so nothing is clipped or overlaps and the page never scrolls sideways. The 44px target is a
+   * minimum height, not a fixed one. The accent variant (try-on) is the same button on a stone tint.
+   */
+  .pdp-action-chip { display: inline-flex; max-width: 100%; min-height: 2.75rem; align-items: center; gap: 0.375rem; padding-block: 0.375rem; padding-inline: 0.5rem; text-align: left; border: 1px solid rgb(59 34 25 / 30%); border-radius: 0.375rem; color: #3b2219; font-size: 0.75rem; font-weight: 500; transition: border-color 200ms ease, background-color 200ms ease; }
+  .pdp-action-chip:hover { border-color: #3b2219; }
+  .pdp-action-chip--accent { border-color: rgb(59 34 25 / 45%); background: rgb(212 199 184 / 45%); font-weight: 600; }
+  .pdp-action-chip--accent:hover { background: rgb(212 199 184 / 70%); }
+  .pdp-action-chip__icon--optional { display: none; }
+  @media (min-width: 24.375rem) {
+    .pdp-action-chip { padding-inline: 0.75rem; font-size: 0.8125rem; }
+    .pdp-action-chip__icon--optional { display: block; }
+  }
+  @media (min-width: 64rem) {
+    .pdp-action-chip { gap: 0.5rem; padding-inline: 1rem; font-size: 0.875rem; }
+  }
 }

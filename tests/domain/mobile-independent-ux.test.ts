@@ -114,8 +114,9 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
 
   // One compact selector system now spans mobile, desktop and the quick sheet. Chips are drawn
   // 32px tall and 44px wide, and each sits in a label padded to the 44px practical touch target,
-  // while desktop no longer re-expands the group spacing.
-  assert.match(panel, /min-h-8 min-w-11[^"]*bg-\[#3B2219\]\/5[^"]*px-4/);
+  // while desktop no longer re-expands the group spacing. The unselected chip is a warm white with
+  // a visible brown hairline (it was a 5% tint with no border); the size and target are unchanged.
+  assert.match(panel, /min-h-8 min-w-11[^"]*border-\[#3B2219\]\/30 bg-\[#FFFDFA\][^"]*px-4/);
   assert.match(panel, /function choiceTarget\(disabled: boolean\) \{\s*return `py-1\.5 /);
   assert.doesNotMatch(panel, /lg:mt-7/);
   assert.match(panel, /function renderSelectorLegend/);
@@ -128,6 +129,14 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
   assert.match(panel, /renderSelectorLegend\(view\.colorDimensionLabel \?\? "Màu", selection\.color\)/);
   assert.match(panel, /function renderSizeGuideTrigger\(surface: "panel" \| "sheet"\)/);
   assert.match(panel, /\{renderSizeGuideTrigger\(surface\)\}/);
+  // The size-guide and try-on buttons share a row only while they fit: the row wraps and a label may wrap
+  // inside its button, so a larger text size or a 320px screen never clips, overlaps or scrolls sideways.
+  assert.match(panel, /<div className="mt-2 flex flex-wrap items-center gap-2">/);
+  const actionChip = /\.pdp-action-chip \{[^}]*\}/.exec(css)?.[0] ?? "";
+  assert.notEqual(actionChip, "");
+  assert.doesNotMatch(actionChip, /white-space:\s*nowrap/);
+  assert.match(actionChip, /max-width:\s*100%/);
+  assert.match(actionChip, /min-height:\s*2\.75rem/);
 
   const factsStart = panel.indexOf("function SizeGuideFacts");
   const guideStart = panel.indexOf("function MappedSizeGuideDialog");

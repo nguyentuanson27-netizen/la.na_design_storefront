@@ -101,16 +101,14 @@ export function BrandTryOnTrigger({
     <button
       ref={triggerRef}
       type="button"
-      className={`group inline-flex min-h-11 items-center gap-2 text-sm text-[#3B2219] ${FOCUS_RING} focus-visible:outline-offset-4`}
+      className={`pdp-action-chip pdp-action-chip--accent ${FOCUS_RING}`}
       aria-haspopup="dialog"
       onClick={onOpen}
     >
       <PersonIcon />
-      <span className="underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors group-hover:decoration-[#3B2219]">
-        Thử đồ AI
-      </span>
+      <span>Thử đồ AI</span>
       <span className="sr-only"> bằng ảnh của nàng, hoàn toàn miễn phí,</span>
-      <span className="border border-[#3B2219]/50 px-1 text-[9px] font-semibold uppercase leading-[14px] tracking-[0.12em]">
+      <span className="rounded-[3px] bg-[#3B2219] px-1.5 text-[9px] font-semibold uppercase leading-[14px] tracking-[0.12em] text-white">
         Beta
       </span>
     </button>

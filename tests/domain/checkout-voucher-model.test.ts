@@ -95,7 +95,7 @@ const picker = (overrides: Partial<VoucherPickerModel> = {}): VoucherPickerModel
     { slot: "MERCHANDISE", kind: "MERCHANDISE", heading: "", hint: "", tone: "clay", mode: "AUTO", items: [{ id: MERCH, name: "Giảm 50K", title: "Giảm 50.000đ", valueLabel: "50K", valueSub: "Giảm", condition: "", selected: true, selectable: true, disabledReason: null, shortfallVnd: null, progressPercent: null, savingText: "Dự kiến giảm 50.000đ", publicCode: null, endsAtIso: null }] },
     { slot: "SHIPPING_FREE", kind: "SHIPPING_FREE", heading: "", hint: "", tone: "teal", mode: "AUTO", items: [] },
   ],
-  summary: { paidBeforeText: "900.000đ", merchandiseDiscountText: "-50.000đ", merchandiseLines: [], shippingFeeText: "30.000đ", shippingDiscountText: null, totalText: "880.000đ", totalVnd: 880_000, savingText: "50.000đ", savingVnd: 50_000 },
+  summary: { paidBeforeText: "900.000đ", merchandiseDiscountText: "-50.000đ", merchandiseLines: [], shippingFeeText: "30.000đ", shippingDiscountText: null, totalText: "880.000đ", totalVnd: 880_000, discountLines: [], savingText: "50.000đ", savingVnd: 50_000 },
   footer: { label: "Áp dụng · Giảm 50.000đ", count: 1 },
   quoteDigest: "a".repeat(64),
   selectionVersion: "b".repeat(64),
@@ -107,8 +107,12 @@ test("held vouchers are listed from the same render as the quote, with the earli
   const view = buildCheckoutVoucherView({ render: render(), picker: picker(), heldUntilMs: 1_700_000_000_000 });
   assert.deepEqual(view, {
     state: "HELD",
-    lines: [{ id: MERCH, title: "Giảm 50.000đ", amountText: `−${vnd("50.000")}` }, { id: SHIP, title: "Miễn phí vận chuyển", amountText: `−${vnd("30.000")}` }],
+    lines: [
+      { id: MERCH, title: "Giảm 50.000đ", amountText: "−50.000đ", kind: "MERCHANDISE", group: "", tone: "clay" },
+      { id: SHIP, title: "Miễn phí vận chuyển", amountText: "−30.000đ", kind: "SHIPPING_FREE" },
+    ],
     heldUntilMs: 1_700_000_000_000,
+    savingText: "50.000đ",
   });
 });
 
@@ -116,7 +120,7 @@ test("an unheld selection is an offer carrying the digest the hold POST must sen
   const plain = { kind: "LEGACY" as const };
   const offered = buildCheckoutVoucherView({ render: plain, picker: picker({ warnings: { giftLoss: "Mất 1 suất quà.", totalIncrease: "Tổng tăng 10.000đ", notices: [] } }), heldUntilMs: null });
   assert.deepEqual(offered, {
-    state: "OFFERED", digest: "a".repeat(64), lines: [{ id: MERCH, title: "Giảm 50.000đ", amountText: "Dự kiến giảm 50.000đ" }], totalText: "880.000đ",
+    state: "OFFERED", digest: "a".repeat(64), lines: [{ id: MERCH, title: "Giảm 50K", amountText: "Dự kiến giảm 50.000đ", kind: "MERCHANDISE", group: "", tone: "clay" }], totalText: "880.000đ",
     giftLossText: "Mất 1 suất quà.", totalIncreaseText: "Tổng tăng 10.000đ", afterStale: false,
   });
   // Holds that stopped describing the cart do not hide the offer; they only say it has to be confirmed again.
@@ -140,4 +144,25 @@ test("review f3eed3a: an offer is never shown (and never blocks the order) where
   assert.deepEqual(buildCheckoutVoucherView({ render: { kind: "LEGACY", voucherStale: true }, picker: picker(), heldUntilMs: null, offerAllowed: false }), { state: "STALE" });
   // The default is unchanged.
   assert.equal(buildCheckoutVoucherView({ render: plain, picker: picker(), heldUntilMs: null })!.state, "OFFERED");
+});
+
+test("a held line wears the colour its voucher has in the picker; with no picker it is neutral", () => {
+  const held = buildCheckoutVoucherView({ render: render(), picker: picker(), heldUntilMs: null }) as Extract<ReturnType<typeof buildCheckoutVoucherView>, { state: "HELD" }>;
+  assert.deepEqual(held.lines.map((line) => [line.kind, line.tone]), [["MERCHANDISE", "clay"], ["SHIPPING_FREE", undefined]]);
+  const blind = buildCheckoutVoucherView({ render: render(), picker: null, heldUntilMs: null }) as Extract<ReturnType<typeof buildCheckoutVoucherView>, { state: "HELD" }>;
+  assert.deepEqual(blind.lines.map((line) => line.tone), [undefined, undefined]);
+});
+
+test("an offered line is named as the picker card names it, and carries its group's kind and colour", () => {
+  const offered = buildCheckoutVoucherView({ render: { kind: "LEGACY" }, picker: picker(), heldUntilMs: null }) as Extract<ReturnType<typeof buildCheckoutVoucherView>, { state: "OFFERED" }>;
+  assert.deepEqual(offered.lines.map((line) => [line.title, line.kind, line.tone]), [["Giảm 50K", "MERCHANDISE", "clay"]]);
+});
+
+test("a held line carries its type's name for the small line under it, and the held total comes from the same picker", () => {
+  const named = picker({ groups: [{ ...picker().groups[0]!, heading: "Theo đơn" }, picker().groups[1]!] });
+  const held = buildCheckoutVoucherView({ render: render(), picker: named, heldUntilMs: null }) as Extract<ReturnType<typeof buildCheckoutVoucherView>, { state: "HELD" }>;
+  assert.deepEqual(held.lines.map((line) => line.group), ["Theo đơn", undefined]);
+  assert.equal(held.savingText, "50.000đ");
+  const blind = buildCheckoutVoucherView({ render: render(), picker: null, heldUntilMs: null }) as Extract<ReturnType<typeof buildCheckoutVoucherView>, { state: "HELD" }>;
+  assert.equal(blind.savingText, undefined);
 });
