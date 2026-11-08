@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-
 import type { ProductCardModel } from "@/components/headless/build-product-card-model";
 import {
   ListingEmptyState,
@@ -35,10 +33,9 @@ export type PlpInfiniteGridProps = {
 };
 
 export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
-  const { totalCount, totalPages, clearHref, toneOffset = 0, emptyStateAnchors = true } = props;
+  const { totalCount, clearHref, toneOffset = 0, emptyStateAnchors = true } = props;
   const {
     products,
-    currentPage,
     hasNextPage,
     nextPageHref,
     isLoadingMore,
@@ -115,31 +112,28 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
       {/* Sentinel for IntersectionObserver */}
       {hasNextPage ? <div ref={sentinelRef} className="h-4 w-full" /> : null}
 
-      {/* Manual "Xem thêm" button & Crawler Fallback */}
+      {/* "Xem thêm": a real link to the next page, so a crawler and a reader without script both find
+          it in the page itself; with script it loads that page in place instead of navigating. */}
       {hasNextPage && !isLoadingMore ? (
         <div className="mt-12 text-center">
-          <button
-            type="button"
-            onClick={() => void loadMore()}
-            className="btn btn--outline px-8"
-          >
-            Xem thêm ({products.length}/{totalCount})
-          </button>
-        </div>
-      ) : null}
-
-      {/* Non-JS Crawler fallback link */}
-      {nextPageHref ? (
-        <noscript>
-          <div className="mt-8 text-center">
-            <Link
+          {nextPageHref ? (
+            <a
               href={nextPageHref}
-              className="text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline"
+              rel="next"
+              className="btn btn--outline px-8"
+              onClick={(event) => {
+                event.preventDefault();
+                void loadMore();
+              }}
             >
-              Trang tiếp theo ({currentPage + 1}/{totalPages})
-            </Link>
-          </div>
-        </noscript>
+              Xem thêm ({products.length}/{totalCount})
+            </a>
+          ) : (
+            <button type="button" onClick={() => void loadMore()} className="btn btn--outline px-8">
+              Xem thêm ({products.length}/{totalCount})
+            </button>
+          )}
+        </div>
       ) : null}
     </div>
   );

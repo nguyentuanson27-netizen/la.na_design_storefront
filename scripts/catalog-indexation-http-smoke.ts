@@ -247,11 +247,13 @@ try {
     `${PUBLIC_ORIGIN}/collections/${collectionSlug}`,
     "enabled collection page 1",
   );
+  // A collection pages with the category listing's "Xem thêm" (a real link that loads in place with
+  // script), not the shop's "Trang sau": the contract is a visible anchor to page 2, whatever its words.
   assert.equal(
     anchorHasVisibleText(
       collectionPageOne.body,
       `/collections/${collectionSlug}?page=2`,
-      "Trang sau",
+      "Xem thêm",
     ),
     true,
     "collection page 1 must expose a visible crawlable link to page 2",

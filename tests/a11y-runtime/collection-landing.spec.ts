@@ -481,11 +481,14 @@ test("a collection loads its next page in place, ordered and filtered like the p
 
   const cards = page.locator("#main-content article h2");
   await expect(cards).toHaveCount(24);
-  const more = page.getByRole("button", { name: "Xem thêm (24/25)" });
+  // A real link to the next page: a crawler and a reader without script both find it, and with script
+  // it loads that page in place instead of navigating.
+  const more = page.getByRole("link", { name: "Xem thêm (24/25)" });
   await expect(more).toBeVisible();
+  await expect(more).toHaveAttribute("href", `/collections/${pagedSlug}?page=2`);
   await more.click();
   await expect(cards).toHaveCount(25);
-  await expect(page.getByRole("button", { name: /Xem thêm/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /^Xem thêm \(/ })).toHaveCount(0);
   // The 25 products are the collection's, each once, and the URL never moved off page one.
   expect(new Set(await cards.allTextContents()).size).toBe(25);
   expect(page.url()).not.toContain("page=");
@@ -515,7 +518,7 @@ test("U3 changing Size from page 2 resets pagination and does not carry a stale 
   await expect(page.getByRole("heading", { level: 1, name: "Runtime Paged Collection" })).toBeVisible();
   await expect(page.getByText("1 sản phẩm", { exact: true })).toBeAttached();
   await expect(page.getByRole("heading", { level: 2, name: `Paged Runtime Product 01 ${suffix}` })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Xem thêm/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /^Xem thêm \(/ })).toHaveCount(0);
   expect(page.url()).not.toContain("page=");
   await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
 });
