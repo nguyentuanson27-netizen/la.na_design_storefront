@@ -771,6 +771,8 @@ test("review 8bfe958: a typed code whose request never reaches the server, with 
   // Reopening shows the same neutral message, the notice goes away, and the shopper can try again by hand.
   await page.locator("[data-voucher-picker] > button").click();
   await expect(dialog).toContainText("Chưa xác định được kết quả");
+  // The code box is the quiet "Nhập mã khuyến mãi" row again on reopening; one press opens it and the shopper can try again.
+  await codeBox(dialog);
   await expect(dialog.getByRole("button", { name: "Áp dụng mã" })).toBeVisible();
 });
 
