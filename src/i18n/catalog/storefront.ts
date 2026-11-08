@@ -541,4 +541,28 @@ export const STOREFRONT_EN: Readonly<Record<string, string>> = {
   "Chưa gửi được tin nhắn lúc này. Nàng nhắn La.na qua một trong các kênh liên hệ bên dưới nhé.": "We couldn't send your message right now. Please message La.na through one of the contact channels below.",
   "Nàng thử lại giúp mình nhé.": "Please try again.",
   "Nàng thử lại sau ít phút nhé.": "Please try again in a few minutes.",
+
+  // ── Colour names the shop's catalogue commonly uses ───────────────
+  // Product options come from the POS as free text; the usual ones are translated, the rest show as
+  // entered. Compound names ("Đỏ đô") fall back to the shop's wording.
+  "Đen": "Black",
+  "Trắng": "White",
+  "Đỏ": "Red",
+  "Hồng": "Pink",
+  "Kem": "Cream",
+  "Be": "Beige",
+  "Nâu": "Brown",
+  "Vàng": "Yellow",
+  "Tím": "Purple",
+  "Xám": "Grey",
+  "Ghi": "Grey",
+  "Cam": "Orange",
+  "Bạc": "Silver",
+  "Xanh dương": "Blue",
+  "Xanh lá": "Green",
+  "Xanh rêu": "Olive green",
+  "Xanh than": "Navy",
+  "Đỏ đô": "Burgundy",
+  "Hồng phấn": "Blush pink",
+  "Trắng kem": "Off-white",
 };

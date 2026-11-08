@@ -380,7 +380,7 @@ export function ShopMobileDrawer({
                     <option value="">{t("Tất cả màu sắc")}</option>
                     {colorFacets.map((col) => (
                       <option key={col} value={col}>
-                        {col}
+                        {t(col)}
                       </option>
                     ))}
                   </select>

@@ -7,6 +7,7 @@ import {
   type CategoryDiscoverySort,
 } from "./category-discovery-url.ts";
 import { listConfiguredCategoryDiscoveryPage } from "./storefront-catalog-runtime.ts";
+import { localizeListing } from "./product-translation-runtime.ts";
 import {
   buildProductCardModel,
   type ProductCardModel,
@@ -54,12 +55,12 @@ export async function loadCategoryNextPageAction(
   });
 
   const now = new Date();
-  const pageResult = await listConfiguredCategoryDiscoveryPage({
+  const pageResult = await localizeListing(await listConfiguredCategoryDiscoveryPage({
     categoryKey: input.categoryKey,
     discovery,
     pageSize: CATEGORY_PAGE_SIZE,
     now,
-  });
+  }));
 
   const cards: ProductCardModel[] = pageResult.products.map((product) =>
     buildProductCardModel({

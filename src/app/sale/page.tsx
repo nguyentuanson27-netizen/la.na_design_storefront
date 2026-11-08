@@ -18,8 +18,8 @@ function render(data: FlashSaleViewModel, { t }: RequestI18n) {
   return (
     <ListingShell>
       <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: SALE_TITLE }]} />
-      <ListingHeader eyebrow={t("Khuyến mãi")} title={SALE_TITLE}>
-        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">{SALE_DESCRIPTION}</p>
+      <ListingHeader eyebrow={t("Khuyến mãi")} title={t(SALE_TITLE)}>
+        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">{t(SALE_DESCRIPTION)}</p>
         <SaleListingSubnav currentHref="/sale" />
       </ListingHeader>
 

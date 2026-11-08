@@ -3,6 +3,7 @@ import { BRAND_POLICY_MESSAGES_EN } from "../../brand/messages.policy.en.ts";
 import { CHROME_EN } from "./chrome.ts";
 import { CONTENT_EN } from "./content.ts";
 import { FLOWS_EN } from "./flows.ts";
+import { PROSE_EN } from "./prose.ts";
 import { STOREFRONT_EN } from "./storefront.ts";
 
 /**
@@ -11,19 +12,21 @@ import { STOREFRONT_EN } from "./storefront.ts";
  * `pnpm i18n:audit` lists what is still missing.
  *
  * Two sets. `EN_CLIENT_MESSAGES` is what client components can look up and is serialized into every
- * English page, so it holds the chrome and the shopping surfaces only. `EN_MESSAGES` adds the long
- * prose that only server components render (policies, About, page titles) and stays on the server.
- * A client component that needs a string must find it in the client set.
+ * English page, so it holds short interface text: the chrome, the shopping surfaces, page labels.
+ * `EN_MESSAGES` adds the long prose that only server components render (legal policies, About,
+ * page descriptions) and stays on the server. Short text goes in the client set by default, because
+ * a shared component may translate a string a server page handed it; only long prose is kept back.
  */
 export const EN_CLIENT_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   ...BRAND_MESSAGES_EN,
   ...CHROME_EN,
+  ...CONTENT_EN,
   ...STOREFRONT_EN,
   ...FLOWS_EN,
 });
 
 export const EN_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   ...EN_CLIENT_MESSAGES,
-  ...CONTENT_EN,
+  ...PROSE_EN,
   ...BRAND_POLICY_MESSAGES_EN,
 });

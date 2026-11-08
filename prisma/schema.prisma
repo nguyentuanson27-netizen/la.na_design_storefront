@@ -318,6 +318,7 @@ model ProductMirror {
   updatedAt         DateTime             @updatedAt
   variants          VariantMirror[]
   content           ProductContent?
+  translations      ProductTranslation[]
   merchantFacts     ProductMerchantFacts?
   slugHistory       ProductSlugHistory[]
   promotionTargets  PromotionTarget[]
@@ -391,6 +392,27 @@ model ProductSlugHistory {
   product   ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
+}
+
+/// A product's name and editorial copy in another language. The Vietnamese source stays in
+/// `ProductMirror.name` and `ProductContent`; a row here overlays only the fields it fills.
+model ProductTranslation {
+  id                   String        @id @default(cuid())
+  productId            String
+  /// "en" only; a CHECK in the migration refuses the default language.
+  locale               String
+  name                 String?
+  editorialDescription String?
+  material             String?
+  craftDetails         String[]      @default([])
+  careInstructions     String?
+  seoTitle             String?
+  seoDescription       String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  product              ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, locale])
 }
 
 model ProductContent {

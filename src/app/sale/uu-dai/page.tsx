@@ -25,9 +25,9 @@ function render(data: FlashSaleViewModel, { t }: RequestI18n) {
           { label: listing.label },
         ]}
       />
-      <ListingHeader eyebrow={SALE_TITLE} title={listing.label}>
+      <ListingHeader eyebrow={t(SALE_TITLE)} title={t(listing.label)}>
         <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
-          {SALE_LISTING_DESCRIPTIONS[KIND]}
+          {t(SALE_LISTING_DESCRIPTIONS[KIND])}
         </p>
         <SaleListingSubnav currentHref={listing.href} />
       </ListingHeader>

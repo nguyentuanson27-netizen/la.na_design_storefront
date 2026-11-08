@@ -488,7 +488,7 @@ export function PurchasePanelView({
         {selectedValue === null ? null : (
           <span aria-hidden="true">
             {": "}
-            <span className={`font-medium text-[#2A1810] ${valueCase}`}>{selectedValue}</span>
+            <span className={`font-medium text-[#2A1810] ${valueCase}`}>{t(selectedValue)}</span>
           </span>
         )}
       </legend>
@@ -777,7 +777,7 @@ export function PurchasePanelView({
                 disabled={choice.disabled || isPending}
                 onChange={() => chooseColor(choice.value)}
               />
-              <span className={`${chipClass(choice.disabled)} ${SENTENCE_CASE}`}>{choice.value}</span>
+              <span className={`${chipClass(choice.disabled)} ${SENTENCE_CASE}`}>{t(choice.value)}</span>
             </label>
           ))}
         </div>

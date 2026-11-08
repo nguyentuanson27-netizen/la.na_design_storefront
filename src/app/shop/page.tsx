@@ -260,7 +260,7 @@ function render(data: ShopViewModel, { t }: RequestI18n) {
                 <option value="">{t("Tất cả")}</option>
                 {data.colorFacets.map((col) => (
                   <option key={col} value={col}>
-                    {col}
+                    {t(col)}
                   </option>
                 ))}
               </ShopFilterSelect>

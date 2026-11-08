@@ -454,6 +454,15 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
           >
             Đánh giá khách →
           </Link>
+          <span aria-hidden="true" className="mx-3 text-black/30">
+            ·
+          </span>
+          <Link
+            className="text-xs font-semibold uppercase tracking-[0.14em] underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
+            href={`${editorPath}/translations`}
+          >
+            Bản dịch tiếng Anh →
+          </Link>
         </p>
       </div>
 

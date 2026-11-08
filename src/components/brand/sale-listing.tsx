@@ -54,9 +54,9 @@ export function SaleListingBody({
         <ListingEmptyState
           titleId="sale-empty-title"
           eyebrow={t("Ưu đãi hiện tại")}
-          title={emptyTitle}
+          title={t(emptyTitle)}
           copy={t("Sản phẩm sẽ xuất hiện tại đây khi có chương trình khuyến mãi đang hoạt động.")}
-          action={{ href: "/shop", label: "Xem toàn bộ cửa hàng" }}
+          action={{ href: "/shop", label: t("Xem toàn bộ cửa hàng") }}
         />
       </div>
     );

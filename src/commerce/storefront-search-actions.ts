@@ -60,6 +60,8 @@ export async function searchStorefrontSuggestionsAction(
     const { createStorefrontSearchSuggestionFinder } = await import(
       "./storefront-search-repository.ts"
     );
-    return createStorefrontSearchSuggestionFinder(prisma, readPancakeShopId())(trimmed);
+    const { localizeProductNames } = await import("./product-translation-runtime.ts");
+    const found = await createStorefrontSearchSuggestionFinder(prisma, readPancakeShopId())(trimmed);
+    return [...(await localizeProductNames(found))];
   });
 }

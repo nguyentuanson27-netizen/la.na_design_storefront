@@ -1,3 +1,4 @@
+import { localizeProduct } from "@/commerce/product-translation-runtime";
 import type { Metadata } from "next";
 import { connection } from "next/server";
 
@@ -30,6 +31,7 @@ export async function buildProductMetadata({ params }: ProductMetadataProps): Pr
   }
 
   if (!product) return {};
+  product = await localizeProduct(product);
 
   const exposure = readSearchExposure();
   const { locale, t } = await getI18n();

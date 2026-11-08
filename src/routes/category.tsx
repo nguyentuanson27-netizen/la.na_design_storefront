@@ -1,3 +1,4 @@
+import { localizeListing } from "@/commerce/product-translation-runtime";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
@@ -103,6 +104,8 @@ export async function loadCategoryRoute(
     if (error instanceof RangeError) notFound();
     throw error;
   }
+
+  catalogPage = await localizeListing(catalogPage);
 
   const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
