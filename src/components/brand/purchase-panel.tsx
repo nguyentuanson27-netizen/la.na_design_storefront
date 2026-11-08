@@ -60,7 +60,7 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  * sentence-case `::first-letter` rule below can apply to it.
  */
 const SELECTABLE_CHIP =
-  "block min-h-8 min-w-11 whitespace-nowrap rounded-md border border-transparent bg-[#3B2219]/5 px-4 text-center text-sm font-normal leading-[30px] tracking-[0.02em] text-[#3B2219] transition-colors hover:border-[#3B2219]/40 peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed peer-disabled:hover:border-transparent";
+  "block min-h-8 min-w-11 whitespace-nowrap rounded-md border border-[#3B2219]/30 bg-[#FFFDFA] px-4 text-center text-sm font-normal leading-[30px] tracking-[0.02em] text-[#3B2219] transition-colors hover:border-[#3B2219] peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed peer-disabled:hover:border-[#3B2219]/30";
 
 /** A choice briefly locked while a purchase request is in flight. */
 const DISABLED_CHIP = "peer-disabled:opacity-50";
@@ -69,7 +69,7 @@ const DISABLED_CHIP = "peer-disabled:opacity-50";
  * A choice the catalogue says cannot be bought. Struck through rather than only dimmed, so a sold
  * out option is not mistaken for an unselected one on the tinted chip.
  */
-const UNAVAILABLE_CHIP = "opacity-50 line-through decoration-1";
+const UNAVAILABLE_CHIP = "border-dashed opacity-50 line-through decoration-1";
 
 /**
  * Merchant option names arrive in whatever case the back office typed -- often all capitals
@@ -107,7 +107,7 @@ function RulerIcon() {
       strokeWidth="1.25"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="shrink-0"
+      className="pdp-action-chip__icon--optional shrink-0"
     >
       <rect x="2.5" y="8" width="19" height="8" rx="1" />
       <path d="M6 8v3M9.5 8v2M13 8v3M16.5 8v2M20 8v3" />
@@ -581,18 +581,16 @@ export function PurchasePanelView({
     if (sizeGuide === null && extra === null) return null;
 
     return (
-      <div className="mt-0.5 flex flex-wrap items-center gap-x-6">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         {sizeGuide === null ? null : (
           <button
             ref={isPanel ? mainSizeGuideTriggerRef : sheetSizeGuideTriggerRef}
             type="button"
-            className="group inline-flex min-h-11 items-center gap-2 text-sm text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219]"
+            className="pdp-action-chip focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
             onClick={isPanel ? showMainSizeGuide : showSheetSizeGuide}
           >
             <RulerIcon />
-            <span className="underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors group-hover:decoration-[#3B2219]">
-              Hướng dẫn chọn size
-            </span>
+            <span>Hướng dẫn chọn size</span>
           </button>
         )}
         {extra}
@@ -902,7 +900,10 @@ export function PurchasePanelView({
                 <span className="sr-only">{flashClock === null ? (priceDisplay.isListReference ? "Giá giảm " : "Giá khuyến mãi ") : "Giá Flash Sale "}</span>
                 {/* Red only for a Flash price, the one sale the page shouts about. */}
                 <span className={flashClock === null ? undefined : "text-[#9A3324]"}>{priceDisplay.displayText}</span>
-                <span className="inline-flex items-center self-center border border-[#3B2219]/30 px-2 py-0.5 text-xs font-medium tracking-[0.08em] text-[#3B2219]">
+                {/* Solid, in the price's own colour: Flash red, otherwise the ink the price is set in. */}
+                <span
+                  className={`inline-flex items-center self-center px-2 py-0.5 text-xs font-bold tracking-[0.08em] text-white ${flashClock === null ? "bg-[#3B2219]" : "bg-[#9A3324]"}`}
+                >
                   -{priceDisplay.discountPercent}%
                 </span>
               </>

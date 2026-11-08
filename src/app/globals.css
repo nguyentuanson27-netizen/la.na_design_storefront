@@ -42,6 +42,7 @@
   --white: #fffdfa;
   --stone: #d4c7b8;
   --olive: #70584b;
+  --linen: #f0e9de;
   --chocolate: #3b2219;
   --line: rgba(59, 34, 25, 0.15);
 }
@@ -2576,22 +2577,58 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   padding: 0 var(--shell-gutter);
 }
 
-/* On the product page the rail sits between the information row and the related grid, inside the
-   page's 1600px column, with the related grid's own rule above it instead of a rule below. */
+/* On the product page the rail sits on a full-bleed linen band (`.pdp-feedback-band`, a wrapper in the product
+   route) between the information row and the related grid, inside the page's 1600px column. The band, not a
+   rule, separates it: the customers' photographs are the page's strongest proof, so they set the rhythm.
+   The heading follows the homepage's: centred, small capitals, wide tracking. */
+.pdp-feedback-band {
+  margin-top: 2.5rem;
+  background: var(--linen);
+}
+
 .feedback-rail--product {
-  /* The page column's own gutter (`px-6`), so the heading and photographs line up with the
-     information row above and the related grid below. */
+  /* The page column's own gutter (`px-6`), so the photographs line up with the information row above
+     and the related grid below. */
   --shell-gutter: 1.5rem;
   max-width: 1600px;
   margin: 0 auto;
-  padding: 1.5rem 0 3rem;
+  padding: 3rem 0 3.5rem;
   border-bottom: 0;
 }
 
 .feedback-rail--product .section-heading-row {
   margin-inline: var(--shell-gutter);
-  padding: 1.5rem 0 0;
-  border-top: 1px solid rgb(0 0 0 / 20%);
+  margin-bottom: 2rem;
+  padding: 0;
+  border-top: 0;
+  justify-content: center;
+  text-align: center;
+}
+
+.feedback-rail--product .section-heading-row h2,
+.section-heading-row--center h2 {
+  font-size: 1.0625rem;
+  font-weight: 400;
+  letter-spacing: 0.3em;
+}
+
+.section-heading-row--center {
+  justify-content: center;
+  text-align: center;
+}
+
+/* From `lg` the product page's reading blocks (description, material, care, shipping, returns) are titled
+   sections: a hairline of the logo's caramel above each title marks where one starts. Below `lg` they are
+   fold-away rows and carry no mark. */
+@media (min-width: 64rem) {
+  .pdp-section-title::before {
+    content: "";
+    display: block;
+    width: 1.5rem;
+    height: 1px;
+    margin-bottom: 0.875rem;
+    background: #b8825f;
+  }
 }
 
 .feedback-rail--product .home-more {
@@ -3437,6 +3474,9 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-tone--moss { --vc: #5c5a2e; }
   .voucher-tone--navy { --vc: #5e3b2c; }
   .voucher-tone--teal { --vc: #46604f; }
+  /* not a voucher type: a PDP promotion ticket takes the neutral ink, a gift promotion the page's own mocha (--olive) */
+  .voucher-tone--ink { --vc: #3b2219; }
+  .voucher-tone--mocha { --vc: #70584b; }
 
   .voucher-swatch { display: inline-block; width: 0.625rem; height: 0.625rem; flex: none; border-radius: 0.1875rem; background: var(--vc); }
   .voucher-dots { display: inline-flex; gap: 0.1875rem; }
@@ -3577,25 +3617,30 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   /* PDP teaser: small tickets in one swipeable row, never a promise. Press one to read its full sentence. */
   .voucher-chips { display: flex; gap: 0.625rem; margin: 0.5rem -0.125rem 0; overflow-x: auto; padding: 0.25rem 0.125rem 0.5rem; scroll-snap-type: x proximity; list-style: none; }
   .voucher-chips > li { flex: none; scroll-snap-align: start; }
-  .voucher-chip { position: relative; display: grid; grid-template-columns: 2.5rem auto; min-height: 3.25rem; overflow: hidden; border: 0; padding: 0; border-radius: 0.5rem; background: #fffdfa; box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); color: var(--ink); font-family: var(--font-sans); text-align: left; cursor: pointer; --voucher-notch: var(--paper); }
+  /* one ticket for the PDP's promotion offers (a list item) and its voucher teaser (a toggle button) */
+  .voucher-chip { position: relative; display: inline-flex; align-items: stretch; max-width: 100%; overflow: hidden; border-radius: 0.5rem; background: #fffdfa; box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); --voucher-notch: var(--paper); }
+  button.voucher-chip { min-height: 3.25rem; border: 0; padding: 0; color: var(--ink); font-family: var(--font-sans); text-align: left; cursor: pointer; }
   .voucher-chip::before,
-  .voucher-chip::after { content: ""; position: absolute; left: 2.125rem; width: 0.75rem; height: 0.75rem; border-radius: 50%; background: var(--voucher-notch); box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); }
+  .voucher-chip::after { content: ""; position: absolute; left: 1.9375rem; width: 0.75rem; height: 0.75rem; border-radius: 50%; background: var(--voucher-notch); box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); }
   .voucher-chip::before { top: -0.375rem; }
   .voucher-chip::after { bottom: -0.375rem; }
+  .voucher-chip__icon { display: grid; place-items: center; width: 2.25rem; flex: none; background: var(--vc, #9a4a32); color: #fff; }
+  .voucher-chip__icon > svg { width: 1.125rem; height: 1.125rem; }
+  .voucher-chip__text { margin-left: -1px; border-left: 1.5px dashed rgba(59, 34, 25, 0.22); padding: 0.4375rem 0.75rem 0.4375rem 0.875rem; font-size: 0.8125rem; font-weight: 600; line-height: 1.35; }
+
+  /* the PDP teaser's chips: toggle buttons with a title over a short condition */
+  .voucher-chip__text--stack { display: grid; align-content: center; font-weight: 400; white-space: nowrap; }
   .voucher-chip[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--vc); }
   .voucher-chip[aria-pressed="true"]::before,
   .voucher-chip[aria-pressed="true"]::after { box-shadow: inset 0 0 0 2px var(--vc); }
   .voucher-chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
-  .voucher-chip__icon { display: grid; place-items: center; background: var(--vc); color: #fff; }
-  .voucher-chip__icon > svg { width: 1.1875rem; height: 1.1875rem; }
-  .voucher-chip__text { display: grid; align-content: center; margin-left: -1px; border-left: 1.5px dashed rgba(59, 34, 25, 0.22); padding: 0.4375rem 0.875rem; white-space: nowrap; }
   .voucher-chip__text > b { font-family: var(--font-display); font-size: 0.9375rem; font-weight: 700; line-height: 1.2; }
   .voucher-chip__text > small { font-size: 0.71875rem; line-height: 1.35; color: rgba(59, 34, 25, 0.72); }
   .voucher-chip-info { margin: 0.375rem 0 0; border-left: 3px solid var(--vc); border-radius: 0.375rem; background: var(--vc-tint); padding: 0.625rem 0.75rem; font-size: 0.8125rem; line-height: 1.45; }
 
   /*
    * Gifts (UI refresh): the "Quà dành cho nàng" panel in the cart and at checkout, in the same ticket language as the vouchers. Gifts have their
-   * own colour (bronze gold, white on it is about 6.7:1) so they never read as one of the voucher types. Only the look changed: the words, the
+   * own colour (caramel, white on it is about 5.9:1) so they never read as one of the voucher types. Only the look changed: the words, the
    * roles and the data-gift-* hooks are the ones the gift flow and its specs already use.
    */
   .gift-panel { --gift: #8a5a2b; --gift-tint: color-mix(in srgb, var(--gift) 8%, #fffdfa); min-width: 0; margin: 1.5rem 0; overflow: hidden; border-radius: 0.5rem; background: #fffdfa; box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); color: var(--ink); }
@@ -3628,4 +3673,26 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   /* "Đã thêm vào đơn: …": a confirmation, not a loose paragraph */
   .gift-status:not(:empty) { margin-top: 0.75rem; border-left: 3px solid var(--gift, #8a5a2b); border-radius: 0.375rem; background: color-mix(in srgb, var(--gift, #8a5a2b) 8%, #fffdfa); padding: 0.5rem 0.75rem; font-size: 0.875rem; line-height: 1.45; }
   @media (prefers-reduced-motion: reduce) { .gift-entry__chev { transition: none; } }
+  /* PDP: the group name above the voucher tickets, in the page's small-label voice */
+  .pdp-voucher-label { margin: 0; font-family: var(--font-display); font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--olive); }
+
+  /*
+   * PDP "Hướng dẫn chọn size" and "Thử đồ AI": two outlined buttons that share one row when they fit, a phone
+   * included. The type and padding step down on narrow phones so both fit at 360px, where the ruler icon goes
+   * too. When they do not fit (a larger text size, a 320px screen) the row wraps and a label wraps inside its
+   * own button, so nothing is clipped or overlaps and the page never scrolls sideways. The 44px target is a
+   * minimum height, not a fixed one. The accent variant (try-on) is the same button on a stone tint.
+   */
+  .pdp-action-chip { display: inline-flex; max-width: 100%; min-height: 2.75rem; align-items: center; gap: 0.375rem; padding-block: 0.375rem; padding-inline: 0.5rem; text-align: left; border: 1px solid rgb(59 34 25 / 30%); border-radius: 0.375rem; color: #3b2219; font-size: 0.75rem; font-weight: 500; transition: border-color 200ms ease, background-color 200ms ease; }
+  .pdp-action-chip:hover { border-color: #3b2219; }
+  .pdp-action-chip--accent { border-color: rgb(59 34 25 / 45%); background: rgb(212 199 184 / 45%); font-weight: 600; }
+  .pdp-action-chip--accent:hover { background: rgb(212 199 184 / 70%); }
+  .pdp-action-chip__icon--optional { display: none; }
+  @media (min-width: 24.375rem) {
+    .pdp-action-chip { padding-inline: 0.75rem; font-size: 0.8125rem; }
+    .pdp-action-chip__icon--optional { display: block; }
+  }
+  @media (min-width: 64rem) {
+    .pdp-action-chip { gap: 0.5rem; padding-inline: 1rem; font-size: 0.875rem; }
+  }
 }

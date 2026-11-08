@@ -25,7 +25,7 @@ export function VoucherTeaserChips({ items }: Readonly<{ items: readonly Voucher
           <li className={`voucher-tone voucher-tone--${item.tone}`} key={item.id}>
             <button type="button" className="voucher-chip" aria-pressed={index === open} aria-controls={panelId} onClick={() => setOpen(index)}>
               <span aria-hidden="true" className="voucher-chip__icon"><VoucherIcon name={item.kind === "SHIPPING_FREE" ? "truck" : "tag"} /></span>
-              <span aria-hidden="true" className="voucher-chip__text">
+              <span aria-hidden="true" className="voucher-chip__text voucher-chip__text--stack">
                 <b>{item.title}</b>
                 {item.sub ? <small>{item.sub}</small> : null}
               </span>
