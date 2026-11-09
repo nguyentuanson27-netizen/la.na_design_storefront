@@ -237,23 +237,29 @@ test("the preview plays only while a quarter of it is on screen and not when the
   const tile = page.getByRole("button", { name: "Xem video", exact: true });
   const preview = tile.locator("video");
   await expect(preview).toHaveAttribute("data-playing", "true");
-  const box = (await tile.boundingBox())!;
+  const frame = (await tile.boundingBox())!;
   const paused = () => preview.evaluate((element: HTMLVideoElement) => element.paused);
+  // The frame is pinned, so it only leaves the screen with the photograph: it rests 4rem above the
+  // photograph's bottom edge. Scroll so that `visible` of the frame is still above the top of the viewport.
+  const scrollUntilVisible = (visible: number) => page.evaluate(([fraction, height]) => {
+    const stageBottom = document.querySelector(".pdp-stage")!.getBoundingClientRect().bottom + window.scrollY;
+    window.scrollTo({ top: stageBottom - 64 - fraction * height, behavior: "instant" });
+  }, [visible, frame.height] as const);
   // Only a sliver (10%) of the frame is left at the top of the viewport: it stands still.
-  await page.evaluate((y) => window.scrollTo(0, y), box.y + box.height * 0.9);
+  await scrollUntilVisible(0.1);
   await expect.poll(paused).toBe(true);
   // Half of it back on screen: it plays again.
-  await page.evaluate((y) => window.scrollTo(0, y), box.y + box.height * 0.5);
+  await scrollUntilVisible(0.5);
   await expect.poll(paused).toBe(false);
   // Closing the dialog while the frame is out of view must not start it in the background.
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await tile.click();
   await expect(page.getByRole("dialog", { name: `Video ${productName}` })).toBeVisible();
-  await page.evaluate((y) => window.scrollTo(0, y), box.y + box.height * 0.95);
+  await scrollUntilVisible(0.05);
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);
   expect(await paused()).toBe(true);
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await expect.poll(paused).toBe(false);
 });
 

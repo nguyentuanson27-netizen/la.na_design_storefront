@@ -3402,10 +3402,12 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
    photograph. It runs out with the photograph: sticky stops at the bottom of the photograph's box
    (4rem clear of it, so the counter and the Flash Sale tag stay uncovered) and leaves with it, so it
    never reaches the price or the buy buttons. Pure CSS, so there is no scroll listener and no jump.
-   Sticky needs the photograph not to be a scroll container, hence `overflow: clip` for `hidden`,
-   and the cell the slot sits in to stop clipping its own box. */
+   Sticky needs the photograph not to be a scroll container, hence `overflow: visible` for `hidden`
+   (never `clip`: a clipping ancestor takes away the lazy-load margin, so the gallery's second
+   photograph would stop being fetched ahead of the first swipe), and the cell the slot sits in to
+   stop clipping its own box. The phone gallery's track clips the photographs itself. */
 @media (max-width: 1023.98px) {
-  .pdp-stage { overflow: clip; }
+  .pdp-stage { overflow: visible; }
   .pdp-video-anchor .pdp-stage__cell { overflow: visible; container-type: size; }
   .pdp-video-slot {
     --pdp-video-width: clamp(88px, 25vw, 112px);
