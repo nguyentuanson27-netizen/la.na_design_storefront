@@ -250,10 +250,11 @@ test("new-arrivals loads the admin-selected products rather than catalog recency
 
 test("new-arrivals renders a real grid, a count and an empty state", () => {
   const page = read("src/app/new-arrivals/page.tsx");
-  assert.match(page, /<ListingProductGrid/, "products render in the shared grid");
-  assert.match(page, /<ProductCard/, "the grid holds product cards");
+  assert.match(page, /<PlpInfiniteGrid/, "products render in the shared infinite grid");
+  assert.match(page, /source=\{\{ kind: "new-arrivals" \}\}/, "the grid pages through the new-arrivals action");
   assert.match(page, /<ListingEmptyState/, "an empty catalog still renders an honest page");
-  assert.match(page, /<ListingPagination/, "§25: crawlable paging, not scroll-only discovery");
+  assert.match(page, /nextHref=\{data\.nextHref\}/, "§25: the grid carries a crawlable next link, not scroll-only discovery");
+  assert.match(page, /<ListingPreviousLink/, "§25: a page opened by URL keeps a crawlable way back");
 });
 
 test("new-arrivals rejects a page parameter the catalog cannot answer", () => {

@@ -1,8 +1,6 @@
-import Link from "next/link";
-
-import { ListingEmptyState, ListingSubnav } from "@/components/brand/listing-chrome";
+import { ListingEmptyState, ListingPreviousLink, ListingSubnav } from "@/components/brand/listing-chrome";
 import { PlpFilterPanel } from "@/components/brand/plp-filter-panel";
-import type { PlpFilterState } from "@/components/headless/plp-filter-model";
+import { EMPTY_PLP_FILTERS } from "@/components/headless/plp-filter-model";
 import { PlpInfiniteGrid } from "@/components/brand/plp-infinite-grid";
 import { SALE_CHILD_NAVIGATION, SALE_ROOT_NAVIGATION, type SaleListingKind } from "@/brand/sale.config";
 import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
@@ -13,16 +11,6 @@ import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
  * filter bar and the grid. The filter bar and the infinite grid are the category listing's, so a
  * shopper meets the same size, price and sort controls -- and the same scrolling -- on every listing.
  */
-
-const NO_FILTERS: PlpFilterState = {
-  size: null,
-  color: null,
-  availability: null,
-  minPriceVnd: null,
-  maxPriceVnd: null,
-  sale: null,
-  sort: "default",
-};
 
 /** Tất cả, then every sale sub-listing, with the current one marked. */
 export function SaleListingSubnav({ currentHref }: Readonly<{ currentHref: string }>) {
@@ -100,17 +88,7 @@ export function SaleListingBody({
         <>
           {/* The page the shopper opened may not be the first. The grid continues forward from it;
               this is the way back, and a crawlable link to the page before. */}
-          {data.previousHref ? (
-            <p className="mt-8">
-              <Link
-                className="inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 transition-colors hover:text-[#2A1810]"
-                href={data.previousHref}
-                rel="prev"
-              >
-                ← Trang trước
-              </Link>
-            </p>
-          ) : null}
+          <ListingPreviousLink href={data.previousHref} />
           <div className="mt-4">
             {/* Infinite scroll with a real "Xem thêm" link to the next page inside it, so a crawler
                 and a reader without script still page through the listing (§25). */}
@@ -121,7 +99,7 @@ export function SaleListingBody({
               initialPage={data.page}
               source={{ kind: "sale", saleKind }}
               clearHref={filters?.basePath ?? "/sale"}
-              activeFilters={filters?.active ?? NO_FILTERS}
+              activeFilters={filters?.active ?? EMPTY_PLP_FILTERS}
               hasNext={data.nextHref !== null}
               nextHref={data.nextHref}
               nextCursor={null}

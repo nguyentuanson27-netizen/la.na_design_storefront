@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import { PlpInfiniteGrid } from "@/components/brand/plp-infinite-grid";
 import {
   ShopActiveFilters,
   ShopFilterCheckbox,
@@ -12,8 +12,7 @@ import {
   ListingBreadcrumbs,
   ListingEmptyState,
   ListingHeader,
-  ListingPagination,
-  ListingProductGrid,
+  ListingPreviousLink,
   ListingShell,
   ListingViewToggle,
 } from "@/components/brand/listing-chrome";
@@ -31,8 +30,6 @@ import type { ShopViewModel } from "@/routes/shop-model";
  * `Tất cả sản phẩm` with a free-text query and a collection facet, now fully aligned with the
  * Category PLP filter panel standard for both Desktop and Mobile.
  */
-
-const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
 function render(data: ShopViewModel) {
   const { discovery } = data;
@@ -320,24 +317,30 @@ function render(data: ShopViewModel) {
           <h2 id="shop-products-title" className="sr-only">
             Sản phẩm hiện tại
           </h2>
-          <div>
-            <ListingProductGrid>
-              {data.cards.map((card, index) => (
-                <ProductCard
-                  key={card.id}
-                  model={card.model}
-                  tone={tones[(data.toneOffset + index) % tones.length]!}
-                  eager={index < PRODUCT_CARD_EAGER_COUNT}
-                />
-              ))}
-            </ListingProductGrid>
-          </div>
-          <ListingPagination
-            label="Phân trang sản phẩm"
-            page={data.page}
+          <ListingPreviousLink href={data.previousHref} />
+          {/* Infinite scroll with a real "Xem thêm" link to the next page inside it, so a crawler and
+              a reader without script still page through the shop (§25). */}
+          <PlpInfiniteGrid
+            initialProducts={data.cards.map((card) => card.model)}
+            totalCount={data.totalCount}
             totalPages={data.totalPages}
-            previousHref={data.previousHref}
+            initialPage={data.page}
+            source={{ kind: "shop", query: discovery.query, collection: discovery.collection }}
+            clearHref="/shop"
+            activeFilters={{
+              size: discovery.size,
+              color: discovery.color,
+              availability: discovery.availability,
+              minPriceVnd: discovery.minPriceVnd,
+              maxPriceVnd: discovery.maxPriceVnd,
+              sale: discovery.sale ?? null,
+              sort: discovery.sort,
+            }}
+            hasNext={data.nextHref !== null}
             nextHref={data.nextHref}
+            nextCursor={null}
+            toneOffset={data.toneOffset}
+            emptyStateAnchors={false}
           />
         </section>
       )}

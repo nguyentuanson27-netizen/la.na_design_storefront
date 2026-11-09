@@ -26,6 +26,9 @@ import type { TrackingEvent } from "../tracking/commerce-events.ts";
  * two restarts the colour cycle and the grid visibly repeats itself.
  */
 
+/** One page of the shop listing: the route, and the infinite grid's server action after it. */
+export const SHOP_PAGE_SIZE = 24;
+
 export type ShopProduct = Readonly<{
   id: string;
   slug: string;
