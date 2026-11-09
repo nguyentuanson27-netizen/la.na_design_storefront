@@ -684,3 +684,65 @@ MVP does not include:
 - background jobs/queues by default;
 - admin try-on management;
 - automatic provider/model fallback.
+
+## 24. Amendment 2026-11-09 — from "see the picture" to "choose a size" (owner request)
+
+An audit of the shipped flow found that it ended at looking at the picture, could not say whether it
+sold anything, and charged shoppers for failures that were ours. This amendment changes the points
+below; everything not listed here (eligibility, the garment image authority, the likeness and age
+attestations, the privacy boundary, one generation at a time) is unchanged.
+
+**Buyer experience (§6).**
+
+- The first step no longer carries the intro line, the "đang phát triển" note or the "3 bước nhẹ
+  nhàng" line. The beta badge and the AI/for-reference statement on the result remain. Feedback to
+  the shop now goes through the 👍/👎 below the picture.
+- The main button of each step sits in a footer that stays at the bottom of the sheet. The result
+  step's main button is **Chọn size & thêm vào giỏ**: it closes the dialog and brings the purchase
+  panel into view (from the dock on another page, it opens the product at `#mua-hang`). Download,
+  share and "Tạo lại" are secondary.
+- Share: where the browser can share files (`navigator.canShare({ files })`), a **Chia sẻ** button
+  hands the picture to the share sheet. Nothing is uploaded by La.na.
+- Zoom: the picture opens full screen (its own dialog, "Xem ảnh phóng to"); tap toggles 2.4x, and when the shopper's own photo is still in
+  memory a switch shows it beside the result.
+- Early busy notice: if another product's try-on is still being made, the first step says so, with a
+  link to it, instead of letting the shopper reach the last step first.
+- Entry points: besides the link beside the size guide, a small **Thử đồ AI** button on the
+  product photograph, centred at its bottom (the Flash Sale tag holds the left and the photo counter
+  the right; below 360 px during a sale it rides above the tag instead). A solid chocolate pill with
+  the "AI" in gold, 28 px painted and 44 px to touch; its accessible name is "Mở thử đồ AI". Product
+  cards in listings carry **no** try-on mark (considered and removed). The parameter `?thu-do=1`
+  opens the product page's dialog once and is then removed; it also brings a shopper back to the open
+  dialog after signing in.
+
+**Session memory (§6, §9, §12, §23).** The tab keeps the last four finished pictures (the picture
+only, never the shopper's own photo) and the age the shopper stated, **in memory only**: blob URLs
+and React state, revoked when pushed out, removed, or the tab closes. Nothing is written to browser
+storage, a cookie, or the server, and the dialog says the pictures are held only in this browser
+tab. This is not the history/account library of §23: a reload drops it. The likeness
+acknowledgement is still asked for every generation.
+
+**Quota (§9).** An attempt spent on a request that then fails for a reason of ours (`UNAVAILABLE`
+after the attempt was taken, `BUSY`, `PRODUCT_IMAGE_UNAVAILABLE`, `AUTH_FAILED`, `TIMEOUT`,
+`GENERATION_FAILED`) is given back: **the daily count only**, never the per-minute window, so a refund
+cannot be used to go faster than the quota. A provider safety block (`SAFETY_BLOCKED`) and every
+request the shopper got wrong stay counted. The failure response carries `refunded: true` and the
+shopper is told. Owner decision needed on one point: a `TIMEOUT` may still finish at the provider and
+spend; it is refunded anyway because the shopper receives nothing.
+
+**Result image (§8, §9).** The provider's 2K PNG is scaled to at most 1600 px and re-encoded as JPEG
+(quality 86, metadata dropped) on the server before it is sent, in memory. If that fails the original
+is sent. This cuts a multi-MB base64 payload to a few hundred KB.
+
+**Observability (§15).** The browser reports a closed set of steps (opened and from where, photo
+chosen, continue, generate, result shown / error class, retry, download, share, zoom, size chosen,
+thumb up/down) to `POST /api/try-on/events` and to the dataLayer as `try_on_<step>`. The endpoint is
+same-origin only, takes at most 1 KB, spends no quota, calls no provider, and writes one line to the
+same signal stream as the server's own signals (`try_on.client_event`; `try_on.attempt_refunded` for
+refunds). Fields are a closed allowlist: no image, file name, free text or identifier has a place to
+travel. The commerce events (`add_to_cart`, `purchase`) are deliberately **not** extended with a
+"used try-on" flag: their boundary is closed on purpose. Compare conversion by joining
+`try_on_to_cart` with the shopper's later `add_to_cart` in the tag manager.
+
+**Not changed, still open.** Trying on the *selected* colour (the garment image is still the first
+trusted product photo — §5, §23), and the provider choice for production traffic.

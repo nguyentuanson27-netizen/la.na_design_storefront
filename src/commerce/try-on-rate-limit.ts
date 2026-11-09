@@ -16,7 +16,10 @@
  * - member: 2 attempts per minute, 10 per day.
  * "In total" for a guest is read as per 24 hours (a window that renews), because a lifetime count
  * would need durable per-visitor state this MVP deliberately does not keep. Every submitted attempt
- * counts, including one that later fails; a rejected attempt does not.
+ * counts; a rejected attempt does not. The one exception (amendment 2026-11-09): an attempt that
+ * fails for a reason on our side — the service busy, the provider down or timing out, the garment
+ * photo unavailable — is given back by `refundAttempt`, daily count only. A photo the provider
+ * refuses (`SAFETY_BLOCKED`) and every request the shopper got wrong stay counted.
  *
  * Three independent controls, deliberately separate:
  * - `consumeAttempt` is the per-identity quota above, spent *before* the request body is read, so it
@@ -178,6 +181,20 @@ export function createTryOnRateLimiter(options: TryOnRateLimiterOptions = {}) {
   }
 
   /**
+   * Gives back the daily attempt an identity spent on a request that failed for a reason on our
+   * side (see `TRY_ON_REFUNDED_REASONS`). Only the day count moves: the per-minute window stays, so
+   * a refund can never become a way to hammer the provider faster than the quota allows. A no-op
+   * when the window has expired or was never opened, and never goes below zero.
+   */
+  function refundAttempt(identity: TryOnIdentity, nowMs: number = Date.now()): void {
+    const id = `${identity.kind}:${identity.key}`;
+    const day = liveWindow(dayWindows, id, DAY_MS, nowMs);
+    if (day === undefined) return;
+    day.count = Math.max(0, day.count - 1);
+    if (day.count === 0) dayWindows.delete(id);
+  }
+
+  /**
    * What `identity` has left today, without spending anything. Read-only, so showing it to a shopper
    * cannot change what they are allowed.
    */
@@ -221,5 +238,5 @@ export function createTryOnRateLimiter(options: TryOnRateLimiterOptions = {}) {
     };
   }
 
-  return { consumeAttempt, peekQuota, startUpload, startGeneration };
+  return { consumeAttempt, refundAttempt, peekQuota, startUpload, startGeneration };
 }

@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { TRY_ON_MAX_REQUEST_BYTES, handleTryOnPost, handleTryOnQuotaGet } from "../../src/commerce/try-on-endpoint.ts";
+import {
+  TRY_ON_EVENT_MAX_BYTES,
+  TRY_ON_MAX_REQUEST_BYTES,
+  handleTryOnEventPost,
+  handleTryOnPost,
+  handleTryOnQuotaGet,
+} from "../../src/commerce/try-on-endpoint.ts";
 import type { TryOnIdentity } from "../../src/commerce/try-on-rate-limit.ts";
 import type { TryOnServiceInput, TryOnServiceResult } from "../../src/commerce/try-on-service.ts";
+import type { TryOnSignalInput } from "../../src/operations/try-on-observability.ts";
 import { JPEG_BYTES, PNG_BYTES, tryOnForm } from "../support/try-on-fixtures.ts";
 
 const HOST = "shop.example.test";
@@ -323,4 +330,102 @@ test("GET never warms the provider for a request that is not provably same-origi
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { ok: true, audience: "guest", limit: 5, remaining: 5 });
   }
+});
+
+test("a refunded failure says so in the body; an ordinary one does not", async () => {
+  const refunded = await handleTryOnPost(
+    post(tryOnForm()),
+    endpoint({ ok: false, reason: "TIMEOUT", refunded: true }).deps,
+  );
+  assert.equal(refunded.status, 504);
+  assert.deepEqual(await refunded.json(), { ok: false, reason: "TIMEOUT", refunded: true });
+
+  const counted = await handleTryOnPost(post(tryOnForm()), endpoint({ ok: false, reason: "SAFETY_BLOCKED" }).deps);
+  assert.deepEqual(await counted.json(), { ok: false, reason: "SAFETY_BLOCKED" });
+});
+
+test("the finished picture is shrunk before it is sent, and a failing optimiser sends the original", async () => {
+  const small = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+  const shrunk = await handleTryOnPost(post(tryOnForm()), {
+    ...endpoint().deps,
+    optimizeResult: async () => ({ bytes: small, mimeType: "image/jpeg" }),
+  });
+  assert.deepEqual(await shrunk.json(), {
+    ok: true,
+    mimeType: "image/jpeg",
+    imageBase64: Buffer.from(small).toString("base64"),
+  });
+
+  const fallback = await handleTryOnPost(post(tryOnForm()), {
+    ...endpoint().deps,
+    optimizeResult: async () => {
+      throw new Error("sharp exploded");
+    },
+  });
+  assert.equal(fallback.status, 200);
+  assert.deepEqual(await fallback.json(), {
+    ok: true,
+    mimeType: "image/png",
+    imageBase64: Buffer.from(PNG_BYTES).toString("base64"),
+  });
+});
+
+function eventPost(body: string, headers: Record<string, string> = {}) {
+  return new Request(`https://${HOST}/api/try-on/events`, {
+    method: "POST",
+    headers: { origin: `https://${HOST}`, host: HOST, "content-type": "application/json", ...headers },
+    body,
+  });
+}
+
+test("a browser step is recorded as one closed-vocabulary signal and answered with 204", async () => {
+  const signals: TryOnSignalInput[] = [];
+  const response = await handleTryOnEventPost(
+    eventPost(JSON.stringify({ event: "open", productSlug: "vay-hoa", source: "card", image: "AAAA", extra: 1 })),
+    { emit: (signal) => signals.push(signal) },
+  );
+  assert.equal(response.status, 204);
+  assert.deepEqual(signals, [
+    {
+      name: "try_on.client_event",
+      clientEvent: "open",
+      productSlug: "vay-hoa",
+      source: "card",
+      rating: undefined,
+      reason: undefined,
+    },
+  ]);
+});
+
+test("a thumb is recorded with its rating; a feedback event without one is dropped", async () => {
+  const signals: TryOnSignalInput[] = [];
+  const emit = (signal: TryOnSignalInput) => signals.push(signal);
+  await handleTryOnEventPost(eventPost(JSON.stringify({ event: "feedback", rating: "down", productSlug: "vay-hoa" })), { emit });
+  await handleTryOnEventPost(eventPost(JSON.stringify({ event: "feedback" })), { emit });
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0]!.rating, "down");
+});
+
+test("garbage, unknown events, oversized and cross-site bodies record nothing", async () => {
+  const signals: TryOnSignalInput[] = [];
+  const emit = (signal: TryOnSignalInput) => signals.push(signal);
+  for (const body of ["not json", JSON.stringify({ event: "hack" }), JSON.stringify([1]), "null"]) {
+    assert.equal((await handleTryOnEventPost(eventPost(body), { emit })).status, 204);
+  }
+  const huge = JSON.stringify({ event: "open", pad: "x".repeat(TRY_ON_EVENT_MAX_BYTES * 2) });
+  assert.equal((await handleTryOnEventPost(eventPost(huge), { emit })).status, 204);
+  const crossSite = await handleTryOnEventPost(
+    eventPost(JSON.stringify({ event: "open" }), { origin: "https://evil.example" }),
+    { emit },
+  );
+  assert.equal(crossSite.status, 403);
+  assert.equal(signals.length, 0);
+});
+
+test("a bad slug in a browser step is dropped, not logged", async () => {
+  const signals: TryOnSignalInput[] = [];
+  await handleTryOnEventPost(eventPost(JSON.stringify({ event: "open", productSlug: "<script>" })), {
+    emit: (signal) => signals.push(signal),
+  });
+  assert.equal(signals[0]!.productSlug, undefined);
 });

@@ -4,9 +4,9 @@ import test from "node:test";
 import { TRY_ON_FAILURE_REASONS } from "../../src/commerce/try-on-policy.ts";
 import {
   TRY_ON_AGE_OPTIONS,
-  TRY_ON_BETA_NOTE,
   TRY_ON_LIKENESS_ACKNOWLEDGEMENT,
   TRY_ON_PHOTO_DONTS,
+  TRY_ON_REFUND_NOTE,
   TRY_ON_PHOTO_DOS,
   TRY_ON_WAIT_NOTE,
   TRY_ON_WAIT_STAGES,
@@ -24,6 +24,7 @@ import {
   nextTryOnStep,
   parseTryOnQuota,
   tryOnLoginHref,
+  tryOnProductHref,
   tryOnQuotaLine,
   tryOnStepNumber,
   TRY_ON_TEEN_ATTESTATION_LEAD,
@@ -137,13 +138,21 @@ test("the first-step quota line: a guest is told what an account adds, a member 
   assert.equal(tryOnQuotaLine({ audience: "member", limit: 10, remaining: 8 }), "Hôm nay nàng còn 8/10 lượt thử đồ.");
 });
 
-test("the sign-in link returns to this product and nowhere else", () => {
-  assert.equal(tryOnLoginHref("set-quan-ha-lam"), "/login?next=%2Fshop%2Fset-quan-ha-lam");
+test("the sign-in link returns to this product, with try-on open again, and nowhere else", () => {
+  assert.equal(
+    tryOnLoginHref("set-quan-ha-lam"),
+    "/login?next=%2Fshop%2Fset-quan-ha-lam%3Fthu-do%3D1",
+  );
 });
 
-test("the wait and in-development notices say what the shopper needs to know", () => {
+test("the product page with try-on open is the deep link's target", () => {
+  assert.equal(tryOnProductHref("set-quan-ha-lam"), "/shop/set-quan-ha-lam?thu-do=1");
+  assert.equal(tryOnProductHref("a b"), "/shop/a%20b?thu-do=1");
+});
+
+test("the wait notice says what the shopper needs to know, and a refund says so", () => {
   assert.match(TRY_ON_WAIT_NOTE, /30–60 giây/);
-  assert.match(TRY_ON_BETA_NOTE, /đang được .*hoàn thiện/);
+  assert.match(TRY_ON_REFUND_NOTE, /hoàn lại lượt/);
   assert.ok(TRY_ON_PHOTO_DOS.length > 0 && TRY_ON_PHOTO_DONTS.length > 0);
 });
 

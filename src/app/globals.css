@@ -3729,3 +3729,84 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     .pdp-action-chip { gap: 0.5rem; padding-inline: 1rem; font-size: 0.875rem; }
   }
 }
+
+/*
+ * "Thử đồ AI" on the product photograph (try-on-dialog.tsx, `BrandTryOnMediaButton`): centred at the
+ * bottom. The Flash Sale tag holds the bottom left and the photo counter the bottom right, so the
+ * middle is the one place on the photograph nothing else claims. It is drawn on the photograph's own
+ * baseline (a few px under the tag's, because it is a little taller, so the centres line up).
+ *
+ * Below 360px the tag and the button would touch; while a sale is on (`data-flash-sale`) the button
+ * then rides above the tag instead. Keep the corner offsets in step with `.pdp-flash-tag`.
+ */
+.pdp-stage__overlay-action {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: calc(1rem - 0.1875rem);
+  transform: translateX(-50%);
+}
+
+@media (min-width: 64rem) {
+  .pdp-stage__overlay-action {
+    bottom: calc(1.5rem - 0.1875rem);
+  }
+}
+
+@media (max-width: 22.4375rem) {
+  .pdp-stage__overlay-action[data-flash-sale="true"] {
+    left: 1rem;
+    bottom: calc(1rem + 1.375rem + 0.5rem);
+    transform: none;
+  }
+}
+
+/*
+ * Small and deliberate: a 28px solid chocolate pill with cream text and the "AI" in warm gold, the
+ * brand's darkest tone on a light photograph, so it is the one calm thing that draws the eye. The
+ * painted box is small; the touch target is not, a transparent `::after` grows it to 44px.
+ */
+.pdp-tryon-media-button {
+  position: relative;
+  display: inline-flex;
+  height: 1.75rem;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0 0.75rem 0 0.625rem;
+  border: 1px solid rgba(250, 247, 242, 0.28);
+  border-radius: 999px;
+  background: #3b2219;
+  color: #faf7f2;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow:
+    0 0 0 1px rgba(42, 24, 16, 0.2),
+    0 6px 16px rgba(42, 24, 16, 0.28);
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+
+.pdp-tryon-media-button svg {
+  width: 0.8125rem;
+  height: 0.8125rem;
+}
+
+.pdp-tryon-media-button__ai {
+  color: #f2cf8e;
+  letter-spacing: 0.06em;
+}
+
+.pdp-tryon-media-button::after {
+  content: "";
+  position: absolute;
+  inset: -0.5rem -0.375rem;
+}
+
+.pdp-tryon-media-button:hover {
+  background: #52332a;
+  box-shadow:
+    0 0 0 1px rgba(42, 24, 16, 0.3),
+    0 6px 18px rgba(42, 24, 16, 0.34);
+}

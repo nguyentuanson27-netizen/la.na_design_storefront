@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
@@ -53,6 +54,12 @@ type BrandProductMediaStageProps = Readonly<{
   /** The product is on Flash Sale: the photograph carries the tag its card carries. */
   flashSale?: boolean;
   video?: PancakePdpVideo | null;
+  /**
+   * A control that sits at the photograph's bottom centre (virtual try-on's "Thử đồ AI"). It is the
+   * caller's to build and own; the stage only gives it a place that clears the Flash Sale tag (left),
+   * the counter (right), the video tile and the gallery gestures.
+   */
+  overlayAction?: ReactNode;
 }>;
 
 export function BrandProductMediaStage({
@@ -62,6 +69,7 @@ export function BrandProductMediaStage({
   galleryIndexByVariantId,
   flashSale = false,
   video = null,
+  overlayAction = null,
 }: BrandProductMediaStageProps) {
   const images = media.gallery;
   const slides = buildDesktopProductGallerySlides(images.length);
@@ -409,6 +417,14 @@ export function BrandProductMediaStage({
           ) : null}
         </div>
       </dialog>
+
+      {/* Bottom centre, between the Flash Sale tag and the counter. On the narrowest phones the tag and
+          this would touch, so during a sale (`data-flash-sale`) it rides above the tag there. */}
+      {overlayAction ? (
+        <div className="pdp-stage__overlay-action" data-flash-sale={flashSale ? "true" : undefined}>
+          {overlayAction}
+        </div>
+      ) : null}
 
       {video ? (
         <div className="pdp-video-anchor" data-single-image={images.length === 1 ? "true" : undefined}>
