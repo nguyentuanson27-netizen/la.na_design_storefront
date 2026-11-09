@@ -7,6 +7,7 @@ import {
   LANGUAGE_SWITCHER_ORDER,
   LOCALE_LANGUAGE_TAG,
   LOCALE_NATIVE_NAME,
+  splitLocalePath,
   switchLocalePath,
   type Locale,
 } from "@/i18n/locale";
@@ -18,6 +19,17 @@ const LANDMARK_NAME = {
 } as const;
 
 const SHORT_CODE: Readonly<Record<Locale, string>> = { vi: "VI", en: "EN" };
+
+/**
+ * The query the other language's link carries. A collection page is named by its path, so a
+ * `collection` parameter on it is a forged identity the page ignores; it is not echoed into a link.
+ */
+function carriedQuery(routePath: string, params: URLSearchParams): string {
+  if (!routePath.startsWith("/collections/")) return params.toString();
+  const kept = new URLSearchParams(params);
+  kept.delete("collection");
+  return kept.toString();
+}
 
 /**
  * The language switch: the same page, in the other language.
@@ -42,7 +54,8 @@ export function LanguageSwitcher({
   const t = useT();
   const current = useLocale();
   const pathname = useAddressBarPathname();
-  const query = useSearchParams().toString();
+  const searchParams = useSearchParams();
+  const query = carriedQuery(splitLocalePath(pathname).pathname, searchParams);
 
   return (
     <nav
