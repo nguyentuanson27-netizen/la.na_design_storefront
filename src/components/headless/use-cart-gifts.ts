@@ -47,8 +47,9 @@ export function useCartGifts(onBusyChange?: (pending: boolean) => void, locked =
       if (outcome === "saved") {
         setSavedCount((count) => count + 1);
         const swapped = result && "replaced" in result && (result.replaced ?? 0) > 0;
-        setMessage(removed > 0 ? `Đã bỏ ${removed} quà ${label} khỏi đơn.`
-          : `Đã thêm vào đơn: ${label}.${swapped ? " Quà của mốc trước đã được thay bằng món này." : ""}`);
+        // Brief on purpose: the item name and remaining slots are already shown in the panel above.
+        setMessage(removed > 0 ? "Đã bỏ quà khỏi đơn."
+          : `Đã thêm quà vào đơn.${swapped ? " Quà mốc trước đã được thay." : ""}`);
       } else {
         setMessage(`Chưa ${removed > 0 ? "bỏ" : "thêm"} quà ${label}. Quyền nhận hoặc tồn kho đã thay đổi. Đang kiểm tra lại số suất thực tế.`);
         // The refusal is known, but the visible eligibility/stock may be stale.

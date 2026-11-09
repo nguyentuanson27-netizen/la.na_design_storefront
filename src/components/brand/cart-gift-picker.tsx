@@ -77,7 +77,6 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   }
   const selected = model.selections.reduce((sum, row) => sum + row.quantity, 0);
   const entitled = model.campaigns.reduce((sum, row) => sum + row.entitled, 0);
-  const unclaimed = model.campaigns.reduce((sum, row) => sum + row.unclaimed, 0);
   const unavailable = model.campaigns.reduce((sum, row) => sum + row.unavailableSlots, 0);
   // Shared capacity is attributed by the existing engine. Never sum competing campaign maxima.
   const shared = model.campaigns.some((row) => row.contendedSlots > 0);
@@ -239,7 +238,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     {onReturnToPayment ? <button type="button" className="gift-back mt-3" onClick={onReturnToPayment}><VoucherIcon name="chevron" className="gift-back__arrow" />Quay lại thanh toán</button> : null}
     {draftNotice ? <p className="gift-note mt-3" data-gift-draft>{draftNotice}</p> : null}
     </> : null}
-    <p className="gift-status" role="status" aria-live="polite" aria-atomic="true">{pending ? "Đang kiểm tra và làm mới báo giá…" : message}{present && !pending && !uncertain && message && !model.invalid ? ` Còn ${unclaimed} suất chưa chọn.` : ""}</p>
+    <p className="gift-status" role="status" aria-live="polite" aria-atomic="true">{pending ? "Đang kiểm tra và làm mới báo giá…" : message}</p>
     {uncertain ? <button type="button" className="gift-btn mt-2" disabled={pending} onClick={(event) => retryGiftRead(event.currentTarget)}>Kiểm tra lại quà trong đơn</button> : null}
     </div>
   </section>;
