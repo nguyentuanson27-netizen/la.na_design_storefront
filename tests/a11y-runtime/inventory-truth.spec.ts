@@ -335,7 +335,7 @@ test("F8a on a phone the preorder sheet and sticky bar keep the two actions apar
   await page.goto(`${BASE_URL}/shop/${slugs.preorder}`, { waitUntil: "networkidle" });
 
   const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
-  const stickyCta = stickyBar.getByRole("button");
+  const stickyCta = stickyBar.getByRole("button").last();
   const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
 
   // Incomplete: the bar still asks for the choices and opens the sheet.

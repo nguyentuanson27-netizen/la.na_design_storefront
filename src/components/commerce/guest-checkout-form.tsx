@@ -443,10 +443,6 @@ export function GuestCheckoutForm({
   useEffect(() => {
     if (!quoteProof && reminder.current.current === "open") reminder.markSeen();
   }, [quoteProof, reminder]);
-  function returnToPayment() {
-    paymentRef.current?.focus();
-    paymentRef.current?.scrollIntoView({block: "center", behavior: "smooth"});
-  }
   function chooseGifts() {
     reminder.markSeen();
     openGiftPicker();
@@ -522,7 +518,7 @@ export function GuestCheckoutForm({
         </section>
       ) : null}
 
-      <BrandCartGiftPicker model={giftPicker ?? EMPTY_GIFT_PICKER} onBusyChange={onGiftBusyChange} locked={isSubmitting || isRefreshingQuote || lockSubmission} isLocked={isInteractionLocked} onDraftChange={setDraftNotice} onReturnToPayment={returnToPayment} />
+      <BrandCartGiftPicker model={giftPicker ?? EMPTY_GIFT_PICKER} onBusyChange={onGiftBusyChange} locked={isSubmitting || isRefreshingQuote || lockSubmission} isLocked={isInteractionLocked} onDraftChange={setDraftNotice} compact />
       {totalsSlot ? <div className="hidden lg:block">{totalsSlot}</div> : null}
       {desktopPreorderSlot ? <div className="hidden lg:block">{desktopPreorderSlot}</div> : null}
       </aside>

@@ -252,7 +252,6 @@ function render(data: ProductRouteData) {
         <div className="mt-5 text-sm text-[#3B2219]" data-pdp-vouchers="">
           <p className="pdp-voucher-label">Voucher có thể áp dụng cho giỏ hàng:</p>
           <VoucherTeaserChips items={data.voucherTeaser} />
-          <p className="mt-1.5 text-xs text-[#3B2219]/70">Nàng chọn voucher trong giỏ hàng. Voucher chỉ áp dụng khi giỏ đủ điều kiện.</p>
         </div>
       )}
     </>
