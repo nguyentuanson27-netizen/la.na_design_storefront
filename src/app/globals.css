@@ -3759,55 +3759,102 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   }
 }
 
+/*
+ * Both try-on controls on a photograph are one quiet kind of object: a frosted pill (or circle) a
+ * little over 2rem tall, a hairline light edge instead of a dark outline, and a soft shadow, so the
+ * photograph stays the subject. The painted box is small on purpose; the touch target is not: a
+ * transparent `::after` grows it to 44px without changing how it looks.
+ */
 .pdp-tryon-media-button {
+  position: relative;
   display: inline-flex;
-  min-height: 2.75rem;
+  height: 2rem;
   align-items: center;
   gap: 0.375rem;
-  padding: 0 0.875rem;
-  border: 1px solid rgba(59, 34, 25, 0.35);
-  background: rgba(250, 247, 242, 0.92);
+  padding: 0 0.875rem 0 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(250, 247, 242, 0.74);
   color: #3b2219;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow:
+    0 0 0 1px rgba(59, 34, 25, 0.08),
+    0 4px 14px rgba(42, 24, 16, 0.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  backdrop-filter: blur(12px) saturate(1.2);
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+
+.pdp-tryon-media-button svg {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+
+.pdp-tryon-media-button::after {
+  content: "";
+  position: absolute;
+  inset: -0.375rem -0.25rem;
 }
 
 .pdp-tryon-media-button:hover {
-  background: #faf7f2;
-  border-color: #3b2219;
+  background: rgba(250, 247, 242, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(59, 34, 25, 0.18),
+    0 4px 14px rgba(42, 24, 16, 0.14);
 }
 
 /* A small try-on mark on a product card (product-card.tsx): bottom right of the photograph. */
 .product-tryon-mark {
   position: absolute;
   z-index: 3;
-  right: 0.5rem;
-  bottom: 0.5rem;
+  right: 0.625rem;
+  bottom: 0.625rem;
   display: inline-flex;
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 2rem;
+  height: 2rem;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(59, 34, 25, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 999px;
-  background: rgba(250, 247, 242, 0.92);
+  background: rgba(250, 247, 242, 0.74);
   color: #3b2219;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  box-shadow:
+    0 0 0 1px rgba(59, 34, 25, 0.08),
+    0 4px 12px rgba(42, 24, 16, 0.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  backdrop-filter: blur(12px) saturate(1.2);
   pointer-events: auto;
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+
+.product-tryon-mark svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.product-tryon-mark::after {
+  content: "";
+  position: absolute;
+  inset: -0.375rem;
 }
 
 .product-tryon-mark:hover {
-  background: #faf7f2;
-  border-color: #3b2219;
+  background: rgba(250, 247, 242, 0.95);
 }
 
 /* The dense listing view packs more cards per row, so the try-on mark shrinks with its card. */
 .listing-product-grid[data-view="small"] .product-tryon-mark {
-  right: 0.25rem;
-  bottom: 0.25rem;
-  width: 2.25rem;
-  height: 2.25rem;
+  right: 0.375rem;
+  bottom: 0.375rem;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.listing-product-grid[data-view="small"] .product-tryon-mark svg {
+  width: 0.875rem;
+  height: 0.875rem;
 }
