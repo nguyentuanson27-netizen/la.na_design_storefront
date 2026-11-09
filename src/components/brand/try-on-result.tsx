@@ -61,7 +61,7 @@ export function BrandTryOnSaveActions({
           onClick={async () => {
             setSharing(true);
             const outcome = await shareTryOnImage({
-              url: result.url,
+              blob: result.blob,
               mimeType: result.mimeType,
               productSlug,
               productName,

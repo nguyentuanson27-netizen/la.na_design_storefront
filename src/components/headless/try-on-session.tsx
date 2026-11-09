@@ -50,7 +50,15 @@ import {
  * likeness acknowledgement is, as before, asked for every generation.
  */
 
-export type TryOnResult = Readonly<{ url: string; mimeType: "image/png" | "image/jpeg" | "image/webp" }>;
+export type TryOnResult = Readonly<{
+  url: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  /**
+   * The same bytes the URL points at. Sharing needs a `File`, and the page's CSP (`connect-src
+   * 'self'`) rightly stops it from `fetch`ing its own blob URL to get one back.
+   */
+  blob: Blob;
+}>;
 
 export type TryOnJob = Readonly<{
   id: number;
@@ -137,7 +145,8 @@ function decodeImage(base64: string, mimeType: TryOnResult["mimeType"]): TryOnRe
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return { url: URL.createObjectURL(new Blob([bytes], { type: mimeType })), mimeType };
+  const blob = new Blob([bytes], { type: mimeType });
+  return { url: URL.createObjectURL(blob), mimeType, blob };
 }
 
 function revokeJob(job: TryOnJob) {

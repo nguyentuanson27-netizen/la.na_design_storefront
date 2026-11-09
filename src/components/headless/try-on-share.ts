@@ -33,11 +33,11 @@ export function canShareTryOnFiles(): boolean {
 export type TryOnShareOutcome = "shared" | "cancelled" | "failed";
 
 export async function shareTryOnImage(
-  input: Readonly<{ url: string; mimeType: string; productSlug: string; productName: string }>,
+  input: Readonly<{ blob: Blob; mimeType: string; productSlug: string; productName: string }>,
 ): Promise<TryOnShareOutcome> {
   try {
-    const blob = await (await fetch(input.url)).blob();
-    const file = new File([blob], tryOnResultFileName(input.productSlug, input.mimeType), {
+    // The bytes already in memory, not a `fetch` of the blob URL: the CSP does not allow that.
+    const file = new File([input.blob], tryOnResultFileName(input.productSlug, input.mimeType), {
       type: input.mimeType,
     });
     const link = `${window.location.origin}/shop/${encodeURIComponent(input.productSlug)}`;

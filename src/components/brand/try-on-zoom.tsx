@@ -56,7 +56,13 @@ export function BrandTryOnZoom({
       ref={dialogRef}
       aria-label="Xem ảnh phóng to"
       className="m-0 h-dvh max-h-none w-screen max-w-none overflow-hidden border-0 bg-black/95 p-0 text-white backdrop:bg-black/95"
-      onClose={onClose}
+      // React passes `cancel` and `close` up its component tree even though the browser does not, so
+      // without these the try-on dialog this one sits inside would close itself with it.
+      onCancel={(event) => event.stopPropagation()}
+      onClose={(event) => {
+        event.stopPropagation();
+        onClose();
+      }}
       onKeyDown={onKeyDown}
     >
       {/* Mounted only while open, so every opening starts fitted to the screen and on the result. */}
