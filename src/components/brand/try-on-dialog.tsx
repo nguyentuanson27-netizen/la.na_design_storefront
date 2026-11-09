@@ -126,11 +126,13 @@ export function BrandTryOnTrigger({
 }
 
 /**
- * "Thử lên người" on the product photograph itself, where a shopper is already looking at the
- * garment and wondering how it would look on them (amendment 2026-11-09). It is the same dialog as
- * the link beside the size guide, not a second feature, and sits at the photograph's bottom left:
- * the right edge is taken by the photo counter and the product video tile. Its accessible name
- * starts with "Thử" like the link's.
+ * "Thử đồ AI" on the product photograph itself, where a shopper is already looking at the garment
+ * and wondering how it would look on them (amendment 2026-11-09). It is the same dialog as the link
+ * beside the size guide, not a second feature, centred at the bottom of the photograph: the left is
+ * the Flash Sale tag's and the right the photo counter's.
+ *
+ * Its accessible name is "Mở thử đồ AI", which contains the visible words (a label must) and, by not
+ * starting with "Thử đồ", leaves the size-guide link the only control with that name.
  */
 export function BrandTryOnMediaButton({
   onOpen,
@@ -141,11 +143,14 @@ export function BrandTryOnMediaButton({
       ref={buttonRef}
       type="button"
       className={`pdp-tryon-media-button ${FOCUS_RING}`}
+      aria-label="Mở thử đồ AI"
       aria-haspopup="dialog"
       onClick={onOpen}
     >
       <PersonIcon />
-      <span>Thử lên người</span>
+      <span aria-hidden="true">
+        Thử đồ <span className="pdp-tryon-media-button__ai">AI</span>
+      </span>
     </button>
   );
 }

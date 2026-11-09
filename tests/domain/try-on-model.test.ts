@@ -145,7 +145,7 @@ test("the sign-in link returns to this product, with try-on open again, and nowh
   );
 });
 
-test("the card icon's target is the product page with try-on open", () => {
+test("the product page with try-on open is the deep link's target", () => {
   assert.equal(tryOnProductHref("set-quan-ha-lam"), "/shop/set-quan-ha-lam?thu-do=1");
   assert.equal(tryOnProductHref("a b"), "/shop/a%20b?thu-do=1");
 });

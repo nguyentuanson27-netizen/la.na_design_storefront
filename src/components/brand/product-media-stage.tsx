@@ -55,9 +55,9 @@ type BrandProductMediaStageProps = Readonly<{
   flashSale?: boolean;
   video?: PancakePdpVideo | null;
   /**
-   * A control that sits on the photograph's bottom left (virtual try-on's "Thử lên người"). It is
-   * the caller's to build and own; the stage only gives it a place that clears the counter, the
-   * video tile and the gallery gestures.
+   * A control that sits at the photograph's bottom centre (virtual try-on's "Thử đồ AI"). It is the
+   * caller's to build and own; the stage only gives it a place that clears the Flash Sale tag (left),
+   * the counter (right), the video tile and the gallery gestures.
    */
   overlayAction?: ReactNode;
 }>;
@@ -418,8 +418,8 @@ export function BrandProductMediaStage({
         </div>
       </dialog>
 
-      {/* Shares the bottom left with the Flash Sale tag below, so it rides above that tag while the sale
-          is on (`data-flash-sale`) instead of covering it. */}
+      {/* Bottom centre, between the Flash Sale tag and the counter. On the narrowest phones the tag and
+          this would touch, so during a sale (`data-flash-sale`) it rides above the tag there. */}
       {overlayAction ? (
         <div className="pdp-stage__overlay-action" data-flash-sale={flashSale ? "true" : undefined}>
           {overlayAction}

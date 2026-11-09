@@ -86,8 +86,6 @@ export type CategoryViewModelInput = Readonly<{
   pageSize: number;
   pricingRule?: StorefrontPricingRule;
   selectEventBySlug: ReadonlyMap<string, TrackingEvent>;
-  /** Slugs of the listed products that offer virtual try-on; absent shows no try-on mark. */
-  tryOnSlugs?: ReadonlySet<string>;
 }>;
 
 export function buildCategoryViewModel(input: CategoryViewModelInput): CategoryViewModel {
@@ -106,7 +104,6 @@ export function buildCategoryViewModel(input: CategoryViewModelInput): CategoryV
     hasNext,
     pricingRule,
     selectEventBySlug,
-    tryOnSlugs,
   } = input;
 
   const cards: ProductCardModel[] = products.map((product) =>
@@ -119,7 +116,6 @@ export function buildCategoryViewModel(input: CategoryViewModelInput): CategoryV
       flashSale: product.flashSale,
       pricingRule,
       selectEvent: selectEventBySlug.get(product.slug) ?? null,
-      tryOn: tryOnSlugs?.has(product.slug) === true,
     }),
   );
 

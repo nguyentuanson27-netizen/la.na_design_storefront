@@ -13,7 +13,6 @@ import {
   type FlashSaleViewModel,
 } from "./flash-sale-model.ts";
 import { NEW_ARRIVALS_TITLE } from "./metadata/new-arrivals.ts";
-import { resolveTryOnListingSlugs } from "@/commerce/try-on-listing";
 
 /** /new-arrivals is the admin-selected list, never catalog recency. */
 
@@ -55,11 +54,9 @@ export async function loadNewArrivalsRoute({
     pricingRule: catalogPage.pricingRule,
   });
 
-  const tryOnSlugs = await resolveTryOnListingSlugs(catalogPage.products);
   const model = buildFlashSaleViewModel({
     basePath: "/new-arrivals",
     products: catalogPage.products,
-    tryOnSlugs,
     totalCount: catalogPage.totalProducts,
     totalPages: catalogPage.totalPages,
     page: catalogPage.page,

@@ -1569,10 +1569,18 @@ test("share is offered only where the browser can share files, and hands over th
   expect(sent!.name).toMatch(new RegExp(`^thu-do-${slugs.eligible}\\.(png|jpg|webp)$`));
 });
 
-test("Thử lên người sits on the product photograph and opens the same dialog", async ({ page }) => {
+test("Thử đồ AI sits centred at the bottom of the product photograph and opens the same dialog", async ({
+  page,
+}) => {
   await page.goto(`${ENABLED_URL}/shop/${slugs.eligible}`, { waitUntil: "networkidle" });
-  const onPhoto = page.getByRole("button", { name: "Thử lên người", exact: true });
+  const onPhoto = page.getByRole("button", { name: "Mở thử đồ AI", exact: true });
   await expect(onPhoto).toBeVisible();
+  await expect(onPhoto).toContainText("Thử đồ AI");
+  // Small, and its touch target is not: the painted pill is 28px, the clickable area 44px.
+  const painted = (await onPhoto.boundingBox())!;
+  expect(painted.height).toBeLessThanOrEqual(30);
+  const stage = (await page.locator(".pdp-stage").boundingBox())!;
+  expect(Math.abs(painted.x + painted.width / 2 - (stage.x + stage.width / 2))).toBeLessThanOrEqual(2);
   await onPhoto.click();
   await expect(dialogOf(page)).toBeVisible();
   await page.keyboard.press("Escape");
@@ -1590,28 +1598,6 @@ test("?thu-do=1 opens the dialog once and leaves no parameter behind; a plain vi
   await page.keyboard.press("Escape");
   await page.reload({ waitUntil: "networkidle" });
   await expect(dialogOf(page)).toBeHidden();
-});
-
-test("an eligible product's card in a listing carries the try-on mark; the others do not", async ({ page }) => {
-  await page.goto(`${ENABLED_URL}/shop`, { waitUntil: "networkidle" });
-  const eligibleCard = page.locator(`article:has(a[href="/shop/${slugs.eligible}"])`);
-  await expect(eligibleCard).toHaveCount(1);
-  const mark = eligibleCard.getByRole("link", { name: `Thử đồ AI với ${PRODUCT_NAME}` });
-  await expect(mark).toHaveAttribute("href", `/shop/${slugs.eligible}?thu-do=1`);
-  // Beside the card's own link, never inside it.
-  await expect(eligibleCard.locator("a a")).toHaveCount(0);
-  const accessoryCard = page.locator(`article:has(a[href="/shop/${slugs.accessory}"])`);
-  if ((await accessoryCard.count()) > 0) {
-    await expect(accessoryCard.getByRole("link", { name: /^Thử đồ AI với/ })).toHaveCount(0);
-  }
-  await mark.click();
-  await expect(dialogOf(page)).toBeVisible();
-  expect(new URL(page.url()).pathname).toBe(`/shop/${slugs.eligible}`);
-});
-
-test("with try-on off, listing cards carry no mark", async ({ page }) => {
-  await page.goto(`${DISABLED_URL}/shop`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("link", { name: /^Thử đồ AI với/ })).toHaveCount(0);
 });
 
 test("the dialog reports its steps through the dataLayer and the events endpoint, with no image in either", async ({
@@ -1669,10 +1655,10 @@ test("another product's try-on still being made is announced on the first step, 
   );
 });
 
-test("on a Flash Sale product the on-photo button rides above the FLASH SALE tag instead of covering it", async ({
+test("on a Flash Sale product the on-photo button stays clear of the FLASH SALE tag and the photo counter", async ({
   page,
 }) => {
-  for (const width of [390, 1280]) {
+  for (const width of [320, 360, 390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${ENABLED_URL}/shop/${slugs.eligible}`, { waitUntil: "networkidle" });
     // The seeded product is not on sale; put the page's own Flash Sale markup in its place, which is
@@ -1688,12 +1674,14 @@ test("on a Flash Sale product the on-photo button rides above the FLASH SALE tag
       stage.appendChild(tag);
       action.setAttribute("data-flash-sale", "true");
     });
-    const button = await page.getByRole("button", { name: "Thử lên người", exact: true }).boundingBox();
-    const tag = await page.getByTestId("flash-tag").boundingBox();
-    expect(button).not.toBeNull();
-    expect(tag).not.toBeNull();
-    // Same left edge, button wholly above the tag, and a visible gap between them.
-    expect(Math.abs(button!.x - tag!.x)).toBeLessThanOrEqual(1);
-    expect(button!.y + button!.height).toBeLessThanOrEqual(tag!.y - 4);
+    const button = (await page.getByRole("button", { name: "Mở thử đồ AI", exact: true }).boundingBox())!;
+    const tag = (await page.getByTestId("flash-tag").boundingBox())!;
+    const counter = page.locator(".pdp-mobile-gallery__counter, .pdp-stage__counter").first();
+    const apart = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+      a.x + a.width + 4 <= b.x || b.x + b.width + 4 <= a.x || a.y + a.height + 4 <= b.y || b.y + b.height + 4 <= a.y;
+    expect(apart(button, tag), `button vs tag at ${width}px`).toBe(true);
+    if (await counter.isVisible()) {
+      expect(apart(button, (await counter.boundingBox())!), `button vs counter at ${width}px`).toBe(true);
+    }
   }
 });

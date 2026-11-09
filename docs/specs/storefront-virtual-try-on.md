@@ -707,12 +707,13 @@ attestations, the privacy boundary, one generation at a time) is unchanged.
   memory a switch shows it beside the result.
 - Early busy notice: if another product's try-on is still being made, the first step says so, with a
   link to it, instead of letting the shopper reach the last step first.
-- Entry points: besides the link beside the size guide, a **Thử lên người** button on the product
-  photograph (bottom left), and a small mark on product cards in listings (shop, collections,
-  categories, sale, new arrivals) for eligible products. The mark links to
-  `/shop/<slug>?thu-do=1`, which opens the dialog once and removes the parameter. The same
-  parameter brings a shopper back to the open dialog after signing in. Eligibility for the marks is
-  resolved on the server for the whole page with one read (`try-on-listing.ts`).
+- Entry points: besides the link beside the size guide, a small **Thử đồ AI** button on the
+  product photograph, centred at its bottom (the Flash Sale tag holds the left and the photo counter
+  the right; below 360 px during a sale it rides above the tag instead). A solid chocolate pill with
+  the "AI" in gold, 28 px painted and 44 px to touch; its accessible name is "Mở thử đồ AI". Product
+  cards in listings carry **no** try-on mark (considered and removed). The parameter `?thu-do=1`
+  opens the product page's dialog once and is then removed; it also brings a shopper back to the open
+  dialog after signing in.
 
 **Session memory (§6, §9, §12, §23).** The tab keeps the last four finished pictures (the picture
 only, never the shopper's own photo) and the age the shopper stated, **in memory only**: blob URLs

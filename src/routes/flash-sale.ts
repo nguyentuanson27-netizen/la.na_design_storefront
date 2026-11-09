@@ -15,7 +15,6 @@ import { buildProductListTracking } from "@/components/analytics/product-list-tr
 import { sealRoute, type RouteHandle } from "./core.tsx";
 import { buildFlashSaleViewModel, type FlashSaleViewModel } from "./flash-sale-model.ts";
 import { FLASH_TITLE } from "./metadata/flash-sale.ts";
-import { resolveTryOnListingSlugs } from "@/commerce/try-on-listing";
 
 /** The Flash Sale listing's loader. */
 
@@ -52,12 +51,9 @@ export async function loadFlashSaleRoute({
     list: { listId: "flash-sale", listName: FLASH_TITLE },
   });
 
-  const tryOnSlugs = await resolveTryOnListingSlugs(products);
-
   return sealRoute({
     data: buildFlashSaleViewModel({
       products,
-      tryOnSlugs,
       totalCount,
       totalPages,
       page,

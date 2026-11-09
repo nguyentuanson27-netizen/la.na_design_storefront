@@ -71,9 +71,8 @@ test("no try-on code has a durable persistence path", () => {
     [/localStorage|sessionStorage|indexedDB|caches\.open|document\.cookie/, "browser storage"],
     [/console\.(log|info|debug|warn|error)/, "ad-hoc logging"],
   ];
-  // The runtime wiring and the listing resolver are the files that legitimately read (never write)
-  // catalog data; `the runtime wiring only reads the catalog` below pins both to reads.
-  const databaseExempt = new Set(["src/commerce/try-on-runtime.ts", "src/commerce/try-on-listing.ts"]);
+  // The runtime wiring is the one file that legitimately reads (never writes) catalog data.
+  const databaseExempt = new Set(["src/commerce/try-on-runtime.ts"]);
   for (const path of ALL_TRY_ON_FILES) {
     for (const [pattern, label] of forbidden) {
       if (label === "database" && databaseExempt.has(path)) continue;
@@ -142,14 +141,11 @@ test("Flow worker dependency boundary is frozen instead of resolving mutable lat
   assert.match(lock, /^version = "0\.82\.1"$/m);
 });
 
-test("the runtime wiring and the listing resolver only read the catalog: no write call on any Prisma model", () => {
-  for (const path of ["src/commerce/try-on-runtime.ts", "src/commerce/try-on-listing.ts"]) {
-    assert.doesNotMatch(
-      code(path),
-      /\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\(|\$executeRaw|\$queryRaw/,
-      path,
-    );
-  }
+test("the runtime wiring only reads the catalog: no write call on any Prisma model", () => {
+  assert.doesNotMatch(
+    code("src/commerce/try-on-runtime.ts"),
+    /\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\(|\$executeRaw|\$queryRaw/,
+  );
 });
 
 test("storageUri is never set: the request builder does not mention it", () => {

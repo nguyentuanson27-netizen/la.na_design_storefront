@@ -29,7 +29,6 @@ import {
   type CategoryViewModel,
 } from "./category-model.ts";
 import { sealRoute, type RouteHandle } from "./core.tsx";
-import { resolveTryOnListingSlugs } from "@/commerce/try-on-listing";
 
 export { CATEGORY_DESTINATIONS };
 export type { CategoryDestination, CategoryViewModel };
@@ -120,8 +119,6 @@ export async function loadCategoryRoute(
     }),
   ];
 
-  const tryOnSlugs = await resolveTryOnListingSlugs(products);
-
   const data = buildCategoryViewModel({
     destination,
     categoryKey,
@@ -138,7 +135,6 @@ export async function loadCategoryRoute(
     pageSize: CATEGORY_PAGE_SIZE,
     pricingRule,
     selectEventBySlug: listTracking.selectEventBySlug,
-    tryOnSlugs,
   });
 
   return sealRoute({

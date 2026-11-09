@@ -115,8 +115,6 @@ export type CollectionViewModelInput = Readonly<{
   pageSize: number;
   pricingRule?: StorefrontPricingRule;
   selectEventBySlug: ReadonlyMap<string, TrackingEvent>;
-  /** Slugs of the listed products that offer virtual try-on; absent shows no try-on mark. */
-  tryOnSlugs?: ReadonlySet<string>;
 }>;
 
 /**
@@ -261,7 +259,6 @@ export function buildCollectionViewModel(input: CollectionViewModelInput): Colle
             flashSale: product.flashSale,
             pricingRule: input.pricingRule,
             selectEvent: input.selectEventBySlug.get(product.slug) ?? null,
-            tryOn: input.tryOnSlugs?.has(product.slug) === true,
           }),
         }),
       ),

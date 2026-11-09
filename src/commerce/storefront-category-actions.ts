@@ -11,7 +11,6 @@ import {
   buildProductCardModel,
   type ProductCardModel,
 } from "../components/headless/build-product-card-model.ts";
-import { resolveTryOnListingSlugs } from "./try-on-listing.ts";
 
 const CATEGORY_PAGE_SIZE = 24;
 
@@ -62,7 +61,6 @@ export async function loadCategoryNextPageAction(
     now,
   });
 
-  const tryOnSlugs = await resolveTryOnListingSlugs(pageResult.products);
   const cards: ProductCardModel[] = pageResult.products.map((product) =>
     buildProductCardModel({
       slug: product.slug,
@@ -73,7 +71,6 @@ export async function loadCategoryNextPageAction(
       flashSale: product.flashSale,
       pricingRule: pageResult.pricingRule,
       selectEvent: null,
-      tryOn: tryOnSlugs.has(product.slug),
     }),
   );
 

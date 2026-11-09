@@ -60,8 +60,6 @@ export type FlashSaleViewModelInput = Readonly<{
   page: number;
   pageSize: number;
   selectEventBySlug: ReadonlyMap<string, TrackingEvent>;
-  /** Slugs of the listed products that offer virtual try-on; absent shows no try-on mark. */
-  tryOnSlugs?: ReadonlySet<string>;
   pricingRule?: StorefrontPricingRule;
   /**
    * The route the paging hrefs are written against.
@@ -110,7 +108,6 @@ export function buildFlashSaleViewModel(input: FlashSaleViewModelInput): FlashSa
             isClearance: product.isClearance,
             priceScopeVariantIds: product.matchedVariantIds,
             selectEvent: input.selectEventBySlug.get(product.slug) ?? null,
-            tryOn: input.tryOnSlugs?.has(product.slug) === true,
           }),
         }),
       ),

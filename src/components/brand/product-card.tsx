@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import { ListingCardImage } from "@/components/brand/listing-view";
 import { ProductSelectLink } from "@/components/analytics/product-select-link";
 import type { ProductCardModel } from "@/components/headless/build-product-card-model";
@@ -45,7 +43,7 @@ export function ProductCard({
   } = model;
 
   return (
-    <article className="group relative">
+    <article className="group">
       <ProductSelectLink
         ariaLabel={`Xem ${model.name}`}
         className="product-visual-link block"
@@ -154,34 +152,6 @@ export function ProductCard({
           ) : null}
         </div>
       </ProductSelectLink>
-      {model.tryOnHref ? (
-        // Beside the card's own link, never inside it: a link inside a link is invalid, and the card
-        // must still open the product on a plain tap. The box is the photograph's frame (2:3), so the
-        // mark sits on its bottom right whatever the card's text below does.
-        <div className="pointer-events-none absolute inset-x-0 top-0 aspect-[2/3]">
-          <Link
-            href={model.tryOnHref}
-            className="product-tryon-mark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
-            aria-label={`Thử đồ AI với ${model.name}`}
-            title="Thử đồ AI"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.25"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="12" cy="7.5" r="3.5" />
-              <path d="M5 20.5c.6-3.8 3.4-6 7-6s6.4 2.2 7 6" />
-            </svg>
-          </Link>
-        </div>
-      ) : null}
     </article>
   );
 }

@@ -18,7 +18,6 @@ import {
   type StorefrontVariantOption,
 } from "../../commerce/storefront-product.ts";
 import type { TrackingEvent } from "../../tracking/commerce-events.ts";
-import { tryOnProductHref } from "./try-on-model.ts";
 
 /**
  * Everything a product card needs to render, decided here so a brand redrawing the card never has
@@ -112,11 +111,6 @@ export type ProductCardModel = Readonly<{
    */
   lowStockLabel: string | null;
   selectEvent: TrackingEvent | null;
-  /**
-   * Where the card's small "thử đồ" mark goes: the product page with the try-on dialog open. `null`
-   * when the product does not offer try-on, and then the card shows no mark.
-   */
-  tryOnHref: string | null;
 }>;
 
 export type ProductCardModelInput = Readonly<{
@@ -148,11 +142,6 @@ export type ProductCardModelInput = Readonly<{
    */
   priceScopeVariantIds?: readonly string[];
   selectEvent?: TrackingEvent | null;
-  /**
-   * The server has decided this product can offer virtual try-on (`resolveTryOnListingSlugs`).
-   * Absent or false shows nothing: a card never guesses eligibility.
-   */
-  tryOn?: boolean;
   isNewArrival?: boolean;
   isBestseller?: boolean;
   /**
@@ -422,6 +411,5 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
     availabilityLabel: resolveAvailabilityLabel(capacityOptions),
     lowStockLabel,
     selectEvent: input.selectEvent ?? null,
-    tryOnHref: input.tryOn === true ? tryOnProductHref(input.slug) : null,
   });
 }
