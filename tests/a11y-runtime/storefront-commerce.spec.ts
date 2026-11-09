@@ -1266,6 +1266,12 @@ test("at 320px the sticky bar's price, add-to-cart and buy-now buttons do not ov
   expect(priceBox && addBox && buyBox, "all three parts are laid out").toBeTruthy();
   expect(priceBox!.x + priceBox!.width, "the price column ends before the add button").toBeLessThanOrEqual(addBox!.x + 0.5);
   expect(addBox!.x + addBox!.width, "the add button ends before buy-now").toBeLessThanOrEqual(buyBox!.x + 0.5);
+  // The boxes above are the columns; the price text itself (sale and struck-through) must also stay left of the add button.
+  const priceSpans = price.locator("span:not(.sr-only)");
+  for (let index = 0; index < (await priceSpans.count()); index += 1) {
+    const box = await priceSpans.nth(index).boundingBox();
+    if (box && box.width > 0) expect(box.x + box.width, `price text ${index} ends before the add button`).toBeLessThanOrEqual(addBox!.x + 0.5);
+  }
   expect(buyBox!.x + buyBox!.width, "buy-now stays inside the viewport").toBeLessThanOrEqual(320);
   expect(await page.evaluate(() => document.documentElement.scrollWidth), "no sideways scroll").toBeLessThanOrEqual(320);
 });

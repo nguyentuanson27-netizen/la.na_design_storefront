@@ -831,8 +831,10 @@ export function PurchasePanelView({
   function renderCompactPrice(clock: FlashClock | null = null) {
     // During a Flash Sale the bar's second line is the countdown, so the struck price moves up
     // beside the Flash price and the percentage stays in the panel, where it is said once.
+    // `flex-wrap`, not `whitespace-nowrap`: beside two buttons on a 320-360px bar the struck price drops to its
+    // own line instead of running under the add button.
     return (
-      <span className="flex min-w-0 items-baseline gap-x-2 whitespace-nowrap">
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
         <span className="sr-only">{priceDisplay.compareAtText ? (priceDisplay.isListReference ? "Giá giảm " : "Giá khuyến mãi ") : ""}</span>
         <span
           className={`font-display text-base font-semibold tabular-nums ${clock ? "text-[#9A3324]" : ""}`}
