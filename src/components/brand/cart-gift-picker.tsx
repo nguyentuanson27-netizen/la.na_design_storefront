@@ -20,7 +20,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   /** Checkout: no title row, no progress line or bar (the sr-only progress text stays), and the payment summary shows the unsaved-draft warning. */
   compact?: boolean;
 }>) {
-  const { pending, uncertain, message, savedCount, change, retryRead } = useCartGifts(onBusyChange, locked, isLocked);
+  const { pending, uncertain, message, spokenMessage, savedCount, change, retryRead } = useCartGifts(onBusyChange, locked, isLocked);
   const autoRemovedGiftCount = useSyncExternalStore(
     subscribeAutoRemovedGiftCount,
     readRecentAutoRemovedGiftCount,
@@ -79,6 +79,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   }
   const selected = model.selections.reduce((sum, row) => sum + row.quantity, 0);
   const entitled = model.campaigns.reduce((sum, row) => sum + row.entitled, 0);
+  const unclaimed = model.campaigns.reduce((sum, row) => sum + row.unclaimed, 0);
   const unavailable = model.campaigns.reduce((sum, row) => sum + row.unavailableSlots, 0);
   // Shared capacity is attributed by the existing engine. Never sum competing campaign maxima.
   const shared = model.campaigns.some((row) => row.contendedSlots > 0);
@@ -148,6 +149,12 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   }, [present]);
   if (!present && !message) return null;
   const busy = pending || uncertain;
+  // Sighted buyers get the brief `message`; the live region reads the fuller sentence (which gift, how many slots
+  // are left) instead, so nothing is announced twice and a collapsed list never hides what was just saved.
+  const slotsLeft = present && !pending && !uncertain && spokenMessage && !model.invalid ? ` Còn ${unclaimed} suất chưa chọn.` : "";
+  const statusLine = pending ? "Đang kiểm tra và làm mới báo giá…" : spokenMessage
+    ? <><span aria-hidden="true">{message}</span><span className="sr-only">{spokenMessage}{slotsLeft}</span></>
+    : message;
   return <section ref={giftArea} id="cart-gifts" tabIndex={-1} className={present ? "gift-panel scroll-mt-32" : "my-4 scroll-mt-32 text-sm"} aria-label="Quà tặng trong giỏ" aria-busy={busy}>
     {present && !compact ? <div className="gift-panel__head">
       <span aria-hidden="true" className="gift-panel__icon"><VoucherIcon name="gift" /></span>
@@ -238,7 +245,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     </div>
     {draftNotice && !compact ? <p className="gift-note mt-3" data-gift-draft>{draftNotice}</p> : null}
     </> : null}
-    <p className="gift-status" role="status" aria-live="polite" aria-atomic="true">{pending ? "Đang kiểm tra và làm mới báo giá…" : message}</p>
+    <p className="gift-status" role="status" aria-live="polite" aria-atomic="true">{statusLine}</p>
     {uncertain ? <button type="button" className="gift-btn mt-2" disabled={pending} onClick={(event) => retryGiftRead(event.currentTarget)}>Kiểm tra lại quà trong đơn</button> : null}
     </div>
   </section>;

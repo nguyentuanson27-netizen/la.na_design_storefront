@@ -1191,6 +1191,85 @@ test("a failed add from the phone sticky bar does not navigate to checkout", asy
   await page.unroute("**/shop/**");
 });
 
+test("the phone sticky bar's add-to-cart button adds exactly one unit, opens the cart drawer and stays on the product", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
+  const addToCart = stickyBar.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
+
+  // Nothing chosen yet: the bar asks for the choices and offers no add button.
+  await expect(addToCart).toHaveCount(0);
+
+  const buyNow = await chooseBlackMediumThenCloseSheet(page);
+  await expect(buyNow).toHaveText("Mua ngay");
+  await expect(addToCart).toBeVisible();
+  await expect(addToCart).toBeEnabled();
+  await addToCart.click();
+
+  const drawer = page.getByRole("dialog", { name: "Giỏ hàng" });
+  await expect(drawer).toBeVisible();
+  await expect(page).toHaveURL(`${BASE_URL}/shop/${productSlug}`);
+
+  const cartId = (await page.context().cookies()).find(({ name }) => name === "la_cart")?.value;
+  expect(cartId, "the add created the cart").toBeTruthy();
+  const items = await prisma.cartItem.findMany({ where: { cartId: cartId! }, include: { variant: true } });
+  expect(items.map((item) => [item.variant.pancakeVariationId, item.quantity])).toEqual([[variantExternalId, 1]]);
+
+  await prisma.cart.delete({ where: { id: cartId! } });
+  await page.context().clearCookies({ name: "la_cart" });
+});
+
+test("a failed add from the phone sticky bar's add-to-cart button opens no drawer and says why", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  await chooseBlackMediumThenCloseSheet(page);
+  const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
+  const addToCart = stickyBar.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
+  await expect(addToCart).toBeEnabled();
+
+  await page.route("**/shop/**", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.abort("failed");
+      return;
+    }
+    await route.fallback();
+  });
+  const failedAdd = page.waitForEvent("requestfailed", (request) => request.method() === "POST");
+  await addToCart.click();
+  await failedAdd;
+
+  await expect(page).toHaveURL(`${BASE_URL}/shop/${productSlug}`);
+  await expect(page.getByRole("dialog", { name: "Giỏ hàng" })).toHaveCount(0);
+  const feedback = stickyBar.getByText("Chưa thêm được vào giỏ hàng. Nàng thử lại nhé.", { exact: true });
+  await expect(feedback).toBeVisible();
+  await expect(feedback).toBeInViewport();
+  await expect(addToCart).toBeEnabled();
+  expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
+
+  await page.unroute("**/shop/**");
+});
+
+test("at 320px the sticky bar's price, add-to-cart and buy-now buttons do not overlap or overflow the page", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  const buyNow = await chooseBlackMediumThenCloseSheet(page);
+  const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
+  const addToCart = stickyBar.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
+  await expect(addToCart).toBeVisible();
+
+  const price = stickyBar.locator("p").first();
+  const [priceBox, addBox, buyBox] = await Promise.all([price.boundingBox(), addToCart.boundingBox(), buyNow.boundingBox()]);
+  expect(priceBox && addBox && buyBox, "all three parts are laid out").toBeTruthy();
+  expect(priceBox!.x + priceBox!.width, "the price column ends before the add button").toBeLessThanOrEqual(addBox!.x + 0.5);
+  expect(addBox!.x + addBox!.width, "the add button ends before buy-now").toBeLessThanOrEqual(buyBox!.x + 0.5);
+  expect(buyBox!.x + buyBox!.width, "buy-now stays inside the viewport").toBeLessThanOrEqual(320);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth), "no sideways scroll").toBeLessThanOrEqual(320);
+});
+
 test("buying now from the phone sticky bar checks out the whole cart: A already in the bag, then B", async ({
   page,
 }) => {

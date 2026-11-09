@@ -222,6 +222,11 @@ for (const [quantity, width] of [[0,390],[1,1440],[2,390]] as const) {
       await picker.getByRole("button",{name:"Nhận quà này",exact:true}).click();
       await expect(picker.locator("[data-gift-progress]")).toContainText(`Đã thêm ${n}/2`);
       await expect(picker).toHaveAttribute("aria-busy","false");
+      // The shown confirmation is brief, but the live region still names the gift that was saved even
+      // though the list collapses right after (the panel is compact here, so no title or progress text).
+      const status=picker.getByRole("status");
+      await expect(status).toContainText("Đã thêm vào đơn: Khăn quà — Trắng / M");
+      await expect(status.locator('[aria-hidden="true"]')).toHaveText("Đã thêm vào đơn.");
       // A confirmed save collapses the list; the buyer reopens it to take the next gift.
       await expect(toggle).toHaveAttribute("aria-expanded","false");
       if(n<quantity) {
@@ -234,6 +239,14 @@ for (const [quantity, width] of [[0,390],[1,1440],[2,390]] as const) {
     if(quantity===0) await expect(picker.getByRole("button",{name:"Thu gọn quà tặng",exact:true})).toHaveAttribute("aria-expanded","true");
     await expectReceiving(page);
     if(quantity===0) await expect(page.locator("[data-payment-gift-draft]")).toContainText("chưa được thêm");
+    if(quantity>0) {
+      // With no "Quay lại thanh toán" link, a keyboard buyer leaves the collapsed picker by Tab, and Shift+Tab comes back.
+      await toggle.focus();
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => { const el=document.activeElement; return !!el && el!==document.body && !el.closest("#cart-gifts"); }), "Tab leaves the picker for the next control").toBe(true);
+      await page.keyboard.press("Shift+Tab");
+      await expect(toggle).toBeFocused();
+    }
     expect(await prisma.orderMirror.count()).toBe(ordersBefore);
     expect(await prisma.variantCapacityReservation.count()).toBe(holdsBefore);
     await page.screenshot({path:`test-results/gift-checkout-${width}-${quantity}.png`,fullPage:true});
