@@ -125,3 +125,19 @@ test("a pattern slot does not swallow a longer title that merely starts the same
   assert.equal(en("Về La.na Design"), "About La.na Design");
   assert.equal(en("Về La.na Design | Thời Trang Nữ"), "Về La.na Design | Thời Trang Nữ");
 });
+
+test("the canonical page view keeps the language prefix, so the two language URLs report apart", async () => {
+  const { buildPageViewEvent } = await import("../../src/tracking/commerce-events.ts");
+  assert.equal(buildPageViewEvent({ pathname: "/shop" }).page_path, "/shop");
+  assert.equal(buildPageViewEvent({ pathname: "/en/shop" }).page_path, "/en/shop");
+  assert.equal(buildPageViewEvent({ pathname: "/en" }).page_path, "/en");
+});
+
+test("the page-view reporters read the address-bar path, not the route path", async () => {
+  const { readFile } = await import("node:fs/promises");
+  for (const file of ["tracking-page-view-reporter.tsx", "facebook-pixel-route-tracker.tsx"]) {
+    const source = await readFile(new URL(`../../src/components/analytics/${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /@\/i18n\/navigation/, `${file} must not strip the language prefix`);
+    assert.match(source, /usePathname[^;]*from "next\/navigation"/, `${file} reads the real path`);
+  }
+});

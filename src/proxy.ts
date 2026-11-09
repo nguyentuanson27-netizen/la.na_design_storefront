@@ -20,6 +20,7 @@ import {
   DEFAULT_LOCALE,
   LOCALE_REQUEST_HEADER,
   localizeHref,
+  parseLocale,
   splitLocalePath,
 } from "@/i18n/locale";
 import { readSearchExposure, shouldNoIndexRequest } from "@/seo/search-exposure";
@@ -28,6 +29,17 @@ import {
   strictScriptPolicyHeaders,
   type StrictScriptPolicyHeaders,
 } from "@/security/script-nonce-policy";
+
+/**
+ * Next runs this proxy again for the path a rewrite produced. `/en/about` becomes `/about`, which
+ * names no language, so the second pass would overwrite the `x-la-locale` the first one set and the
+ * page would render in Vietnamese. The first pass therefore also stamps the request with this
+ * per-process key; the second pass keeps the carried language only when it finds the key. The key
+ * never leaves the server, so a browser cannot forge it, and anything it sends in either header is
+ * discarded -- exactly as before.
+ */
+const LOCALE_CARRY_HEADER = "x-la-locale-carry";
+const LOCALE_CARRY_KEY = globalThis.crypto.randomUUID();
 
 const SHOP_PRODUCT_PREFIX = "/shop/";
 const EXACT_PRODUCT_PATH = /^\/shop\/[^/]+$/;
@@ -151,7 +163,13 @@ export async function proxy(request: NextRequest) {
   // `/en/...` is the same route tree as `/...`: the prefix is read here, stripped, and the render is
   // told which language it is by a header this function always overwrites. Everything below works
   // on the route path, so no rule in this file has to know a second spelling of any page.
-  const { locale, pathname: routePath } = splitLocalePath(request.nextUrl.pathname);
+  const { locale: pathLocale, pathname: routePath } = splitLocalePath(request.nextUrl.pathname);
+  const carriedLocale =
+    request.headers.get(LOCALE_CARRY_HEADER) === LOCALE_CARRY_KEY
+      ? parseLocale(request.headers.get(LOCALE_REQUEST_HEADER))
+      : null;
+  // The language the page is rendered in: the one the URL names, or else the one a rewrite carried.
+  const locale = pathLocale !== DEFAULT_LOCALE ? pathLocale : (carriedLocale ?? DEFAULT_LOCALE);
 
   // A marketing link carrying a voucher code is answered before anything renders: a body-less redirect to the clean
   // URL (by way of the server handler that validates the code), so the code never reaches a document that loads
@@ -171,6 +189,8 @@ export async function proxy(request: NextRequest) {
   const scriptPolicy = readStrictScriptPolicy(request);
   const listingViewCookie = planListingView(request, scriptPolicy.request);
   scriptPolicy.request.set(LOCALE_REQUEST_HEADER, locale);
+  if (locale === DEFAULT_LOCALE) scriptPolicy.request.delete(LOCALE_CARRY_HEADER);
+  else scriptPolicy.request.set(LOCALE_CARRY_HEADER, LOCALE_CARRY_KEY);
   const forward = { request: { headers: scriptPolicy.request } };
 
   const respond = (response: Response): Response =>
@@ -178,7 +198,8 @@ export async function proxy(request: NextRequest) {
 
   /** Lets the request through; an English one is rewritten onto the route its prefix names. */
   const proceed = (): Response => {
-    if (locale === DEFAULT_LOCALE) return respond(NextResponse.next(forward));
+    // Only a path that names the language is rewritten; the pass after it just continues.
+    if (pathLocale === DEFAULT_LOCALE) return respond(NextResponse.next(forward));
     const destination = request.nextUrl.clone();
     destination.pathname = routePath;
     return respond(NextResponse.rewrite(destination, forward));
