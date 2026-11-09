@@ -71,7 +71,8 @@ function render(data: ProductRouteData) {
 
   // A product with its own review photographs shows those, not the shared brand gallery as well:
   // two walls of customer photographs say the same thing twice, and the shared one is not about this
-  // product. The brand rail (and the link to it) stays for a product with no review photographs.
+  // product. The brand rail stays at the bottom of the page for a product with no review photographs;
+  // nothing near the price points to it (no strip, no link under the buy buttons).
   const reviewsHavePhotos = data.reviews !== null && data.reviews.photoCount > 0;
   const feedback = data.feedback !== null && data.feedback.scope === "brand" && reviewsHavePhotos
     ? null
