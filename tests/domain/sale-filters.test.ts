@@ -169,7 +169,7 @@ test("every sale listing scrolls infinitely, through its own server action, and 
 
   const action = read("src/commerce/storefront-sale-actions.ts");
   assert.match(action, /^"use server";/, "the sale paging endpoint is a server action");
-  assert.match(action, /parseSaleDiscoverySearchParams/, "scrolled pages read filters with the route's own parser");
+  assert.match(action, /saleDiscoveryFromInput/, "scrolled pages read filters with the route's own parser");
   assert.match(action, /describeSalePage/, "scrolled pages are priced and reported like the first page");
   assert.match(action, /RangeError\("Invalid sale listing"\)/, "an unknown campaign kind never reaches the read");
 });
@@ -193,7 +193,7 @@ test("/shop and /new-arrivals scroll infinitely too, each through its own server
 
   const shopAction = read("src/commerce/storefront-shop-actions.ts");
   assert.match(shopAction, /^"use server";/);
-  assert.match(shopAction, /parseStorefrontDiscoverySearchParams/, "scrolled pages read filters with the route's own parser");
+  assert.match(shopAction, /shopDiscoveryFromInput/, "scrolled pages read filters with the route's own parser");
   assert.match(shopAction, /inStockFirst: discovery\.sort === "name-asc"/, "scrolled pages are ordered like the first page");
   assert.match(shopAction, /RangeError\("Shop page is out of range"\)/, "a page past the end is not served");
 

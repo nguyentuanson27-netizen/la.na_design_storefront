@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { loadCategoryNextPageAction } from "@/commerce/storefront-category-actions";
 import { loadCollectionNextPageAction } from "@/commerce/storefront-collection-actions";
+import { buildSaleNextPageInput, buildShopNextPageInput } from "@/commerce/listing-next-page-input";
 import { loadNewArrivalsNextPageAction } from "@/commerce/storefront-new-arrivals-actions";
 import { loadSaleNextPageAction } from "@/commerce/storefront-sale-actions";
 import { loadShopNextPageAction } from "@/commerce/storefront-shop-actions";
@@ -105,29 +106,9 @@ export function usePlpInfiniteGrid({
           case "collection":
             return loadCollectionNextPageAction({ slug: source.slug, ...request });
           case "sale":
-            // Sale listings page by number only and have no availability or Sale toggle to send.
-            return loadSaleNextPageAction({
-              kind: source.saleKind,
-              page: currentPage + 1,
-              color: request.color,
-              size: request.size,
-              minPriceVnd: request.minPriceVnd,
-              maxPriceVnd: request.maxPriceVnd,
-              sort: request.sort,
-            });
+            return loadSaleNextPageAction(buildSaleNextPageInput(source.saleKind, activeFilters, currentPage + 1));
           case "shop":
-            return loadShopNextPageAction({
-              page: currentPage + 1,
-              query: source.query,
-              collection: source.collection,
-              color: request.color,
-              size: request.size,
-              availability: request.availability,
-              minPriceVnd: request.minPriceVnd,
-              maxPriceVnd: request.maxPriceVnd,
-              sale: request.sale,
-              sort: request.sort,
-            });
+            return loadShopNextPageAction(buildShopNextPageInput(source, activeFilters, currentPage + 1));
           case "new-arrivals":
             return loadNewArrivalsNextPageAction({ page: currentPage + 1 });
           default:

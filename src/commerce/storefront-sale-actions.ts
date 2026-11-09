@@ -5,11 +5,8 @@ import { buildFlashSaleViewModel } from "../routes/flash-sale-model.ts";
 import { describeSalePage, SALE_PAGE_SIZE } from "../routes/sale-page.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
 import type { ProductCardModel } from "../components/headless/build-product-card-model.ts";
-import {
-  buildCategoryDiscoveryHref,
-  parseSaleDiscoverySearchParams,
-  type CategoryDiscoverySort,
-} from "./category-discovery-url.ts";
+import { buildCategoryDiscoveryHref } from "./category-discovery-url.ts";
+import { saleDiscoveryFromInput, type SaleNextPageInput } from "./listing-next-page-input.ts";
 import { localizeListing } from "./product-translation-runtime.ts";
 import { listConfiguredSalePage } from "./storefront-catalog-runtime.ts";
 
@@ -21,17 +18,6 @@ import { listConfiguredSalePage } from "./storefront-catalog-runtime.ts";
  * checked against the declared sale listings: this is a public POST endpoint, and an unknown value
  * must not reach the campaign read.
  */
-
-export type SaleNextPageActionInput = {
-  /** Which sale listing is being paged; absent or `null` is `/sale` itself (every active discount). */
-  kind?: SaleListingKind | null;
-  page: number;
-  color?: string | null;
-  size?: string | null;
-  minPriceVnd?: number | null;
-  maxPriceVnd?: number | null;
-  sort?: CategoryDiscoverySort;
-};
 
 export type SaleNextPageActionResult = {
   products: ProductCardModel[];
@@ -54,20 +40,13 @@ function parseKind(kind: unknown): SaleListingKind | undefined {
 }
 
 export async function loadSaleNextPageAction(
-  input: SaleNextPageActionInput,
+  input: SaleNextPageInput,
 ): Promise<SaleNextPageActionResult> {
   if (typeof input?.page !== "number") throw new RangeError("Invalid sale page request");
   const kind = parseKind(input.kind);
   const basePath = kind ? saleListingByKind(kind).href : "/sale";
 
-  const discovery = parseSaleDiscoverySearchParams({
-    color: input.color ?? undefined,
-    size: input.size ?? undefined,
-    minPrice: input.minPriceVnd !== null && input.minPriceVnd !== undefined ? String(input.minPriceVnd) : undefined,
-    maxPrice: input.maxPriceVnd !== null && input.maxPriceVnd !== undefined ? String(input.maxPriceVnd) : undefined,
-    sort: input.sort && input.sort !== "default" ? input.sort : undefined,
-    page: String(input.page),
-  });
+  const discovery = saleDiscoveryFromInput(input);
 
   const now = new Date();
   // Names in the shopper's language, applied after the read as on the first page.

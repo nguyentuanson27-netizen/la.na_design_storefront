@@ -7,6 +7,7 @@ import {
   readConfiguredNextSaleBoundary,
 } from "@/commerce/storefront-catalog-runtime";
 import { parseSaleDiscoverySearchParams } from "@/commerce/category-discovery-url";
+import { salePlpFilters } from "@/commerce/listing-next-page-input";
 import type { StorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
 import { resolveStorefrontPromotionRefresh } from "@/commerce/storefront-promotion-freshness";
 import { sealRoute, type RouteHandle } from "./core.tsx";
@@ -62,15 +63,7 @@ export async function loadSaleRoute(
     selectEventBySlug: tracking.selectEventBySlug,
     pricingRule,
     filters: {
-      active: {
-        size: discovery.size,
-        color: discovery.color,
-        availability: null,
-        minPriceVnd: discovery.minPriceVnd,
-        maxPriceVnd: discovery.maxPriceVnd,
-        sale: null,
-        sort: discovery.sort,
-      },
+      active: salePlpFilters(discovery),
       availableSizes: facets.sizes,
     },
   });

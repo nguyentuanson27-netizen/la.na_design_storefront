@@ -327,15 +327,7 @@ function render(data: ShopViewModel, { t, href }: RequestI18n) {
             initialPage={data.page}
             source={{ kind: "shop", query: discovery.query, collection: discovery.collection }}
             clearHref="/shop"
-            activeFilters={{
-              size: discovery.size,
-              color: discovery.color,
-              availability: discovery.availability,
-              minPriceVnd: discovery.minPriceVnd,
-              maxPriceVnd: discovery.maxPriceVnd,
-              sale: discovery.sale ?? null,
-              sort: discovery.sort,
-            }}
+            activeFilters={data.gridFilters}
             hasNext={data.nextHref !== null}
             nextHref={data.nextHref}
             nextCursor={null}

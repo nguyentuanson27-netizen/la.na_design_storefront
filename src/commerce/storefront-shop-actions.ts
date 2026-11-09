@@ -12,11 +12,8 @@ import { SHOP_PAGE_SIZE } from "../routes/shop-model.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
 import { localizeListing } from "./product-translation-runtime.ts";
 import { listConfiguredStorefrontDiscoveryPage } from "./storefront-catalog-runtime.ts";
-import {
-  buildStorefrontDiscoveryHref,
-  parseStorefrontDiscoverySearchParams,
-  type StorefrontDiscoverySort,
-} from "./storefront-discovery.ts";
+import { buildStorefrontDiscoveryHref } from "./storefront-discovery.ts";
+import { shopDiscoveryFromInput, type ShopNextPageInput } from "./listing-next-page-input.ts";
 
 /**
  * The next page of `/shop` for the infinite grid.
@@ -25,20 +22,6 @@ import {
  * by scrolling lists, orders and prices exactly what that page's crawlable URL does -- including the
  * free-text query and the collection, which the category filter state has no field for.
  */
-
-export type ShopNextPageActionInput = {
-  page: number;
-  query?: string | null;
-  collection?: string | null;
-  color?: string | null;
-  size?: string | null;
-  availability?: "in-stock" | null;
-  minPriceVnd?: number | null;
-  maxPriceVnd?: number | null;
-  sale?: boolean | null;
-  /** `default` and `name-asc` are the same order here: the shop's own default is A-Z. */
-  sort?: StorefrontDiscoverySort | "default";
-};
 
 export type ShopNextPageActionResult = {
   products: ProductCardModel[];
@@ -53,27 +36,12 @@ export type ShopNextPageActionResult = {
   listEvent: TrackingEvent | null;
 };
 
-const text = (value: string | null | undefined) => value ?? undefined;
-const number = (value: number | null | undefined) =>
-  value !== null && value !== undefined ? String(value) : undefined;
-
 export async function loadShopNextPageAction(
-  input: ShopNextPageActionInput,
+  input: ShopNextPageInput,
 ): Promise<ShopNextPageActionResult> {
   if (typeof input?.page !== "number") throw new RangeError("Invalid shop page request");
 
-  const discovery = parseStorefrontDiscoverySearchParams({
-    q: text(input.query),
-    collection: text(input.collection),
-    color: text(input.color),
-    size: text(input.size),
-    availability: text(input.availability),
-    minPrice: number(input.minPriceVnd),
-    maxPrice: number(input.maxPriceVnd),
-    sale: input.sale ? "true" : undefined,
-    sort: input.sort && input.sort !== "default" ? input.sort : undefined,
-    page: String(input.page),
-  });
+  const discovery = shopDiscoveryFromInput(input);
 
   // Names in the shopper's language, applied after the read as on the first page.
   const catalogPage = await localizeListing(
