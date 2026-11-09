@@ -17,7 +17,7 @@ type Draft = { campaignId: string; variantId: string; label: string; committed?:
 export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLocked, onDraftChange, compact = false }: Readonly<{
   model: CartGiftPickerModel; onBusyChange?: (pending: boolean) => void; locked?: boolean;
   isLocked?: () => boolean; onDraftChange?: (notice: string | null) => void;
-  /** Checkout: the pill and the status line already say how many gifts are added, and the payment summary shows the unsaved-draft warning. */
+  /** Checkout: no title row, no progress line or bar (the sr-only progress text stays), and the payment summary shows the unsaved-draft warning. */
   compact?: boolean;
 }>) {
   const { pending, uncertain, message, savedCount, change, retryRead } = useCartGifts(onBusyChange, locked, isLocked);
@@ -149,7 +149,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   if (!present && !message) return null;
   const busy = pending || uncertain;
   return <section ref={giftArea} id="cart-gifts" tabIndex={-1} className={present ? "gift-panel scroll-mt-32" : "my-4 scroll-mt-32 text-sm"} aria-label="Quà tặng trong giỏ" aria-busy={busy}>
-    {present ? <div className="gift-panel__head">
+    {present && !compact ? <div className="gift-panel__head">
       <span aria-hidden="true" className="gift-panel__icon"><VoucherIcon name="gift" /></span>
       <h2 className="font-display text-xl">Quà dành cho nàng</h2>
       {hasChoices && !model.invalid ? <span aria-hidden="true" className="gift-panel__pill">{selected}/{entitled}</span> : null}
