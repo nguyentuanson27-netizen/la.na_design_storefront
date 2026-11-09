@@ -14,9 +14,11 @@ import { VoucherIcon } from "./voucher-icons";
  * least once: removing that gift later is a finished action, not an unsaved choice to warn about.
  */
 type Draft = { campaignId: string; variantId: string; label: string; committed?: boolean };
-export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLocked, onDraftChange, onReturnToPayment }: Readonly<{
+export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLocked, onDraftChange, compact = false }: Readonly<{
   model: CartGiftPickerModel; onBusyChange?: (pending: boolean) => void; locked?: boolean;
-  isLocked?: () => boolean; onDraftChange?: (notice: string | null) => void; onReturnToPayment?: () => void;
+  isLocked?: () => boolean; onDraftChange?: (notice: string | null) => void;
+  /** Checkout: the pill and the status line already say how many gifts are added, and the payment summary shows the unsaved-draft warning. */
+  compact?: boolean;
 }>) {
   const { pending, uncertain, message, savedCount, change, retryRead } = useCartGifts(onBusyChange, locked, isLocked);
   const autoRemovedGiftCount = useSyncExternalStore(
@@ -154,8 +156,8 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     </div> : null}
     <div className={present ? "gift-panel__body" : undefined}>
     {present ? <>
-    {hasChoices ? <p className="text-sm" data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p> : null}
-    {hasChoices && !model.invalid && entitled > 0 ? <div aria-hidden="true" className="gift-bar"><i style={{ width: `${Math.min(100, Math.round((selected / entitled) * 100))}%` }} /></div> : null}
+    {hasChoices ? <p className={compact ? "sr-only" : "text-sm"} data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p> : null}
+    {!compact && hasChoices && !model.invalid && entitled > 0 ? <div aria-hidden="true" className="gift-bar"><i style={{ width: `${Math.min(100, Math.round((selected / entitled) * 100))}%` }} /></div> : null}
     {autoRemovedGiftCount > 0 ? <p className="mt-3 text-sm text-amber-900" data-gift-auto-reconciled role="status" aria-live="polite">
       Đã tự động bỏ {autoRemovedGiftCount} quà tặng vì giỏ hàng không còn đủ số lượng hoặc giá trị để nhận. Những quà còn đủ điều kiện vẫn được giữ; hệ thống không tự chọn quà thay thế.
     </p> : null}
@@ -234,9 +236,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
         }))}</div>
       </div>)}
     </div>
-    {/* Outside the collapsible list: after a confirmed save collapses it, the way back to payment stays reachable. */}
-    {onReturnToPayment ? <button type="button" className="gift-back mt-3" onClick={onReturnToPayment}><VoucherIcon name="chevron" className="gift-back__arrow" />Quay lại thanh toán</button> : null}
-    {draftNotice ? <p className="gift-note mt-3" data-gift-draft>{draftNotice}</p> : null}
+    {draftNotice && !compact ? <p className="gift-note mt-3" data-gift-draft>{draftNotice}</p> : null}
     </> : null}
     <p className="gift-status" role="status" aria-live="polite" aria-atomic="true">{pending ? "Đang kiểm tra và làm mới báo giá…" : message}</p>
     {uncertain ? <button type="button" className="gift-btn mt-2" disabled={pending} onClick={(event) => retryGiftRead(event.currentTarget)}>Kiểm tra lại quà trong đơn</button> : null}
