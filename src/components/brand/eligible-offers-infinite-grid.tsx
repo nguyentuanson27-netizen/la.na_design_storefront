@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 import { ListingProductGrid } from "@/components/brand/listing-chrome";
 import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
@@ -8,6 +8,7 @@ import {
   useEligibleOffersInfiniteGrid,
   type EligibleOffersCardItem,
 } from "@/components/headless/use-eligible-offers-infinite-grid";
+import { useT } from "@/i18n/client";
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
@@ -25,6 +26,7 @@ export type EligibleOffersInfiniteGridProps = {
 };
 
 export function EligibleOffersInfiniteGrid({ toneOffset = 0, nextHref = null, ...options }: EligibleOffersInfiniteGridProps) {
+  const t = useT();
   const { totalCount, totalPages } = options;
   const { cards, currentPage, hasNextPage, isLoadingMore, announcement, error, sentinelRef, loadMore } =
     useEligibleOffersInfiniteGrid(options);
@@ -65,7 +67,7 @@ export function EligibleOffersInfiniteGrid({ toneOffset = 0, nextHref = null, ..
         <div role="alert" aria-live="assertive" className="mt-8 text-center text-xs text-[#70584B]">
           <p>{error}</p>
           <button type="button" onClick={() => void loadMore()} className="mt-2 text-xs font-semibold uppercase underline">
-            Thử lại
+            {t("Thử lại")}
           </button>
         </div>
       ) : null}

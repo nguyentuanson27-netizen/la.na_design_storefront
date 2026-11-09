@@ -1,6 +1,6 @@
 import { FeedbackGallery } from "@/components/brand/feedback-gallery";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { loadFeedbackRoute, type FeedbackRouteProps, type FeedbackViewModel } from "@/routes/feedback";
 import { buildFeedbackMetadata } from "@/routes/metadata/feedback";
 
@@ -9,11 +9,11 @@ import { buildFeedbackMetadata } from "@/routes/metadata/feedback";
  * inside the normal site chrome. Images only -- no quotes, captions, ratings or social features.
  */
 
-function render(data: FeedbackViewModel) {
+function render(data: FeedbackViewModel, { t }: RequestI18n) {
   return (
     <PageShell>
       <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: data.title }]} />
-      <PageHeader eyebrow="Khách hàng" title={data.title} />
+      <PageHeader eyebrow={t("Khách hàng")} title={data.title} />
       <div className="mt-8">
         <FeedbackGallery images={data.images} />
       </div>

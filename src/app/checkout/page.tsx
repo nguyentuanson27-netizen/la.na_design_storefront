@@ -1,5 +1,5 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
 import { CheckoutVoucherFocus, CheckoutVoucherPanel } from "@/components/brand/checkout-voucher-panel";
@@ -10,7 +10,7 @@ import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { PromotionBanner } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { loadCheckoutRoute, type CheckoutRouteProps } from "@/routes/checkout";
 import type { CheckoutViewModel } from "@/routes/checkout-model";
 import { buildCheckoutMetadata } from "@/routes/metadata/checkout";
@@ -18,15 +18,15 @@ import { buildCheckoutMetadata } from "@/routes/metadata/checkout";
 /** Checkout's markup. Every decision behind it is in `@/routes/checkout` and its model. */
 
 // No breadcrumb or eyebrow: checkout keeps the buyer on the form, not on the way out.
-function render(data: CheckoutViewModel) {
+function render(data: CheckoutViewModel, { t }: RequestI18n) {
   const bankTransferEnabled = data.bankTransferEnabled === true;
   if (data.state === "empty") {
     return (
       <PageShell>
-        <PageHeader title="Thanh toán" />
+        <PageHeader title={t("Thanh toán")} />
         <div className="mt-8" data-ui-state="empty">
-          <p className="font-display text-xl md:text-2xl">Giỏ hàng của nàng đang trống.</p>
-          <Link className="text-link mt-6 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
+          <p className="font-display text-xl md:text-2xl">{t("Giỏ hàng của nàng đang trống.")}</p>
+          <Link className="text-link mt-6 inline-block" href="/shop">{t("Tiếp tục mua sắm ↗")}</Link>
         </div>
       </PageShell>
     );
@@ -62,7 +62,7 @@ function render(data: CheckoutViewModel) {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold uppercase tracking-[0.05em]">{line.productName}</p>
             <p className="mt-1 text-xs leading-5 text-black/75">
-              {line.optionLabel} · SL {line.quantity}
+              {t(line.optionLabel)} · {t("SL {count}", { count: line.quantity })}
               {line.unitPriceText === null || line.originalPriceText ? null : ` × ${line.unitPriceText}`}
             </p>
             {line.originalPriceText ? (
@@ -75,7 +75,7 @@ function render(data: CheckoutViewModel) {
                 />
                 {line.promotionPriceText && line.unitPriceText ? (
                   <span className="ml-1.5" data-line-after-offers>
-                    · Giá sau ưu đãi: {line.unitPriceText}
+                    · {t("Giá sau ưu đãi: {prices}", { prices: line.unitPriceText })}
                   </span>
                 ) : null}
               </p>
@@ -103,12 +103,12 @@ function render(data: CheckoutViewModel) {
               className="flex aspect-[3/4] w-14 shrink-0 items-center justify-center border border-black/10 bg-black/[0.04] text-[9px] font-semibold uppercase tracking-wider text-black/75"
               aria-hidden="true"
             >
-              Quà
+              {t("Quà")}
             </div>
           )}
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold uppercase tracking-[0.05em]">{gift.label}</p>
-            <p className="mt-1 text-xs leading-5 text-black/75">Quà tặng · SL {gift.quantity}</p>
+            <p className="mt-1 text-xs leading-5 text-black/75">{t("Quà tặng · SL {count}", { count: gift.quantity })}</p>
           </div>
           <p className="shrink-0 text-sm font-medium">{gift.priceText}</p>
         </div>
@@ -122,22 +122,22 @@ function render(data: CheckoutViewModel) {
   const fallbackTotals = (
     <dl className="space-y-3 text-sm">
       <div className="flex justify-between gap-5">
-        <dt className="text-black/75">Tạm tính</dt>
-        <dd>{totals.subtotalText}</dd>
+        <dt className="text-black/75">{t("Tạm tính")}</dt>
+        <dd>{t(totals.subtotalText)}</dd>
       </div>
       {benefit && benefit.giftQuantity > 0 ? (
         <div className="flex justify-between gap-5">
-          <dt className="text-black/75">Quà tặng ({benefit.giftQuantity})</dt>
+          <dt className="text-black/75">{t("Quà tặng ({count})", { count: benefit.giftQuantity })}</dt>
           <dd>0 ₫</dd>
         </div>
       ) : null}
       <div className="flex justify-between gap-5">
-        <dt className="text-black/75">Phí vận chuyển</dt>
-        <dd>{totals.shippingText}</dd>
+        <dt className="text-black/75">{t("Phí vận chuyển")}</dt>
+        <dd>{t(totals.shippingText)}</dd>
       </div>
       <div className="flex items-baseline justify-between gap-5 border-t border-black pt-4">
-        <dt className="font-semibold uppercase tracking-[0.08em]">Tổng thanh toán</dt>
-        <dd className="text-xl font-semibold tracking-[-0.02em]">{totals.totalText}</dd>
+        <dt className="font-semibold uppercase tracking-[0.08em]">{t("Tổng thanh toán")}</dt>
+        <dd className="text-xl font-semibold tracking-[-0.02em]">{t(totals.totalText)}</dd>
       </div>
     </dl>
   );
@@ -156,7 +156,7 @@ function render(data: CheckoutViewModel) {
         className="mt-4 inline-block text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4"
         href="/cart"
       >
-        Sửa giỏ hàng
+        {t("Sửa giỏ hàng")}
       </Link>
     </>
   );
@@ -175,7 +175,7 @@ function render(data: CheckoutViewModel) {
       view={data.vouchers}
     />
   ) : voucherPicker && voucherPicker.footer.count === 0 ? (
-    <section aria-label="Ưu đãi" data-checkout-voucher-picker="">
+    <section aria-label={t("Ưu đãi")} data-checkout-voucher-picker="">
       <VoucherPicker initial={voucherPicker} key={voucherPickerKey(voucherPicker)} />
     </section>
   ) : null;
@@ -187,7 +187,7 @@ function render(data: CheckoutViewModel) {
 
   return (
     <PageShell>
-      <PageHeader title="Thanh toán" meta={bankTransferEnabled ? "Thanh toán khi nhận hàng hoặc chuyển khoản" : "Thanh toán khi nhận hàng"} />
+      <PageHeader title={t("Thanh toán")} meta={bankTransferEnabled ? "Thanh toán khi nhận hàng hoặc chuyển khoản" : "Thanh toán khi nhận hàng"} />
 
       {/* The form owns one interactive gift area and the responsive order/receiving layout. */}
       <PromotionBanner className="mt-8" view={data.promotions} />
@@ -199,7 +199,7 @@ function render(data: CheckoutViewModel) {
           giftPicker={data.giftPicker}
           attemptKey={data.attemptKey}
           quoteRenderId={data.quoteRenderId}
-          unavailableNotice={data.state === "unquotable" ? data.unavailableNotice ?? "Có sản phẩm, giá hoặc tồn kho cần được kiểm tra lại trước khi đặt hàng." : null}
+          unavailableNotice={data.state === "unquotable" ? t(data.unavailableNotice ?? "Có sản phẩm, giá hoặc tồn kho cần được kiểm tra lại trước khi đặt hàng.") : null}
           upsellEnabled={data.upsellEnabled}
           benefit={
             benefit === null
@@ -212,13 +212,13 @@ function render(data: CheckoutViewModel) {
                   tierNotice: benefit.tierNotice,
                 }
           }
-          summaryLabel={`Đơn hàng (${itemCount}) · ${totals.totalText}`}
+          summaryLabel={t("Đơn hàng ({count}) · {total}", { count: itemCount, total: t(totals.totalText) })}
           summarySlot={summaryContent}
           totalsSlot={totalsContent}
           preorderSlot={preorderNoticeFor("mobile")}
           desktopPreorderSlot={preorderNoticeFor("desktop")}
           voucherSlot={voucherSlot}
-          submitBlockedReason={data.vouchers?.state === "OFFERED" ? "Nàng xác nhận ưu đãi ở trên (hoặc đổi, bỏ ưu đãi) trước khi đặt hàng nhé." : null}
+          submitBlockedReason={data.vouchers?.state === "OFFERED" ? t("Nàng xác nhận ưu đãi ở trên (hoặc đổi, bỏ ưu đãi) trước khi đặt hàng nhé.") : null}
           bankTransferEnabled={bankTransferEnabled}
         />
 
@@ -230,8 +230,10 @@ function render(data: CheckoutViewModel) {
 
 const route = createStorefrontRoute<CheckoutRouteProps, CheckoutViewModel>({
   load: loadCheckoutRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: () => buildCheckoutMetadata(),
   render,
 });
 
-export const metadata = buildCheckoutMetadata();
+export const generateMetadata = route.generateMetadata;
 export default route.Page;

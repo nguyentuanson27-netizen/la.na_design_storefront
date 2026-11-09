@@ -1,3 +1,4 @@
+import { localizeListing } from "@/commerce/product-translation-runtime";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { saleListingCampaignKinds } from "@/commerce/flash-sale-catalog";
@@ -50,6 +51,8 @@ export async function loadSaleRoute(
     if (error instanceof RangeError) notFound();
     throw error;
   }
+
+  page = await localizeListing(page);
 
   // A sub-listing prices its cards -- and reports them -- from its own campaign kind only, so a
   // product listed on Ưu đãi for its Promotion variant never shows a sibling variant's Flash price.

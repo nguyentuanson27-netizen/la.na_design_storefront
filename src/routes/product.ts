@@ -1,3 +1,4 @@
+import { localizeProduct, localizeProductNames } from "@/commerce/product-translation-runtime";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
@@ -111,11 +112,13 @@ export async function loadProductRoute({
     throw error;
   }
   if (!product) notFound();
+  // The English name, copy and SEO text, over the Vietnamese the catalog cached.
+  product = await localizeProduct(product);
 
   // Related selection is membership-driven (ADR 0013 §7), so it does not depend on the request
   // clock; the promotion pass below is what applies `requestNow` to the products it returns.
   const sizeGuideId = product.sizeGuide;
-  const [relatedProducts, sizeGuideImageUrl, tryOn, feedback, promotionOffers, voucherTeaser, reviews] = await Promise.all([
+  const [relatedSource, sizeGuideImageUrl, tryOn, feedback, promotionOffers, voucherTeaser, reviews] = await Promise.all([
     listConfiguredRelatedStorefrontProducts(product),
     isApprovedSizeGuideId(sizeGuideId)
       ? createSizeGuideMediaRepository(prisma).readImageUrl(sizeGuideId)
@@ -127,6 +130,7 @@ export async function loadProductRoute({
     // Optional content: a failed read must never take the product page down.
     productReviews.readSection(product.id).catch(() => null),
   ]);
+  const relatedProducts = await localizeProductNames(relatedSource);
   const promotion = await resolveStorefrontPromotionForProducts({
     products: [product, ...relatedProducts],
     now: requestNow,

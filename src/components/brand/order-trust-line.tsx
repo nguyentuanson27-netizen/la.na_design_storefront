@@ -1,4 +1,7 @@
+"use client";
+
 import { ORDER_TRUST_FACTS } from "@/brand";
+import { useT } from "@/i18n/client";
 
 /**
  * The reassurance line under every order button (cart drawer, cart page, checkout): one line, so it
@@ -13,9 +16,10 @@ export function OrderTrustLine({
   className = "",
   facts = ORDER_TRUST_FACTS,
 }: Readonly<{ className?: string; facts?: readonly string[] }>) {
+  const t = useT();
   return (
     <ul
-      aria-label="Cam kết khi đặt hàng"
+      aria-label={t("Cam kết khi đặt hàng")}
       className={`flex flex-wrap items-center justify-center gap-x-1.5 text-[0.7rem] leading-5 text-[#70584B] ${className}`}
       data-order-trust
     >
@@ -28,7 +32,7 @@ export function OrderTrustLine({
           ) : (
             <span aria-hidden="true">·</span>
           )}
-          {fact}
+          {t(fact)}
         </li>
       ))}
     </ul>

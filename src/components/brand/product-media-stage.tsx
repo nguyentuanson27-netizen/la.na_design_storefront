@@ -24,6 +24,7 @@ import { preloadImageForViewport } from "@/components/brand/viewport-image-prelo
 
 import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
 import { BrandProductVideoOverlay } from "./product-video-overlay";
+import { useT } from "@/i18n/client";
 
 const DRAG_THRESHOLD_PX = 48;
 const DIALOG_FOCUSABLE_SELECTOR = [
@@ -71,6 +72,7 @@ export function BrandProductMediaStage({
   video = null,
   overlayAction = null,
 }: BrandProductMediaStageProps) {
+  const t = useT();
   const images = media.gallery;
   const slides = buildDesktopProductGallerySlides(images.length);
 
@@ -217,7 +219,7 @@ export function BrandProductMediaStage({
   }
 
   const imageAlt = (index: number) =>
-    index === 0 ? productName : images[index]!.alt || `${productName} - Ảnh ${index + 1}`;
+    index === 0 ? productName : images[index]!.alt || t("{name} - Ảnh {index}", { name: productName, index: index + 1 });
   const hasMultipleImages = images.length > 1;
   const hasMultipleDesktopSlides = slides.length > 1;
 
@@ -225,7 +227,7 @@ export function BrandProductMediaStage({
     <section
       className="product-page-hero pdp-stage"
       tabIndex={-1}
-      aria-label={`Ảnh chính của ${productName}`}
+      aria-label={t("Ảnh chính của {name}", { name: productName })}
       data-header-overlay-hero=""
     >
       <div className="pdp-mobile-gallery lg:hidden">
@@ -247,7 +249,7 @@ export function BrandProductMediaStage({
                 key={image.url}
                 type="button"
                 className="pdp-mobile-gallery__image"
-                aria-label={`Mở ảnh ${index + 1} / ${images.length} của ${productName}`}
+                aria-label={t("Mở ảnh {index} / {total} của {name}", { index: index + 1, total: images.length, name: productName })}
                 tabIndex={isCurrent ? undefined : -1}
                 data-active={isCurrent ? "true" : "false"}
                 onClick={(event) => openLightbox(index, event.currentTarget)}
@@ -349,7 +351,7 @@ export function BrandProductMediaStage({
                 setDesktopSlide((current) => stepGallerySlide(current, -1, slides.length))
               }
             >
-              <span className="sr-only">Ảnh trước</span>
+              <span className="sr-only">{t("Ảnh trước")}</span>
             </button>
             <button
               type="button"
@@ -359,21 +361,21 @@ export function BrandProductMediaStage({
                 setDesktopSlide((current) => stepGallerySlide(current, 1, slides.length))
               }
             >
-              <span className="sr-only">Ảnh tiếp theo</span>
+              <span className="sr-only">{t("Ảnh tiếp theo")}</span>
             </button>
           </div>
 
           {/* The desktop wording is PR #51's approved copy; only the mobile counter above is this
               spec's to define. */}
           <p className="pdp-stage__counter" role="status" aria-live="polite">
-            {`Trang ảnh ${desktopSlide + 1} / ${slides.length}`}
+            {t("Trang ảnh {page} / {total}", { page: desktopSlide + 1, total: slides.length })}
           </p>
         </>
       ) : null}
 
       <dialog
         ref={lightboxRef}
-        aria-label={`Xem ảnh ${productName}`}
+        aria-label={t("Xem ảnh {name}", { name: productName })}
         className="m-0 h-dvh max-h-none w-screen max-w-none overflow-hidden border-0 bg-black/95 p-0 text-white backdrop:bg-black/95"
         onClose={closeLightbox}
         onKeyDown={containLightboxFocus}
@@ -382,7 +384,7 @@ export function BrandProductMediaStage({
           <button
             ref={lightboxCloseRef}
             type="button"
-            aria-label="Đóng thư viện ảnh"
+            aria-label={t("Đóng thư viện ảnh")}
             className="absolute right-4 top-4 z-20 inline-flex h-11 w-11 items-center justify-center border border-white/50 bg-black/30 text-2xl text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             onClick={() => lightboxRef.current?.close()}
           >
@@ -397,7 +399,7 @@ export function BrandProductMediaStage({
                   <Image
                     loader={pdpProductImageLoader}
                     src={image.url}
-                    alt={image.alt || `${productName} - Ảnh ${index + 1}`}
+                    alt={image.alt || t("{name} - Ảnh {index}", { name: productName, index: index + 1 })}
                     fill
                     sizes="100vw"
                     draggable={false}

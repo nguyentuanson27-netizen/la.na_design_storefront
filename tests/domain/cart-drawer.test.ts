@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { readUntranslated } from "../support/untranslated-source.ts";
 import { fileURLToPath } from "node:url";
 
 import { checkoutBlockedMessages, handleDrawerFocusTrap, isMeaningfulReturnFocusTarget } from "../../src/components/headless/cart-drawer-model.ts";
@@ -71,7 +71,7 @@ test("F2d cart drawer: unavailable lines disable checkout and provide honest lab
 });
 
 test("F2d cart drawer component: enforces accessible dialog contracts and Escape dismissal", () => {
-  const source = readFileSync(
+  const source = readUntranslated(
     path.join(REPO_ROOT, "src/components/brand/cart-drawer.tsx"),
     "utf8",
   );
@@ -157,6 +157,6 @@ test("F2d cart drawer: a blocked cart lists every reason, not only the first", (
 });
 
 test("F2d cart drawer component: renders the blocked-checkout reasons through the model", () => {
-  const source = readFileSync(path.join(REPO_ROOT, "src/components/brand/cart-drawer.tsx"), "utf8");
+  const source = readUntranslated(path.join(REPO_ROOT, "src/components/brand/cart-drawer.tsx"), "utf8");
   assert.match(source, /checkoutBlockedMessages\(cart\)\.map/);
 });

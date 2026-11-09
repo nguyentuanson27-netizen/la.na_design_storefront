@@ -1,12 +1,13 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 import { ArtDirectedHeroImage } from "@/components/brand/art-directed-hero-image";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { useDocumentLoaded } from "@/components/headless/use-document-loaded";
 import { HOME_HERO_CTA_LABEL, type HomeHeroSlide } from "@/routes/home-hero";
+import { useT } from "@/i18n/client";
 
 /**
  * Owner-approved §17 hero: image + one linked CTA only.
@@ -82,6 +83,7 @@ function HeroSlideFigure({
 }
 
 export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHeroSlide[] }>) {
+  const t = useT();
   const [activeIndex, setActiveIndex] = useState(0);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -171,7 +173,7 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
     return (
       <section
         className="home-hero home-hero--static"
-        aria-label="Ảnh bìa trang chủ"
+        aria-label={t("Ảnh bìa trang chủ")}
         data-header-overlay-hero=""
       >
         <HeroSlideFigure slide={slides[0]!} preload />
@@ -183,7 +185,7 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
     <section
       ref={sectionRef}
       className="home-hero home-hero--slider"
-      aria-label="Ảnh bìa trang chủ"
+      aria-label={t("Ảnh bìa trang chủ")}
       aria-roledescription="carousel"
       data-header-overlay-hero=""
       data-autoplaying={autoplaying ? "true" : "false"}

@@ -1,5 +1,8 @@
+"use client";
+
 import type { ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/i18n/link";
+import { useT } from "@/i18n/client";
 
 /**
  * The head every storefront page shares: container, breadcrumb, eyebrow and display H1.
@@ -35,6 +38,7 @@ export function PageBreadcrumbs({
   items,
   className = "",
 }: Readonly<{ items: readonly PageCrumb[]; className?: string }>) {
+  const t = useT();
   return (
     <nav
       aria-label="Breadcrumb"
@@ -46,11 +50,11 @@ export function PageBreadcrumbs({
             {index > 0 ? <span aria-hidden="true">/</span> : null}
             {crumb.href ? (
               <Link className="transition-colors hover:text-[#2A1810]" href={crumb.href}>
-                {crumb.label}
+                {t(crumb.label)}
               </Link>
             ) : (
               <span aria-current="page" className="font-medium text-[#2A1810]">
-                {crumb.label}
+                {t(crumb.label)}
               </span>
             )}
           </li>
@@ -87,26 +91,27 @@ export function PageHeader({
   meta?: ReactNode;
   children?: ReactNode;
 }>) {
+  const t = useT();
   const heading = (
     <h1 className="mt-2 font-display text-3xl font-normal tracking-tight text-[#2A1810] sm:text-4xl md:text-5xl">
-      {title}
+      {t(title)}
     </h1>
   );
 
   return (
     <div className={align === "center" ? "mt-6 text-center md:mt-10" : "mt-4 border-b border-[#3B2219]/15 pb-4"}>
-      {eyebrow ? <p className="eyebrow text-[#70584B]">{eyebrow}</p> : null}
+      {eyebrow ? <p className="eyebrow text-[#70584B]">{t(eyebrow)}</p> : null}
       {meta ? (
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           {heading}
-          <p className="pb-1 text-xs uppercase tracking-wider text-[#70584B]">{meta}</p>
+          <p className="pb-1 text-xs uppercase tracking-wider text-[#70584B]">{typeof meta === "string" ? t(meta) : meta}</p>
         </div>
       ) : (
         heading
       )}
       {lead ? (
         <p className="mt-3 max-w-2xl text-sm leading-6 text-[#3B2219]/75 md:text-base md:leading-7">
-          {lead}
+          {typeof lead === "string" ? t(lead) : lead}
         </p>
       ) : null}
       {children}

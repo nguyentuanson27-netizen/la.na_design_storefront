@@ -10,18 +10,36 @@ import {
   metaFirstPartySetCookies,
   readMetaFirstPartyCookiesEnabled,
 } from "@/integrations/meta/first-party-cookies";
-import { VOUCHER_REDIRECT_HEADERS, planVoucherLinkRedirect } from "@/commerce/voucher-marketing-link";
+import { VOUCHER_LINK_PATH, VOUCHER_REDIRECT_HEADERS, planVoucherLinkRedirect } from "@/commerce/voucher-marketing-link";
 import {
   LISTING_VIEW_COOKIE,
   LISTING_VIEW_REQUEST_HEADER,
   planListingViewRequest,
 } from "@/components/headless/listing-view-model";
+import {
+  DEFAULT_LOCALE,
+  LOCALE_REQUEST_HEADER,
+  localizeHref,
+  parseLocale,
+  splitLocalePath,
+} from "@/i18n/locale";
 import { readSearchExposure, shouldNoIndexRequest } from "@/seo/search-exposure";
 import {
   readStrictScriptPolicyMode,
   strictScriptPolicyHeaders,
   type StrictScriptPolicyHeaders,
 } from "@/security/script-nonce-policy";
+
+/**
+ * Next runs this proxy again for the path a rewrite produced. `/en/about` becomes `/about`, which
+ * names no language, so the second pass would overwrite the `x-la-locale` the first one set and the
+ * page would render in Vietnamese. The first pass therefore also stamps the request with this
+ * per-process key; the second pass keeps the carried language only when it finds the key. The key
+ * never leaves the server, so a browser cannot forge it, and anything it sends in either header is
+ * discarded -- exactly as before.
+ */
+const LOCALE_CARRY_HEADER = "x-la-locale-carry";
+const LOCALE_CARRY_KEY = globalThis.crypto.randomUUID();
 
 const SHOP_PRODUCT_PREFIX = "/shop/";
 const EXACT_PRODUCT_PATH = /^\/shop\/[^/]+$/;
@@ -51,13 +69,13 @@ function readStrictScriptPolicy(request: NextRequest): StrictScriptPolicyHeaders
  * nothing Meta-related is written at all. Storefront pages are `private, no-store`, so no shared
  * cache can hand one visitor's cookie to another.
  */
-function applyMetaFirstPartyCookies(request: NextRequest, response: Response): void {
+function applyMetaFirstPartyCookies(request: NextRequest, response: Response, routePath: string): void {
   if (!META_PIXEL_CONFIGURED) return;
   try {
     const cookies = metaFirstPartySetCookies({
       enabled: readMetaFirstPartyCookiesEnabled(),
       method: request.method,
-      pathname: request.nextUrl.pathname,
+      pathname: routePath,
       headers: request.headers,
       fbclid: request.nextUrl.searchParams.get("fbclid"),
       clickIdCookie: request.cookies.get(META_CLICK_ID_COOKIE)?.value,
@@ -76,11 +94,11 @@ function applyMetaFirstPartyCookies(request: NextRequest, response: Response): v
  * note (src/commerce/ad-attribution.ts). Last touch wins; a page load without UTM leaves the cookie
  * alone. Same page loads as the Meta cookies, but independent of the pixel and its switch.
  */
-function applyAdAttributionCookie(request: NextRequest, response: Response): void {
+function applyAdAttributionCookie(request: NextRequest, response: Response, routePath: string): void {
   try {
     if (!isMetaCookieNavigation({
       method: request.method,
-      pathname: request.nextUrl.pathname,
+      pathname: routePath,
       headers: request.headers,
     })) return;
     const value = adAttributionCookieValue(request.nextUrl.searchParams);
@@ -115,12 +133,13 @@ function planListingView(request: NextRequest, requestHeaders: Headers): string 
 function applyResponseHeaders(
   request: NextRequest,
   response: Response,
+  routePath: string,
   scriptPolicy?: StrictScriptPolicyHeaders,
   listingViewCookie: string | null = null,
 ): Response {
   if (listingViewCookie !== null) response.headers.append("Set-Cookie", listingViewCookie);
-  applyMetaFirstPartyCookies(request, response);
-  applyAdAttributionCookie(request, response);
+  applyMetaFirstPartyCookies(request, response, routePath);
+  applyAdAttributionCookie(request, response, routePath);
   if (scriptPolicy?.response) {
     // In the order given: see `StrictScriptPolicyHeaders.response` for why it matters.
     const { name, values } = scriptPolicy.response;
@@ -131,7 +150,7 @@ function applyResponseHeaders(
   if (
     shouldNoIndexRequest({
       indexingEnabled: exposure.indexingEnabled,
-      pathname: request.nextUrl.pathname,
+      pathname: routePath,
       search: request.nextUrl.search,
     })
   ) {
@@ -141,34 +160,61 @@ function applyResponseHeaders(
 }
 
 export async function proxy(request: NextRequest) {
+  // `/en/...` is the same route tree as `/...`: the prefix is read here, stripped, and the render is
+  // told which language it is by a header this function always overwrites. Everything below works
+  // on the route path, so no rule in this file has to know a second spelling of any page.
+  const { locale: pathLocale, pathname: routePath } = splitLocalePath(request.nextUrl.pathname);
+  const carriedLocale =
+    request.headers.get(LOCALE_CARRY_HEADER) === LOCALE_CARRY_KEY
+      ? parseLocale(request.headers.get(LOCALE_REQUEST_HEADER))
+      : null;
+  // The language the page is rendered in: the one the URL names, or else the one a rewrite carried.
+  const locale = pathLocale !== DEFAULT_LOCALE ? pathLocale : (carriedLocale ?? DEFAULT_LOCALE);
+
   // A marketing link carrying a voucher code is answered before anything renders: a body-less redirect to the clean
   // URL (by way of the server handler that validates the code), so the code never reaches a document that loads
   // analytics, a Referer header or a cache (Voucher v1 V19, spec §8).
-  const voucherLink = planVoucherLinkRedirect({ method: request.method, pathname: request.nextUrl.pathname, search: request.nextUrl.search });
+  const voucherLink = planVoucherLinkRedirect({ method: request.method, pathname: routePath, search: request.nextUrl.search });
   if (voucherLink !== null) {
-    const redirect = NextResponse.redirect(new URL(voucherLink.handlerPath, request.nextUrl.origin), 307);
+    const handler = new URL(voucherLink.handlerPath, request.nextUrl.origin);
+    if (locale !== DEFAULT_LOCALE) {
+      if (handler.pathname === VOUCHER_LINK_PATH) handler.searchParams.set("lang", locale);
+      else handler.pathname = localizeHref(handler.pathname, locale);
+    }
+    const redirect = NextResponse.redirect(handler, 307);
     for (const [name, value] of Object.entries(VOUCHER_REDIRECT_HEADERS)) redirect.headers.set(name, value);
     return redirect;
   }
 
   const scriptPolicy = readStrictScriptPolicy(request);
   const listingViewCookie = planListingView(request, scriptPolicy.request);
+  scriptPolicy.request.set(LOCALE_REQUEST_HEADER, locale);
+  if (locale === DEFAULT_LOCALE) scriptPolicy.request.delete(LOCALE_CARRY_HEADER);
+  else scriptPolicy.request.set(LOCALE_CARRY_HEADER, LOCALE_CARRY_KEY);
   const forward = { request: { headers: scriptPolicy.request } };
 
-  if (!EXACT_PRODUCT_PATH.test(request.nextUrl.pathname)) {
-    return applyResponseHeaders(request, NextResponse.next(forward), scriptPolicy, listingViewCookie);
-  }
+  const respond = (response: Response): Response =>
+    applyResponseHeaders(request, response, routePath, scriptPolicy, listingViewCookie);
 
-  const slug = request.nextUrl.pathname.slice(SHOP_PRODUCT_PREFIX.length);
+  /** Lets the request through; an English one is rewritten onto the route its prefix names. */
+  const proceed = (): Response => {
+    // Only a path that names the language is rewritten; the pass after it just continues.
+    if (pathLocale === DEFAULT_LOCALE) return respond(NextResponse.next(forward));
+    const destination = request.nextUrl.clone();
+    destination.pathname = routePath;
+    return respond(NextResponse.rewrite(destination, forward));
+  };
+
+  if (!EXACT_PRODUCT_PATH.test(routePath)) return proceed();
+
+  const slug = routePath.slice(SHOP_PRODUCT_PREFIX.length);
   const resolution = await resolveConfiguredStorefrontProductSlug(slug);
 
-  if (resolution.kind === "CURRENT") {
-    return applyResponseHeaders(request, NextResponse.next(forward), scriptPolicy, listingViewCookie);
-  }
+  if (resolution.kind === "CURRENT") return proceed();
 
   if (resolution.kind === "HISTORICAL") {
     const destination = new URL(readStorefrontOrigin());
-    destination.pathname = `${SHOP_PRODUCT_PREFIX}${resolution.currentSlug}`;
+    destination.pathname = localizeHref(`${SHOP_PRODUCT_PREFIX}${resolution.currentSlug}`, locale);
 
     return applyResponseHeaders(
       request,
@@ -178,6 +224,7 @@ export async function proxy(request: NextRequest) {
           Location: destination.href,
         },
       }),
+      routePath,
     );
   }
 
@@ -207,7 +254,7 @@ export async function proxy(request: NextRequest) {
   destination.search = "";
   destination.hash = "";
 
-  return applyResponseHeaders(request, NextResponse.rewrite(destination, forward), scriptPolicy, listingViewCookie);
+  return respond(NextResponse.rewrite(destination, forward));
 }
 
 export const config = {

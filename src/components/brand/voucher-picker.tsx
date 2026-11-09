@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { useVoucherPickerActions } from "@/components/headless/use-voucher-picker";
@@ -8,6 +8,7 @@ import { formatVoucherVnd, voucherEntryCopy, type VoucherPickerGroup, type Vouch
 import { VoucherCard } from "./voucher-card";
 import { VoucherIcon } from "./voucher-icons";
 import { VoucherDiscountRows } from "./voucher-summary-lines";
+import { useRich, useT } from "@/i18n/client";
 
 /**
  * Voucher v1 (V16): the Grab-inspired picker (spec §7). Mobile is a full-screen sheet with a sticky footer, desktop a
@@ -73,6 +74,8 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
   trigger?: "entry" | "link";
   triggerLabel?: string;
 }>) {
+  const t = useT();
+  const rich = useRich();
   const { previewDraft, commitDraft, applyCode, applyLinkedCode, dismissLinkedOffer } = useVoucherPickerActions();
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -446,28 +449,28 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
   return (
     <div data-voucher-picker>
       {trigger === "link" ? (
-        <button type="button" className="inline-flex min-h-11 items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4" aria-haspopup="dialog" onClick={openDialog}>{triggerLabel}</button>
+        <button type="button" className="inline-flex min-h-11 items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4" aria-haspopup="dialog" onClick={openDialog}>{t(triggerLabel)}</button>
       ) : (
       <button type="button" className="voucher-entry" aria-haspopup="dialog" onClick={openDialog}>
         <span className="voucher-entry__icon"><VoucherIcon name={entry.used ? "check" : "tag"} /></span>
         <span className="voucher-entry__text">
           <span className="voucher-entry__title">
-            {entry.title}
+            {t(entry.title)}
             {entry.used ? <span className="voucher-dots" aria-hidden="true">{usedGroups.map((group) => <i key={group.slot} className={`voucher-tone voucher-tone--${group.tone}`} />)}</span> : null}
           </span>
-          <span className="voucher-entry__sub" data-quiet={!entry.used}>{entry.sub}</span>
+          <span className="voucher-entry__sub" data-quiet={!entry.used}>{t(entry.sub)}</span>
         </span>
-        <span className="voucher-entry__go">{entry.used ? "Đổi" : "Chọn"}<VoucherIcon name="chevron" /></span>
+        <span className="voucher-entry__go">{t(entry.used ? "Đổi" : "Chọn")}<VoucherIcon name="chevron" /></span>
       </button>
       )}
       {trigger === "entry" && nudge ? (
         <div className={`voucher-tone voucher-tone--${nudge.tone} voucher-nudge`} data-voucher-nudge>
-          <span>Mua thêm <b>{formatVoucherVnd(nudge.item.shortfallVnd!)}</b> để dùng voucher <b>{nudge.item.name}</b></span>
-          <span className="voucher-nudge__bar" role="progressbar" aria-label="Tiến độ đạt điều kiện" aria-valuemin={0} aria-valuemax={100} aria-valuenow={nudge.item.progressPercent!}><i style={{ width: `${nudge.item.progressPercent!}%` }} /></span>
+          <span>{rich("Mua thêm <b>{amount}</b> để dùng voucher <b>{name}</b>", { amount: formatVoucherVnd(nudge.item.shortfallVnd!), name: nudge.item.name })}</span>
+          <span className="voucher-nudge__bar" role="progressbar" aria-label={t("Tiến độ đạt điều kiện")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={nudge.item.progressPercent!}><i style={{ width: `${nudge.item.progressPercent!}%` }} /></span>
         </div>
       ) : null}
-      {unknownOutcome && !open ? <p role="status" className="mt-2 text-sm text-black/80">Chưa xác định được kết quả của yêu cầu áp dụng ưu đãi. Nàng mở lại “Ưu đãi” để kiểm tra ưu đãi đang dùng rồi thử lại nếu cần.</p> : null}
-      {lateRefusal ? <p role="status" className="mt-2 text-sm text-black/80">Yêu cầu áp dụng ưu đãi chưa được thực hiện. Nàng mở lại “Ưu đãi” để xem lý do và thử lại.</p> : null}
+      {unknownOutcome && !open ? <p role="status" className="mt-2 text-sm text-black/80">{t("Chưa xác định được kết quả của yêu cầu áp dụng ưu đãi. Nàng mở lại “Ưu đãi” để kiểm tra ưu đãi đang dùng rồi thử lại nếu cần.")}</p> : null}
+      {lateRefusal ? <p role="status" className="mt-2 text-sm text-black/80">{t("Yêu cầu áp dụng ưu đãi chưa được thực hiện. Nàng mở lại “Ưu đãi” để xem lý do và thử lại.")}</p> : null}
 
       <dialog
         ref={dialog}
@@ -477,48 +480,48 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
       >
         <div className="flex h-dvh flex-col sm:h-auto sm:max-h-[85dvh]">
           <header className="flex items-center gap-3 border-b border-black/15 px-4 py-3">
-            <button type="button" className="inline-flex h-11 w-11 items-center justify-center text-xl focus-visible:outline-2 focus-visible:outline-offset-2" aria-label={saving ? "Đóng — yêu cầu áp dụng vẫn tiếp tục" : "Quay lại, giữ lựa chọn cũ"} onClick={close}>
+            <button type="button" className="inline-flex h-11 w-11 items-center justify-center text-xl focus-visible:outline-2 focus-visible:outline-offset-2" aria-label={saving ? t("Đóng — yêu cầu áp dụng vẫn tiếp tục") : t("Quay lại, giữ lựa chọn cũ")} onClick={close}>
               <span aria-hidden="true">←</span>
             </button>
-            <h2 id={titleId} ref={heading} tabIndex={-1} className="font-display text-xl">Ưu đãi</h2>
+            <h2 id={titleId} ref={heading} tabIndex={-1} className="font-display text-xl">{t("Ưu đãi")}</h2>
           </header>
 
           <div className="voucher-bar" data-voucher-bar>
             <span className="voucher-bar__count">
               <span className="voucher-bar__label">
                 {draftGroups.length > 0 ? <span className="voucher-dots" aria-hidden="true">{draftGroups.map((group) => <i key={group.slot} className={`voucher-tone voucher-tone--${group.tone}`} />)}</span> : null}
-                Đang chọn
+                {t("Đang chọn")}
               </span>
-              <span className="voucher-bar__value">{model.footer.count > 0 ? <><b>{model.footer.count}</b>voucher</> : "Chưa chọn voucher"}</span>
+              <span className="voucher-bar__value">{model.footer.count > 0 ? <><b>{model.footer.count}</b>{t("voucher")}</> : t("Chưa chọn voucher")}</span>
             </span>
-            {model.footer.count > 0 && model.summary.savingText ? <span className="voucher-bar__saving"><VoucherIcon name="down" />Giảm {model.summary.savingText}</span> : null}
+            {model.footer.count > 0 && model.summary.savingText ? <span className="voucher-bar__saving"><VoucherIcon name="down" />{t("Giảm {amount}", { amount: model.summary.savingText })}</span> : null}
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-4">
             <button type="button" className="voucher-code-toggle" aria-expanded={codeOpen || code !== ""} aria-controls={codeOpen || code !== "" ? `${titleId}-code-row` : undefined} onClick={() => setCodeOpen((value) => !value)}>
-              <span>Nhập mã khuyến mãi</span>
+              <span>{t("Nhập mã khuyến mãi")}</span>
               <VoucherIcon name="chevron" />
             </button>
             {codeOpen || code !== "" ? (
             <div className="mt-2 flex gap-2" id={`${titleId}-code-row`}>
               {/* Not a <form>: on the checkout this dialog sits inside the order form, and a nested form is invalid HTML (the parser drops it). Enter is handled below. */}
-              <label className="sr-only" htmlFor={`${titleId}-code`}>Nhập mã khuyến mãi</label>
-              <input autoFocus id={`${titleId}-code`} value={code} onChange={(event) => editCode(event.target.value)} maxLength={64} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Nhập mã khuyến mãi" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); if (code.trim() && !pending) submitCode(); } }} className="min-h-11 min-w-0 flex-1 rounded-md border border-black/30 bg-transparent px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2" />
-              <button type="button" onClick={() => { if (code.trim()) submitCode(); }} disabled={pending || code.trim() === ""} className="min-h-11 rounded-md border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Áp dụng mã</button>
+              <label className="sr-only" htmlFor={`${titleId}-code`}>{t("Nhập mã khuyến mãi")}</label>
+              <input autoFocus id={`${titleId}-code`} value={code} onChange={(event) => editCode(event.target.value)} maxLength={64} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder={t("Nhập mã khuyến mãi")} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); if (code.trim() && !pending) submitCode(); } }} className="min-h-11 min-w-0 flex-1 rounded-md border border-black/30 bg-transparent px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2" />
+              <button type="button" onClick={() => { if (code.trim()) submitCode(); }} disabled={pending || code.trim() === ""} className="min-h-11 rounded-md border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">{t("Áp dụng mã")}</button>
             </div>
             ) : null}
 
-            {error ? <p role="alert" className="mt-3 border-l-2 border-black bg-black/5 p-3 text-sm">{error}</p> : null}
-            {model.warnings.notices.map((notice) => <p key={notice} role="status" className="mt-3 text-sm text-black/80">{notice}</p>)}
+            {error ? <p role="alert" className="mt-3 border-l-2 border-black bg-black/5 p-3 text-sm">{t(error)}</p> : null}
+            {model.warnings.notices.map((notice) => <p key={notice} role="status" className="mt-3 text-sm text-black/80">{t(notice)}</p>)}
 
             {linkVisible ? (
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-black/20 p-3 text-sm">
-                <p>Nàng có mã ưu đãi từ liên kết.</p>
-                <button type="button" disabled={pending} onClick={submitLinked} className="min-h-11 rounded-md border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">Dùng mã từ liên kết</button>
+                <p>{t("Nàng có mã ưu đãi từ liên kết.")}</p>
+                <button type="button" disabled={pending} onClick={submitLinked} className="min-h-11 rounded-md border border-black px-4 text-sm font-semibold disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2">{t("Dùng mã từ liên kết")}</button>
               </div>
             ) : null}
 
-            {model.groups.some((group) => group.items.length > 0) ? <p className="mt-3 text-xs text-black/65">Nhấn lại voucher đang chọn để bỏ chọn.</p> : null}
+            {model.groups.some((group) => group.items.length > 0) ? <p className="mt-3 text-xs text-black/65">{t("Nhấn lại voucher đang chọn để bỏ chọn.")}</p> : null}
 
             {model.groups.map((group) => {
               if (group.items.length === 0) return null;
@@ -526,8 +529,8 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
               return (
                 <fieldset key={group.slot} className={`voucher-tone voucher-tone--${group.tone} mt-5 min-w-0`} disabled={pending}>
                   <legend className="voucher-group__legend">
-                    <span className="voucher-group__title"><i aria-hidden="true" className="voucher-swatch" />{group.heading}</span>
-                    <span className="voucher-group__hint" data-auto={chosen && group.mode === "AUTO"}>{chosen && group.mode === "AUTO" ? "Đã chọn giúp nàng" : group.hint}</span>
+                    <span className="voucher-group__title"><i aria-hidden="true" className="voucher-swatch" />{t(group.heading)}</span>
+                    <span className="voucher-group__hint" data-auto={chosen && group.mode === "AUTO"}>{chosen && group.mode === "AUTO" ? t("Đã chọn giúp nàng") : t(group.hint)}</span>
                   </legend>
                   <ul className="space-y-2.5">
                     {group.items.map((item) => (
@@ -539,32 +542,32 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
             })}
 
             <dl className="voucher-rows">
-              <div><dt>Tiền hàng</dt><dd>{model.summary.paidBeforeText}</dd></div>
+              <div><dt>{t("Tiền hàng")}</dt><dd>{t(model.summary.paidBeforeText)}</dd></div>
               <VoucherDiscountRows part="merchandise" summary={model.summary} />
-              <div><dt>Phí vận chuyển</dt><dd>{model.summary.shippingFeeText}</dd></div>
+              <div><dt>{t("Phí vận chuyển")}</dt><dd>{t(model.summary.shippingFeeText)}</dd></div>
               <VoucherDiscountRows part="shipping" summary={model.summary} />
-              <div className="voucher-rows__total"><dt>Dự kiến thanh toán</dt><dd>{model.summary.totalText}</dd></div>
+              <div className="voucher-rows__total"><dt>{t("Dự kiến thanh toán")}</dt><dd>{t(model.summary.totalText)}</dd></div>
             </dl>
-            <p className="mt-2.5 text-xs text-black/65">Đây là số dự kiến; ưu đãi chưa được giữ cho đến khi nàng đặt hàng.</p>
+            <p className="mt-2.5 text-xs text-black/65">{t("Đây là số dự kiến; ưu đãi chưa được giữ cho đến khi nàng đặt hàng.")}</p>
 
             {warnings.length > 0 ? (
               <div role="alert" className="mt-4 border-l-2 border-black bg-black/5 p-3 text-sm leading-6">
-                {warnings.map((text) => <p key={text}>{text}</p>)}
+                {warnings.map((text) => <p key={text}>{t(text)}</p>)}
               </div>
             ) : null}
           </div>
 
           <footer className="sticky bottom-0 border-t border-black/15 bg-[#fcf8f6] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
-            {saving ? <p role="status" className="mt-3 text-sm text-black/80">Đang xử lý yêu cầu áp dụng. Nếu nàng đóng hộp thoại, yêu cầu vẫn tiếp tục; ưu đãi chỉ có hiệu lực khi được xác nhận.</p> : null}
-            <p role="status" aria-live="polite" className="sr-only">{message ?? ""}</p>
+            {saving ? <p role="status" className="mt-3 text-sm text-black/80">{t("Đang xử lý yêu cầu áp dụng. Nếu nàng đóng hộp thoại, yêu cầu vẫn tiếp tục; ưu đãi chỉ có hiệu lực khi được xác nhận.")}</p> : null}
+            <p role="status" aria-live="polite" className="sr-only">{message ? t(message) : ""}</p>
             {confirming ? (
               <div className="flex flex-col gap-2">
-                <button type="button" className="btn btn--primary min-h-11" disabled={pending} onClick={apply}>Tiếp tục với voucher này</button>
-                <button type="button" className="btn btn--secondary min-h-11" onClick={() => setConfirming(false)}>Đổi voucher</button>
+                <button type="button" className="btn btn--primary min-h-11" disabled={pending} onClick={apply}>{t("Tiếp tục với voucher này")}</button>
+                <button type="button" className="btn btn--secondary min-h-11" onClick={() => setConfirming(false)}>{t("Đổi voucher")}</button>
               </div>
             ) : (
               <button type="button" className="btn btn--primary min-h-11 w-full" disabled={pending} onClick={apply}>
-                {warnings.length > 0 ? `Xem lại và ${model.footer.label}` : model.footer.label}
+                {warnings.length > 0 ? t("Xem lại và {label}", { label: t(model.footer.label) }) : t(model.footer.label)}
               </button>
             )}
           </footer>

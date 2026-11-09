@@ -1,3 +1,4 @@
+import { localizeListing } from "@/commerce/product-translation-runtime";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
@@ -29,6 +30,7 @@ import {
   type CategoryViewModel,
 } from "./category-model.ts";
 import { sealRoute, type RouteHandle } from "./core.tsx";
+import type { RequestI18n } from "./factory.tsx";
 
 export { CATEGORY_DESTINATIONS };
 export type { CategoryDestination, CategoryViewModel };
@@ -103,6 +105,8 @@ export async function loadCategoryRoute(
     throw error;
   }
 
+  catalogPage = await localizeListing(catalogPage);
+
   const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
 
@@ -158,7 +162,7 @@ function shortenChildLabel(label: string, parentLabel: string): string {
   return rest ? rest.charAt(0).toLocaleUpperCase("vi") + rest.slice(1) : label;
 }
 
-export function renderCategoryRoute(data: CategoryViewModel) {
+export function renderCategoryRoute(data: CategoryViewModel, { t }: RequestI18n) {
   const {
     destination,
     categoryKey,
@@ -179,9 +183,9 @@ export function renderCategoryRoute(data: CategoryViewModel) {
     <ListingShell>
       <ListingBreadcrumbs items={breadcrumbs} />
 
-      <ListingHeader eyebrow="Danh mục thiết kế" title={destination.label}>
+      <ListingHeader eyebrow={t("Danh mục thiết kế")} title={destination.label}>
         {subcategories.length > 0 ? (
-          <ListingSubnav label="Danh mục con" items={subcategories} />
+          <ListingSubnav label={t("Danh mục con")} items={subcategories} />
         ) : null}
       </ListingHeader>
 

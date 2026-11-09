@@ -2,6 +2,7 @@
 
 import { ACCOUNT_AUTH_COPY } from "@/components/headless/account-auth-model";
 import { useAccountAuth } from "@/components/headless/use-account-auth";
+import { useT } from "@/i18n/client";
 
 /**
  * Markup only. Every brand throws this file away and writes its own.
@@ -25,12 +26,13 @@ const secondaryButtonClassName = "btn btn--outline";
 const formHeadingClassName = "mt-2 font-display text-2xl font-normal text-[#2A1810]";
 
 export function BrandAccountAuthPanel() {
+  const t = useT();
   const { view, session, feedback, handleSignIn, handleSignUp, handleSignOut } = useAccountAuth();
 
   const feedbackParagraph = (className: string) =>
     feedback ? (
       <p className={className} role={feedback.tone === "error" ? "alert" : "status"}>
-        {feedback.message}
+        {t(feedback.message)}
       </p>
     ) : null;
 
@@ -45,13 +47,13 @@ export function BrandAccountAuthPanel() {
   if (view.mode === "signed-in" && session) {
     return (
       <section className="pt-8" aria-labelledby="account-session-title">
-        <p className="eyebrow text-[#70584B]">Đã đăng nhập</p>
+        <p className="eyebrow text-[#70584B]">{t("Đã đăng nhập")}</p>
         <h2 id="account-session-title" className={formHeadingClassName}>
-          Xin chào, {session.user.name}
+          {t("Xin chào, {name}", { name: session.user.name })}
         </h2>
         <p className="mt-2 text-sm text-[#3B2219]/65">{session.user.email}</p>
         <p className="mt-6 max-w-xl text-sm leading-6 text-[#3B2219]/75">
-          Lịch sử đơn hàng và địa chỉ đã lưu sẽ xuất hiện ở đây khi các module tương ứng được bật.
+          {t("Lịch sử đơn hàng và địa chỉ đã lưu sẽ xuất hiện ở đây khi các module tương ứng được bật.")}
         </p>
         <button
           className={`${secondaryButtonClassName} mt-8`}
@@ -59,7 +61,7 @@ export function BrandAccountAuthPanel() {
           onClick={handleSignOut}
           disabled={view.signOutDisabled}
         >
-          {view.signOutLabel}
+          {t(view.signOutLabel)}
         </button>
         {feedbackParagraph("mt-4 text-sm text-[#2A1810]")}
       </section>
@@ -69,7 +71,7 @@ export function BrandAccountAuthPanel() {
   return (
     // The page header above already says what an account is for and that it is optional, so the
     // panel opens straight onto the two forms rather than restating it under a second headline.
-    <section className="pt-8" aria-label="Đăng nhập hoặc tạo tài khoản">
+    <section className="pt-8" aria-label={t("Đăng nhập hoặc tạo tài khoản")}>
       <div className="grid gap-12 md:grid-cols-2 lg:gap-24">
         <form
           className="space-y-6"
@@ -78,8 +80,8 @@ export function BrandAccountAuthPanel() {
           aria-labelledby="sign-in-title"
         >
           <div>
-            <p className="eyebrow text-[#70584B]">Đã có tài khoản</p>
-            <h2 id="sign-in-title" className={formHeadingClassName}>Đăng nhập</h2>
+            <p className="eyebrow text-[#70584B]">{t("Đã có tài khoản")}</p>
+            <h2 id="sign-in-title" className={formHeadingClassName}>{t("Đăng nhập")}</h2>
           </div>
 
           <div>
@@ -100,7 +102,7 @@ export function BrandAccountAuthPanel() {
 
           <div>
             <label className={labelClassName} htmlFor="sign-in-password">
-              Mật khẩu
+              {t("Mật khẩu")}
             </label>
             <input
               className={inputClassName}
@@ -116,7 +118,7 @@ export function BrandAccountAuthPanel() {
           </div>
 
           <button className={primaryButtonClassName} type="submit" disabled={view.formsDisabled}>
-            {view.signInLabel}
+            {t(view.signInLabel)}
           </button>
         </form>
 
@@ -127,13 +129,13 @@ export function BrandAccountAuthPanel() {
           aria-labelledby="sign-up-title"
         >
           <div>
-            <p className="eyebrow text-[#70584B]">Khách hàng mới</p>
-            <h2 id="sign-up-title" className={formHeadingClassName}>Tạo tài khoản</h2>
+            <p className="eyebrow text-[#70584B]">{t("Khách hàng mới")}</p>
+            <h2 id="sign-up-title" className={formHeadingClassName}>{t("Tạo tài khoản")}</h2>
           </div>
 
           <div>
             <label className={labelClassName} htmlFor="sign-up-name">
-              Họ tên
+              {t("Họ tên")}
             </label>
             <input
               className={inputClassName}
@@ -165,7 +167,7 @@ export function BrandAccountAuthPanel() {
 
           <div>
             <label className={labelClassName} htmlFor="sign-up-password">
-              Mật khẩu
+              {t("Mật khẩu")}
             </label>
             <input
               className={inputClassName}
@@ -180,12 +182,12 @@ export function BrandAccountAuthPanel() {
               disabled={view.formsDisabled}
             />
             <p className="mt-2 text-xs leading-5 text-[#3B2219]/65" id="sign-up-password-help">
-              Từ 8 đến 128 ký tự.
+              {t("Từ 8 đến 128 ký tự.")}
             </p>
           </div>
 
           <button className={secondaryButtonClassName} type="submit" disabled={view.formsDisabled}>
-            {view.signUpLabel}
+            {t(view.signUpLabel)}
           </button>
         </form>
       </div>

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { useT } from "@/i18n/client";
 import { useCartGifts } from "@/components/headless/use-cart-gifts";
 import { readRecentAutoRemovedGiftCount, subscribeAutoRemovedGiftCount } from "@/components/headless/cart-gift-adjustment-notice";
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
@@ -20,6 +21,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   /** Checkout: no title row, no progress line or bar (the sr-only progress text stays), and the payment summary shows the unsaved-draft warning. */
   compact?: boolean;
 }>) {
+  const t = useT();
   const { pending, uncertain, message, spokenMessage, savedCount, change, retryRead } = useCartGifts(onBusyChange, locked, isLocked);
   const autoRemovedGiftCount = useSyncExternalStore(
     subscribeAutoRemovedGiftCount,
@@ -151,14 +153,14 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   const busy = pending || uncertain;
   // Sighted buyers get the brief `message`; the live region reads the fuller sentence (which gift, how many slots
   // are left) instead, so nothing is announced twice and a collapsed list never hides what was just saved.
-  const slotsLeft = present && !pending && !uncertain && spokenMessage && !model.invalid ? ` Còn ${unclaimed} suất chưa chọn.` : "";
-  const statusLine = pending ? "Đang kiểm tra và làm mới báo giá…" : spokenMessage
+  const slotsLeft = present && !pending && !uncertain && spokenMessage && !model.invalid ? t(" Còn {unclaimed} suất chưa chọn.", { unclaimed }) : "";
+  const statusLine = pending ? t("Đang kiểm tra và làm mới báo giá…") : spokenMessage
     ? <><span aria-hidden="true">{message}</span><span className="sr-only">{spokenMessage}{slotsLeft}</span></>
     : message;
-  return <section ref={giftArea} id="cart-gifts" tabIndex={-1} className={present ? "gift-panel scroll-mt-32" : "my-4 scroll-mt-32 text-sm"} aria-label="Quà tặng trong giỏ" aria-busy={busy}>
+  return <section ref={giftArea} id="cart-gifts" tabIndex={-1} className={present ? "gift-panel scroll-mt-32" : "my-4 scroll-mt-32 text-sm"} aria-label={t("Quà tặng trong giỏ")} aria-busy={busy}>
     {present && !compact ? <div className="gift-panel__head">
       <span aria-hidden="true" className="gift-panel__icon"><VoucherIcon name="gift" /></span>
-      <h2 className="font-display text-xl">Quà dành cho nàng</h2>
+      <h2 className="font-display text-xl">{t("Quà dành cho nàng")}</h2>
       {hasChoices && !model.invalid ? <span aria-hidden="true" className="gift-panel__pill">{selected}/{entitled}</span> : null}
     </div> : null}
     <div className={present ? "gift-panel__body" : undefined}>
@@ -168,19 +170,19 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     {autoRemovedGiftCount > 0 ? <p className="mt-3 text-sm text-amber-900" data-gift-auto-reconciled role="status" aria-live="polite">
       Đã tự động bỏ {autoRemovedGiftCount} quà tặng vì giỏ hàng không còn đủ số lượng hoặc giá trị để nhận. Những quà còn đủ điều kiện vẫn được giữ; hệ thống không tự chọn quà thay thế.
     </p> : null}
-    {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà nàng chọn không còn phù hợp vì giỏ hàng đã thay đổi (số lượng, sản phẩm), quà đã hết hàng hoặc chương trình đã đổi. Nàng bấm “Bỏ quà để chọn lại” ở danh sách quà đã chọn rồi chọn món mới nhé; hệ thống không tự đổi quà thay nàng.</p> : <>
+    {model.invalid ? <p role="alert" className="mt-3 text-sm">{t("Quà nàng chọn không còn phù hợp vì giỏ hàng đã thay đổi (số lượng, sản phẩm), quà đã hết hàng hoặc chương trình đã đổi. Nàng bấm “Bỏ quà để chọn lại” ở danh sách quà đã chọn rồi chọn món mới nhé; hệ thống không tự đổi quà thay nàng.")}</p> : <>
       {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Nàng còn quà chưa chọn. Các chương trình dùng chung lượng quà, nàng chọn từng món để cập nhật nhé." : `Nàng còn có thể chọn ${available} món quà.`}</p> : null}
       {unavailable > 0 ? <p className="mt-2 text-sm">Hiện chưa có lựa chọn phù hợp cho {unavailable} suất quà còn lại.</p> : null}
     </>}
-    {replaced.length > 0 ? <p className="mt-3 text-sm" data-gift-replaced-notice>Đơn của nàng đã lên mốc quà cao hơn nên quà đã chọn ở mốc trước không đi kèm đơn nữa. Nàng chọn quà của mốc mới, quà cũ sẽ được thay.</p> : null}
-    {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Giỏ hàng của nàng đủ điều kiện nhận quà từ nhiều chương trình, nhưng các chương trình này không được dùng cùng lúc nên một số quà chưa được tặng. Nàng điều chỉnh lại giỏ hàng hoặc liên hệ shop để được hỗ trợ nhé.</p> : null}
+    {replaced.length > 0 ? <p className="mt-3 text-sm" data-gift-replaced-notice>{t("Đơn của nàng đã lên mốc quà cao hơn nên quà đã chọn ở mốc trước không đi kèm đơn nữa. Nàng chọn quà của mốc mới, quà cũ sẽ được thay.")}</p> : null}
+    {model.stackConflict ? <p role="alert" className="mt-3 text-sm">{t("Giỏ hàng của nàng đủ điều kiện nhận quà từ nhiều chương trình, nhưng các chương trình này không được dùng cùng lúc nên một số quà chưa được tặng. Nàng điều chỉnh lại giỏ hàng hoặc liên hệ shop để được hỗ trợ nhé.")}</p> : null}
     {hasChoices ? <button type="button" ref={toggleRef} className="gift-entry mt-3" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
       <span aria-hidden="true" className="gift-entry__icon"><VoucherIcon name="gift" /></span>
       <span className="gift-entry__text">{expanded ? "Thu gọn quà tặng" : model.invalid ? "Kiểm tra quà đã chọn" : complete ? "Xem quà đã chọn" : available > 0 ? "Chọn quà ngay" : "Xem lựa chọn quà"}</span>
       <VoucherIcon name="chevron" className="gift-entry__chev" />
     </button> : null}
     <div id={detailsId} ref={detailsRef} hidden={!expanded}>
-      {model.repairGroups?.map((group, index) => <div key={index} role="group" aria-label="Nhóm quà cần kiểm tra" className="mt-4 rounded-lg border border-[#b42318]/40 p-3 text-sm">
+      {model.repairGroups?.map((group, index) => <div key={index} role="group" aria-label={t("Nhóm quà cần kiểm tra")} className="mt-4 rounded-lg border border-[#b42318]/40 p-3 text-sm">
         <p>{group.message}</p>
         <ul className="mt-2 list-disc pl-5">{model.selections.filter(row => group.selectionKeys.includes(`${row.campaignId}/${row.variantId}`)).map(row => <li key={`${row.campaignId}/${row.variantId}`}>{row.label} · {row.quantity} quà</li>)}</ul>
       </div>)}
@@ -188,10 +190,10 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
         <div className="flex items-center gap-3">
           {row.imageUrl ? <Image src={row.imageUrl} alt="" width={40} height={50} className="h-[50px] w-10 rounded-md object-cover" /> : null}
           <p className="min-w-0 flex-1 break-words text-sm">{row.label} · {row.quantity} quà</p>
-          <span aria-hidden="true" className="gift-item__tag">Quà tặng</span>
+          <span aria-hidden="true" className="gift-item__tag">{t("Quà tặng")}</span>
         </div>
         {row.problems?.map((problem, index) => <p key={index} data-gift-problem className="mt-2 text-sm text-[#b42318]">Cần xử lý: {problem}</p>)}
-        <p className="mt-2 text-xs leading-5">Quà cũ sẽ được bỏ trước. Món chọn lại tùy tình trạng còn hàng.</p>
+        <p className="mt-2 text-xs leading-5">{t("Quà cũ sẽ được bỏ trước. Món chọn lại tùy tình trạng còn hàng.")}</p>
         <div className="mt-2 flex flex-wrap gap-3">
           {row.quantity > 1 ? <button type="button" className="gift-btn" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, row.quantity - 1, row.label, 1)}>Bỏ 1 chiếc để chọn lại: {row.label}</button> : null}
           <button type="button" className="gift-btn text-left" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, 0, row.label, row.quantity)}>{row.quantity > 1 ? `Bỏ toàn bộ ${row.quantity} chiếc` : "Bỏ quà để chọn lại"}: {row.label}</button>
@@ -202,12 +204,12 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
           {row.imageUrl ? <Image src={row.imageUrl} alt="" width={40} height={50} className="h-[50px] w-10 rounded-md object-cover opacity-60" /> : null}
           <p className="min-w-0 break-words text-sm">Quà mốc trước: {row.label} · {row.quantity} quà</p>
         </div>
-        <p className="mt-2 text-xs leading-5">Không đi kèm đơn ở mốc hiện tại. Sẽ được thay khi nàng nhận quà của mốc mới.</p>
+        <p className="mt-2 text-xs leading-5">{t("Không đi kèm đơn ở mốc hiện tại. Sẽ được thay khi nàng nhận quà của mốc mới.")}</p>
         <button type="button" className="gift-btn mt-2 text-left" disabled={busy || locked} onClick={(event) => removeGift(event.currentTarget, row.campaignId, row.variantId, row.campaignRevision, 0, row.label, row.quantity)}>Bỏ hẳn quà mốc trước: {row.label}</button>
       </div>)}
       {model.campaigns.filter((c) => c.entitled > 0).map((campaign, index) => <div className="mt-5 border-t border-black/15 pt-4" key={campaign.campaignId}>
         <p className="font-display text-sm font-bold">Quà tặng theo giỏ hàng {index + 1} · Đã thêm {campaign.selected}/{campaign.entitled}</p>
-        {!campaign.allowDuplicateGifts ? <p className="mt-2 text-xs">Mỗi mẫu được chọn 1 lần, kể cả khác màu hoặc kích cỡ.</p> : null}
+        {!campaign.allowDuplicateGifts ? <p className="mt-2 text-xs">{t("Mỗi mẫu được chọn 1 lần, kể cả khác màu hoặc kích cỡ.")}</p> : null}
         <div className="mt-3 grid grid-cols-3 gap-2" data-gift-grid>{giftGridCells(campaign.products.map((product) => {
           const key = `${campaign.campaignId}/${product.productId}`;
           const option = product.options.find((o) => o.variantId === draft?.variantId && draft.campaignId === campaign.campaignId);
@@ -230,14 +232,14 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
             if (product.options.length === 1) setDraft({campaignId: campaign.campaignId, variantId: product.options[0]!.variantId, label: `${product.name} — ${product.options[0]!.label}`});
           };
           const detail = card !== key ? null : <GiftProductDetail key={`${key}/detail`} name={product.name} imageUrl={product.imageUrl} chips={chips}>
-            {option ? <p className="mt-3 text-sm">{uncertain ? "Đang chờ kiểm tra kết quả lưu quà…" : pending ? "Đang cập nhật quà…" : chosen > 0 ? "Đã thêm vào đơn" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">Chọn phiên bản để xem.</p>}
+            {option ? <p className="mt-3 text-sm">{uncertain ? "Đang chờ kiểm tra kết quả lưu quà…" : pending ? "Đang cập nhật quà…" : chosen > 0 ? "Đã thêm vào đơn" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">{t("Chọn phiên bản để xem.")}</p>}
             {receiveBlockReason ? <p id={receiveReasonId} className="mt-2 text-xs" aria-live="polite">{receiveBlockReason}</p> : null}
             <button type="button" className="btn btn--secondary mt-3 min-h-10 w-full py-1.5" disabled={receiveBlockReason !== null} aria-describedby={receiveBlockReason ? receiveReasonId : undefined} onClick={() => {
               if (!option) return;
               // A new receive is a new intent: until the server confirms it, an earlier save no longer covers it.
               if (draft?.committed) setDraft({ ...draft, committed: false });
               if (change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0)) setCollapseFromSave(savedCount);
-            }}>Nhận quà này</button>
+            }}>{t("Nhận quà này")}</button>
           </GiftProductDetail>;
           return { tile: <GiftProductCard key={product.productId} name={product.name} imageUrl={product.imageUrl} open={card === key} onOpen={onOpen} />, detail };
         }))}</div>
@@ -246,7 +248,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     {draftNotice && !compact ? <p className="gift-note mt-3" data-gift-draft>{draftNotice}</p> : null}
     </> : null}
     <p className="gift-status" role="status" aria-live="polite" aria-atomic="true">{statusLine}</p>
-    {uncertain ? <button type="button" className="gift-btn mt-2" disabled={pending} onClick={(event) => retryGiftRead(event.currentTarget)}>Kiểm tra lại quà trong đơn</button> : null}
+    {uncertain ? <button type="button" className="gift-btn mt-2" disabled={pending} onClick={(event) => retryGiftRead(event.currentTarget)}>{t("Kiểm tra lại quà trong đơn")}</button> : null}
     </div>
   </section>;
 }

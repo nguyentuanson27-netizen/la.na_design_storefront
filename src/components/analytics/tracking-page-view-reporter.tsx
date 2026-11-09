@@ -1,5 +1,8 @@
 "use client";
 
+// The address-bar path, `/en/shop` included -- not the storefront's own route-path hook, which
+// strips the language prefix for route matching. A report is about the URL that was seen, and the
+// two language versions of a page are different URLs to marketing and search.
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 

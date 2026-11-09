@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 
 import {
   ListingBreadcrumbs,
@@ -9,7 +9,7 @@ import {
 } from "@/components/brand/listing-chrome";
 import { ListingCollectionGrid, ListingCollectionImage } from "@/components/brand/listing-view";
 import { loadCollectionsRoute, type CollectionsRouteData } from "@/routes/collections";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { buildCollectionsMetadata } from "@/routes/metadata/collections";
 
 /**
@@ -50,24 +50,25 @@ const CARD_LAYOUT =
  */
 function CollectionCardCta({
   collection,
+  label,
   tone = "light",
-}: Readonly<{ collection: ListedCollection; tone?: "light" | "ink" }>) {
+}: Readonly<{ collection: ListedCollection; label: string; tone?: "light" | "ink" }>) {
   return (
     <Link
       href={`/collections/${collection.slug}`}
       className={tone === "ink" ? "collection-card-cta collection-card-cta--ink" : "collection-card-cta"}
     >
-      Khám phá
+      {label}
       <span className="sr-only">: {collection.title}</span>
     </Link>
   );
 }
 
-function render(data: CollectionsRouteData) {
+function render(data: CollectionsRouteData, { t }: RequestI18n) {
   return (
     <ListingShell>
       <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Bộ sưu tập" }]} />
-      <ListingHeader title="Bộ sưu tập" />
+      <ListingHeader title={t("Bộ sưu tập")} />
 
       {data.collections.length > 0 ? (
         // On a phone the covers run edge to edge with the product grid's 2px seam, the way the
@@ -108,7 +109,7 @@ function render(data: CollectionsRouteData) {
                   />
 
                   <div className="flex h-full flex-col items-center justify-end px-5 pb-2 sm:pb-5 lg:pb-6">
-                    <CollectionCardCta collection={collection} />
+                    <CollectionCardCta collection={collection} label={t("Khám phá")} />
                   </div>
                 </article>
               ) : (
@@ -128,7 +129,7 @@ function render(data: CollectionsRouteData) {
                     </h2>
                   </div>
                   <div className="mt-6 md:mt-8">
-                    <CollectionCardCta collection={collection} tone="ink" />
+                    <CollectionCardCta collection={collection} label={t("Khám phá")} tone="ink" />
                   </div>
                 </article>
               ),
@@ -138,9 +139,9 @@ function render(data: CollectionsRouteData) {
       ) : (
         <ListingEmptyState
           titleId="collections-empty-title"
-          eyebrow="Bộ sưu tập hiện tại"
-          title="Các bộ sưu tập đang được chuẩn bị."
-          copy="Bộ sưu tập sẽ xuất hiện tại đây khi sẵn sàng."
+          eyebrow={t("Bộ sưu tập hiện tại")}
+          title={t("Các bộ sưu tập đang được chuẩn bị.")}
+          copy={t("Bộ sưu tập sẽ xuất hiện tại đây khi sẵn sàng.")}
         />
       )}
     </ListingShell>

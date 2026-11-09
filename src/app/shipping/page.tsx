@@ -1,8 +1,8 @@
 import { ShippingPromotionNoticeView } from "@/components/brand/shipping-promotion-notice";
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { loadShippingRoute, type ShippingRouteProps } from "@/routes/shipping";
 import type { ShippingViewModel } from "@/routes/evergreen-model";
 import { buildShippingMetadata } from "@/routes/metadata/shipping";
@@ -24,87 +24,87 @@ import { buildShippingMetadata } from "@/routes/metadata/shipping";
 const POLICY_LINK =
   "underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4";
 
-function render(data: ShippingViewModel) {
+function render(data: ShippingViewModel, { t }: RequestI18n) {
   return (
     <PageShell>
       <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Vận chuyển & thanh toán" }]} />
       <PageHeader
-        eyebrow="Chính sách"
-        title="Vận chuyển & thanh toán"
-        lead={<>{data.coverage}.</>}
+        eyebrow={t("Chính sách")}
+        title={t("Vận chuyển & thanh toán")}
+        lead={<>{t(data.coverage)}.</>}
       />
 
       <div className="mt-10 grid max-w-4xl gap-14">
         <section aria-labelledby="delivery-heading">
           <h2 id="delivery-heading" className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
-            Giao hàng
+            {t("Giao hàng")}
           </h2>
           <dl className="mt-6 grid max-w-2xl gap-6 text-base leading-7">
             <div>
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
-                Đơn vị vận chuyển
+                {t("Đơn vị vận chuyển")}
               </dt>
               <dd className="mt-2 text-black/70">
-                {data.carriersText}
-                <span className="mt-1 block text-sm text-black/60">{data.carrierSelectionNote}</span>
+                {t(data.carriersText)}
+                <span className="mt-1 block text-sm text-black/60">{t(data.carrierSelectionNote)}</span>
               </dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
-                {data.innerCityLabel}
+                {t(data.innerCityLabel)}
               </dt>
-              <dd className="mt-2 text-black/70">{data.innerCityEstimate} (dự kiến)</dd>
+              <dd className="mt-2 text-black/70">{t("{estimate} (dự kiến)", { estimate: t(data.innerCityEstimate) })}</dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
-                {data.otherProvinceLabel}
+                {t(data.otherProvinceLabel)}
               </dt>
-              <dd className="mt-2 text-black/70">{data.otherProvinceEstimate} (dự kiến)</dd>
+              <dd className="mt-2 text-black/70">{t("{estimate} (dự kiến)", { estimate: t(data.otherProvinceEstimate) })}</dd>
             </div>
           </dl>
-          <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">{data.estimateCaveat}</p>
+          <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">{t(data.estimateCaveat)}</p>
         </section>
 
         <section aria-labelledby="fee-heading">
           <h2 id="fee-heading" className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
-            Phí vận chuyển
+            {t("Phí vận chuyển")}
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            {data.shippingPromotionTitle}: {data.shippingPromotionDetail} Phí vận chuyển và điều kiện miễn phí được máy chủ
-            áp dụng tại thời điểm đặt hàng.
+            {t(data.shippingPromotionTitle)}: {t(data.shippingPromotionDetail)}{" "}
+            {t("Phí vận chuyển và điều kiện miễn phí được máy chủ áp dụng tại thời điểm đặt hàng.")}
           </p>
           <ShippingPromotionNoticeView initial={data.activeShippingPromotion} />
         </section>
 
         <section aria-labelledby="tracking-heading">
           <h2 id="tracking-heading" className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
-            Theo dõi đơn hàng
+            {t("Theo dõi đơn hàng")}
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            {data.carrierTrackingNote} {data.orderTrackingDetail}{" "}
+            {t(data.carrierTrackingNote)} {t(data.orderTrackingDetail)}{" "}
             <Link className={POLICY_LINK} href="/track-order">
-              {data.orderTrackingTitle}
+              {t(data.orderTrackingTitle)}
             </Link>
-            . {data.phoneConfirmationWording}
+            . {t(data.phoneConfirmationWording)}
           </p>
         </section>
 
         {/* `thanh-toan` is the anchor the policy hub links to; it is part of the published surface. */}
         <section id="thanh-toan" aria-labelledby="payment-heading">
           <h2 id="payment-heading" className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
-            Thanh toán
+            {t("Thanh toán")}
           </h2>
-          <p className="mt-6 max-w-2xl text-base leading-7">{data.paymentMethod}</p>
+          <p className="mt-6 max-w-2xl text-base leading-7">{t(data.paymentMethod)}</p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-black/70">
-            {data.bankTransferUnavailable}
+            {t(data.bankTransferUnavailable)}
           </p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-black/70">
-            {data.checkoutAccount} {data.serverVerification}
+            {t(data.checkoutAccount)} {t(data.serverVerification)}
           </p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-black/70">
-            {data.refundChannelNote} Điều kiện và thời gian hoàn tiền được nêu trong{" "}
+            {t(data.refundChannelNote)} {t("Điều kiện và thời gian hoàn tiền được nêu trong")}{" "}
             <Link className={POLICY_LINK} href="/returns">
-              chính sách đổi trả
+              {t("chính sách đổi trả")}
             </Link>
             .
           </p>

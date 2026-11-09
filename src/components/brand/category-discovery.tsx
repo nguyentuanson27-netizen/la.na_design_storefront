@@ -1,7 +1,10 @@
+"use client";
+
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 import type { HomeCategoryDiscoverySection } from "@/routes/home-model";
+import { useT } from "@/i18n/client";
 
 /**
  * YOUR NEXT FAVOURITE (spec §7.4): the heading and its supporting line in a column on the left, the
@@ -13,6 +16,7 @@ import type { HomeCategoryDiscoverySection } from "@/routes/home-model";
  * the category label; the photograph is decorative for the same reason.
  */
 export function CategoryDiscovery({ section }: Readonly<{ section: HomeCategoryDiscoverySection }>) {
+  const t = useT();
   return (
     <section
       className="category-discovery"
@@ -21,10 +25,10 @@ export function CategoryDiscovery({ section }: Readonly<{ section: HomeCategoryD
     >
       <div className="category-discovery__intro">
         <h2 id="home-category-discovery-title" className="category-discovery__title">
-          {section.title}
+          {t(section.title)}
         </h2>
         {section.description ? (
-          <p className="category-discovery__description">{section.description}</p>
+          <p className="category-discovery__description">{t(section.description)}</p>
         ) : null}
       </div>
       <ul className="category-discovery__grid">
@@ -40,7 +44,7 @@ export function CategoryDiscovery({ section }: Readonly<{ section: HomeCategoryD
                   className="object-cover"
                 />
               </span>
-              <span className="category-discovery__label">{tile.label}</span>
+              <span className="category-discovery__label">{t(tile.label)}</span>
             </Link>
           </li>
         ))}

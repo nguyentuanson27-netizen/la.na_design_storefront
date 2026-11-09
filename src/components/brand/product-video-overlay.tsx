@@ -8,6 +8,7 @@ import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
 import { pdpProductImageLoader } from "@/components/headless/pdp-image-loader";
 import { useDocumentLoaded } from "@/components/headless/use-document-loaded";
 import { useInlineVideoAllowed, useVideoLayout } from "@/components/headless/use-inline-video-allowed";
+import { useT } from "@/i18n/client";
 
 /** A preview that is less than this much on screen stands still. */
 const PREVIEW_MIN_VISIBLE_RATIO = 0.25;
@@ -37,6 +38,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
   video: PancakePdpVideo;
   productName: string;
 }>) {
+  const t = useT();
   const titleId = useId();
   const opener = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -220,7 +222,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
       <button
         type="button"
         className="pdp-video-slot__close"
-        aria-label="Đóng video nhỏ"
+        aria-label={t("Đóng video nhỏ")}
         onClick={() => {
           releaseVideo(preview.current);
           const gallery = opener.current?.closest<HTMLElement>(".pdp-stage");
@@ -239,7 +241,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
       >
         <div className="mb-3 flex items-center justify-between gap-4">
           <h2 id={titleId} className="text-base font-semibold">Video {productName}</h2>
-          <button type="button" className="min-h-11 min-w-11 px-2 underline focus-visible:outline-2 focus-visible:outline-offset-2" onClick={close}>Đóng</button>
+          <button type="button" className="min-h-11 min-w-11 px-2 underline focus-visible:outline-2 focus-visible:outline-offset-2" onClick={close}>{t("Đóng")}</button>
         </div>
         {requested ? (
           <video ref={player} controls playsInline preload="none" poster={video.poster} tabIndex={0} aria-label={`Video ${productName}`} className="mx-auto block aspect-[9/16] h-auto w-[min(100%,calc(min(78dvh,720px)*9/16))] bg-black object-contain" onLoadedMetadata={(event) => {
@@ -257,8 +259,8 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
             <source src={video.src} type="video/mp4" onError={() => { reporting.error(player.current?.error?.code); }} />
           </video>
         ) : null}
-        {blocked && !failed ? <p role="status" className="mt-3 text-sm">Bấm nút Play để xem video.</p> : null}
-        {failed ? <p role="alert" className="mt-3 text-sm">Chưa phát được video. Nàng có thể đóng để xem ảnh và tiếp tục mua hàng.</p> : null}
+        {blocked && !failed ? <p role="status" className="mt-3 text-sm">{t("Bấm nút Play để xem video.")}</p> : null}
+        {failed ? <p role="alert" className="mt-3 text-sm">{t("Chưa phát được video. Nàng có thể đóng để xem ảnh và tiếp tục mua hàng.")}</p> : null}
       </dialog>
     </div>
   );

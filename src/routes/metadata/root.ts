@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 
+import { localizeMetadata } from "@/i18n/metadata";
+import { getI18n } from "@/i18n/server";
 import { buildRootMetadata } from "@/seo/root-metadata";
 import { readSearchExposure } from "@/seo/search-exposure";
 
@@ -14,5 +16,6 @@ import { readSearchExposure } from "@/seo/search-exposure";
 export async function buildRootLayoutMetadata(): Promise<Metadata> {
   await connection();
 
-  return buildRootMetadata(readSearchExposure());
+  const { locale, t } = await getI18n();
+  return localizeMetadata(buildRootMetadata(readSearchExposure()), locale, t);
 }

@@ -5,7 +5,7 @@ import {
   ListingShell,
 } from "@/components/brand/listing-chrome";
 import { SaleListingBody, SaleListingSubnav } from "@/components/brand/sale-listing";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
 import { buildSaleMetadata, SALE_LISTING_DESCRIPTIONS, SALE_TITLE } from "@/routes/metadata/sale";
 import { loadSaleRoute, type SaleRouteProps } from "@/routes/sale";
@@ -15,7 +15,7 @@ import { loadSaleRoute, type SaleRouteProps } from "@/routes/sale";
 const KIND = "PROMOTION";
 const listing = saleListingByKind(KIND);
 
-function render(data: FlashSaleViewModel) {
+function render(data: FlashSaleViewModel, { t }: RequestI18n) {
   return (
     <ListingShell>
       <ListingBreadcrumbs
@@ -25,9 +25,9 @@ function render(data: FlashSaleViewModel) {
           { label: listing.label },
         ]}
       />
-      <ListingHeader eyebrow={SALE_TITLE} title={listing.label}>
+      <ListingHeader eyebrow={t(SALE_TITLE)} title={t(listing.label)}>
         <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
-          {SALE_LISTING_DESCRIPTIONS[KIND]}
+          {t(SALE_LISTING_DESCRIPTIONS[KIND])}
         </p>
         <SaleListingSubnav currentHref={listing.href} />
       </ListingHeader>

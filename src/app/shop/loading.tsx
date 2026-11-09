@@ -1,9 +1,12 @@
+"use client";
+
 import {
   ListingBreadcrumbs,
   ListingHeader,
   ListingProductGrid,
   ListingShell,
 } from "@/components/brand/listing-chrome";
+import { useT } from "@/components/brand/localization";
 
 /**
  * The shop's loading skeleton.
@@ -14,12 +17,13 @@ import {
  * listing pages no longer use.
  */
 export default function ShopLoading() {
+  const t = useT();
   return (
     <div aria-busy="true" aria-live="polite">
       <ListingShell>
         <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Cửa hàng" }]} />
-        <ListingHeader eyebrow="Tất cả sản phẩm" title="Cửa hàng">
-          <p className="sr-only">Đang tải cửa hàng.</p>
+        <ListingHeader eyebrow={t("Tất cả sản phẩm")} title={t("Cửa hàng")}>
+          <p className="sr-only">{t("Đang tải cửa hàng.")}</p>
           <div className="mt-6 h-12 max-w-2xl animate-pulse bg-[#3B2219]/5" aria-hidden="true" />
         </ListingHeader>
 

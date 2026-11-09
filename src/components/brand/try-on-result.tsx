@@ -2,11 +2,13 @@
 
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 
+import { BRAND } from "@/brand";
 import { TRY_ON_TEEN_DISCLOSURE } from "@/components/headless/try-on-model";
 import type { TryOnResult } from "@/components/headless/try-on-session";
 import { canShareTryOnFiles, shareTryOnImage, tryOnResultFileName } from "@/components/headless/try-on-share";
 import { trackTryOn } from "@/components/headless/try-on-track";
 import type { TryOnRating } from "@/commerce/try-on-client-events";
+import { useT } from "@/i18n/client";
 
 import { BrandTryOnZoom } from "./try-on-zoom";
 
@@ -42,6 +44,7 @@ export function BrandTryOnSaveActions({
   canShare: boolean;
   className: string;
 }>) {
+  const t = useT();
   const [sharing, setSharing] = useState(false);
   return (
     <>
@@ -51,7 +54,7 @@ export function BrandTryOnSaveActions({
         className={className}
         onClick={() => trackTryOn({ event: "download", productSlug })}
       >
-        Tải ảnh
+        {t("Tải ảnh")}
       </a>
       {canShare ? (
         <button
@@ -70,7 +73,7 @@ export function BrandTryOnSaveActions({
             if (outcome === "shared") trackTryOn({ event: "share", productSlug });
           }}
         >
-          Chia sẻ
+          {t("Chia sẻ")}
         </button>
       ) : null}
     </>
@@ -83,6 +86,7 @@ export function BrandTryOnSaveActions({
  * changed until the shopper leaves, and a new picture asks again (the caller keys it by the picture).
  */
 function Feedback({ productSlug }: Readonly<{ productSlug: string }>) {
+  const t = useT();
   const [rating, setRating] = useState<TryOnRating | null>(null);
 
   function choose(next: TryOnRating) {
@@ -106,12 +110,12 @@ function Feedback({ productSlug }: Readonly<{ productSlug: string }>) {
   );
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/10 pt-3" role="group" aria-label="Đánh giá ảnh thử đồ">
-      <span className="mr-1 text-[13px] text-black/75">Ảnh này thế nào?</span>
-      {button("up", "👍", "Giống thật")}
-      {button("down", "👎", "Chưa ổn")}
+    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/10 pt-3" role="group" aria-label={t("Đánh giá ảnh thử đồ")}>
+      <span className="mr-1 text-[13px] text-black/75">{t("Ảnh này thế nào?")}</span>
+      {button("up", "👍", t("Giống thật"))}
+      {button("down", "👎", t("Chưa ổn"))}
       <span aria-live="polite" className="w-full text-xs leading-5 text-black/60">
-        {rating === null ? "" : "Cảm ơn nàng, La.na sẽ dùng góp ý này để làm ảnh tốt hơn."}
+        {rating === null ? "" : t("Cảm ơn nàng, {brand} sẽ dùng góp ý này để làm ảnh tốt hơn.", { brand: BRAND.identity.name })}
       </span>
     </div>
   );
@@ -140,10 +144,11 @@ export function BrandTryOnResult({
   /** The shopper's own photo, when still in memory, for the before/after switch in the zoom. */
   beforeUrl?: string | null;
 }>) {
+  const t = useT();
   const [zoomOpen, setZoomOpen] = useState(false);
   const canShare = useCanShareTryOnFiles();
 
-  const alt = `Ảnh thử đồ do AI tạo cho ${productName}, chỉ mang tính tham khảo`;
+  const alt = t("Ảnh thử đồ do AI tạo cho {productName}, chỉ mang tính tham khảo", { productName });
   const actionClass = "btn btn--outline px-3";
 
   function openZoom() {
@@ -156,7 +161,7 @@ export function BrandTryOnResult({
       <div className="relative mx-auto mt-2 w-fit max-w-full">
         <button
           type="button"
-          aria-label="Phóng to ảnh thử đồ"
+          aria-label={t("Phóng to ảnh thử đồ")}
           className={`block cursor-zoom-in ${FOCUS_RING}`}
           onClick={openZoom}
         >
@@ -167,7 +172,7 @@ export function BrandTryOnResult({
           aria-hidden="true"
           className="pointer-events-none absolute bottom-2 right-2 whitespace-nowrap bg-[#FAF7F2]/90 px-2 py-1 text-[11px] font-semibold text-[#3B2219]"
         >
-          Phóng to
+          {t("Phóng to")}
         </span>
       </div>
       <div className={`mt-3 grid gap-2 ${canShare ? "grid-cols-3" : "grid-cols-2"}`}>
@@ -182,12 +187,11 @@ export function BrandTryOnResult({
       </div>
       <Feedback key={result.url} productSlug={productSlug} />
       <p className="mt-3 text-xs leading-5 text-black/65">
-        Ảnh do AI tạo, chỉ mang tính tham khảo — không đảm bảo kích cỡ, độ vừa vặn, chất liệu hay màu
-        sắc thật.
+        {t("Ảnh do AI tạo, chỉ mang tính tham khảo — không đảm bảo kích cỡ, độ vừa vặn, chất liệu hay màu sắc thật.")}
       </p>
       {isTeen ? (
         <p className="mt-2 border-l-[3px] border-[#3B2219] pl-3 text-xs leading-5 text-black/75">
-          {TRY_ON_TEEN_DISCLOSURE}
+          {t(TRY_ON_TEEN_DISCLOSURE)}
         </p>
       ) : null}
 

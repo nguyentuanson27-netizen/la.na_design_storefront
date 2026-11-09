@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/i18n/link";
+import { useRouter } from "@/i18n/navigation";
 import {
   useActionState,
   startTransition,
@@ -34,6 +34,7 @@ import { CheckoutUpsellLoader } from "./checkout-upsell";
 import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
 import { OrderTrustLine } from "@/components/brand/order-trust-line";
 import { orderTrustFor } from "@/brand";
+import { useT } from "@/i18n/client";
 
 const EMPTY_GIFT_PICKER: CartGiftPickerModel = { campaigns: [], selections: [], invalid: false, stackConflict: false };
 
@@ -179,6 +180,7 @@ export function GuestCheckoutForm({
   /** Offer bank transfer beside COD. The server refuses the method too when it is off. */
   bankTransferEnabled?: boolean;
 }>) {
+  const t = useT();
   const [submitState, submitAction, isSubmitting] = useActionState(
     submitGuestCheckoutAction,
     null,
@@ -406,7 +408,7 @@ export function GuestCheckoutForm({
     const message = visibleErrors[field];
     return message ? (
       <span className="mt-2 block text-sm font-normal text-[#b42318]" id={errorId(field)}>
-        {message}
+        {t(message)}
       </span>
     ) : null;
   }
@@ -497,7 +499,7 @@ export function GuestCheckoutForm({
       <input name="quoteProof" type="hidden" value={quoteProof ?? ""} />
 
       <aside className="checkout-order-panel min-w-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-24 lg:self-start">
-      {summarySlot ? <div className="checkout-desktop-lines hidden lg:block"><p className="mb-5 text-xs font-semibold uppercase tracking-[0.14em]">Đơn hàng</p>{summarySlot}</div> : null}
+      {summarySlot ? <div className="checkout-desktop-lines hidden lg:block"><p className="mb-5 text-xs font-semibold uppercase tracking-[0.14em]">{t("Đơn hàng")}</p>{summarySlot}</div> : null}
       {/* Below `lg` only: at `lg+` the page's sticky aside is the order summary, already expanded,
           so a second collapsible copy would be two summaries of one order. */}
       {summarySlot && summaryLabel ? (
@@ -509,7 +511,7 @@ export function GuestCheckoutForm({
             onClick={() => setIsSummaryOpen((open) => !open)}
             className="flex min-h-11 w-full items-center justify-between gap-4 text-left text-sm font-semibold"
           >
-            <span>{summaryLabel}</span>
+            <span>{t(summaryLabel)}</span>
             <span aria-hidden="true">{isSummaryOpen ? "−" : "＋"}</span>
           </button>
           <div id={summaryContentId} className={`${isSummaryOpen ? "block" : "hidden"} pt-5`}>
@@ -526,7 +528,7 @@ export function GuestCheckoutForm({
       <div className="min-w-0 space-y-6 lg:col-start-1 lg:row-start-1">
       <div className="checkout-receiving-fields min-w-0 space-y-5">
       {/* UX-08: why the order cannot be placed, and how to fix it, before the first field. */}
-      {unavailableNotice ? <div id="checkout-blocking-notice" tabIndex={-1} role="alert" className="border border-[#b42318]/50 px-4 py-3 text-sm"><p className="font-semibold">Giỏ hàng cần xem lại một chút</p><p className="mt-1 leading-6">{unavailableNotice}</p><div className="flex flex-wrap items-center gap-x-4"><button type="button" className="min-h-11 underline" disabled={isRefreshingQuote || giftPending || isSubmitting} onClick={refreshQuote}>Cập nhật giá</button><Link href="/cart" className="min-h-11 content-center underline">Quay lại giỏ hàng</Link></div></div> : null}
+      {unavailableNotice ? <div id="checkout-blocking-notice" tabIndex={-1} role="alert" className="border border-[#b42318]/50 px-4 py-3 text-sm"><p className="font-semibold">{t("Giỏ hàng cần xem lại một chút")}</p><p className="mt-1 leading-6">{unavailableNotice}</p><div className="flex flex-wrap items-center gap-x-4"><button type="button" className="min-h-11 underline" disabled={isRefreshingQuote || giftPending || isSubmitting} onClick={refreshQuote}>{t("Cập nhật giá")}</button><Link href="/cart" className="min-h-11 content-center underline">{t("Quay lại giỏ hàng")}</Link></div></div> : null}
       {upsellEnabled ? (
         <CheckoutUpsellLoader
           quoteProof={quoteProof}
@@ -537,7 +539,7 @@ export function GuestCheckoutForm({
         />
       ) : null}
       {voucherSlot}
-      <h2 className="font-display text-2xl">Thông tin nhận hàng</h2>
+      <h2 className="font-display text-2xl">{t("Thông tin nhận hàng")}</h2>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
@@ -556,7 +558,7 @@ export function GuestCheckoutForm({
               {...fieldA11y("name")}
             />
             <label className={inFieldLabelClassName} htmlFor="checkout-name">
-              Họ và tên <RequiredMark />
+              {t("Họ và tên")} <RequiredMark />
             </label>
           </div>
           {renderFieldError("name")}
@@ -579,7 +581,7 @@ export function GuestCheckoutForm({
               {...fieldA11y("phone")}
             />
             <label className={inFieldLabelClassName} htmlFor="checkout-phone">
-              Số điện thoại <RequiredMark />
+              {t("Số điện thoại")} <RequiredMark />
             </label>
           </div>
           {renderFieldError("phone")}
@@ -588,7 +590,7 @@ export function GuestCheckoutForm({
 
       <fieldset className="space-y-3" disabled={isSubmitting || lockSubmission}>
         <legend className="mb-3 text-sm font-semibold uppercase tracking-[0.12em]">
-          Địa chỉ giao hàng <span className="font-normal normal-case tracking-normal text-black/60">(địa chỉ mới)</span>
+          {t("Địa chỉ giao hàng")} <span className="font-normal normal-case tracking-normal text-black/60">{t("(địa chỉ mới)")}</span>
         </legend>
 
         <div className="grid gap-3 md:grid-cols-2">
@@ -605,7 +607,7 @@ export function GuestCheckoutForm({
                 {...fieldA11y("province")}
               >
                 <option value="">
-                  {provinceLoading ? "Đang tải tỉnh/thành…" : "Chọn tỉnh/thành phố"}
+                  {t(provinceLoading ? "Đang tải tỉnh/thành…" : "Chọn tỉnh/thành phố")}
                 </option>
                 {provinces.map((province) => (
                   <option key={province.id} value={province.id}>
@@ -614,7 +616,7 @@ export function GuestCheckoutForm({
                 ))}
               </select>
               <label className={selectLabelClassName} htmlFor="checkout-province">
-                Tỉnh / Thành phố <RequiredMark />
+                {t("Tỉnh / Thành phố")} <RequiredMark />
               </label>
               <SelectChevron />
             </div>
@@ -637,11 +639,13 @@ export function GuestCheckoutForm({
                 {...fieldA11y("commune")}
               >
                 <option value="">
-                  {communeLoading
-                    ? "Đang tải phường/xã…"
-                    : provinceRef
-                      ? "Chọn phường/xã"
-                      : "Chọn tỉnh/thành phố trước"}
+                  {t(
+                    communeLoading
+                      ? "Đang tải phường/xã…"
+                      : provinceRef
+                        ? "Chọn phường/xã"
+                        : "Chọn tỉnh/thành phố trước",
+                  )}
                 </option>
                 {communes.map((commune) => (
                   <option key={commune.id} value={commune.id}>
@@ -650,7 +654,7 @@ export function GuestCheckoutForm({
                 ))}
               </select>
               <label className={selectLabelClassName} htmlFor="checkout-commune">
-                Phường / Xã <RequiredMark />
+                {t("Phường / Xã")} <RequiredMark />
               </label>
               <SelectChevron />
             </div>
@@ -663,13 +667,13 @@ export function GuestCheckoutForm({
             className="flex flex-wrap items-center justify-between gap-3 border border-black/25 px-4 py-3 text-sm"
             role="status"
           >
-            <span>{geoError.message}</span>
+            <span>{t(geoError.message)}</span>
             <button
               className="font-semibold uppercase tracking-[0.1em] underline underline-offset-4"
               onClick={retryGeoRead}
               type="button"
             >
-              Thử lại
+              {t("Thử lại")}
             </button>
           </div>
         ) : null}
@@ -690,7 +694,7 @@ export function GuestCheckoutForm({
               {...fieldA11y("detail")}
             />
             <label className={inFieldLabelClassName} htmlFor="checkout-detail">
-              Số nhà, tên đường <RequiredMark />
+              {t("Số nhà, tên đường")} <RequiredMark />
             </label>
           </div>
           {renderFieldError("detail")}
@@ -708,7 +712,7 @@ export function GuestCheckoutForm({
             onChange={(event) => setNote(event.target.value)}
           />
           <label className="pointer-events-none absolute inset-x-3.5 top-2.5 truncate text-base text-black/60 transition-all duration-150 motion-reduce:transition-none peer-[:not(:placeholder-shown)]:top-1 peer-[:not(:placeholder-shown)]:text-[11px] peer-[:not(:placeholder-shown)]:leading-4" htmlFor="checkout-note">
-            Ghi chú (không bắt buộc)
+            {t("Ghi chú (không bắt buộc)")}
           </label>
         </div>
       </fieldset>
@@ -718,7 +722,7 @@ export function GuestCheckoutForm({
           notice belong between the fields and the submit button below `lg`, and inside the sticky
           aside at `lg+`. */}
       <div className="min-w-0 space-y-4">
-      <h2 ref={paymentRef} tabIndex={-1} className="scroll-mt-32 font-display text-2xl">Tổng kết thanh toán</h2>
+      <h2 ref={paymentRef} tabIndex={-1} className="scroll-mt-32 font-display text-2xl">{t("Tổng kết thanh toán")}</h2>
       {benefit?.tierNotice ? <p role="status" className="text-sm">{benefit.tierNotice}</p> : null}
       {draftNotice ? <p className="text-sm" data-payment-gift-draft>{draftNotice}</p> : null}
       {totalsSlot ? <div className="checkout-totals lg:hidden">{totalsSlot}</div> : null}
@@ -726,18 +730,18 @@ export function GuestCheckoutForm({
 
       {bankTransferEnabled ? (
         <fieldset className="space-y-2" disabled={isSubmitting || lockSubmission}>
-          <legend className="text-sm font-semibold">Phương thức thanh toán</legend>
+          <legend className="text-sm font-semibold">{t("Phương thức thanh toán")}</legend>
           <label className="flex min-h-11 items-center gap-3 border border-black/20 px-4 text-sm">
             <input type="radio" name="paymentMethod" value="COD" checked={paymentMethod === "COD"} onChange={() => setPaymentMethod("COD")} />
-            Thanh toán khi nhận hàng (COD)
+            {t("Thanh toán khi nhận hàng (COD)")}
           </label>
           <label className="flex min-h-11 items-center gap-3 border border-black/20 px-4 text-sm">
             <input type="radio" name="paymentMethod" value="BANK_TRANSFER" checked={paymentMethod === "BANK_TRANSFER"} onChange={() => setPaymentMethod("BANK_TRANSFER")} />
-            Chuyển khoản ngân hàng
+            {t("Chuyển khoản ngân hàng")}
           </label>
           {paymentMethod === "BANK_TRANSFER" ? (
             <p className="text-sm leading-6 text-black/75" data-bank-transfer-hint>
-              Thông tin chuyển khoản hiện ở trang xác nhận sau khi nàng đặt hàng. Đơn được giao sau khi shop nhận đủ tiền.
+              {t("Thông tin chuyển khoản hiện ở trang xác nhận sau khi nàng đặt hàng. Đơn được giao sau khi shop nhận đủ tiền.")}
             </p>
           ) : null}
         </fieldset>
@@ -749,11 +753,11 @@ export function GuestCheckoutForm({
           className={`border px-5 py-4 ${feedbackTone}`}
           role="status"
         >
-          <p className="font-semibold">{feedback.title}</p>
-          <p className="mt-1 text-sm leading-6 opacity-80">{feedback.message}</p>
+          <p className="font-semibold">{t(feedback.title)}</p>
+          <p className="mt-1 text-sm leading-6 opacity-80">{t(feedback.message)}</p>
           {!feedback.mayRetry && !submitState?.ok ? (
             <Link className="mt-3 inline-block text-sm font-semibold underline underline-offset-4" href="/cart">
-              Quay lại giỏ hàng
+              {t("Quay lại giỏ hàng")}
             </Link>
           ) : null}
         </div>
@@ -766,19 +770,19 @@ export function GuestCheckoutForm({
           ref={errorSummaryRef}
           role="alert"
         >
-          Nàng điền nốt các ô còn trống nhé.
+          {t("Nàng điền nốt các ô còn trống nhé.")}
         </p>
       ) : null}
 
       {giftHint ? (
         <div className="flex flex-wrap items-center justify-between gap-x-4 border-t border-black/15 pt-2 text-sm" data-checkout-gift-hint>
-          <p>{giftHint.text}</p>
-          {giftHint.canChoose ? <button type="button" className="min-h-11 font-semibold underline underline-offset-4" onClick={openGiftPicker}>Chọn quà</button> : null}
+          <p>{t(giftHint.text)}</p>
+          {giftHint.canChoose ? <button type="button" className="min-h-11 font-semibold underline underline-offset-4" onClick={openGiftPicker}>{t("Chọn quà")}</button> : null}
         </div>
       ) : null}
 
       {/* Always mounted, so a reason that appears later is announced; empty and out of layout otherwise. */}
-      <p id={submitReasonId} className="text-sm empty:hidden" aria-live="polite" data-checkout-submit-reason>{submitLockReason}</p>
+      <p id={submitReasonId} className="text-sm empty:hidden" aria-live="polite" data-checkout-submit-reason>{submitLockReason ? t(submitLockReason) : ""}</p>
 
       <button
         aria-describedby={submitLockReason ? submitReasonId : undefined}
@@ -788,7 +792,7 @@ export function GuestCheckoutForm({
         ref={submitButton}
         type="submit"
       >
-        {isSubmitting ? "Đang đặt hàng…" : paymentMethod === "BANK_TRANSFER" ? "Đặt hàng và chuyển khoản" : "Đặt hàng COD"}
+        {t(isSubmitting ? "Đang đặt hàng…" : paymentMethod === "BANK_TRANSFER" ? "Đặt hàng và chuyển khoản" : "Đặt hàng COD")}
       </button>
       <OrderTrustLine facts={orderTrust.facts} />
 
@@ -802,11 +806,11 @@ export function GuestCheckoutForm({
               order all run through `handleSubmit` exactly as the primary button does. */}
           {/* Named apart from the primary button so assistive tech and tests can tell the two apart. */}
           <button type="button" className="btn btn--primary px-4" disabled={submitDisabled} onClick={() => formRef.current?.requestSubmit()}>
-            {isSubmitting ? "Đang gửi…" : "Đặt hàng"}
+            {t(isSubmitting ? "Đang gửi…" : "Đặt hàng")}
           </button>
         </MobileStickyCta>
       ) : null}
-      <CheckoutGiftReminderDialog open={reminder.state === "open"} disabled={submitDisabled} description={benefit?.unclaimedText ?? "Nàng còn quà chưa chọn."} canChoose={Boolean(giftPicker?.campaigns.some((c) => (c.selectable ?? 0) > 0))} onShown={reminder.recordShown} onClose={() => { reminder.markSeen(); submitButton.current?.focus(); }} onChoose={chooseGifts} onContinue={() => { reminder.markSeen(); formRef.current?.requestSubmit(); }} />
+      <CheckoutGiftReminderDialog open={reminder.state === "open"} disabled={submitDisabled} description={t(benefit?.unclaimedText ?? "Nàng còn quà chưa chọn.")} canChoose={Boolean(giftPicker?.campaigns.some((c) => (c.selectable ?? 0) > 0))} onShown={reminder.recordShown} onClose={() => { reminder.markSeen(); submitButton.current?.focus(); }} onChoose={chooseGifts} onContinue={() => { reminder.markSeen(); formRef.current?.requestSubmit(); }} />
     </form>
   );
 }

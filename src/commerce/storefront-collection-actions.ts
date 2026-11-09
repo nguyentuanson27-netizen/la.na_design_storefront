@@ -12,6 +12,7 @@ import { collectionListingPath, parseCollectionListingSearchParams } from "./col
 import { CollectionDefinitionError } from "./collection-definition.ts";
 import { createCollectionDefinitionRepository } from "./collection-definition-repository.ts";
 import { listConfiguredStorefrontDiscoveryPage } from "./storefront-catalog-runtime.ts";
+import { localizeListing } from "./product-translation-runtime.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
 import { buildProductListTracking } from "../components/analytics/product-list-tracking.ts";
 import {
@@ -90,14 +91,14 @@ export async function loadCollectionNextPageAction(
     cursor: input.cursor ?? undefined,
   });
 
-  const pageResult = await listConfiguredStorefrontDiscoveryPage({
+  const pageResult = await localizeListing(await listConfiguredStorefrontDiscoveryPage({
     discovery: listing.discovery,
     pageSize: COLLECTION_PAGE_SIZE,
     allowCuratedComponents: true,
     inStockFirst: listing.merchandiserOrder,
     featuredProductSlugs: listing.merchandiserOrder ? collection.featuredProductSlugs : [],
     now: new Date(),
-  });
+  }));
 
   const ordered = orderCollectionPage(pageResult.products, {
     featuredProductSlugs: collection.featuredProductSlugs,

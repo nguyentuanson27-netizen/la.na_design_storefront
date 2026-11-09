@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
 
 import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
 import type { StorefrontProjectionOption } from "@/commerce/storefront-projection";

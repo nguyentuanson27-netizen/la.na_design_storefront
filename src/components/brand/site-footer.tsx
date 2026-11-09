@@ -1,9 +1,12 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 import { BRAND, NAVIGATION } from "@/brand";
 import { FooterNavGroup } from "@/components/brand/footer-nav-group";
+import { LanguageSwitcher } from "@/components/brand/language-switcher";
 import type { SiteFooterModel } from "@/components/headless/site-chrome-model";
+import { getT } from "@/i18n/server";
+import type { Translator } from "@/i18n/translate";
 
 /**
  * F9a footer layout. Presentation consumes approved Brand Config and policy projections only:
@@ -84,7 +87,10 @@ function SocialIcon({ network }: Readonly<{ network: SocialNetwork }>) {
  * the footer's tap-target size, and its accessible name says both the network and the brand, since
  * the icon alone says nothing to a screen reader.
  */
-function SocialLinks({ contact }: Readonly<{ contact: SiteFooterModel["contact"] }>) {
+function SocialLinks({
+  contact,
+  t,
+}: Readonly<{ contact: SiteFooterModel["contact"]; t: Translator }>) {
   const profiles: readonly (readonly [SocialNetwork, string, string | undefined])[] = [
     ["instagram", "Instagram", contact.instagramUrl],
     ["tiktok", "TikTok", contact.tiktokUrl],
@@ -92,7 +98,7 @@ function SocialLinks({ contact }: Readonly<{ contact: SiteFooterModel["contact"]
   ];
 
   return (
-    <ul className="footer-social" aria-label="Mạng xã hội">
+    <ul className="footer-social" aria-label={t("Mạng xã hội")}>
       {profiles.map(([network, label, href]) =>
         href ? (
           <li key={network}>
@@ -112,7 +118,8 @@ function SocialLinks({ contact }: Readonly<{ contact: SiteFooterModel["contact"]
   );
 }
 
-export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
+export async function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
+  const t = await getT();
   return (
     <footer className="site-footer">
       <noscript>
@@ -143,44 +150,44 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
               and matches how `policy.config.ts` already writes the same facts. */}
           <ul className="footer-contact-list">
             <li>
-              <span className="footer-label">Hotline/Zalo:</span>{" "}
+              <span className="footer-label">{t("Hotline/Zalo:")}</span>{" "}
               <a href={`tel:${model.contact.telephoneInternational}`}>
                 {model.contact.telephone}
               </a>
             </li>
             <li>
-              <span className="footer-label">Email hỗ trợ:</span>{" "}
+              <span className="footer-label">{t("Email hỗ trợ:")}</span>{" "}
               <a href={`mailto:${model.contact.email}`}>{model.contact.email}</a>
             </li>
             <li>
-              <span className="footer-label">Địa chỉ kinh doanh/đổi trả:</span>{" "}
+              <span className="footer-label">{t("Địa chỉ kinh doanh/đổi trả:")}</span>{" "}
               {model.address}
             </li>
             <li>
-              <span className="footer-label">Giờ hỗ trợ:</span> {model.supportHours}
+              <span className="footer-label">{t("Giờ hỗ trợ:")}</span> {t(model.supportHours)}
             </li>
           </ul>
 
-          <SocialLinks contact={model.contact} />
+          <SocialLinks contact={model.contact} t={t} />
         </section>
 
         <FooterNavGroup
-          heading="Mua sắm"
-          navigationLabel="Mua sắm"
+          heading={t("Mua sắm")}
+          navigationLabel={t("Mua sắm")}
           panelId="footer-shopping-links"
           links={NAVIGATION.footer}
         />
 
         <FooterNavGroup
-          heading="Hỗ trợ khách hàng"
-          navigationLabel="Hỗ trợ khách hàng"
+          heading={t("Hỗ trợ khách hàng")}
+          navigationLabel={t("Hỗ trợ khách hàng")}
           panelId="footer-support-links"
           links={model.supportLinks}
         />
 
         <FooterNavGroup
-          heading="Thông tin & chính sách"
-          navigationLabel="Thông tin và chính sách"
+          heading={t("Thông tin & chính sách")}
+          navigationLabel={t("Thông tin và chính sách")}
           panelId="footer-policy-links"
           links={model.policyLinks}
         />
@@ -188,14 +195,14 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
 
       <div className="footer-legal" data-footer-legal>
         <div className="footer-legal-info">
-          <p className="footer-label">Thông tin pháp lý</p>
+          <p className="footer-label">{t("Thông tin pháp lý")}</p>
           <p className="footer-legal-name">{model.legal.legalEntityName}</p>
           {/* Beside the entity it belongs to, not at the end of the block: the representative is part
               of who the company is, where the lines below are where to reach it. */}
-          <p>Đại diện pháp luật: {model.legal.legalRepresentative}</p>
-          <p>Địa chỉ đăng ký: {model.legal.registeredAddress}</p>
+          <p>{t("Đại diện pháp luật:")} {model.legal.legalRepresentative}</p>
+          <p>{t("Địa chỉ đăng ký:")} {model.legal.registeredAddress}</p>
           <p>
-            MST: {model.legal.taxCode} - ngày cấp: {model.legal.taxIdIssueDate}
+            {t("MST:")} {model.legal.taxCode} - {t("ngày cấp:")} {model.legal.taxIdIssueDate}
           </p>
           <p>Email: {model.legal.legalEmail}</p>
         </div>
@@ -206,12 +213,12 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
             href="http://online.gov.vn/nen-tang/005c15fc-3eb7-44a5-9aab-0f29fd7b5995"
             target="_blank"
             rel="noreferrer"
-            aria-label="Đã thông báo Bộ Công Thương"
+            aria-label={t("Đã thông báo Bộ Công Thương")}
           >
             <Image
               className="footer-bct-badge"
               src="/brand/bo-cong-thuong-da-thong-bao.png"
-              alt="Đã thông báo Bộ Công Thương"
+              alt={t("Đã thông báo Bộ Công Thương")}
               width={140}
               height={52}
               style={{ width: "auto", height: "auto" }}
@@ -221,7 +228,10 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
         </div>
       </div>
 
-      <p className="footer-meta">© 2026 {BRAND.identity.name}</p>
+      <div className="footer-meta-row">
+        <p className="footer-meta">© 2026 {BRAND.identity.name}</p>
+        <LanguageSwitcher placement="footer" className="language-switcher language-switcher--footer" />
+      </div>
     </footer>
   );
 }

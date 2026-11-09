@@ -26,6 +26,9 @@ import {
   parseListingView,
   type ListingView,
 } from "@/components/headless/listing-view-model";
+import { clientMessagesFor, getLocale } from "@/i18n/server";
+import { type Locale } from "@/i18n/locale";
+import { createTranslator } from "@/i18n/translate";
 import { readRequestScriptNonce } from "@/security/script-nonce-policy";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildSiteStructuredData, serializeJsonLd } from "@/seo/structured-data";
@@ -63,6 +66,8 @@ export type SiteChromeModel = Readonly<{
   scriptNonce: string | undefined;
   /** The photograph size the shopper chose for listings (`?view=` over the cookie), resolved by the proxy. */
   listingView: ListingView;
+  /** The language this request is rendered in, from the proxy's header. */
+  locale: Locale;
 }>;
 
 import { readConfiguredCategoryMegaMedia } from "@/commerce/storefront-catalog-runtime";
@@ -84,10 +89,11 @@ const PANCAKE_CHAT_HOSTS = [OFFICIAL_PRODUCTION_STOREFRONT_HOST, LEGACY_TEMPORAR
  */
 export async function loadSiteChrome(): Promise<SiteChromeModel> {
   await connection();
-  const [exposure, megaMedia, requestHeaders] = await Promise.all([
+  const [exposure, megaMedia, requestHeaders, locale] = await Promise.all([
     Promise.resolve(readSearchExposure()),
     readConfiguredCategoryMegaMedia(),
     headers(),
+    getLocale(),
   ]);
 
   return {
@@ -95,6 +101,7 @@ export async function loadSiteChrome(): Promise<SiteChromeModel> {
     content: buildSiteChromeContent(megaMedia, process.env),
     scriptNonce: readRequestScriptNonce(requestHeaders),
     listingView: parseListingView(requestHeaders.get(LISTING_VIEW_REQUEST_HEADER)) ?? DEFAULT_LISTING_VIEW,
+    locale,
   };
 }
 
@@ -114,7 +121,7 @@ export function SiteChrome({
   children,
 }: Readonly<{ model: SiteChromeModel; children: ReactNode }>) {
   return (
-    <SiteDocument>
+    <SiteDocument locale={model.locale} messages={clientMessagesFor(model.locale)}>
       <TrackingBootstrap nonce={model.scriptNonce} />
       <GoogleTagManager nonce={model.scriptNonce} />
       <ChatGptAdsPixel nonce={model.scriptNonce} />
