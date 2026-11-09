@@ -238,11 +238,9 @@ export function useTryOn({
       // Every submitted attempt counts except one the server gave back, so the number may have
       // moved whatever the outcome was.
       if (activeRef.current) void refreshQuota();
-      trackTryOn(
-        settled.status === "success"
-          ? { event: "result_shown", productSlug }
-          : { event: "result_error", productSlug, reason: settled.errorReason ?? undefined },
-      );
+      // Not reported here: this runs when the request settles, which can be while the dialog is shut
+      // and the shopper elsewhere. "Shown" is reported once, when the outcome is actually on screen
+      // (`markSeen` in the session); the server already counts completions.
       if (settled.photoRefused) {
         // The provider refused this photo for good. It is dropped, and the shopper is sent back to
         // choose another, with the explanation still showing there.

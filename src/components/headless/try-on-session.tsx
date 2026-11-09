@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { compressTryOnPhoto } from "./try-on-photo.ts";
+import { trackTryOn } from "./try-on-track.ts";
 import {
   TRY_ON_DONE_TITLE_PREFIX,
   TRY_ON_NETWORK_FAILURE_MESSAGE,
@@ -361,6 +362,15 @@ export function TryOnSessionProvider({ children }: Readonly<{ children: ReactNod
       const current = jobRef.current;
       if (current === null || current.id !== id || current.status === "loading" || current.seen) return;
       commit({ ...current, seen: true });
+      // The one place that knows the shopper has really been shown the outcome (the dialog or the
+      // dock's viewer had it on screen), and it can happen once per job: `seen` guards it, and
+      // `jobRef` makes that guard synchronous, so StrictMode's repeated effects and reopening the
+      // same job cannot report it twice. A settled-but-unopened job reports nothing.
+      trackTryOn(
+        current.status === "success"
+          ? { event: "result_shown", productSlug: current.productSlug }
+          : { event: "result_error", productSlug: current.productSlug, reason: current.errorReason ?? undefined },
+      );
     },
     [commit],
   );

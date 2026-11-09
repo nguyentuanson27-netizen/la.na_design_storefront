@@ -1498,7 +1498,7 @@ test("the picture opens full screen, switches to the shopper's own photo, and Es
   await dialog.getByRole("button", { name: "Phóng to ảnh thử đồ" }).click();
   const zoom = page.getByRole("dialog", { name: "Xem ảnh phóng to" });
   await expect(zoom).toBeVisible();
-  const image = zoom.getByRole("img").first();
+  const image = zoom.locator("img").first();
   const fitted = await image.evaluate((element) => element.getBoundingClientRect().width);
   await image.click();
   await expect
@@ -1684,4 +1684,94 @@ test("on a Flash Sale product the on-photo button stays clear of the FLASH SALE 
       expect(apart(button, (await counter.boundingBox())!), `button vs counter at ${width}px`).toBe(true);
     }
   }
+});
+
+test("zoom works from the keyboard: Tab reaches the Phóng to button, Enter and Space zoom in and out", async ({
+  page,
+}) => {
+  const dialog = await openTryOn(page);
+  const { generate, result } = parts(dialog);
+  await fillThroughConfirmation(dialog);
+  await generate.click();
+  await expect(result).toBeVisible();
+
+  // Open the zoom from the keyboard too.
+  await dialog.getByRole("button", { name: "Phóng to ảnh thử đồ" }).focus();
+  await page.keyboard.press("Enter");
+  const zoom = page.getByRole("dialog", { name: "Xem ảnh phóng to" });
+  await expect(zoom).toBeVisible();
+
+  const image = zoom.locator("img").first();
+  const widthOf = () => image.evaluate((element) => element.getBoundingClientRect().width);
+  const fitted = await widthOf();
+
+  // Reach the zoom button by Tab alone, never by a pointer or a script focus.
+  const toggle = zoom.getByRole("button", { name: "Phóng to", exact: true });
+  for (let step = 0; step < 8 && !(await toggle.evaluate((element) => element === document.activeElement)); step += 1) {
+    await page.keyboard.press("Tab");
+  }
+  await expect(toggle).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  await expect.poll(widthOf).toBeGreaterThan(fitted * 1.5);
+  const thuNho = zoom.getByRole("button", { name: "Thu nhỏ", exact: true });
+  await expect(thuNho).toBeFocused();
+
+  // The zoomed picture scrolls from the keyboard: the frame is focusable and takes the arrow keys.
+  const frame = zoom.getByLabel("Ảnh đang phóng to, cuộn để xem");
+  await frame.focus();
+  const before = await frame.evaluate((element) => element.scrollTop);
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(() => frame.evaluate((element) => element.scrollTop)).toBeGreaterThan(before);
+
+  await thuNho.focus();
+  await page.keyboard.press("Space");
+  await expect.poll(widthOf).toBeLessThanOrEqual(fitted + 1);
+  await expect(zoom.getByRole("button", { name: "Phóng to", exact: true })).toBeFocused();
+});
+
+test("result_shown is reported once, when the picture is really on screen, not when it is merely finished", async ({
+  page,
+}) => {
+  const reported: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/try-on/events") && request.method() === "POST") {
+      reported.push((JSON.parse(request.postData() ?? "{}") as { event?: string }).event ?? "");
+    }
+  });
+  const shownInLayer = () =>
+    page.evaluate(
+      () =>
+        ((window as unknown as { dataLayer?: Array<{ event?: string }> }).dataLayer ?? []).filter(
+          (entry) => entry.event === "try_on_result_shown",
+        ).length,
+    );
+
+  const dialog = await openTryOn(page);
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("linger") });
+  await parts(dialog).generate.click();
+  await dialog.getByRole("button", { name: "Xem tiếp sản phẩm trong lúc chờ", exact: true }).click();
+  await expect(dialog).toBeHidden();
+
+  // The picture finishes while the dialog is shut: the dock says so, and nothing has been shown yet.
+  const dock = page.getByTestId("try-on-dock");
+  await expect(dock.getByRole("button", { name: /Ảnh thử đồ đã xong/ })).toBeVisible({ timeout: 20_000 });
+  await page.waitForTimeout(500);
+  expect(reported).not.toContain("result_shown");
+  expect(await shownInLayer()).toBe(0);
+
+  // Opening it is what shows it: exactly one report.
+  await dock.getByRole("button", { name: /Ảnh thử đồ đã xong/ }).click();
+  await expect(parts(dialog).result).toBeVisible();
+  await expect.poll(() => reported.filter((name) => name === "result_shown").length).toBe(1);
+  expect(await shownInLayer()).toBe(1);
+
+  // Closing and reopening does not report it again (the picture is only kept aside now).
+  await page.keyboard.press("Escape");
+  await triggerOf(page).click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(500);
+  expect(reported.filter((name) => name === "result_shown")).toHaveLength(1);
+  expect(await shownInLayer()).toBe(1);
 });

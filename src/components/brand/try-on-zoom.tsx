@@ -7,9 +7,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
  * so the buttons stay on screen; this is for looking at the fabric and the fit.
  *
  * A native modal `<dialog>` of its own, over the try-on dialog: the browser supplies the focus trap,
- * the inert page behind and Escape, which closes only this one. Tap or click toggles between fitting
- * the screen and 2.4x, centred on the point pressed; when zoomed the box scrolls, so a finger pans
- * and a keyboard can scroll it. When the shopper's own photo is available a two-way switch shows it
+ * the inert page behind and Escape, which closes only this one. Zoom toggles between fitting the
+ * screen and 2.4x. A pointer can tap or click the picture, centring on the point pressed; the same
+ * toggle is a real button ("Phóng to" / "Thu nhỏ": its name is the action, so no `aria-pressed`) in the toolbar, so a keyboard or
+ * a screen reader can do it too (the `<img>` itself is not focusable and is not the control). When
+ * zoomed the box scrolls and takes focus, so arrow keys and a finger both pan. When the shopper's own photo is available a two-way switch shows it
  * next to the result, which is the whole "before and after" without a second screen.
  *
  * Keys are stopped here so the try-on dialog's own Tab handling does not see them through the React
@@ -109,6 +111,12 @@ function ZoomBody({
     }
   }, [zoomed]);
 
+  /** The toolbar button: no pointer position, so the middle of the picture. */
+  function toggleZoomFromButton() {
+    pendingCenterRef.current = { x: 0.5, y: 0.5 };
+    setZoomed((current) => !current);
+  }
+
   function toggleZoom(event: MouseEvent<HTMLImageElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     pendingCenterRef.current = {
@@ -145,14 +153,23 @@ function ZoomBody({
         ) : (
           <span />
         )}
-        <button
-          type="button"
-          aria-label="Đóng ảnh phóng to"
-          className={`inline-flex h-11 w-11 items-center justify-center border border-white/50 bg-black/30 text-2xl ${FOCUS_RING}`}
-          onClick={onClose}
-        >
-          ×
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className={`inline-flex min-h-11 items-center border border-white/50 bg-black/30 px-3.5 text-[13px] ${FOCUS_RING}`}
+            onClick={toggleZoomFromButton}
+          >
+            {zoomed ? "Thu nhỏ" : "Phóng to"}
+          </button>
+          <button
+            type="button"
+            aria-label="Đóng ảnh phóng to"
+            className={`inline-flex h-11 w-11 items-center justify-center border border-white/50 bg-black/30 text-2xl ${FOCUS_RING}`}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
       </div>
 
       <div
@@ -176,7 +193,7 @@ function ZoomBody({
       </div>
 
       <p className="shrink-0 px-4 pt-2 text-center text-xs text-white/70">
-        {zoomed ? "Chạm lần nữa để thu nhỏ" : "Chạm vào ảnh để phóng to"}
+        {zoomed ? "Cuộn hoặc dùng phím mũi tên để xem; chạm lần nữa để thu nhỏ" : "Chạm vào ảnh hoặc bấm Phóng to"}
       </p>
       {actions ? (
         <div className="shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">{actions}</div>
