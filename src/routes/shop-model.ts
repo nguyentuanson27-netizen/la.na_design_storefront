@@ -1,4 +1,5 @@
 import type { StorefrontProductMedia } from "../commerce/product-media.ts";
+import { shopPlpFilters } from "../commerce/listing-next-page-input.ts";
 import {
   buildStorefrontDiscoveryHref,
   STOREFRONT_DISCOVERY_LIMITS,
@@ -14,6 +15,7 @@ import {
   type ProductCardModel,
   type StorefrontFlashSalePresentation,
 } from "../components/headless/build-product-card-model.ts";
+import type { PlpFilterState } from "../components/headless/plp-filter-model.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
 
 /**
@@ -25,6 +27,9 @@ import type { TrackingEvent } from "../tracking/commerce-events.ts";
  * links point, and which tone each card takes -- the last of which has to survive paging, or page
  * two restarts the colour cycle and the grid visibly repeats itself.
  */
+
+/** One page of the shop listing: the route, and the infinite grid's server action after it. */
+export const SHOP_PAGE_SIZE = 24;
 
 export type ShopProduct = Readonly<{
   id: string;
@@ -89,6 +94,8 @@ export type ShopViewModel = Readonly<{
   /** The collection the select should show as chosen; `""` for none. Kept even when no longer published. */
   selectedCollection: string;
   discovery: StorefrontDiscoveryQuery;
+  /** What the infinite grid holds and sends back for the next page; see `listing-next-page-input`. */
+  gridFilters: PlpFilterState;
   /**
    * The same bounds the loader rejects past, handed to the form so its affordances and the server's
    * answer cannot disagree. Retyping them in markup is how a field lets a shopper enter something
@@ -191,6 +198,7 @@ export function buildShopViewModel(input: ShopViewModelInput): ShopViewModel {
     selectedSize: size.value,
     selectedColor: color.value,
     discovery: input.discovery,
+    gridFilters: Object.freeze(shopPlpFilters(input.discovery)),
     limits: Object.freeze({
       query: STOREFRONT_DISCOVERY_LIMITS.query,
       priceVnd: STOREFRONT_DISCOVERY_LIMITS.priceVnd,

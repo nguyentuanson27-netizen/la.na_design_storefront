@@ -13,6 +13,17 @@ export type PlpFilterState = {
   sort: CategoryDiscoverySort;
 };
 
+/** The filter state of a listing that offers no filter of its own. */
+export const EMPTY_PLP_FILTERS: PlpFilterState = Object.freeze({
+  size: null,
+  color: null,
+  availability: null,
+  minPriceVnd: null,
+  maxPriceVnd: null,
+  sale: null,
+  sort: "default",
+});
+
 export function hasActivePlpFilters(state: PlpFilterState): boolean {
   return (
     state.size !== null ||

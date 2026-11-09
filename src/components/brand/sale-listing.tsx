@@ -1,25 +1,21 @@
 "use client";
 
-import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
-import {
-  ListingEmptyState,
-  ListingPagination,
-  ListingProductGrid,
-  ListingSubnav,
-} from "@/components/brand/listing-chrome";
+import { useMemo } from "react";
+
+import { ListingEmptyState, ListingPreviousLink, ListingSubnav } from "@/components/brand/listing-chrome";
 import { PlpFilterPanel } from "@/components/brand/plp-filter-panel";
-import { SALE_CHILD_NAVIGATION, SALE_ROOT_NAVIGATION } from "@/brand/sale.config";
+import { EMPTY_PLP_FILTERS } from "@/components/headless/plp-filter-model";
+import { PlpInfiniteGrid } from "@/components/brand/plp-infinite-grid";
+import { SALE_CHILD_NAVIGATION, SALE_ROOT_NAVIGATION, type SaleListingKind } from "@/brand/sale.config";
 import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
 import { useT } from "@/i18n/client";
 
 /**
  * Markup shared by `/sale`, `/sale/uu-dai`, `/sale/flash-sale` and `/sale/xa-hang-le-size`. Which
  * products each lists is the loader's decision (`@/routes/sale`); this only draws the tabs, the
- * filter bar, the grid and the pager. The filter bar is the category listing's, so a shopper meets
- * the same size, price and sort controls on every listing.
+ * filter bar and the grid. The filter bar and the infinite grid are the category listing's, so a
+ * shopper meets the same size, price and sort controls -- and the same scrolling -- on every listing.
  */
-
-const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
 /** Tất cả, then every sale sub-listing, with the current one marked. */
 export function SaleListingSubnav({ currentHref }: Readonly<{ currentHref: string }>) {
@@ -35,16 +31,19 @@ export function SaleListingBody({
   data,
   countLabel,
   emptyTitle,
-  paginationLabel,
+  saleKind = null,
 }: Readonly<{
   data: FlashSaleViewModel;
   /** Follows the number in the bar's hidden live count, e.g. "sản phẩm đang giảm giá". */
   countLabel: string;
   emptyTitle: string;
-  paginationLabel: string;
+  /** Which campaign kind the listing shows; `null` is `/sale`, every active discount. */
+  saleKind?: SaleListingKind | null;
 }>) {
   const t = useT();
   const { filters } = data;
+  // Stable between renders: the grid starts over whenever it is handed a different list.
+  const initialProducts = useMemo(() => data.cards.map((card) => card.model), [data.cards]);
 
   // Nothing is on sale at all: there is nothing to filter, so the bar is not drawn either.
   if (data.totalCount === 0 && !filters?.filtered) {
@@ -96,25 +95,27 @@ export function SaleListingBody({
         </div>
       ) : (
         <>
-          <div className="mt-8">
-            <ListingProductGrid>
-              {data.cards.map((card, index) => (
-                <ProductCard
-                  key={card.id}
-                  model={card.model}
-                  tone={tones[(data.toneOffset + index) % tones.length]!}
-                  eager={index < PRODUCT_CARD_EAGER_COUNT}
-                />
-              ))}
-            </ListingProductGrid>
+          {/* The page the shopper opened may not be the first. The grid continues forward from it;
+              this is the way back, and a crawlable link to the page before. */}
+          <ListingPreviousLink href={data.previousHref} />
+          <div className="mt-4">
+            {/* Infinite scroll with a real "Xem thêm" link to the next page inside it, so a crawler
+                and a reader without script still page through the listing (§25). */}
+            <PlpInfiniteGrid
+              initialProducts={initialProducts}
+              totalCount={data.totalCount}
+              totalPages={data.totalPages}
+              initialPage={data.page}
+              source={{ kind: "sale", saleKind }}
+              clearHref={filters?.basePath ?? "/sale"}
+              activeFilters={filters?.active ?? EMPTY_PLP_FILTERS}
+              hasNext={data.nextHref !== null}
+              nextHref={data.nextHref}
+              nextCursor={null}
+              toneOffset={data.toneOffset}
+              emptyStateAnchors={false}
+            />
           </div>
-          <ListingPagination
-            label={paginationLabel}
-            page={data.page}
-            totalPages={data.totalPages}
-            previousHref={data.previousHref}
-            nextHref={data.nextHref}
-          />
         </>
       )}
     </section>

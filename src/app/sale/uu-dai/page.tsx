@@ -36,7 +36,7 @@ function render(data: FlashSaleViewModel, { t }: RequestI18n) {
         data={data}
         countLabel="sản phẩm đang ưu đãi"
         emptyTitle="Hiện chưa có sản phẩm trong chương trình ưu đãi."
-        paginationLabel="Phân trang Ưu đãi"
+        saleKind={KIND}
       />
     </ListingShell>
   );

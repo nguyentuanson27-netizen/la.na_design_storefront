@@ -1,6 +1,6 @@
 "use client";
 
-import { useT } from "@/i18n/client";
+import { useLocalizedHref, useT } from "@/i18n/client";
 import type { ProductCardModel } from "@/components/headless/build-product-card-model";
 import {
   ListingEmptyState,
@@ -35,6 +35,7 @@ export type PlpInfiniteGridProps = {
 
 export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
   const t = useT();
+  const localizedHref = useLocalizedHref();
   const { totalCount, clearHref, toneOffset = 0, emptyStateAnchors = true } = props;
   const {
     products,
@@ -59,7 +60,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
           eyebrow={t("Không tìm thấy")}
           title={t("Không tìm thấy sản phẩm phù hợp")}
           copy={t("Nàng thử đổi bộ lọc hoặc bỏ bớt lựa chọn nhé.")}
-          action={{ href: clearHref, label: "Xóa tất cả bộ lọc" }}
+          action={{ href: localizedHref(clearHref), label: "Xóa tất cả bộ lọc" }}
         />
       </div>
     );
@@ -120,7 +121,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
         <div className="mt-12 text-center">
           {nextPageHref ? (
             <a
-              href={nextPageHref}
+              href={localizedHref(nextPageHref)}
               rel="next"
               className="btn btn--outline px-8"
               onClick={(event) => {

@@ -36,7 +36,7 @@ function render(data: FlashSaleViewModel, { t }: RequestI18n) {
         data={data}
         countLabel="sản phẩm đang Flash Sale"
         emptyTitle="Hiện chưa có Flash Sale nào đang diễn ra."
-        paginationLabel="Phân trang Flash Sale"
+        saleKind={KIND}
       />
     </ListingShell>
   );

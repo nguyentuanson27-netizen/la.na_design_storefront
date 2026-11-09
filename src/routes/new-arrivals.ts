@@ -13,11 +13,12 @@ import {
   buildFlashSaleViewModel,
   type FlashSaleViewModel,
 } from "./flash-sale-model.ts";
+import { NEW_ARRIVALS_PAGE_SIZE } from "../commerce/new-arrivals-selection.ts";
 import { NEW_ARRIVALS_TITLE } from "./metadata/new-arrivals.ts";
 
 /** /new-arrivals is the admin-selected list, never catalog recency. */
 
-export const NEW_ARRIVALS_PAGE_SIZE = 24;
+export { NEW_ARRIVALS_PAGE_SIZE };
 
 export type NewArrivalsRouteProps = Readonly<{
   searchParams: Promise<StorefrontDiscoverySearchParams>;
@@ -55,6 +56,7 @@ export async function loadNewArrivalsRoute({
     products: catalogPage.products,
     list: { listId: "new-arrivals", listName: NEW_ARRIVALS_TITLE },
     pricingRule: catalogPage.pricingRule,
+    startIndex: (catalogPage.page - 1) * NEW_ARRIVALS_PAGE_SIZE,
   });
 
   const model = buildFlashSaleViewModel({

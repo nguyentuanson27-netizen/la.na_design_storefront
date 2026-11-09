@@ -27,7 +27,6 @@ function render(data: FlashSaleViewModel, { t }: RequestI18n) {
         data={data}
         countLabel="sản phẩm đang giảm giá"
         emptyTitle="Hiện chưa có sản phẩm đang được giảm giá."
-        paginationLabel="Phân trang Sale"
       />
     </ListingShell>
   );

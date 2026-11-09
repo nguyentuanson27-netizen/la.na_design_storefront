@@ -223,8 +223,10 @@ try {
 
   const shopPageOne = await requestPath("/shop");
   assertIndexableCanonical(shopPageOne, `${PUBLIC_ORIGIN}/shop`, "enabled shop page 1");
+  // The shop scrolls infinitely, like a collection: its way to page 2 is the grid's "Xem thêm" (a real
+  // link that loads in place with script). The contract is a visible anchor to page 2, whatever its words.
   assert.equal(
-    anchorHasVisibleText(shopPageOne.body, "/shop?page=2", "Trang sau"),
+    anchorHasVisibleText(shopPageOne.body, "/shop?page=2", "Xem thêm"),
     true,
     "shop page 1 must expose a visible crawlable link to page 2",
   );
@@ -248,7 +250,7 @@ try {
     "enabled collection page 1",
   );
   // A collection pages with the category listing's "Xem thêm" (a real link that loads in place with
-  // script), not the shop's "Trang sau": the contract is a visible anchor to page 2, whatever its words.
+  // script), the same as the shop: the contract is a visible anchor to page 2, whatever its words.
   assert.equal(
     anchorHasVisibleText(
       collectionPageOne.body,

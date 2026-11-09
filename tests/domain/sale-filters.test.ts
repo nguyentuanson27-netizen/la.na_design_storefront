@@ -143,3 +143,62 @@ test("every sale listing draws the shared filter bar without the controls that c
   const panel = read("src/components/brand/plp-filter-panel.tsx");
   assert.match(panel, /offerAvailability \|\| showSaleToggle/, "the toggles' wrapper disappears when neither is offered");
 });
+
+test("every sale listing scrolls infinitely, through its own server action, and keeps a crawlable next link", () => {
+  const body = read("src/components/brand/sale-listing.tsx");
+  assert.match(body, /<PlpInfiniteGrid/, "the sale body draws the shared infinite grid");
+  assert.match(body, /source=\{\{ kind: "sale", saleKind \}\}/, "the grid pages through the sale action");
+  assert.match(body, /nextHref=\{data\.nextHref\}/, "the grid carries the server-rendered next page link (§25)");
+  assert.match(body, /<ListingPreviousLink href=\{data\.previousHref\}/, "a page opened by URL keeps a crawlable way back");
+  assert.ok(!body.includes("<ListingPagination"), "numbered Trước/Sau paging is replaced by the grid");
+
+  const kinds: Record<string, string> = {
+    "sale/page.tsx": "",
+    "sale/uu-dai/page.tsx": "saleKind={KIND}",
+    "sale/flash-sale/page.tsx": "saleKind={KIND}",
+    "sale/xa-hang-le-size/page.tsx": "saleKind={KIND}",
+  };
+  for (const [page, kindProp] of Object.entries(kinds)) {
+    const source = read(`src/app/${page}`);
+    assert.ok(kindProp === "" || source.includes(kindProp), `${page} tells the grid which campaign kind it pages`);
+    assert.ok(!source.includes("paginationLabel"), `${page} no longer passes a pager label`);
+  }
+
+  const hook = read("src/components/headless/use-plp-infinite-grid.ts");
+  assert.match(hook, /loadSaleNextPageAction/, "the grid hook can page a sale listing");
+
+  const action = read("src/commerce/storefront-sale-actions.ts");
+  assert.match(action, /^"use server";/, "the sale paging endpoint is a server action");
+  assert.match(action, /saleDiscoveryFromInput/, "scrolled pages read filters with the route's own parser");
+  assert.match(action, /describeSalePage/, "scrolled pages are priced and reported like the first page");
+  assert.match(action, /RangeError\("Invalid sale listing"\)/, "an unknown campaign kind never reaches the read");
+});
+
+test("/shop and /new-arrivals scroll infinitely too, each through its own server action", () => {
+  const hook = read("src/components/headless/use-plp-infinite-grid.ts");
+  assert.match(hook, /loadShopNextPageAction/, "the grid hook can page the shop");
+  assert.match(hook, /loadNewArrivalsNextPageAction/, "the grid hook can page new arrivals");
+
+  const shop = read("src/app/shop/page.tsx");
+  assert.match(shop, /<PlpInfiniteGrid/, "the shop draws the shared infinite grid");
+  assert.match(shop, /source=\{\{ kind: "shop", query: discovery\.query, collection: discovery\.collection \}\}/,
+    "the query and collection ride along, because the filter state has no field for them");
+  assert.match(shop, /nextHref=\{data\.nextHref\}/, "the shop keeps a crawlable next link (§25)");
+  assert.match(shop, /<ListingPreviousLink/, "the shop keeps a crawlable way back");
+  assert.ok(!shop.includes("<ListingPagination"), "numbered paging is replaced by the grid");
+
+  const arrivals = read("src/app/new-arrivals/page.tsx");
+  assert.match(arrivals, /source=\{\{ kind: "new-arrivals" \}\}/);
+  assert.ok(!arrivals.includes("<ListingPagination"), "numbered paging is replaced by the grid");
+
+  const shopAction = read("src/commerce/storefront-shop-actions.ts");
+  assert.match(shopAction, /^"use server";/);
+  assert.match(shopAction, /shopDiscoveryFromInput/, "scrolled pages read filters with the route's own parser");
+  assert.match(shopAction, /inStockFirst: discovery\.sort === "name-asc"/, "scrolled pages are ordered like the first page");
+  assert.match(shopAction, /RangeError\("Shop page is out of range"\)/, "a page past the end is not served");
+
+  const arrivalsAction = read("src/commerce/storefront-new-arrivals-actions.ts");
+  assert.match(arrivalsAction, /^"use server";/);
+  assert.match(arrivalsAction, /parseStorefrontListingPage/, "the page goes through the route's own parser");
+  assert.match(arrivalsAction, /RangeError\("New-arrivals page is out of range"\)/);
+});

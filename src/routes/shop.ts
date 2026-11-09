@@ -14,11 +14,11 @@ import { buildProductListTracking } from "@/components/analytics/product-list-tr
 
 import { sealRoute, type RouteHandle } from "./core.tsx";
 import { SHOP_TITLE } from "./metadata/shop.ts";
-import { buildShopViewModel, type ShopViewModel } from "./shop-model.ts";
+import { buildShopViewModel, SHOP_PAGE_SIZE, type ShopViewModel } from "./shop-model.ts";
 
 /** The shop listing's loader: the query, the page, the facets and the grid's tracking. */
 
-export const SHOP_PAGE_SIZE = 24;
+export { SHOP_PAGE_SIZE };
 
 export type ShopRouteProps = Readonly<{
   searchParams: Promise<StorefrontDiscoverySearchParams>;
@@ -66,6 +66,7 @@ export async function loadShopRoute({
     products,
     list: { listId: "shop", listName: SHOP_TITLE },
     pricingRule,
+    startIndex: (page - 1) * SHOP_PAGE_SIZE,
   });
 
   return sealRoute({

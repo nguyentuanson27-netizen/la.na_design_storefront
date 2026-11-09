@@ -175,13 +175,36 @@ export function ListingEmptyState({
 }
 
 /**
+ * The way back from an infinite grid that opened on a later page.
+ *
+ * The grid continues forward from the page the URL named, so the pages before it are reached by this
+ * link -- which is also what lets a crawler walk the listing backwards. Absent on the first page.
+ */
+export function ListingPreviousLink({ href }: Readonly<{ href: string | null }>) {
+  const t = useT();
+  if (href === null) return null;
+  return (
+    <p className="mt-8">
+      <Link
+        className="inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 transition-colors hover:text-[#2A1810]"
+        href={href}
+        rel="prev"
+      >
+        {t("← Trang trước")}
+      </Link>
+    </p>
+  );
+}
+
+/**
  * Crawlable prev/next paging.
  *
- * The category PLP scrolls infinitely instead, on a server action built around its taxonomy key.
- * The other listings each page on their own query semantics, so they keep server-rendered links --
- * which §25 requires anyway: "SEO/crawlability must not depend solely on client-side scrolling".
- * Sharing the markup is what makes them look like one system; sharing the fetch would mean giving
- * four different queries one cursor.
+ * The category PLP, a collection and the sale listings scroll infinitely instead, each on a server
+ * action built around its own scope (they still carry a real next-page link, which §25 requires:
+ * "SEO/crawlability must not depend solely on client-side scrolling"). The listings left on this
+ * pager page on their own query semantics, so they keep server-rendered links. Sharing the markup
+ * is what makes them look like one system; sharing the fetch would mean giving different queries
+ * one cursor.
  */
 export function ListingPagination({
   label,

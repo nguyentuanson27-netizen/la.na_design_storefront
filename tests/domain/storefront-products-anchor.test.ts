@@ -64,15 +64,15 @@ test("collection #san-pham keeps landing on the title or the controls, never on 
 test("shop, sale, and new-arrivals listing surfaces carry #san-pham on populated and empty states", () => {
   const shopPage = read("src/app/shop/page.tsx");
   assert.match(shopPage, /id="bo-loc"/, "shop filter section carries #bo-loc");
-  assert.match(shopPage, /<ListingProductGrid/, "shop uses shared ListingProductGrid");
+  assert.match(shopPage, /<PlpInfiniteGrid/, "shop uses the shared infinite grid, which draws the shared ListingProductGrid");
   assert.match(shopPage, /id="san-pham"/, "shop empty state carries #san-pham");
 
   const saleListing = read("src/components/brand/sale-listing.tsx");
-  assert.match(saleListing, /<ListingProductGrid/, "sale uses shared ListingProductGrid");
+  assert.match(saleListing, /<PlpInfiniteGrid/, "sale uses the shared infinite grid, which draws the shared ListingProductGrid");
   assert.match(saleListing, /id="san-pham"/, "sale empty state carries #san-pham");
 
   const newArrivals = read("src/app/new-arrivals/page.tsx");
-  assert.match(newArrivals, /<ListingProductGrid/, "new-arrivals uses shared ListingProductGrid");
+  assert.match(newArrivals, /<PlpInfiniteGrid/, "new-arrivals uses the shared infinite grid, which draws the shared ListingProductGrid");
   assert.match(newArrivals, /id="san-pham"/, "new-arrivals empty state carries #san-pham");
 });
 

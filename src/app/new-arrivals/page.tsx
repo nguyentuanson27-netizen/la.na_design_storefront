@@ -1,11 +1,11 @@
 import { BRAND } from "@/brand";
-import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import { PlpInfiniteGrid } from "@/components/brand/plp-infinite-grid";
+import { EMPTY_PLP_FILTERS } from "@/components/headless/plp-filter-model";
 import {
   ListingBreadcrumbs,
   ListingEmptyState,
   ListingHeader,
-  ListingPagination,
-  ListingProductGrid,
+  ListingPreviousLink,
   ListingShell,
   ListingViewBar,
 } from "@/components/brand/listing-chrome";
@@ -20,9 +20,7 @@ import { buildNewArrivalsMetadata } from "@/routes/metadata/new-arrivals";
 /** Markup only. The manual selection, its paging, the tracking and the refresh window live in
  *  `@/routes/new-arrivals`. */
 
-const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
-
-function render(data: NewArrivalsViewModel, { t }: RequestI18n) {
+function render(data: NewArrivalsViewModel, { t, href }: RequestI18n) {
   return (
     <ListingShell>
       <ListingBreadcrumbs
@@ -51,25 +49,25 @@ function render(data: NewArrivalsViewModel, { t }: RequestI18n) {
             {t("Sản phẩm được chọn")}
           </h2>
           <ListingViewBar totalCount={data.totalCount} />
-          <div className="mt-8">
-            <ListingProductGrid>
-              {data.cards.map((card, index) => (
-                <ProductCard
-                  key={card.id}
-                  model={card.model}
-                  tone={tones[(data.toneOffset + index) % tones.length]!}
-                  eager={index < PRODUCT_CARD_EAGER_COUNT}
-                />
-              ))}
-            </ListingProductGrid>
+          <ListingPreviousLink href={data.previousHref} />
+          <div className="mt-4">
+            {/* Infinite scroll with a real "Xem thêm" link to the next page inside it, so a crawler
+                and a reader without script still page through the list (§25). */}
+            <PlpInfiniteGrid
+              initialProducts={data.cards.map((card) => card.model)}
+              totalCount={data.totalCount}
+              totalPages={data.totalPages}
+              initialPage={data.page}
+              source={{ kind: "new-arrivals" }}
+              clearHref="/new-arrivals"
+              activeFilters={EMPTY_PLP_FILTERS}
+              hasNext={data.nextHref !== null}
+              nextHref={data.nextHref}
+              nextCursor={null}
+              toneOffset={data.toneOffset}
+              emptyStateAnchors={false}
+            />
           </div>
-          <ListingPagination
-            label={t("Phân trang hàng mới về")}
-            page={data.page}
-            totalPages={data.totalPages}
-            previousHref={data.previousHref}
-            nextHref={data.nextHref}
-          />
         </section>
       )}
     </ListingShell>

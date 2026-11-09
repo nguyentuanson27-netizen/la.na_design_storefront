@@ -4,6 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { loadCategoryNextPageAction } from "@/commerce/storefront-category-actions";
 import { loadCollectionNextPageAction } from "@/commerce/storefront-collection-actions";
+import { buildSaleNextPageInput, buildShopNextPageInput } from "@/commerce/listing-next-page-input";
+import { loadNewArrivalsNextPageAction } from "@/commerce/storefront-new-arrivals-actions";
+import { loadSaleNextPageAction } from "@/commerce/storefront-sale-actions";
+import { loadShopNextPageAction } from "@/commerce/storefront-shop-actions";
+import type { SaleListingKind } from "@/brand/sale.config";
 import type { TrackingEvent } from "@/tracking/commerce-events";
 import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 import type { ProductCardModel } from "./build-product-card-model";
@@ -12,11 +17,18 @@ import { createPageRequestGuard, settleIfCurrent } from "./plp-page-request-guar
 
 /**
  * Which listing the grid pages through. Each has its own server action because each validates its
- * own scope (a taxonomy key, a published collection), but both take the same filter state.
+ * own scope (a taxonomy key, a published collection, a sale campaign kind), but all take the same
+ * filter state.
  */
 export type PlpGridSource =
   | Readonly<{ kind: "category"; categoryKey: string; categoryPath: string }>
-  | Readonly<{ kind: "collection"; slug: string }>;
+  | Readonly<{ kind: "collection"; slug: string }>
+  /** `/sale` (`saleKind: null`, every active discount) or one of its sub-listings. */
+  | Readonly<{ kind: "sale"; saleKind: SaleListingKind | null }>
+  /** `/shop`: the free-text query and the collection ride along because the filter state has no field for them. */
+  | Readonly<{ kind: "shop"; query: string | null; collection: string | null }>
+  /** `/new-arrivals`: the admin-selected list, which has no filters at all. */
+  | Readonly<{ kind: "new-arrivals" }>;
 
 export type UsePlpInfiniteGridOptions = {
   initialProducts: readonly ProductCardModel[];
@@ -89,15 +101,24 @@ export function usePlpInfiniteGrid({
         sale: activeFilters.sale,
         sort: activeFilters.sort,
       };
-      const outcome = await settleIfCurrent(guardRef.current, () =>
-        source.kind === "collection"
-          ? loadCollectionNextPageAction({ slug: source.slug, ...request })
-          : loadCategoryNextPageAction({
+      const outcome = await settleIfCurrent(guardRef.current, () => {
+        switch (source.kind) {
+          case "collection":
+            return loadCollectionNextPageAction({ slug: source.slug, ...request });
+          case "sale":
+            return loadSaleNextPageAction(buildSaleNextPageInput(source.saleKind, activeFilters, currentPage + 1));
+          case "shop":
+            return loadShopNextPageAction(buildShopNextPageInput(source, activeFilters, currentPage + 1));
+          case "new-arrivals":
+            return loadNewArrivalsNextPageAction({ page: currentPage + 1 });
+          default:
+            return loadCategoryNextPageAction({
               categoryKey: source.categoryKey,
               categoryPath: source.categoryPath,
               ...request,
-            }),
-      );
+            });
+        }
+      });
       if (outcome.stale) {
         // The shopper moved to another filter; the grid was already reset for it.
         stale = true;
@@ -107,7 +128,7 @@ export function usePlpInfiniteGrid({
 
       // The page is accepted, so its cards are about to be shown: report them once, in the list and
       // numbering the server built. A stale response returned above and an error never reach here.
-      // Only the collection action carries one; the publisher never throws.
+      // The collection, sale, shop and new-arrivals actions carry one; the publisher never throws.
       const listEvent = "listEvent" in result ? (result.listEvent as TrackingEvent | null) : null;
       if (listEvent) publishBrowserTrackingEvent(listEvent);
 
