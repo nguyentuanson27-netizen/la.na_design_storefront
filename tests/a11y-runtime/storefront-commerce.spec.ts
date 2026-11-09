@@ -534,7 +534,7 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
 
   const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
-  const stickyCta = stickyBar.getByRole("button");
+  const stickyCta = stickyBar.getByRole("button").last();
   const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
 
   // The inline selector stays touch-friendly but no longer spends a full section break between
@@ -727,7 +727,7 @@ test("variant selectors share compact rectangular presentation across panel and 
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
-  const sticky = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button");
+  const sticky = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button").last();
   await sticky.click();
 
   const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
@@ -767,7 +767,7 @@ test("a rejected add keeps the selection sheet open with feedback, and opens no 
    */
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
 
-  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button");
+  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button").last();
   await stickyCta.click();
 
   const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
@@ -809,7 +809,7 @@ test("the size guide suspends the selection sheet and gives focus back to it", a
    */
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
 
-  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button");
+  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button").last();
   await stickyCta.click();
 
   const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
@@ -842,7 +842,7 @@ test("the phone purchase bar keeps the price, steps aside for the panel buttons,
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
 
   const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
-  const stickyCta = stickyBar.getByRole("button");
+  const stickyCta = stickyBar.getByRole("button").last();
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
 
   // The CTA never squeezes the price out of the bar, and the bar names the product while the
@@ -1100,7 +1100,7 @@ test("Mua ngay reuses canonical cart authority before navigating to checkout", a
  * the sticky bar is what the shopper presses next.
  */
 async function chooseBlackMediumThenCloseSheet(page: Page) {
-  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button");
+  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button").last();
   await stickyCta.click();
   const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
   await expect(sheet).toBeVisible();
@@ -1121,7 +1121,7 @@ test("the phone sticky bar buys now: incomplete opens the sheet, complete goes t
   });
 
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
-  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button");
+  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button").last();
 
   // Nothing chosen: the bar still asks for the choices and starts no purchase.
   await expect(stickyCta).toHaveText("Chọn màu / size");
@@ -1563,7 +1563,7 @@ test("the phone size guide holds the page still behind it, from the panel and fr
   const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
   await expect(stickyBar).toBeVisible();
   await settledScrollY();
-  await stickyBar.getByRole("button").click();
+  await stickyBar.getByRole("button").last().click();
   const selection = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
   await expect(selection).toBeVisible();
   await selection.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }).click();
