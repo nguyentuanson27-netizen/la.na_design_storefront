@@ -503,17 +503,32 @@ export function buildBenefitCheckoutViewModel(
   const shippingVoucher = render.voucher && render.voucher.shippingWaivedVnd > 0 && render.voucher.shippingCampaignId !== null
     ? { label: render.voucher.names.get(render.voucher.shippingCampaignId) ?? "Voucher vận chuyển", waivedVnd: render.voucher.shippingWaivedVnd }
     : undefined;
-  const summary = listedValueVnd === null || !voucherConsistent
+  const namedDiscounts = [...(promotions?.savings ?? []), ...voucherRows];
+  const summaryBase = {
+    goodsAfterDiscountsVnd: facts.paidSubtotalVnd,
+    shippingFeeVnd: facts.shippingFeeVnd,
+    giftQuantity,
+    expectedTotalVnd: facts.totalVnd,
+    ...(shippingVoucher ? { shippingVoucher } : {}),
+  };
+  // The strict bill: the named discounts must close the gap to the lines' listed value exactly.
+  const strictSummary = listedValueVnd === null || !voucherConsistent
     ? null
-    : buildOrderSummary({
-        goodsAfterDiscountsVnd: facts.paidSubtotalVnd,
-        discounts: [...(promotions?.savings ?? []), ...voucherRows],
-        shippingFeeVnd: facts.shippingFeeVnd,
-        giftQuantity,
-        expectedTotalVnd: facts.totalVnd,
+    : buildOrderSummary({ ...summaryBase, discounts: namedDiscounts, expectedValueVnd: listedValueVnd });
+  // When they do not close it because a programme saving is not named by the quote, show the remainder as one generic
+  // programme row. This only ever happens with a proven listed value and a positive, safe remainder; the value is still checked
+  // against the lines' listed value. No listed value, or named discounts that already exceed it, still gives no bill.
+  let summary = strictSummary;
+  if (summary === null && listedValueVnd !== null && voucherConsistent) {
+    const residualVnd = listedValueVnd - facts.paidSubtotalVnd - namedDiscounts.reduce((sum, row) => sum + row.amountVnd, 0);
+    if (Number.isSafeInteger(residualVnd) && residualVnd > 0) {
+      summary = buildOrderSummary({
+        ...summaryBase,
+        discounts: [...namedDiscounts, Object.freeze({ id: "program:other", label: "Ưu đãi chương trình", amountVnd: residualVnd, amountText: currency.format(residualVnd) })],
         expectedValueVnd: listedValueVnd,
-        ...(shippingVoucher ? { shippingVoucher } : {}),
       });
+    }
+  }
 
   const listPriceSavingsText = describeListPriceSavings(input.lines, facts.paidSubtotalVnd);
   return Object.freeze({

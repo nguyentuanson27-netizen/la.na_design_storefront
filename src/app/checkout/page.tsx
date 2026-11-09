@@ -146,7 +146,6 @@ function render(data: CheckoutViewModel) {
   const totalsBlock = (
     <>
       {data.summary ? <OrderSummary summary={data.summary} /> : fallbackTotals}
-      {data.listPriceSavingsText ? <p className="mt-3 font-semibold" data-list-price-savings>Tiết kiệm so với giá niêm yết: {data.listPriceSavingsText}</p> : null}
     </>
   );
 
