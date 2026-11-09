@@ -192,7 +192,7 @@ test("teen_eligible_with_guardian is allowed through to the provider", async () 
 test("a product image that cannot be fetched or is too large fails safely before the provider", async () => {
   for (const reason of ["TOO_LARGE", "FETCH_FAILED", "UNTRUSTED_URL"] as const) {
     const { run, probe } = build({ fetchProductImage: async () => ({ ok: false, reason }) });
-    assert.deepEqual(await run(), { ok: false, reason: "PRODUCT_IMAGE_UNAVAILABLE" });
+    assert.deepEqual(await run(), { ok: false, reason: "PRODUCT_IMAGE_UNAVAILABLE", refunded: true });
     assert.equal(probe.generate.length, 0);
   }
 });
@@ -216,14 +216,14 @@ test("a provider safety block fails closed with one attempt and no retry", async
 test("upstream failure classes pass through as safe reasons and the service never throws", async () => {
   for (const reason of ["AUTH_FAILED", "BUSY", "TIMEOUT", "GENERATION_FAILED"] as const) {
     const { run } = build({ generate: async () => ({ ok: false, reason }) });
-    assert.deepEqual(await run(), { ok: false, reason });
+    assert.deepEqual(await run(), { ok: false, reason, refunded: true });
   }
   const throwing = build({
     generate: async () => {
       throw new Error("boom: secret upstream detail");
     },
   });
-  assert.deepEqual(await throwing.run(), { ok: false, reason: "GENERATION_FAILED" });
+  assert.deepEqual(await throwing.run(), { ok: false, reason: "GENERATION_FAILED", refunded: true });
 });
 
 test("a failing product lookup is UNAVAILABLE, not a thrown error", async () => {
@@ -232,7 +232,7 @@ test("a failing product lookup is UNAVAILABLE, not a thrown error", async () => 
       throw new Error("database down");
     },
   });
-  assert.deepEqual(await run(), { ok: false, reason: "UNAVAILABLE" });
+  assert.deepEqual(await run(), { ok: false, reason: "UNAVAILABLE", refunded: true });
 });
 
 test("the guest quota rejects before the body is read: one a minute, then wait", async () => {
@@ -287,7 +287,7 @@ test("the global in-flight cap answers BUSY, and the slot is released after succ
   assert.equal(held.ok, true);
 
   const busy = build({ limiter });
-  assert.deepEqual(await busy.run(), { ok: false, reason: "BUSY" });
+  assert.deepEqual(await busy.run(), { ok: false, reason: "BUSY", refunded: true });
   assert.equal(busy.probe.generate.length, 0);
 
   if (held.ok) held.release();
@@ -328,11 +328,10 @@ test("an upload slot is taken before the body is read: saturated, the body is ne
   assert.equal(held.ok, true);
 
   const { run, probe } = build({ limiter });
-  assert.deepEqual(await run(), { ok: false, reason: "BUSY" });
+  assert.deepEqual(await run(), { ok: false, reason: "BUSY", refunded: true });
   assert.equal(probe.readForm, 0);
   assert.equal(probe.loadProduct.length, 0);
-  assert.equal(probe.signals.at(-1)?.name, "try_on.rate_limited");
-  assert.equal(probe.signals.at(-1)?.reason, "BUSY");
+  assert.ok(probe.signals.some((signal) => signal.name === "try_on.rate_limited" && signal.reason === "BUSY"));
 
   if (held.ok) held.release();
   assert.equal((await run()).ok, true);
@@ -371,7 +370,7 @@ test("the upload slot is held for the whole body read, so concurrent uploads are
       return tryOnForm();
     },
   });
-  assert.deepEqual(refused, { ok: false, reason: "BUSY" });
+  assert.deepEqual(refused, { ok: false, reason: "BUSY", refunded: true });
   assert.equal(secondRead, 0);
 
   openBody();
@@ -491,7 +490,7 @@ test("overflow: past the daily cap a busy Flow answers BUSY as before, and nothi
   const { run, probe, calls, limiter } = buildOverflow([], { dailyCap: 1 });
   limiter.startGeneration();
   assert.equal((await run()).ok, true);
-  assert.deepEqual(await run(), { ok: false, reason: "BUSY" });
+  assert.deepEqual(await run(), { ok: false, reason: "BUSY", refunded: true });
   assert.deepEqual(calls, ["vertex"]);
   assert.ok(probe.signals.some((s) => s.name === "try_on.rate_limited" && s.cause === "daily_cap"));
 });
@@ -507,7 +506,7 @@ test("overflow: a Flow failure is final for that request and is never retried on
 
 test("overflow: after an auth failure Flow is marked down and the next request goes to Vertex", async () => {
   const { run, probe, calls } = buildOverflow(["AUTH_FAILED"]);
-  assert.deepEqual(await run(), { ok: false, reason: "AUTH_FAILED" });
+  assert.deepEqual(await run(), { ok: false, reason: "AUTH_FAILED", refunded: true });
   assert.ok(probe.signals.some((s) => s.name === "try_on.primary_marked_down" && s.cause === "auth_failed"));
   assert.equal((await run()).ok, true);
   assert.deepEqual(calls, ["flow", "vertex"]);
@@ -538,14 +537,14 @@ test("overflow: a failure before the provider call does not count against Flow's
 test("overflow configured without a gate behaves as Flow alone: a busy Flow is BUSY", async () => {
   const { run, calls, limiter } = buildOverflow([], { withGate: false });
   limiter.startGeneration();
-  assert.deepEqual(await run(), { ok: false, reason: "BUSY" });
+  assert.deepEqual(await run(), { ok: false, reason: "BUSY", refunded: true });
   assert.deepEqual(calls, []);
 });
 
 test("overflow: a garment fetch that fails before Vertex is called hands the day's generation back", async () => {
   const { run, probe, calls, limiter } = buildOverflow([], { dailyCap: 1, garmentFetches: ["fail", "ok"] });
   limiter.startGeneration(); // Flow is busy for both requests
-  assert.deepEqual(await run(), { ok: false, reason: "PRODUCT_IMAGE_UNAVAILABLE" });
+  assert.deepEqual(await run(), { ok: false, reason: "PRODUCT_IMAGE_UNAVAILABLE", refunded: true });
   // Nothing reached Vertex, and no route was reported for a call that never began.
   assert.deepEqual(calls, []);
   assert.equal(probe.signals.some((s) => s.name === "try_on.overflow_routed"), false);
@@ -554,20 +553,57 @@ test("overflow: a garment fetch that fails before Vertex is called hands the day
   assert.deepEqual(calls, ["vertex"]);
   assert.equal(probe.signals.filter((s) => s.name === "try_on.overflow_routed").length, 1);
   // Now the one generation of the day is spent.
-  assert.deepEqual(await run(), { ok: false, reason: "BUSY" });
+  assert.deepEqual(await run(), { ok: false, reason: "BUSY", refunded: true });
   assert.deepEqual(calls, ["vertex"]);
 });
 
 test("overflow: a held worker's BUSY keeps Flow in use; a quota BUSY sends the next request to Vertex", async () => {
   const held = buildOverflow(["BUSY_HELD", "ok"]);
-  assert.deepEqual(await held.run(), { ok: false, reason: "BUSY" });
+  assert.deepEqual(await held.run(), { ok: false, reason: "BUSY", refunded: true });
   assert.equal((await held.run()).ok, true);
   assert.deepEqual(held.calls, ["flow", "flow"]);
   assert.equal(held.probe.signals.some((s) => s.name === "try_on.primary_marked_down"), false);
 
   const quota = buildOverflow(["BUSY_QUOTA"]);
-  assert.deepEqual(await quota.run(), { ok: false, reason: "BUSY" });
+  assert.deepEqual(await quota.run(), { ok: false, reason: "BUSY", refunded: true });
   assert.equal((await quota.run()).ok, true);
   assert.deepEqual(quota.calls, ["flow", "vertex"]);
   assert.ok(quota.probe.signals.some((s) => s.name === "try_on.primary_marked_down" && s.cause === "provider_busy"));
+});
+
+// Amendment 2026-11-09: a failure that is ours gives the day's attempt back.
+
+test("a failure of ours gives the daily attempt back but keeps the minute window", async () => {
+  const limiter = createTryOnRateLimiter({ guest: { perMinute: 1, perDay: 2 }, member: OPEN.member });
+  const { run, probe } = build({
+    limiter,
+    generate: async () => ({ ok: false, reason: "TIMEOUT" }),
+  });
+  assert.deepEqual(await run(), { ok: false, reason: "TIMEOUT", refunded: true });
+  assert.equal(limiter.peekQuota(GUEST).remaining, 2);
+  assert.ok(probe.signals.some((signal) => signal.name === "try_on.attempt_refunded" && signal.reason === "TIMEOUT"));
+  // Not a way to go faster: the minute is still spent.
+  assert.deepEqual(await run(), { ok: false, reason: "RATE_LIMITED" });
+  assert.equal(limiter.peekQuota(GUEST).remaining, 2);
+});
+
+test("a provider safety block stays counted and is not marked refunded", async () => {
+  const limiter = createTryOnRateLimiter({ ...OPEN, guest: { perMinute: 100, perDay: 5 } });
+  const { run } = build({ limiter, generate: async () => ({ ok: false, reason: "SAFETY_BLOCKED" }) });
+  assert.deepEqual(await run(), { ok: false, reason: "SAFETY_BLOCKED" });
+  assert.equal(limiter.peekQuota(GUEST).remaining, 4);
+});
+
+test("a request the shopper got wrong stays counted", async () => {
+  const limiter = createTryOnRateLimiter({ ...OPEN, guest: { perMinute: 100, perDay: 5 } });
+  const { run } = build({ limiter, loadProduct: async () => product({ categoryKeys: ["phuKien"] }) });
+  assert.deepEqual(await run(), { ok: false, reason: "NOT_ELIGIBLE" });
+  assert.equal(limiter.peekQuota(GUEST).remaining, 4);
+});
+
+test("an unavailable feature spends nothing, so there is nothing to give back or to claim", async () => {
+  const limiter = createTryOnRateLimiter({ ...OPEN, guest: { perMinute: 100, perDay: 5 } });
+  const { run } = build({ limiter, readConfig: () => ({ available: false, reason: "DISABLED" }) });
+  assert.deepEqual(await run(), { ok: false, reason: "UNAVAILABLE" });
+  assert.equal(limiter.peekQuota(GUEST).remaining, 5);
 });

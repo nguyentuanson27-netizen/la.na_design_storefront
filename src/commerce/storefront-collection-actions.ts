@@ -12,6 +12,7 @@ import { collectionListingPath, parseCollectionListingSearchParams } from "./col
 import { CollectionDefinitionError } from "./collection-definition.ts";
 import { createCollectionDefinitionRepository } from "./collection-definition-repository.ts";
 import { listConfiguredStorefrontDiscoveryPage } from "./storefront-catalog-runtime.ts";
+import { resolveTryOnListingSlugs } from "./try-on-listing.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
 import { buildProductListTracking } from "../components/analytics/product-list-tracking.ts";
 import {
@@ -115,6 +116,7 @@ export async function loadCollectionNextPageAction(
     startIndex: (pageResult.page - 1) * COLLECTION_PAGE_SIZE,
   });
 
+  const tryOnSlugs = await resolveTryOnListingSlugs(ordered);
   const cards: ProductCardModel[] = ordered.map((product) =>
     buildProductCardModel({
       slug: product.slug,
@@ -125,6 +127,7 @@ export async function loadCollectionNextPageAction(
       flashSale: product.flashSale,
       pricingRule: pageResult.pricingRule,
       selectEvent: tracking.selectEventBySlug.get(product.slug) ?? null,
+      tryOn: tryOnSlugs.has(product.slug),
     }),
   );
 

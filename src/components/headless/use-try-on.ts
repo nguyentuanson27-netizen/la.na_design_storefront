@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
 
 import { createTryOnQuotaLoader } from "./try-on-quota.ts";
+import { trackTryOn } from "./try-on-track.ts";
 import {
   isBlockedAgeState,
   isTeenAgeState,
@@ -29,6 +30,10 @@ import { useTryOnSession, type TryOnJob } from "./try-on-session.tsx";
  * cart and imports neither, so a failure here cannot change what the shopper is buying. It holds the
  * photo only as an in-memory blob URL, revokes it when replaced, and `reset()` drops the form when
  * the dialog closes — nothing is written to browser storage.
+ *
+ * The age the shopper stated is remembered by the session for the rest of the tab (never the likeness
+ * acknowledgement, which is asked again for every generation), and a picture the shopper has looked
+ * at is kept there too instead of dropped, so the next attempt can be compared with it.
  *
  * The dialog is a three-step wizard (`step`): photo, age and confirmation, result. Loading, success
  * and failure are all the result step, so the form is not on screen while a request is in flight.
@@ -72,7 +77,7 @@ export function useTryOn({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
-  const [ageState, setAgeState] = useState<TryOnAgeState | null>(null);
+  const [ageState, setAgeState] = useState<TryOnAgeState | null>(() => session.rememberedAge);
   // What is left today, as the server says. Display only: the server enforces the limit on its own.
   // `quotaCurrent` is false from the moment a refresh starts until it answers, so a number that may
   // be out of date is never shown; the audience it carries survives that wait (it only decides
@@ -99,6 +104,7 @@ export function useTryOn({
   const phase: Phase = job?.status ?? "idle";
   const locked = phase === "loading";
   const busyElsewhere = otherJob?.status === "loading";
+  const busyHref = busyElsewhere && otherJob ? `/shop/${encodeURIComponent(otherJob.productSlug)}` : null;
   const canGenerate =
     !locked &&
     !busyElsewhere &&
@@ -135,7 +141,7 @@ export function useTryOn({
 
   /** Drops this product's settled result or error, as replacing the photo or going back always did. */
   function dropSettledJob() {
-    if (job !== null && job.status !== "loading") discard(job.id);
+    if (job !== null && job.status !== "loading") discard(job.id, { keep: true });
   }
 
   /**
@@ -170,9 +176,9 @@ export function useTryOn({
     setPreviewUrl(null);
     setFileError(null);
     setAcknowledged(false);
-    setAgeState(null);
+    setAgeState(session.rememberedAge);
     clearFileInput();
-    if (job !== null && job.status !== "loading" && (job.seen || showing)) discard(job.id);
+    if (job !== null && job.status !== "loading" && (job.seen || showing)) discard(job.id, { keep: true });
   }
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
@@ -195,12 +201,14 @@ export function useTryOn({
     }
     setFile(next);
     setPreviewUrl(URL.createObjectURL(next));
+    trackTryOn({ event: "photo_selected", productSlug });
   }
 
   const canContinue = !locked && file !== null && fileError === null;
 
   function continueToConfirm() {
     if (!canContinue) return;
+    trackTryOn({ event: "continue", productSlug });
     setStep((current) => nextTryOnStep(current, "continue"));
   }
 
@@ -214,6 +222,7 @@ export function useTryOn({
   /** Back to the confirmation step to run again; the acknowledgement is asked afresh. */
   function backToConfirm() {
     if (locked) return;
+    if (job?.status === "success") trackTryOn({ event: "retry", productSlug });
     dropSettledJob();
     setStep((current) => nextTryOnStep(current, "back"));
   }
@@ -226,8 +235,14 @@ export function useTryOn({
       // The acknowledgement is a representation about one photo for one generation; asking again
       // for the next attempt is deliberate (spec §6), and the server demands it regardless.
       setAcknowledged(false);
-      // Every submitted attempt counts, so the number has moved whatever the outcome was.
+      // Every submitted attempt counts except one the server gave back, so the number may have
+      // moved whatever the outcome was.
       if (activeRef.current) void refreshQuota();
+      trackTryOn(
+        settled.status === "success"
+          ? { event: "result_shown", productSlug }
+          : { event: "result_error", productSlug, reason: settled.errorReason ?? undefined },
+      );
       if (settled.photoRefused) {
         // The provider refused this photo for good. It is dropped, and the shopper is sent back to
         // choose another, with the explanation still showing there.
@@ -238,12 +253,14 @@ export function useTryOn({
       }
     });
     if (!started) return;
+    trackTryOn({ event: "generate", productSlug });
     setStep((current) => nextTryOnStep(current, "generate"));
   }
 
   function chooseAge(value: TryOnAgeState) {
     if (locked) return;
     setAgeState(value);
+    session.rememberAge(value);
   }
 
   function chooseAcknowledged(value: boolean) {
@@ -276,6 +293,11 @@ export function useTryOn({
     errorReason: job?.errorReason ?? null,
     /** Set while another product's try-on is being made: this one waits for it. */
     busyMessage: busyElsewhere && otherJob ? tryOnBusyElsewhereMessage(otherJob.productName) : null,
+    /** Where the other product's try-on is being made, to go and see it. */
+    busyHref,
+    /** Pictures the shopper has looked at earlier in this tab, newest first, for comparison. */
+    kept: session.kept,
+    removeKept: session.removeKept,
     quota,
     quotaLine: quotaCurrent ? tryOnQuotaLine(quota) : null,
     quotaUpsell: tryOnQuotaUpsell(job?.errorReason ?? null, quota?.audience ?? null),

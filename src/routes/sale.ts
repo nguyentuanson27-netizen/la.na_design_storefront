@@ -15,6 +15,7 @@ import { sealRoute, type RouteHandle } from "./core.tsx";
 import { buildFlashSaleViewModel, type FlashSaleViewModel } from "./flash-sale-model.ts";
 import { saleListingByKind, type SaleListingKind } from "../brand/sale.config.ts";
 import { SALE_TITLE } from "./metadata/sale.ts";
+import { resolveTryOnListingSlugs } from "@/commerce/try-on-listing";
 
 export const SALE_PAGE_SIZE = 24;
 export type SaleRouteProps = Readonly<{
@@ -83,9 +84,11 @@ export async function loadSaleRoute(
       : { listId: "sale", listName: SALE_TITLE },
     pricingRule,
   });
+  const tryOnSlugs = await resolveTryOnListingSlugs(page.products);
   const model = buildFlashSaleViewModel({
     basePath: listing?.href ?? "/sale",
     products: page.products,
+    tryOnSlugs,
     totalCount: page.totalCount,
     totalPages: page.totalPages,
     page: page.page,

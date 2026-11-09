@@ -30,8 +30,12 @@ const CLIENT_TRY_ON_FILES = [
   "src/components/brand/try-on-dialog.tsx",
   "src/components/brand/try-on-dock.tsx",
   "src/components/brand/try-on-result.tsx",
+  "src/components/brand/try-on-kept.tsx",
+  "src/components/brand/try-on-zoom.tsx",
   "src/components/brand/try-on-waiting.tsx",
   "src/components/headless/use-try-on.ts",
+  "src/components/headless/try-on-track.ts",
+  "src/components/headless/try-on-share.ts",
   "src/components/headless/try-on-session.tsx",
   "src/components/headless/try-on-model.ts",
   "src/components/headless/try-on-disclosure.ts",
@@ -67,8 +71,9 @@ test("no try-on code has a durable persistence path", () => {
     [/localStorage|sessionStorage|indexedDB|caches\.open|document\.cookie/, "browser storage"],
     [/console\.(log|info|debug|warn|error)/, "ad-hoc logging"],
   ];
-  // The runtime wiring is the one file that legitimately reads (never writes) catalog data.
-  const databaseExempt = new Set(["src/commerce/try-on-runtime.ts"]);
+  // The runtime wiring and the listing resolver are the files that legitimately read (never write)
+  // catalog data; `the runtime wiring only reads the catalog` below pins both to reads.
+  const databaseExempt = new Set(["src/commerce/try-on-runtime.ts", "src/commerce/try-on-listing.ts"]);
   for (const path of ALL_TRY_ON_FILES) {
     for (const [pattern, label] of forbidden) {
       if (label === "database" && databaseExempt.has(path)) continue;
@@ -137,11 +142,14 @@ test("Flow worker dependency boundary is frozen instead of resolving mutable lat
   assert.match(lock, /^version = "0\.82\.1"$/m);
 });
 
-test("the runtime wiring only reads the catalog: no write call on any Prisma model", () => {
-  assert.doesNotMatch(
-    code("src/commerce/try-on-runtime.ts"),
-    /\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\(|\$executeRaw|\$queryRaw/,
-  );
+test("the runtime wiring and the listing resolver only read the catalog: no write call on any Prisma model", () => {
+  for (const path of ["src/commerce/try-on-runtime.ts", "src/commerce/try-on-listing.ts"]) {
+    assert.doesNotMatch(
+      code(path),
+      /\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\(|\$executeRaw|\$queryRaw/,
+      path,
+    );
+  }
 });
 
 test("storageUri is never set: the request builder does not mention it", () => {
@@ -152,18 +160,24 @@ test("credentials stay server-side: no client file imports provider, auth or run
   for (const path of CLIENT_TRY_ON_FILES) {
     const text = code(path);
     assert.doesNotMatch(text, /vertex-try-on|google-auth-library|try-on-runtime|process\.env/, path);
-    // The only server-side module a client file may reach is the constants-only policy file.
+    // The only server-side modules a client file may reach are the constants-only policy file and
+    // the browser-event vocabulary, which is pure and imports nothing but the policy (pinned below).
     const specifiers = [...text.matchAll(/from "([^"]+)"/g)].map((match) => match[1]!);
     for (const specifier of specifiers.filter((value) => /commerce|integrations|operations|\/db\//.test(value))) {
-      assert.match(specifier, /try-on-policy(\.ts)?$/, `${path} imports ${specifier}`);
+      assert.match(specifier, /try-on-(policy|client-events)(\.ts)?$/, `${path} imports ${specifier}`);
     }
   }
   for (const path of CLIENT_TRY_ON_FILES.filter((file) =>
-    /try-on-(dialog|dock|session|waiting)\.tsx$|use-try-on\.ts$/.test(file),
+    /try-on-(dialog|dock|session|waiting|result|kept|zoom)\.tsx$|use-try-on\.ts$/.test(file),
   )) {
     assert.match(code(path), /^"use client";/m, path);
   }
   assert.doesNotMatch(code("src/commerce/try-on-policy.ts"), /^import\s/m);
+  // The browser-event vocabulary is shared with the browser, so it may reach nothing but the policy.
+  const clientEventImports = [...code("src/commerce/try-on-client-events.ts").matchAll(/from "([^"]+)"/g)].map(
+    (match) => match[1]!,
+  );
+  assert.deepEqual(clientEventImports, ["./try-on-policy.ts"]);
 });
 
 test("no browser-exposed or build-time configuration carries Google credentials or the try-on switch", () => {

@@ -18,6 +18,7 @@ import {
 import { COLLECTION_PAGE_SIZE, isCollectionRouteReachable } from "./collection-first-page.ts";
 import { sealRoute, type RouteHandle } from "./core.tsx";
 import { readPublishedCollection } from "./metadata/collection.ts";
+import { resolveTryOnListingSlugs } from "@/commerce/try-on-listing";
 
 /** The collection detail's loader: the definition, its page of products, and the breadcrumb graph. */
 
@@ -83,6 +84,8 @@ export async function loadCollectionRoute({
     startIndex: (page - 1) * COLLECTION_PAGE_SIZE,
   });
 
+  const tryOnSlugs = await resolveTryOnListingSlugs(ordered);
+
   return sealRoute({
     data: buildCollectionViewModel({
       slug: collection.slug,
@@ -104,6 +107,7 @@ export async function loadCollectionRoute({
       pageSize: COLLECTION_PAGE_SIZE,
       pricingRule,
       selectEventBySlug: listTracking.selectEventBySlug,
+      tryOnSlugs,
     }),
     refreshAfterMs,
     trackingEvent: listTracking.listEvent,

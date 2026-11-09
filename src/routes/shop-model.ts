@@ -109,6 +109,8 @@ export type ShopViewModelInput = Readonly<{
   pageSize: number;
   pricingRule?: StorefrontPricingRule;
   selectEventBySlug: ReadonlyMap<string, TrackingEvent>;
+  /** Slugs of the listed products that offer virtual try-on; absent shows no try-on mark. */
+  tryOnSlugs?: ReadonlySet<string>;
 }>;
 
 /** A facet slug as a heading: `ao-so-mi` reads `Ao So Mi`. */
@@ -158,6 +160,7 @@ export function buildShopViewModel(input: ShopViewModelInput): ShopViewModel {
             flashSale: product.flashSale,
             pricingRule: input.pricingRule,
             selectEvent: input.selectEventBySlug.get(product.slug) ?? null,
+            tryOn: input.tryOnSlugs?.has(product.slug) === true,
           }),
         }),
       ),

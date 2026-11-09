@@ -15,7 +15,9 @@ import { compressTryOnPhoto } from "./try-on-photo.ts";
 import {
   TRY_ON_DONE_TITLE_PREFIX,
   TRY_ON_NETWORK_FAILURE_MESSAGE,
+  TRY_ON_REFUND_NOTE,
   isFinalForPhoto,
+  isTryOnAgeAllowed,
   parseTryOnFailureReason,
   tryOnFailureMessage,
   type TryOnAgeState,
@@ -36,9 +38,16 @@ import {
  * has been counted. `start` refuses a second job while one is loading; the dialog says why.
  *
  * Privacy is unchanged: everything is in memory as blob URLs, revoked when the job is replaced or
- * discarded; nothing is written to browser storage. A result the shopper has seen is discarded when
- * they close what showed it, as closing the dialog always did; only a result they have not seen yet
- * waits for them, and the dock offers to discard it.
+ * discarded; nothing is written to browser storage. A result the shopper has not seen yet waits for
+ * them, and the dock offers to discard it.
+ *
+ * Kept results (amendment 2026-11-09). A result the shopper has seen used to vanish the moment they
+ * closed the dialog or pressed "Tạo lại", so two garments could never be compared. The last few are
+ * now kept in this tab's memory (`kept`): the picture only, never the shopper's own photo, as a blob
+ * URL that is revoked when it is pushed out, removed, or the tab goes. Still nothing in browser
+ * storage, so a reload or a closed tab drops them, which the dialog says. The age the shopper stated
+ * is remembered the same way (`rememberedAge`) so it is not asked again on every opening; the
+ * likeness acknowledgement is, as before, asked for every generation.
  */
 
 export type TryOnResult = Readonly<{ url: string; mimeType: "image/png" | "image/jpeg" | "image/webp" }>;
@@ -60,11 +69,24 @@ export type TryOnJob = Readonly<{
   result: TryOnResult | null;
   errorMessage: string | null;
   errorReason: TryOnFailureReason | null;
+  /** The attempt this request spent was given back by the server (the failure was ours). */
+  refunded: boolean;
   /** The provider refused this photo for good: the shopper must choose another. */
   photoRefused: boolean;
   /** Whether the outcome has been on screen; until then the dock and the tab title point to it. */
   seen: boolean;
 }>;
+
+/** A finished picture the shopper has looked at and may want to compare with the next one. */
+export type TryOnKeptResult = Readonly<{
+  id: number;
+  productSlug: string;
+  productName: string;
+  result: TryOnResult;
+}>;
+
+/** How many finished pictures a tab keeps; the oldest goes first. */
+export const TRY_ON_KEPT_LIMIT = 4;
 
 export type TryOnJobInput = Readonly<{
   productSlug: string;
@@ -84,8 +106,18 @@ export type TryOnSession = Readonly<{
    * can reset itself (a component that has unmounted meanwhile simply ignores it).
    */
   start: (input: TryOnJobInput, onSettled?: (job: TryOnJob) => void) => boolean;
-  /** Drops a settled job and its images. A loading job is never dropped: its attempt is spent. */
-  discard: (id: number) => void;
+  /**
+   * Drops a settled job and its images. A loading job is never dropped: its attempt is spent.
+   * `keep` moves a successful picture to `kept` instead of destroying it (the shopper's own photo
+   * is released either way).
+   */
+  discard: (id: number, options?: Readonly<{ keep?: boolean }>) => void;
+  /** Finished pictures kept for comparison, newest first. */
+  kept: readonly TryOnKeptResult[];
+  removeKept: (id: number) => void;
+  /** The age the shopper stated earlier in this tab, or `null`; never the one that blocks. */
+  rememberedAge: TryOnAgeState | null;
+  rememberAge: (age: TryOnAgeState | null) => void;
   markSeen: (id: number) => void;
   /** A PDP's dialog, for its own product. Returns the unregister function. */
   registerDialog: (productSlug: string, open: JobOpener) => () => void;
@@ -113,7 +145,10 @@ function revokeJob(job: TryOnJob) {
   if (job.result) URL.revokeObjectURL(job.result.url);
 }
 
-type Outcome = Pick<TryOnJob, "status" | "result" | "errorMessage" | "errorReason" | "photoRefused">;
+type Outcome = Pick<
+  TryOnJob,
+  "status" | "result" | "errorMessage" | "errorReason" | "photoRefused" | "refunded"
+>;
 
 async function runJob(input: TryOnJobInput): Promise<Outcome> {
   // Shrunk first (a few hundred ms) so the upload and the model input are small; the original is
@@ -141,14 +176,17 @@ async function runJob(input: TryOnJobInput): Promise<Outcome> {
         errorMessage: null,
         errorReason: null,
         photoRefused: false,
+        refunded: false,
       };
     }
+    const refunded = record.refunded === true;
     return {
       status: "error",
       result: null,
-      errorMessage: tryOnFailureMessage(record.reason),
+      errorMessage: `${tryOnFailureMessage(record.reason)}${refunded ? ` ${TRY_ON_REFUND_NOTE}` : ""}`,
       errorReason: parseTryOnFailureReason(record.reason),
       photoRefused: isFinalForPhoto(record.reason),
+      refunded,
     };
   } catch (error) {
     return {
@@ -157,6 +195,7 @@ async function runJob(input: TryOnJobInput): Promise<Outcome> {
       errorMessage: error instanceof TypeError ? TRY_ON_NETWORK_FAILURE_MESSAGE : tryOnFailureMessage(undefined),
       errorReason: null,
       photoRefused: false,
+      refunded: false,
     };
   }
 }
@@ -200,17 +239,64 @@ export function TryOnSessionProvider({ children }: Readonly<{ children: ReactNod
   const jobRef = useRef<TryOnJob | null>(null);
   const nextIdRef = useRef(1);
   const dialogsRef = useRef(new Map<string, JobOpener>());
+  const [kept, setKept] = useState<readonly TryOnKeptResult[]>([]);
+  const keptRef = useRef<readonly TryOnKeptResult[]>([]);
+  const [rememberedAge, setRememberedAge] = useState<TryOnAgeState | null>(null);
 
   const commit = useCallback((next: TryOnJob | null) => {
     jobRef.current = next;
     setJob(next);
   }, []);
 
+  const commitKept = useCallback((next: readonly TryOnKeptResult[]) => {
+    keptRef.current = next;
+    setKept(next);
+  }, []);
+
+  /**
+   * Lets go of a settled job. A successful picture is kept (newest first, oldest pushed out and
+   * revoked) when `keep` is set; the shopper's own photo is always released.
+   */
+  const retire = useCallback(
+    (job: TryOnJob, keep: boolean) => {
+      if (keep && job.status === "success" && job.result) {
+        if (job.photoUrl) URL.revokeObjectURL(job.photoUrl);
+        const entry: TryOnKeptResult = {
+          id: job.id,
+          productSlug: job.productSlug,
+          productName: job.productName,
+          result: job.result,
+        };
+        const next = [entry, ...keptRef.current.filter((item) => item.id !== job.id)];
+        for (const dropped of next.slice(TRY_ON_KEPT_LIMIT)) URL.revokeObjectURL(dropped.result.url);
+        commitKept(next.slice(0, TRY_ON_KEPT_LIMIT));
+        return;
+      }
+      revokeJob(job);
+    },
+    [commitKept],
+  );
+
+  const removeKept = useCallback(
+    (id: number) => {
+      const target = keptRef.current.find((item) => item.id === id);
+      if (!target) return;
+      URL.revokeObjectURL(target.result.url);
+      commitKept(keptRef.current.filter((item) => item.id !== id));
+    },
+    [commitKept],
+  );
+
+  const rememberAge = useCallback((age: TryOnAgeState | null) => {
+    setRememberedAge(age !== null && isTryOnAgeAllowed(age) ? age : null);
+  }, []);
+
   const start = useCallback(
     (input: TryOnJobInput, onSettled?: (job: TryOnJob) => void) => {
       const current = jobRef.current;
       if (current?.status === "loading") return false;
-      if (current) revokeJob(current);
+      // A picture replaced by the next attempt is exactly what the shopper wants to compare it with.
+      if (current) retire(current, true);
 
       const id = nextIdRef.current++;
       commit({
@@ -225,6 +311,7 @@ export function TryOnSessionProvider({ children }: Readonly<{ children: ReactNod
         result: null,
         errorMessage: null,
         errorReason: null,
+        refunded: false,
         photoRefused: false,
         seen: false,
       });
@@ -247,17 +334,17 @@ export function TryOnSessionProvider({ children }: Readonly<{ children: ReactNod
       });
       return true;
     },
-    [commit],
+    [commit, retire],
   );
 
   const discard = useCallback(
-    (id: number) => {
+    (id: number, options?: Readonly<{ keep?: boolean }>) => {
       const current = jobRef.current;
       if (current === null || current.id !== id || current.status === "loading") return;
-      revokeJob(current);
+      retire(current, options?.keep === true);
       commit(null);
     },
-    [commit],
+    [commit, retire],
   );
 
   const markSeen = useCallback(
@@ -285,13 +372,25 @@ export function TryOnSessionProvider({ children }: Readonly<{ children: ReactNod
   // The provider lives as long as the tab; this only runs on a full teardown.
   useEffect(() => () => {
     if (jobRef.current) revokeJob(jobRef.current);
+    for (const item of keptRef.current) URL.revokeObjectURL(item.result.url);
   }, []);
 
   useReadyNotice(job);
 
   const session = useMemo<TryOnSession>(
-    () => ({ job, start, discard, markSeen, registerDialog, openJob }),
-    [job, start, discard, markSeen, registerDialog, openJob],
+    () => ({
+      job,
+      start,
+      discard,
+      kept,
+      removeKept,
+      rememberedAge,
+      rememberAge,
+      markSeen,
+      registerDialog,
+      openJob,
+    }),
+    [job, start, discard, kept, removeKept, rememberedAge, rememberAge, markSeen, registerDialog, openJob],
   );
 
   return <TryOnSessionContext.Provider value={session}>{children}</TryOnSessionContext.Provider>;

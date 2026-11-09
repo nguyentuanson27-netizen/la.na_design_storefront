@@ -10,7 +10,7 @@ import type {
   TryOnUploadSlot,
 } from "./try-on-rate-limit.ts";
 import { parseTryOnRequest } from "./try-on-request.ts";
-import type { TryOnFailureReason, TryOnImageMimeType } from "./try-on-policy.ts";
+import { isRefundedTryOnReason, type TryOnFailureReason, type TryOnImageMimeType } from "./try-on-policy.ts";
 
 /**
  * One virtual try-on generation, start to finish (spec §7).
@@ -26,6 +26,9 @@ import type { TryOnFailureReason, TryOnImageMimeType } from "./try-on-policy.ts"
  * is made before anything is sent and never revisited, so one request reaches one provider: a Flow
  * failure is never retried on Vertex (a Flow timeout may still finish and spend; a safety refusal
  * must stay final). What Flow does with the requests it gets feeds its health in the gate.
+ *
+ * An attempt spent on a request that then fails for a reason of ours (busy, provider down, timeout,
+ * garment photo unavailable) is given back — see `handle`, `TRY_ON_REFUNDED_REASONS`.
  *
  * Every step that can reject runs before the next costlier one, and nothing before the last step can
  * reach the provider. The service is I/O-free: product lookup, the image fetch, the provider call, the
@@ -43,6 +46,8 @@ export type TryOnServiceDependencies = Readonly<{
   readConfig: () => TryOnRuntimeConfig;
   limiter: Readonly<{
     consumeAttempt: (identity: TryOnIdentity) => TryOnAttemptDecision;
+    /** Gives back the daily attempt of a request that failed for a reason on our side. */
+    refundAttempt: (identity: TryOnIdentity) => void;
     startUpload: () => TryOnUploadSlot;
     startGeneration: () => TryOnGenerationSlot;
   }>;
@@ -74,7 +79,12 @@ export type TryOnServiceDependencies = Readonly<{
 
 export type TryOnServiceResult =
   | Readonly<{ ok: true; image: Image }>
-  | Readonly<{ ok: false; reason: TryOnFailureReason }>;
+  | Readonly<{
+      ok: false;
+      reason: TryOnFailureReason;
+      /** The attempt this request spent was given back: the failure was ours (`TRY_ON_REFUNDED_REASONS`). */
+      refunded?: true;
+    }>;
 
 export type TryOnServiceInput = Readonly<{
   /** A signed-in member (account id) or a guest (pseudonymous client key, never a raw IP). */
@@ -127,7 +137,28 @@ export function createTryOnService(deps: TryOnServiceDependencies) {
     if (down) deps.emit({ name: "try_on.primary_marked_down", provider: "flow", cause: down.cause });
   }
 
-  async function handle({ identity, readForm }: TryOnServiceInput): Promise<TryOnServiceResult> {
+  /**
+   * Runs the request and gives the shopper's attempt back when it was spent and the failure is one
+   * of ours. Done once, here, rather than at each of the many return points below, so a new failure
+   * path cannot forget it or refund twice.
+   */
+  async function handle(input: TryOnServiceInput): Promise<TryOnServiceResult> {
+    let spent = false;
+    const result = await run(input, () => {
+      spent = true;
+    });
+    if (spent && !result.ok && isRefundedTryOnReason(result.reason)) {
+      deps.limiter.refundAttempt(input.identity);
+      deps.emit({ name: "try_on.attempt_refunded", reason: result.reason });
+      return { ...result, refunded: true };
+    }
+    return result;
+  }
+
+  async function run(
+    { identity, readForm }: TryOnServiceInput,
+    onAttemptSpent: () => void,
+  ): Promise<TryOnServiceResult> {
     const startedAt = now();
     let productSlug: string | undefined;
     let releaseSlot: (() => void) | undefined;
@@ -148,6 +179,7 @@ export function createTryOnService(deps: TryOnServiceDependencies) {
         deps.emit({ name: "try_on.rate_limited", reason: attempt.reason });
         return { ok: false, reason: attempt.reason };
       }
+      onAttemptSpent();
 
       // The upload slot spans receiving and validating the body and nothing after it: that is the
       // phase whose memory and CPU an untrusted upload costs, and holding it through the slower

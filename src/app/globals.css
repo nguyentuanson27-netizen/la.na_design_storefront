@@ -3729,3 +3729,68 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     .pdp-action-chip { gap: 0.5rem; padding-inline: 1rem; font-size: 0.875rem; }
   }
 }
+
+/*
+ * "Thử lên người" on the product photograph (try-on-dialog.tsx, `BrandTryOnMediaButton`). Bottom
+ * left of the stage: the right edge belongs to the photo counter and the product video tile. Above
+ * the gallery's swipe track and below the video (z-index 4), and a real 44px target.
+ */
+.pdp-stage__overlay-action {
+  position: absolute;
+  z-index: 3;
+  left: 1rem;
+  bottom: 1rem;
+}
+
+.pdp-tryon-media-button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.875rem;
+  border: 1px solid rgba(59, 34, 25, 0.35);
+  background: rgba(250, 247, 242, 0.92);
+  color: #3b2219;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.pdp-tryon-media-button:hover {
+  background: #faf7f2;
+  border-color: #3b2219;
+}
+
+/* A small try-on mark on a product card (product-card.tsx): bottom right of the photograph. */
+.product-tryon-mark {
+  position: absolute;
+  z-index: 3;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  display: inline-flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(59, 34, 25, 0.3);
+  border-radius: 999px;
+  background: rgba(250, 247, 242, 0.92);
+  color: #3b2219;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  pointer-events: auto;
+}
+
+.product-tryon-mark:hover {
+  background: #faf7f2;
+  border-color: #3b2219;
+}
+
+/* The dense listing view packs more cards per row, so the try-on mark shrinks with its card. */
+.listing-product-grid[data-view="small"] .product-tryon-mark {
+  right: 0.25rem;
+  bottom: 0.25rem;
+  width: 2.25rem;
+  height: 2.25rem;
+}

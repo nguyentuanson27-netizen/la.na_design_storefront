@@ -421,6 +421,11 @@ async function fillThroughConfirmation(
   await parts(dialog).acknowledge.check();
 }
 
+/** Step 1 to step 2 with a fresh photo (the age may already be chosen). */
+async function photoStep(dialog: Locator) {
+  await choosePhotoAndContinue(dialog);
+}
+
 // --- eligibility ------------------------------------------------------------------------------
 
 test("an eligible apparel PDP offers Thử đồ at phone and desktop widths, beside the size guide", async ({
@@ -622,20 +627,31 @@ test("moving between steps moves focus to the new step's heading, and the steps 
   await expect(adult).toBeChecked();
 });
 
-test("closing discards the photo, the choices and the result", async ({ page }) => {
+test("closing discards the photo and the result on screen, keeps the picture aside and remembers the age", async ({
+  page,
+}) => {
   const dialog = await openTryOn(page);
-  const { result, preview, next, generate } = parts(dialog);
+  const { result, preview, next, generate, adult, acknowledge } = parts(dialog);
   await fillThroughConfirmation(dialog);
   await generate.click();
   await expect(result).toBeVisible();
 
   await page.keyboard.press("Escape");
   await triggerOf(page).click();
-  // Back at step 1 with nothing carried over.
+  // Back at step 1 with the form empty: no photo, no result on screen, nothing to continue with.
   await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeVisible();
   await expect(preview).toHaveCount(0);
   await expect(result).toHaveCount(0);
   await expect(next).toBeDisabled();
+
+  // The finished picture is kept in this tab for comparison (amendment 2026-11-09), and the age the
+  // shopper stated is not asked again; the acknowledgement still is.
+  const kept = dialog.getByRole("region", { name: "Ảnh đã thử trước đó" });
+  await expect(kept.getByRole("button", { name: /^Xem lại ảnh thử/ })).toHaveCount(1);
+  await expect(kept).toContainText("Chỉ lưu tạm trên trình duyệt này");
+  await photoStep(dialog);
+  await expect(adult).toBeChecked();
+  await expect(acknowledge).not.toBeChecked();
 });
 
 // --- upload ------------------------------------------------------------------------------------
@@ -1095,7 +1111,8 @@ test("a provider failure shows a safe message, goes back to confirm with nothing
   await generate.click();
 
   await expect(dialog.getByRole("heading", { name: "Chưa tạo được ảnh" })).toBeVisible();
-  await expect(alert).toHaveText("Chưa tạo được ảnh thử đồ. Nàng thử lại nhé.");
+  // A failure of ours is given back, and the shopper is told so (amendment 2026-11-09).
+  await expect(alert).toHaveText("Chưa tạo được ảnh thử đồ. Nàng thử lại nhé. La.na đã hoàn lại lượt thử cho nàng.");
   await expect(alert).not.toContainText(/fixture|upstream|500|projects\//i);
   await assertPageQuality(page);
 
@@ -1389,7 +1406,10 @@ test("a guest told to log in sees the sign-in link on the result step, and the d
   const signIn = dialog.getByRole("link", { name: "Đăng ký hoặc đăng nhập" });
   await expect(signIn).toBeVisible();
   // It sends the shopper back to this very product once they have signed in.
-  await expect(signIn).toHaveAttribute("href", `/login?next=${encodeURIComponent(`/shop/${slugs.eligible}`)}`);
+  await expect(signIn).toHaveAttribute(
+    "href",
+    `/login?next=${encodeURIComponent(`/shop/${slugs.eligible}?thu-do=1`)}`,
+  );
   await assertPageQuality(page);
 
   await page.keyboard.press("Escape");
@@ -1397,4 +1417,254 @@ test("a guest told to log in sees the sign-in link on the result step, and the d
   await addToBagAndExpectConfirmation(page);
   expect(watched.pageErrors).toEqual([]);
   expect(unexpectedConsoleErrors(watched, { allowTryOnFailure: true })).toEqual([]);
+});
+
+
+// --- amendment 2026-11-09: conversion, measurement, fairness -------------------------------------
+
+test("the first step carries none of the removed notes and its main button is in view without scrolling", async ({
+  page,
+}) => {
+  const dialog = await openTryOn(page);
+  const { next } = parts(dialog);
+  await expect(dialog.getByText("Chỉ 3 bước nhẹ nhàng")).toHaveCount(0);
+  await expect(dialog.getByText(/Thử đồ bằng AI là tính năng mới/)).toHaveCount(0);
+  await expect(dialog.getByText(/trên ảnh của nàng\. Kết quả do AI tạo/)).toHaveCount(0);
+  await expect(dialog.getByText(/Nàng có góp ý gì/)).toHaveCount(0);
+  // The footer holds the step's main button at the bottom of the sheet.
+  await expect(next).toBeInViewport({ ratio: 1 });
+  await assertPageQuality(page);
+});
+
+test("the main button stays reachable on a short phone while the step above it scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 520 });
+  const dialog = await openTryOn(page);
+  const { next, photo } = parts(dialog);
+  await photo.setInputFiles(jpegPhoto());
+  await expect(next).toBeInViewport({ ratio: 1 });
+  await expect(next).toBeEnabled();
+});
+
+test("a result offers choosing a size first: the dialog closes and the purchase panel comes into view", async ({
+  page,
+}) => {
+  const watched = await watch(page);
+  const dialog = await openTryOn(page);
+  const { generate, result } = parts(dialog);
+  await fillThroughConfirmation(dialog);
+  await generate.click();
+  await expect(result).toBeVisible();
+
+  const chooseSize = dialog.getByRole("button", { name: "Chọn size & thêm vào giỏ", exact: true });
+  await expect(chooseSize).toBeInViewport({ ratio: 1 });
+  await chooseSize.click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("region", { name: "Mua sản phẩm" })).toBeInViewport();
+  expect(watched.pageErrors).toEqual([]);
+});
+
+test("a failure of ours gives the attempt back: the allowance on the first step is whole again", async ({
+  page,
+}) => {
+  const dialog = await openTryOn(page);
+  const { generate, back, alert, changePhoto } = parts(dialog);
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("fail") });
+  await generate.click();
+  await expect(alert).toContainText("La.na đã hoàn lại lượt thử cho nàng.");
+  await back.click();
+  await changePhoto.click();
+  await expect(dialog.getByText(/Hôm nay nàng còn 5\/5 lượt thử đồ miễn phí/)).toBeVisible();
+});
+
+test("a safety block is not given back: the attempt stays spent and nothing claims otherwise", async ({ page }) => {
+  const dialog = await openTryOn(page);
+  const { generate } = parts(dialog);
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("safety") });
+  await generate.click();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeVisible();
+  await expect(dialog.getByRole("alert")).not.toContainText("hoàn lại lượt");
+  await expect(dialog.getByText(/Hôm nay nàng còn 4\/5 lượt thử đồ miễn phí/)).toBeVisible();
+});
+
+test("the picture opens full screen, switches to the shopper's own photo, and Escape closes only the zoom", async ({
+  page,
+}) => {
+  const dialog = await openTryOn(page);
+  const { generate, result } = parts(dialog);
+  await fillThroughConfirmation(dialog);
+  await generate.click();
+  await expect(result).toBeVisible();
+
+  await dialog.getByRole("button", { name: "Phóng to ảnh thử đồ" }).click();
+  const zoom = page.getByRole("dialog", { name: "Xem ảnh phóng to" });
+  await expect(zoom).toBeVisible();
+  const image = zoom.getByRole("img").first();
+  const fitted = await image.evaluate((element) => element.getBoundingClientRect().width);
+  await image.click();
+  await expect
+    .poll(() => image.evaluate((element) => element.getBoundingClientRect().width))
+    .toBeGreaterThan(fitted * 1.5);
+
+  await zoom.getByRole("button", { name: "Ảnh gốc" }).click();
+  await expect(zoom.getByRole("button", { name: "Ảnh gốc" })).toHaveAttribute("aria-pressed", "true");
+  await expect(zoom.getByRole("link", { name: "Tải ảnh" })).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(zoom).toBeHidden();
+  await expect(dialog).toBeVisible();
+  await expect(result).toBeVisible();
+});
+
+test("a thumb under the picture is counted once per choice and changes nothing else", async ({ page }) => {
+  const dialog = await openTryOn(page);
+  const { generate, result } = parts(dialog);
+  await fillThroughConfirmation(dialog);
+  await generate.click();
+  await expect(result).toBeVisible();
+
+  const reported = page.waitForRequest(
+    (request) =>
+      request.url().endsWith("/api/try-on/events") &&
+      request.method() === "POST" &&
+      (request.postData() ?? "").includes('"feedback"'),
+  );
+  const up = dialog.getByRole("button", { name: /Giống thật/ });
+  await up.click();
+  const body = JSON.parse((await reported).postData() ?? "{}");
+  expect(body).toEqual({ event: "feedback", productSlug: slugs.eligible, rating: "up" });
+  await expect(up).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByText(/Cảm ơn nàng/)).toBeVisible();
+});
+
+test("share is offered only where the browser can share files, and hands over the picture", async ({ page }) => {
+  // Desktop Chromium on Linux cannot share files: no button.
+  const plain = await openTryOn(page);
+  await fillThroughConfirmation(plain);
+  await parts(plain).generate.click();
+  await expect(parts(plain).result).toBeVisible();
+  await expect(plain.getByRole("button", { name: "Chia sẻ", exact: true })).toHaveCount(0);
+
+  await asNewGuest(page);
+  await page.addInitScript(() => {
+    const shared: Array<{ files: number; name: string }> = [];
+    Object.assign(window, { __shared: shared });
+    Object.defineProperty(navigator, "canShare", { value: () => true, configurable: true });
+    Object.defineProperty(navigator, "share", {
+      value: async (data: { files?: File[] }) => {
+        shared.push({ files: data.files?.length ?? 0, name: data.files?.[0]?.name ?? "" });
+      },
+      configurable: true,
+    });
+  });
+  const dialog = await openTryOn(page);
+  await fillThroughConfirmation(dialog);
+  await parts(dialog).generate.click();
+  await expect(parts(dialog).result).toBeVisible();
+  await dialog.getByRole("button", { name: "Chia sẻ", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __shared: unknown[] }).__shared.length))
+    .toBe(1);
+  const [sent] = await page.evaluate(() => (window as unknown as { __shared: Array<{ files: number; name: string }> }).__shared);
+  expect(sent).toMatchObject({ files: 1 });
+  expect(sent!.name).toMatch(new RegExp(`^thu-do-${slugs.eligible}\\.(png|jpg|webp)$`));
+});
+
+test("Thử lên người sits on the product photograph and opens the same dialog", async ({ page }) => {
+  await page.goto(`${ENABLED_URL}/shop/${slugs.eligible}`, { waitUntil: "networkidle" });
+  const onPhoto = page.getByRole("button", { name: "Thử lên người", exact: true });
+  await expect(onPhoto).toBeVisible();
+  await onPhoto.click();
+  await expect(dialogOf(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialogOf(page)).toBeHidden();
+  // Focus returns to the control that was used.
+  await expect(onPhoto).toBeFocused();
+});
+
+test("?thu-do=1 opens the dialog once and leaves no parameter behind; a plain visit stays closed", async ({
+  page,
+}) => {
+  await page.goto(`${ENABLED_URL}/shop/${slugs.eligible}?thu-do=1`, { waitUntil: "networkidle" });
+  await expect(dialogOf(page)).toBeVisible();
+  expect(new URL(page.url()).searchParams.has("thu-do")).toBe(false);
+  await page.keyboard.press("Escape");
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(dialogOf(page)).toBeHidden();
+});
+
+test("an eligible product's card in a listing carries the try-on mark; the others do not", async ({ page }) => {
+  await page.goto(`${ENABLED_URL}/shop`, { waitUntil: "networkidle" });
+  const eligibleCard = page.locator(`article:has(a[href="/shop/${slugs.eligible}"])`);
+  await expect(eligibleCard).toHaveCount(1);
+  const mark = eligibleCard.getByRole("link", { name: `Thử đồ AI với ${PRODUCT_NAME}` });
+  await expect(mark).toHaveAttribute("href", `/shop/${slugs.eligible}?thu-do=1`);
+  // Beside the card's own link, never inside it.
+  await expect(eligibleCard.locator("a a")).toHaveCount(0);
+  const accessoryCard = page.locator(`article:has(a[href="/shop/${slugs.accessory}"])`);
+  if ((await accessoryCard.count()) > 0) {
+    await expect(accessoryCard.getByRole("link", { name: /^Thử đồ AI với/ })).toHaveCount(0);
+  }
+  await mark.click();
+  await expect(dialogOf(page)).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(`/shop/${slugs.eligible}`);
+});
+
+test("with try-on off, listing cards carry no mark", async ({ page }) => {
+  await page.goto(`${DISABLED_URL}/shop`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("link", { name: /^Thử đồ AI với/ })).toHaveCount(0);
+});
+
+test("the dialog reports its steps through the dataLayer and the events endpoint, with no image in either", async ({
+  page,
+}) => {
+  const reported: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/try-on/events") && request.method() === "POST") {
+      reported.push(request.postData() ?? "");
+    }
+  });
+  const dialog = await openTryOn(page);
+  await fillThroughConfirmation(dialog);
+  await parts(dialog).generate.click();
+  await expect(parts(dialog).result).toBeVisible();
+
+  await expect.poll(() => reported.length).toBeGreaterThanOrEqual(5);
+  const events = reported.map((body) => JSON.parse(body) as { event: string });
+  expect(events.map((entry) => entry.event)).toEqual(
+    expect.arrayContaining(["open", "photo_selected", "continue", "generate", "result_shown"]),
+  );
+  for (const body of reported) expect(body.length).toBeLessThan(200);
+  const layer = await page.evaluate(() =>
+    ((window as unknown as { dataLayer?: Array<{ event?: string }> }).dataLayer ?? [])
+      .map((entry) => entry.event)
+      .filter((name) => typeof name === "string" && name.startsWith("try_on_")),
+  );
+  expect(layer).toEqual(expect.arrayContaining(["try_on_open", "try_on_generate", "try_on_result_shown"]));
+});
+
+test("another product's try-on still being made is announced on the first step, with a way to it", async ({
+  page,
+}) => {
+  // A generation for one product, started from its page and left running while the shopper moves on
+  // inside the app: the session provider (root layout) keeps it, so the other page's dialog hears of it.
+  const first = await openTryOn(page, ENABLED_URL, slugs.eligible);
+  const photo = { ...jpegPhoto("linger") };
+  await fillThroughConfirmation(first, { photo });
+  await parts(first).generate.click();
+  await first.getByRole("button", { name: "Xem tiếp sản phẩm trong lúc chờ", exact: true }).click();
+  await expect(first).toBeHidden();
+
+  await page.evaluate((href) => {
+    const next = (window as unknown as { next?: { router?: { push: (to: string) => void } } }).next;
+    next?.router?.push(href);
+  }, `/shop/${slugs.webpFirst}`);
+  await expect(page).toHaveURL(new RegExp(`/shop/${slugs.webpFirst}$`));
+  await triggerOf(page).click();
+  const dialog = dialogOf(page);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(`Đang tạo ảnh thử đồ cho ${PRODUCT_NAME}.`)).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "Xem ảnh đang tạo" })).toHaveAttribute(
+    "href",
+    `/shop/${slugs.eligible}`,
+  );
 });
