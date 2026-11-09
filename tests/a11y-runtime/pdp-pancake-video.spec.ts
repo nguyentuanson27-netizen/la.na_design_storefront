@@ -132,6 +132,19 @@ for (const width of [320, 390, 768, 1024, 1440]) {
       await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
     } else {
       expect(t.y + t.height).toBeLessThanOrEqual(c.y);
+      // Pinned: once the photograph scrolls on, the frame stays on screen just under the masthead
+      // (88px + 4rem), clear of the counter, instead of scrolling away with the top of the photograph.
+      await page.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), t.y - 100);
+      await expect.poll(async () => Math.round((await tile.boundingBox())!.y)).toBeGreaterThanOrEqual(150);
+      const pinned = (await tile.boundingBox())!;
+      expect(pinned.y).toBeLessThanOrEqual(154);
+      expect(width - pinned.x - pinned.width).toBeCloseTo(16, 0);
+      const pinnedCounter = (await counter.boundingBox())!;
+      expect(pinned.y + pinned.height).toBeLessThanOrEqual(pinnedCounter.y);
+      // It leaves with the photograph rather than reaching the purchase panel.
+      await page.evaluate(() => window.scrollTo({ top: document.querySelector(".pdp-stage")!.getBoundingClientRect().bottom + window.scrollY, behavior: "instant" }));
+      await expect.poll(async () => (await tile.boundingBox())!.y + (await tile.boundingBox())!.height).toBeLessThanOrEqual(0);
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
     }
 
     // Opening carries on from where the preview was, with sound controls, and does not restart.
