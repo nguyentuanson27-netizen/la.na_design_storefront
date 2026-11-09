@@ -329,7 +329,8 @@ test("new-arrivals pagination is canonical and indexable, like every other paged
  * presentation change ever starts widening it.
  */
 test("sale still selects only actively discounted products, through the same loader", () => {
-  const route = read("src/routes/sale.ts");
+  // The loader and the helper it shares with the infinite grid's server action.
+  const route = read("src/routes/sale.ts") + read("src/routes/sale-page.ts");
   assert.match(route, /listConfiguredSalePage/, "the sale read is the sale authority");
   assert.match(
     route,

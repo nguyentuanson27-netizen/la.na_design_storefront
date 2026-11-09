@@ -143,3 +143,33 @@ test("every sale listing draws the shared filter bar without the controls that c
   const panel = read("src/components/brand/plp-filter-panel.tsx");
   assert.match(panel, /offerAvailability \|\| showSaleToggle/, "the toggles' wrapper disappears when neither is offered");
 });
+
+test("every sale listing scrolls infinitely, through its own server action, and keeps a crawlable next link", () => {
+  const body = read("src/components/brand/sale-listing.tsx");
+  assert.match(body, /<PlpInfiniteGrid/, "the sale body draws the shared infinite grid");
+  assert.match(body, /source=\{\{ kind: "sale", saleKind \}\}/, "the grid pages through the sale action");
+  assert.match(body, /nextHref=\{data\.nextHref\}/, "the grid carries the server-rendered next page link (§25)");
+  assert.match(body, /rel="prev"/, "a page opened by URL keeps a crawlable way back");
+  assert.ok(!body.includes("<ListingPagination"), "numbered Trước/Sau paging is replaced by the grid");
+
+  const kinds: Record<string, string> = {
+    "sale/page.tsx": "",
+    "sale/uu-dai/page.tsx": "saleKind={KIND}",
+    "sale/flash-sale/page.tsx": "saleKind={KIND}",
+    "sale/xa-hang-le-size/page.tsx": "saleKind={KIND}",
+  };
+  for (const [page, kindProp] of Object.entries(kinds)) {
+    const source = read(`src/app/${page}`);
+    assert.ok(kindProp === "" || source.includes(kindProp), `${page} tells the grid which campaign kind it pages`);
+    assert.ok(!source.includes("paginationLabel"), `${page} no longer passes a pager label`);
+  }
+
+  const hook = read("src/components/headless/use-plp-infinite-grid.ts");
+  assert.match(hook, /loadSaleNextPageAction/, "the grid hook can page a sale listing");
+
+  const action = read("src/commerce/storefront-sale-actions.ts");
+  assert.match(action, /^"use server";/, "the sale paging endpoint is a server action");
+  assert.match(action, /parseSaleDiscoverySearchParams/, "scrolled pages read filters with the route's own parser");
+  assert.match(action, /describeSalePage/, "scrolled pages are priced and reported like the first page");
+  assert.match(action, /RangeError\("Invalid sale listing"\)/, "an unknown campaign kind never reaches the read");
+});

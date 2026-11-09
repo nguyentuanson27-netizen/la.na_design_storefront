@@ -68,7 +68,7 @@ test("shop, sale, and new-arrivals listing surfaces carry #san-pham on populated
   assert.match(shopPage, /id="san-pham"/, "shop empty state carries #san-pham");
 
   const saleListing = read("src/components/brand/sale-listing.tsx");
-  assert.match(saleListing, /<ListingProductGrid/, "sale uses shared ListingProductGrid");
+  assert.match(saleListing, /<PlpInfiniteGrid/, "sale uses the shared infinite grid, which draws the shared ListingProductGrid");
   assert.match(saleListing, /id="san-pham"/, "sale empty state carries #san-pham");
 
   const newArrivals = read("src/app/new-arrivals/page.tsx");

@@ -170,11 +170,12 @@ export function ListingEmptyState({
 /**
  * Crawlable prev/next paging.
  *
- * The category PLP scrolls infinitely instead, on a server action built around its taxonomy key.
- * The other listings each page on their own query semantics, so they keep server-rendered links --
- * which §25 requires anyway: "SEO/crawlability must not depend solely on client-side scrolling".
- * Sharing the markup is what makes them look like one system; sharing the fetch would mean giving
- * four different queries one cursor.
+ * The category PLP, a collection and the sale listings scroll infinitely instead, each on a server
+ * action built around its own scope (they still carry a real next-page link, which §25 requires:
+ * "SEO/crawlability must not depend solely on client-side scrolling"). The listings left on this
+ * pager page on their own query semantics, so they keep server-rendered links. Sharing the markup
+ * is what makes them look like one system; sharing the fetch would mean giving different queries
+ * one cursor.
  */
 export function ListingPagination({
   label,

@@ -36,7 +36,7 @@ function render(data: FlashSaleViewModel) {
         data={data}
         countLabel="sản phẩm xả hàng lẻ size"
         emptyTitle="Hiện chưa có sản phẩm xả hàng lẻ size."
-        paginationLabel="Phân trang Xả hàng lẻ size"
+        saleKind={KIND}
       />
     </ListingShell>
   );

@@ -1,22 +1,19 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { saleListingCampaignKinds } from "@/commerce/flash-sale-catalog";
 import {
   listConfiguredSaleFacets,
   listConfiguredSalePage,
   readConfiguredNextSaleBoundary,
-  resolveStorefrontPricingRuleForProducts,
 } from "@/commerce/storefront-catalog-runtime";
 import { parseSaleDiscoverySearchParams } from "@/commerce/category-discovery-url";
 import type { StorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
 import { resolveStorefrontPromotionRefresh } from "@/commerce/storefront-promotion-freshness";
-import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { sealRoute, type RouteHandle } from "./core.tsx";
 import { buildFlashSaleViewModel, type FlashSaleViewModel } from "./flash-sale-model.ts";
 import { saleListingByKind, type SaleListingKind } from "../brand/sale.config.ts";
-import { SALE_TITLE } from "./metadata/sale.ts";
+import { describeSalePage, SALE_PAGE_SIZE } from "./sale-page.ts";
 
-export const SALE_PAGE_SIZE = 24;
+export { SALE_PAGE_SIZE };
 export type SaleRouteProps = Readonly<{
   searchParams: Promise<StorefrontDiscoverySearchParams>;
 }>;
@@ -51,38 +48,7 @@ export async function loadSaleRoute(
     throw error;
   }
 
-  // A sub-listing prices its cards -- and reports them -- from its own campaign kind only, so a
-  // product listed on Ưu đãi for its Promotion variant never shows a sibling variant's Flash price.
-  // Xả hàng lẻ size widens that scope to Flash Sale on exactly the Flash variants its read admitted
-  // for proven "lẻ size" stock; everything else there stays Clearance-only.
-  const flashAdmittedVariantIds = new Set(
-    page.products.flatMap((product) =>
-      "admittedFlashVariantIds" in product ? product.admittedFlashVariantIds : [],
-    ),
-  );
-  const pricingRule = await resolveStorefrontPricingRuleForProducts({
-    products: page.products,
-    now,
-    onlyKind:
-      kind === "CLEARANCE"
-        ? (variantId) =>
-            flashAdmittedVariantIds.has(variantId) ? saleListingCampaignKinds(kind) : [kind]
-        : kind,
-  });
-  // The card prices from the variants the filters matched, so the list and select events price the
-  // same variants: a `select_item` must describe the card at the price that was shown.
-  const trackedProducts = page.products.map((product) => {
-    const matched = "matchedVariantIds" in product ? new Set(product.matchedVariantIds) : null;
-    const variants = matched ? product.variants.filter((variant) => matched.has(variant.id)) : [];
-    return variants.length > 0 ? { ...product, variants } : product;
-  });
-  const tracking = buildProductListTracking({
-    products: trackedProducts,
-    list: listing
-      ? { listId: listing.href.slice(1).replaceAll("/", "-"), listName: listing.label }
-      : { listId: "sale", listName: SALE_TITLE },
-    pricingRule,
-  });
+  const { pricingRule, tracking } = await describeSalePage({ page, kind, now });
   const model = buildFlashSaleViewModel({
     basePath: listing?.href ?? "/sale",
     products: page.products,
