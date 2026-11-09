@@ -1,3 +1,4 @@
+import { localizeListing } from "@/commerce/product-translation-runtime";
 import { notFound } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import { connection } from "next/server";
@@ -112,6 +113,7 @@ async function listForCart(
       return fallback({ ...empty, campaignId, retryHref: eligibleHref(campaignId, page) });
     }
     recordUpsellMetric({ event: "hydrate", outcome: "offered", durationMs: Date.now() - hydrating });
+    catalog = await localizeListing(catalog);
     const listing = buildFlashSaleViewModel({
       basePath: "/offers/eligible",
       products: catalog.products,
@@ -241,7 +243,9 @@ export async function fetchEligibleOffersCards({
     if (allowed === null) return none;
     const cards: EligibleOffersNextPageResult["cards"][number][] = [];
     for (let at = 0; at < allowed.length; at += CATALOG_READ_MAX_IDS) {
-      const catalog = await listConfiguredStorefrontListingProductsByIds({ ids: allowed.slice(at, at + CATALOG_READ_MAX_IDS), now });
+      const catalog = await localizeListing(
+        await listConfiguredStorefrontListingProductsByIds({ ids: allowed.slice(at, at + CATALOG_READ_MAX_IDS), now }),
+      );
       cards.push(...buildFlashSaleViewModel({
         basePath: "/offers/eligible",
         products: catalog.products,

@@ -1,5 +1,7 @@
 "use server";
 
+import { getLocale } from "../i18n/server.ts";
+import { localizeHref } from "../i18n/locale.ts";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
@@ -125,7 +127,8 @@ export async function submitGuestCheckoutAction(
         ]).then(() => undefined),
       );
     }
-    redirect(`/checkout/success?order=${encodeURIComponent(result.orderCode)}`);
+    // Back to the confirmation page in the language the shopper ordered in.
+    redirect(localizeHref(`/checkout/success?order=${encodeURIComponent(result.orderCode)}`, await getLocale()));
   }
   return result;
 }

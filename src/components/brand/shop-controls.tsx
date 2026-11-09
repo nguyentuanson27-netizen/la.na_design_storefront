@@ -1,6 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/i18n/link";
+import { useT } from "@/i18n/client";
 import {
   useCallback,
   useEffect,
@@ -82,6 +83,7 @@ export function ShopPriceRange({
   inputClassName,
   separatorClassName,
 }: ShopPriceRangeProps) {
+  const t = useT();
   const [min, setMin] = useState(minPriceVnd !== null ? String(minPriceVnd) : "");
   const [max, setMax] = useState(maxPriceVnd !== null ? String(maxPriceVnd) : "");
   const minRef = useRef<HTMLInputElement>(null);
@@ -97,9 +99,9 @@ export function ShopPriceRange({
 
   useEffect(() => {
     const issue = validateShopPriceRange({ min, max, limitVnd });
-    minRef.current?.setCustomValidity(issue?.field === "min" ? issue.message : "");
-    maxRef.current?.setCustomValidity(issue?.field === "max" ? issue.message : "");
-  }, [min, max, limitVnd]);
+    minRef.current?.setCustomValidity(issue?.field === "min" ? t(issue.message) : "");
+    maxRef.current?.setCustomValidity(issue?.field === "max" ? t(issue.message) : "");
+  }, [min, max, limitVnd, t]);
 
   return (
     <>
@@ -108,8 +110,8 @@ export function ShopPriceRange({
         type="text"
         inputMode="numeric"
         name="minPrice"
-        aria-label="Giá tối thiểu"
-        placeholder="Từ"
+        aria-label={t("Giá tối thiểu")}
+        placeholder={t("Từ")}
         autoComplete="off"
         value={min}
         onChange={(event) => setMin(normalizeShopPriceInput(event.target.value))}
@@ -121,8 +123,8 @@ export function ShopPriceRange({
         type="text"
         inputMode="numeric"
         name="maxPrice"
-        aria-label="Giá tối đa"
-        placeholder="Đến"
+        aria-label={t("Giá tối đa")}
+        placeholder={t("Đến")}
         autoComplete="off"
         value={max}
         onChange={(event) => setMax(normalizeShopPriceInput(event.target.value))}
@@ -156,6 +158,7 @@ export function ShopMobileDrawer({
   selectedColor,
   activeFilterCount,
 }: ShopMobileDrawerProps) {
+  const t = useT();
   const [isOpen, setIsOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -251,7 +254,7 @@ export function ShopMobileDrawer({
             d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
           />
         </svg>
-        <span className={LISTING_ACTION_BAR_CLASSES.filterTriggerLabel}>Bộ lọc</span>
+        <span className={LISTING_ACTION_BAR_CLASSES.filterTriggerLabel}>{t("Bộ lọc")}</span>
         {activeFilterCount > 0 ? (
           <span
             className={`inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#3B2219] text-[0.6rem] font-bold text-[#FAF7F2] ${LISTING_ACTION_BAR_CLASSES.filterBadge}`}
@@ -288,13 +291,13 @@ export function ShopMobileDrawer({
                 id="mobile-shop-drawer-title"
                 className="text-sm font-semibold uppercase tracking-wider text-[#2A1810]"
               >
-                Bộ lọc
+                {t("Bộ lọc")}
               </h2>
               <button
                 ref={closeBtnRef}
                 type="button"
                 onClick={() => setIsOpen(false)}
-                aria-label="Đóng bộ lọc"
+                aria-label={t("Đóng bộ lọc")}
                 className="rounded-full p-2 text-[#3B2219]/70 hover:bg-[#3B2219]/10 hover:text-[#2A1810]"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -318,7 +321,7 @@ export function ShopMobileDrawer({
                       className="h-4 w-4 rounded border-[#3B2219]/30 accent-[#3B2219]"
                     />
                     <span className="text-xs font-semibold uppercase tracking-wider text-[#70584B]">
-                      Chỉ còn hàng
+                      {t("Chỉ còn hàng")}
                     </span>
                   </label>
                 </div>
@@ -326,15 +329,15 @@ export function ShopMobileDrawer({
                 {/* Collection */}
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-[#70584B] mb-2">
-                    Bộ sưu tập
+                    {t("Bộ sưu tập")}
                   </label>
                   <select
                     name="collection"
-                    aria-label="Bộ sưu tập"
+                    aria-label={t("Bộ sưu tập")}
                     defaultValue={selectedCollection}
                     className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
                   >
-                    <option value="">Tất cả bộ sưu tập</option>
+                    <option value="">{t("Tất cả bộ sưu tập")}</option>
                     {collectionFacets.map((col) => (
                       <option key={col.value} value={col.value}>
                         {col.label}
@@ -346,15 +349,15 @@ export function ShopMobileDrawer({
                 {/* Size */}
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-[#70584B] mb-2">
-                    Kích cỡ
+                    {t("Kích cỡ")}
                   </label>
                   <select
                     name="size"
-                    aria-label="Kích cỡ"
+                    aria-label={t("Kích cỡ")}
                     defaultValue={selectedSize}
                     className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
                   >
-                    <option value="">Tất cả kích cỡ</option>
+                    <option value="">{t("Tất cả kích cỡ")}</option>
                     {sizeFacets.map((size) => (
                       <option key={size} value={size}>
                         {size}
@@ -366,18 +369,18 @@ export function ShopMobileDrawer({
                 {/* Color */}
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-[#70584B] mb-2">
-                    Màu sắc
+                    {t("Màu sắc")}
                   </label>
                   <select
                     name="color"
-                    aria-label="Màu sắc"
+                    aria-label={t("Màu sắc")}
                     defaultValue={selectedColor}
                     className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
                   >
-                    <option value="">Tất cả màu sắc</option>
+                    <option value="">{t("Tất cả màu sắc")}</option>
                     {colorFacets.map((col) => (
                       <option key={col} value={col}>
-                        {col}
+                        {t(col)}
                       </option>
                     ))}
                   </select>
@@ -386,7 +389,7 @@ export function ShopMobileDrawer({
                 {/* Price range */}
                 <div>
                   <span className="block text-xs font-semibold uppercase tracking-wider text-[#70584B] mb-2">
-                    Khoảng giá (₫)
+                    {t("Khoảng giá (₫)")}
                   </span>
                   <div className="flex items-center gap-2">
                     <ShopPriceRange
@@ -407,13 +410,13 @@ export function ShopMobileDrawer({
                   onClick={() => setIsOpen(false)}
                   className="btn btn--outline flex-1"
                 >
-                  Xóa bộ lọc
+                  {t("Xóa bộ lọc")}
                 </Link>
                 <button
                   type="submit"
                   className="btn btn--primary flex-1"
                 >
-                  Áp dụng
+                  {t("Áp dụng")}
                 </button>
               </div>
             </div>
@@ -435,6 +438,7 @@ export function ShopActiveFilters({
   collectionFacets,
   filtered,
 }: ShopActiveFiltersProps) {
+  const t = useT();
   if (!filtered) return null;
 
   const activeCollectionFacet = collectionFacets.find(
@@ -445,10 +449,10 @@ export function ShopActiveFilters({
     <div className="mt-4 flex flex-wrap items-center gap-2">
       {discovery.query ? (
         <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
-          <span>Tìm: &ldquo;{discovery.query}&rdquo;</span>
+          <span>{t("Tìm: “{query}”", { query: discovery.query })}</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, query: null, page: 1 })}
-            aria-label="Xóa từ khóa tìm kiếm"
+            aria-label={t("Xóa từ khóa tìm kiếm")}
             className="hover:text-black"
           >
             ✕
@@ -461,7 +465,7 @@ export function ShopActiveFilters({
           <span>BST: {activeCollectionFacet?.label ?? discovery.collection}</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, collection: null, page: 1 })}
-            aria-label="Xóa bộ lọc bộ sưu tập"
+            aria-label={t("Xóa bộ lọc bộ sưu tập")}
             className="hover:text-black"
           >
             ✕
@@ -474,7 +478,7 @@ export function ShopActiveFilters({
           <span>Size: {discovery.size}</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, size: null, page: 1 })}
-            aria-label={`Xóa bộ lọc size ${discovery.size}`}
+            aria-label={t("Xóa bộ lọc size {size}", { size: discovery.size })}
             className="hover:text-black"
           >
             ✕
@@ -484,10 +488,10 @@ export function ShopActiveFilters({
 
       {discovery.color ? (
         <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
-          <span>Màu: {discovery.color}</span>
+          <span>{t("Màu: {color}", { color: discovery.color })}</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, color: null, page: 1 })}
-            aria-label={`Xóa bộ lọc màu ${discovery.color}`}
+            aria-label={t("Xóa bộ lọc màu {color}", { color: discovery.color })}
             className="hover:text-black"
           >
             ✕
@@ -497,10 +501,10 @@ export function ShopActiveFilters({
 
       {discovery.availability === "in-stock" ? (
         <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
-          <span>Chỉ còn hàng</span>
+          <span>{t("Chỉ còn hàng")}</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, availability: null, page: 1 })}
-            aria-label="Xóa bộ lọc chỉ còn hàng"
+            aria-label={t("Xóa bộ lọc chỉ còn hàng")}
             className="hover:text-black"
           >
             ✕
@@ -513,7 +517,7 @@ export function ShopActiveFilters({
           <span>Sale</span>
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, sale: null, page: 1 })}
-            aria-label="Xóa bộ lọc sale"
+            aria-label={t("Xóa bộ lọc sale")}
             className="hover:text-black"
           >
             ✕
@@ -524,7 +528,7 @@ export function ShopActiveFilters({
       {discovery.minPriceVnd !== null || discovery.maxPriceVnd !== null ? (
         <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
           <span>
-            Giá:{" "}
+            {t("Giá:")}{" "}
             {discovery.minPriceVnd !== null
               ? formatFilterPriceVnd(discovery.minPriceVnd)
               : "0₫"}{" "}
@@ -540,7 +544,7 @@ export function ShopActiveFilters({
               maxPriceVnd: null,
               page: 1,
             })}
-            aria-label="Xóa khoảng giá"
+            aria-label={t("Xóa khoảng giá")}
             className="hover:text-black"
           >
             ✕
@@ -552,7 +556,7 @@ export function ShopActiveFilters({
         href="/shop"
         className="text-xs font-medium text-[#70584B] underline underline-offset-2 hover:text-[#3B2219] ml-1"
       >
-        Xóa tất cả
+        {t("Xóa tất cả")}
       </Link>
     </div>
   );

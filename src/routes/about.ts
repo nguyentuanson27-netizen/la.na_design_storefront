@@ -1,4 +1,6 @@
 import { BRAND } from "@/brand";
+import { getI18n } from "@/i18n/server";
+import { localizeHref } from "@/i18n/locale";
 import { buildAboutViewModel, type AboutViewModel } from "./evergreen-model.ts";
 import { ABOUT_DESCRIPTION, ABOUT_FAQ } from "./about-copy.ts";
 import { sealRoute, type RouteHandle } from "./core.tsx";
@@ -11,13 +13,16 @@ export type AboutRouteProps = Readonly<{
 
 export async function loadAboutRoute(): Promise<RouteHandle<AboutViewModel>> {
   const origin = "https://www.lanadesign.vn";
-  const aboutUrl = `${origin}/about`;
+  // Structured data has to say what the page says, in the page's language.
+  const { locale, t } = await getI18n();
+  const aboutUrl = `${origin}${localizeHref("/about", locale)}`;
 
   const aboutPageJsonLd = {
     "@context": "https://schema.org",
     "@type": "AboutPage",
-    name: `Về ${BRAND.identity.name} | Thời Trang Nữ Thiết Kế & Áo Dài Cao Cấp Từ 2022`,
-    description: ABOUT_DESCRIPTION,
+    name: t("Về {name} | Thời Trang Nữ Thiết Kế & Áo Dài Cao Cấp Từ 2022", { name: BRAND.identity.name }),
+    description: t(ABOUT_DESCRIPTION),
+    inLanguage: locale,
     url: aboutUrl,
     mainEntity: {
       "@type": "Organization",
@@ -53,8 +58,8 @@ export async function loadAboutRoute(): Promise<RouteHandle<AboutViewModel>> {
     "@type": "FAQPage",
     mainEntity: ABOUT_FAQ.map(({ question, answer }) => ({
       "@type": "Question",
-      name: question,
-      acceptedAnswer: { "@type": "Answer", text: answer },
+      name: t(question),
+      acceptedAnswer: { "@type": "Answer", text: t(answer) },
     })),
   };
 

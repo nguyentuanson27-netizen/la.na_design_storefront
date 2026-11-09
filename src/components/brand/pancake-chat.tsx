@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { MessengerButton } from "./messenger-button";
+import { useT } from "@/i18n/client";
 
 /** The `<script>` this component inserts, and the element Pancake's script appends to `<body>`. */
 export const PANCAKE_SCRIPT_ID = "pancake-chat-plugin";
@@ -131,6 +132,7 @@ export function PancakeChat({
   messengerHref,
   brandName,
 }: Readonly<{ pageId: string; messengerHref: string | null; brandName: string }>) {
+  const t = useT();
   // Read after hydration only: the server and the first client render both show the facade state.
   const engaged = useSyncExternalStore(subscribeToNothing, readEngaged, readFalse);
   const alreadyRunning = useSyncExternalStore(subscribeToNothing, pancakeChatHasRun, readFalse);
@@ -227,7 +229,7 @@ export function PancakeChat({
   if (phase !== "loading" && (engaged || alreadyRunning || phase === "open")) return null;
 
   return (
-    <aside aria-label="Chat với shop">
+    <aside aria-label={t("Chat với shop")}>
       <button
         type="button"
         className="pancake-chat-facade"

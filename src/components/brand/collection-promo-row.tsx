@@ -1,7 +1,10 @@
+"use client";
+
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 import type { HomePromoRow } from "@/routes/home-model";
+import { useT } from "@/i18n/client";
 
 /**
  * One two-tile collection promo row (spec §7.3 / §7.5). Both rows render through this one component;
@@ -20,6 +23,7 @@ export function CollectionPromoRow({
   row,
   region,
 }: Readonly<{ row: HomePromoRow; region: "promo-a" | "promo-b" }>) {
+  const t = useT();
   return (
     <div className="collection-promo-row" data-homepage-region={region}>
       {row.map((tile) => (
@@ -35,10 +39,10 @@ export function CollectionPromoRow({
             />
           </div>
           <div className="collection-promo__copy">
-            <h2 className="collection-promo__title">{tile.title}</h2>
+            <h2 className="collection-promo__title">{t(tile.title)}</h2>
             <Link className="collection-promo__cta" href={tile.href}>
-              {tile.ctaLabel}
-              <span className="sr-only">: {tile.title}</span>
+              {t(tile.ctaLabel)}
+              <span className="sr-only">: {t(tile.title)}</span>
             </Link>
           </div>
         </article>

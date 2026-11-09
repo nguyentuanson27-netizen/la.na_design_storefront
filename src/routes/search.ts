@@ -1,3 +1,5 @@
+import { getLocale } from "@/i18n/server";
+import { localizeHref } from "@/i18n/locale";
 import { redirect } from "next/navigation";
 
 import { sealRoute, type RouteHandle } from "./core.tsx";
@@ -23,7 +25,7 @@ export type SearchViewModel = Readonly<Record<string, never>>;
 
 export async function loadSearchRoute({ searchParams }: SearchRouteProps): Promise<RouteHandle<SearchViewModel>> {
   const target = searchRedirectTarget(await searchParams);
-  if (target !== null) redirect(target);
+  if (target !== null) redirect(localizeHref(target, await getLocale()));
   return sealRoute({
     data: Object.freeze({}),
     // Nothing here is promotion-priced, so it re-reads on the shared default cadence.

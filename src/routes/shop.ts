@@ -1,3 +1,4 @@
+import { localizeListing } from "@/commerce/product-translation-runtime";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
@@ -53,6 +54,9 @@ export async function loadShopRoute({
     if (error instanceof RangeError) notFound();
     throw error;
   }
+
+  // The English names come on last, after everything cached: the catalog holds the Vietnamese.
+  catalogPage = await localizeListing(catalogPage);
 
   const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();

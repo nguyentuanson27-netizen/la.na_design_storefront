@@ -1,3 +1,4 @@
+import { localizeListing } from "@/commerce/product-translation-runtime";
 import { connection } from "next/server";
 
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
@@ -111,13 +112,15 @@ export async function loadHomeRoute(): Promise<RouteHandle<HomeRouteData>> {
   // One instant for the whole request, so counting, ordering and card pricing cannot disagree.
   const requestNow = new Date();
 
-  const [specialDeals, heroCollections, promoCollections, storedCategoryMedia, feedbackContent] = await Promise.all([
+  const [specialDealsSource, heroCollections, promoCollections, storedCategoryMedia, feedbackContent] = await Promise.all([
     loadSpecialDealsSection(requestNow),
     collectionRepository.listHomepageMerchandising(),
     loadPromoCollections(),
     readConfiguredCategoryHeroMedia([...NEXT_FAVOURITE_CATEGORY_KEYS]),
     readDynamicFeedbackContent(),
   ]);
+
+  const specialDeals = specialDealsSource === null ? null : await localizeListing(specialDealsSource);
 
   // Built from the exact four products the section renders, in render order, so impression and
   // select indices describe what the shopper sees.

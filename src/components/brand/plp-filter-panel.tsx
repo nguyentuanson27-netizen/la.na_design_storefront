@@ -1,7 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/i18n/link";
+import { useT } from "@/i18n/client";
+import { useRouter } from "@/i18n/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import {
@@ -60,6 +61,7 @@ export function PlpFilterPanel({
   countLabel = "sản phẩm",
   activeFilters,
 }: PlpFilterPanelProps) {
+  const t = useT();
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -151,12 +153,14 @@ export function PlpFilterPanel({
     if (trimmedMin !== "") {
       const parsed = Number(trimmedMin);
       if (!Number.isSafeInteger(parsed) || parsed < 0) {
-        setPriceError("Giá tối thiểu không hợp lệ.");
+        setPriceError(t("Giá tối thiểu không hợp lệ."));
         return;
       }
       if (parsed > STOREFRONT_DISCOVERY_LIMITS.priceVnd) {
         setPriceError(
-          `Giá tối đa cho phép là ${STOREFRONT_DISCOVERY_LIMITS.priceVnd.toLocaleString("vi-VN")} ₫.`,
+          t("Giá tối đa cho phép là {limit} ₫.", {
+            limit: STOREFRONT_DISCOVERY_LIMITS.priceVnd.toLocaleString("vi-VN"),
+          }),
         );
         return;
       }
@@ -167,12 +171,14 @@ export function PlpFilterPanel({
     if (trimmedMax !== "") {
       const parsed = Number(trimmedMax);
       if (!Number.isSafeInteger(parsed) || parsed < 0) {
-        setPriceError("Giá tối đa không hợp lệ.");
+        setPriceError(t("Giá tối đa không hợp lệ."));
         return;
       }
       if (parsed > STOREFRONT_DISCOVERY_LIMITS.priceVnd) {
         setPriceError(
-          `Giá tối đa cho phép là ${STOREFRONT_DISCOVERY_LIMITS.priceVnd.toLocaleString("vi-VN")} ₫.`,
+          t("Giá tối đa cho phép là {limit} ₫.", {
+            limit: STOREFRONT_DISCOVERY_LIMITS.priceVnd.toLocaleString("vi-VN"),
+          }),
         );
         return;
       }
@@ -181,7 +187,7 @@ export function PlpFilterPanel({
 
     // Min price must not exceed max price
     if (minVal !== null && maxVal !== null && minVal > maxVal) {
-      setPriceError("Giá tối thiểu không được lớn hơn giá tối đa.");
+      setPriceError(t("Giá tối thiểu không được lớn hơn giá tối đa."));
       return;
     }
 
@@ -221,7 +227,7 @@ export function PlpFilterPanel({
           label. */}
       <div className={LISTING_ACTION_BAR_CLASSES.bar}>
         <span role="status" className="sr-only">
-          {totalCount} {countLabel}
+          {totalCount} {t(countLabel)}
         </span>
         <ListingViewToggle compact className="shrink-0" />
 
@@ -251,7 +257,7 @@ export function PlpFilterPanel({
                 d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
               />
             </svg>
-            <span className={LISTING_ACTION_BAR_CLASSES.filterTriggerLabel}>Bộ lọc</span>
+            <span className={LISTING_ACTION_BAR_CLASSES.filterTriggerLabel}>{t("Bộ lọc")}</span>
           </button>
 
           {/* Sort Selector */}
@@ -260,18 +266,18 @@ export function PlpFilterPanel({
               htmlFor="plp-sort-select"
               className="sr-only whitespace-nowrap text-xs uppercase tracking-wider text-[#3B2219]/70 sm:not-sr-only"
             >
-              Sắp xếp:
+              {t("Sắp xếp:")}
             </label>
             <select
               id="plp-sort-select"
-              aria-label="Sắp xếp sản phẩm"
+              aria-label={t("Sắp xếp sản phẩm")}
               value={activeFilters.sort}
               onChange={handleSortChange}
               className={LISTING_ACTION_BAR_CLASSES.sortSelect}
             >
               {SORT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.label)}
                 </option>
               ))}
             </select>
@@ -295,7 +301,7 @@ export function PlpFilterPanel({
                   : "border-[#3B2219]/20 hover:border-[#3B2219]"
               }`}
             >
-              Còn hàng
+              {t("Còn hàng")}
             </Link>
           ) : null}
           {showSaleToggle
@@ -351,13 +357,13 @@ export function PlpFilterPanel({
         {/* Desktop Price Range Form */}
         <div>
           <form onSubmit={handlePriceFilterSubmit} className="flex items-center gap-1.5">
-            <span className="font-semibold uppercase tracking-wider text-[#70584B] mr-1">Giá:</span>
+            <span className="font-semibold uppercase tracking-wider text-[#70584B] mr-1">{t("Giá:")}</span>
             <input
               type="number"
               min="0"
               max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
-              placeholder="Từ"
-              aria-label="Giá tối thiểu"
+              placeholder={t("Từ")}
+              aria-label={t("Giá tối thiểu")}
               value={minPriceInput}
               onChange={(e) => {
                 setMinPriceInput(e.target.value);
@@ -370,8 +376,8 @@ export function PlpFilterPanel({
               type="number"
               min="0"
               max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
-              placeholder="Đến"
-              aria-label="Giá tối đa"
+              placeholder={t("Đến")}
+              aria-label={t("Giá tối đa")}
               value={maxPriceInput}
               onChange={(e) => {
                 setMaxPriceInput(e.target.value);
@@ -383,7 +389,7 @@ export function PlpFilterPanel({
               type="submit"
               className="btn btn--outline btn--sm"
             >
-              Lọc
+              {t("Lọc")}
             </button>
           </form>
           {priceError ? (
@@ -400,7 +406,7 @@ export function PlpFilterPanel({
             scroll={false}
             className="ml-auto font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 hover:text-[#2A1810]"
           >
-            Xóa bộ lọc
+            {t("Xóa bộ lọc")}
           </Link>
         ) : null}
       </div>
@@ -410,8 +416,8 @@ export function PlpFilterPanel({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {isInStockActive ? (
             <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
-              <span>Còn hàng</span>
-              <Link href={inStockHref} scroll={false} aria-label="Xóa bộ lọc còn hàng" className="hover:text-black">
+              <span>{t("Còn hàng")}</span>
+              <Link href={inStockHref} scroll={false} aria-label={t("Xóa bộ lọc còn hàng")} className="hover:text-black">
                 ✕
               </Link>
             </span>
@@ -423,7 +429,7 @@ export function PlpFilterPanel({
               {(() => {
                 const href = buildToggleSaleHref(categoryPath, activeFilters);
                 return (
-                  <Link href={href} scroll={false} aria-label="Xóa bộ lọc sale" className="hover:text-black">
+                  <Link href={href} scroll={false} aria-label={t("Xóa bộ lọc sale")} className="hover:text-black">
                     ✕
                   </Link>
                 );
@@ -437,7 +443,7 @@ export function PlpFilterPanel({
               {(() => {
                 const href = buildToggleSizeHref(categoryPath, activeFilters, activeFilters.size!);
                 return (
-                  <Link href={href} scroll={false} aria-label={`Xóa bộ lọc size ${activeFilters.size}`} className="hover:text-black">
+                  <Link href={href} scroll={false} aria-label={t("Xóa bộ lọc size {size}", { size: activeFilters.size })} className="hover:text-black">
                     ✕
                   </Link>
                 );
@@ -447,11 +453,11 @@ export function PlpFilterPanel({
 
           {activeFilters.color ? (
             <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
-              <span>Màu: {activeFilters.color}</span>
+              <span>{t("Màu: {color}", { color: activeFilters.color })}</span>
               {(() => {
                 const href = buildToggleColorHref(categoryPath, activeFilters, activeFilters.color!);
                 return (
-                  <Link href={href} scroll={false} aria-label={`Xóa bộ lọc màu ${activeFilters.color}`} className="hover:text-black">
+                  <Link href={href} scroll={false} aria-label={t("Xóa bộ lọc màu {color}", { color: activeFilters.color })} className="hover:text-black">
                     ✕
                   </Link>
                 );
@@ -462,7 +468,7 @@ export function PlpFilterPanel({
           {activeFilters.minPriceVnd !== null || activeFilters.maxPriceVnd !== null ? (
             <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
               <span>
-                Giá:{" "}
+                {t("Giá:")}{" "}
                 {activeFilters.minPriceVnd !== null
                   ? formatFilterPriceVnd(activeFilters.minPriceVnd)
                   : "0₫"}{" "}
@@ -474,7 +480,7 @@ export function PlpFilterPanel({
               <Link
                 href={buildClearPriceHref(categoryPath, activeFilters)}
                 scroll={false}
-                aria-label="Xóa khoảng giá"
+                aria-label={t("Xóa khoảng giá")}
                 className="hover:text-black"
               >
                 ✕
@@ -490,7 +496,7 @@ export function PlpFilterPanel({
           id="mobile-plp-filters"
           role="dialog"
           aria-modal="true"
-          aria-label="Bộ lọc sản phẩm"
+          aria-label={t("Bộ lọc sản phẩm")}
           className="fixed inset-0 z-50 flex"
         >
           {/* Backdrop */}
@@ -505,12 +511,12 @@ export function PlpFilterPanel({
             className="relative ml-auto flex h-full w-full max-w-sm flex-col bg-[#FAF7F2] shadow-2xl"
           >
             <div className="flex items-center justify-between border-b border-[#3B2219]/15 px-6 py-5">
-              <h2 className="font-display text-xl text-[#2A1810]">Bộ lọc sản phẩm</h2>
+              <h2 className="font-display text-xl text-[#2A1810]">{t("Bộ lọc sản phẩm")}</h2>
               <button
                 ref={closeBtnRef}
                 type="button"
                 onClick={() => setIsMobileOpen(false)}
-                aria-label="Đóng bộ lọc"
+                aria-label={t("Đóng bộ lọc")}
                 className="p-2 text-[#3B2219] hover:text-[#2A1810]"
               >
                 ✕
@@ -523,7 +529,7 @@ export function PlpFilterPanel({
               {offerAvailability || showSaleToggle ? (
               <div>
                 <span className="block text-xs font-semibold uppercase tracking-wider text-[#3B2219]/70 mb-3">
-                  Ưu đãi
+                  {t("Ưu đãi")}
                 </span>
                 <div className="flex flex-wrap gap-2">
                   {offerAvailability ? (
@@ -537,7 +543,7 @@ export function PlpFilterPanel({
                           : "border-[#3B2219]/25 text-[#3B2219]"
                       }`}
                     >
-                      Chỉ xem sản phẩm còn hàng
+                      {t("Chỉ xem sản phẩm còn hàng")}
                     </Link>
                   ) : null}
                   {showSaleToggle
@@ -555,7 +561,7 @@ export function PlpFilterPanel({
                                 : "border-[#3B2219]/25 text-[#3B2219]"
                             }`}
                           >
-                            Chỉ xem sản phẩm Sale
+                            {t("Chỉ xem sản phẩm Sale")}
                           </Link>
                         );
                       })()
@@ -568,7 +574,7 @@ export function PlpFilterPanel({
               {availableSizes.length > 0 ? (
                 <div>
                   <span className="block text-xs font-semibold uppercase tracking-wider text-[#70584B] mb-3">
-                    Kích cỡ
+                    {t("Kích cỡ")}
                   </span>
                   <div className="flex flex-wrap gap-2">
                     {availableSizes.map((size) => {
@@ -598,7 +604,7 @@ export function PlpFilterPanel({
               {/* Price range form */}
               <div>
                 <span className="block text-xs font-semibold uppercase tracking-wider text-[#70584B] mb-3">
-                  Khoảng giá (₫)
+                  {t("Khoảng giá (₫)")}
                 </span>
                 <form onSubmit={handlePriceFilterSubmit} className="space-y-3">
                   <div className="flex items-center gap-2">
@@ -606,8 +612,8 @@ export function PlpFilterPanel({
                       type="number"
                       min="0"
                       max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
-                      placeholder="Từ"
-                      aria-label="Giá tối thiểu"
+                      placeholder={t("Từ")}
+                      aria-label={t("Giá tối thiểu")}
                       value={minPriceInput}
                       onChange={(e) => {
                         setMinPriceInput(e.target.value);
@@ -620,8 +626,8 @@ export function PlpFilterPanel({
                       type="number"
                       min="0"
                       max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
-                      placeholder="Đến"
-                      aria-label="Giá tối đa"
+                      placeholder={t("Đến")}
+                      aria-label={t("Giá tối đa")}
                       value={maxPriceInput}
                       onChange={(e) => {
                         setMaxPriceInput(e.target.value);
@@ -634,7 +640,7 @@ export function PlpFilterPanel({
                     type="submit"
                     className="btn btn--primary w-full"
                   >
-                    Áp dụng giá
+                    {t("Áp dụng giá")}
                   </button>
                 </form>
                 {priceError ? (
@@ -653,14 +659,14 @@ export function PlpFilterPanel({
                   scroll={false}
                   className="btn btn--outline px-3"
                 >
-                  Xóa bộ lọc
+                  {t("Xóa bộ lọc")}
                 </Link>
                 <button
                   type="button"
                   onClick={() => setIsMobileOpen(false)}
                   className="btn btn--primary px-3"
                 >
-                  Xem {totalCount} sản phẩm
+                  {t("Xem {count} sản phẩm", { count: totalCount })}
                 </button>
               </div>
             </div>

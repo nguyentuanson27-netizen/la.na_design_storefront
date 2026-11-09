@@ -6,6 +6,7 @@ import { buildFlashSaleViewModel } from "../routes/flash-sale-model.ts";
 import { NEW_ARRIVALS_TITLE } from "../routes/metadata/new-arrivals.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
 import { NEW_ARRIVALS_PAGE_SIZE } from "./new-arrivals-selection.ts";
+import { localizeListing } from "./product-translation-runtime.ts";
 import { listConfiguredManualNewArrivalsPage } from "./storefront-catalog-runtime.ts";
 import { parseStorefrontListingPage } from "./storefront-discovery.ts";
 
@@ -32,11 +33,14 @@ export async function loadNewArrivalsNextPageAction(input: {
   if (typeof input?.page !== "number") throw new RangeError("Invalid new-arrivals page request");
   const page = parseStorefrontListingPage({ page: String(input.page) });
 
-  const catalogPage = await listConfiguredManualNewArrivalsPage({
-    page,
-    pageSize: NEW_ARRIVALS_PAGE_SIZE,
-    now: new Date(),
-  });
+  // Names in the shopper's language, applied after the read as on the first page.
+  const catalogPage = await localizeListing(
+    await listConfiguredManualNewArrivalsPage({
+      page,
+      pageSize: NEW_ARRIVALS_PAGE_SIZE,
+      now: new Date(),
+    }),
+  );
   if (page > Math.max(catalogPage.totalPages, 1)) {
     throw new RangeError("New-arrivals page is out of range");
   }

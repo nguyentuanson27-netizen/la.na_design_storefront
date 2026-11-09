@@ -1,3 +1,5 @@
+"use client";
+
 import Image from "next/image";
 
 import type { CustomerPhotoStrip as CustomerPhotoStripModel } from "@/components/headless/customer-photo-strip-model";
@@ -8,6 +10,7 @@ import {
   starFillPercent,
 } from "@/components/headless/product-review-model";
 import type { ProductReviewSection } from "@/commerce/product-review";
+import { useT } from "@/i18n/client";
 
 /**
  * The pieces of the review UI that need no script: the stars, the rating line under the product
@@ -25,10 +28,11 @@ export function ReviewStars({
   value,
   className = "",
 }: Readonly<{ value: number; className?: string }>) {
+  const t = useT();
   return (
     <span
       role="img"
-      aria-label={spokenRating(value)}
+      aria-label={t(spokenRating(value))}
       className={`relative inline-block whitespace-nowrap leading-none tracking-[0.06em] ${className}`}
     >
       <span aria-hidden="true" className="text-[#3B2219]/20">
@@ -47,6 +51,7 @@ export function ReviewStars({
 
 /** Under the product name: stars and the average once there are enough reviews, else just the count. */
 export function ProductRatingLink({ section }: Readonly<{ section: ProductReviewSection }>) {
+  const t = useT();
   const { summary } = section;
   return (
     <a
@@ -61,10 +66,10 @@ export function ProductRatingLink({ section }: Readonly<{ section: ProductReview
         </>
       )}
       <span className="underline decoration-[#3B2219]/30 underline-offset-[5px]">
-        {ratingLinkText(section)}
+        {t(ratingLinkText(section))}
       </span>
       {summary !== null && summary.photoReviewCount > 0 ? (
-        <span className="text-[#70584B]">· {summary.photoReviewCount} có ảnh</span>
+        <span className="text-[#70584B]">· {t("{count} có ảnh", { count: summary.photoReviewCount })}</span>
       ) : null}
     </a>
   );

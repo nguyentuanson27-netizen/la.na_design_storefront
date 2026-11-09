@@ -1,19 +1,19 @@
 import { BrandAccountAuthPanel } from "@/components/brand/account-auth-panel";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { loadLoginRoute, type LoginRouteProps, type LoginViewModel } from "@/routes/login";
 import { buildLoginMetadata } from "@/routes/metadata/login";
 
 /** The login page. Session state belongs to the panel, which reads it on the client. */
 
-function render() {
+function render(_data: unknown, { t }: RequestI18n) {
   return (
     <PageShell>
       <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Đăng nhập" }]} />
       <PageHeader
-        eyebrow="Khách hàng"
-        title="Đăng nhập"
-        lead="Lưu thông tin cho lần mua sau và theo dõi đơn hàng tại một nơi. Tài khoản không bắt buộc: nàng vẫn có thể đặt hàng và thanh toán COD mà không cần đăng ký."
+        eyebrow={t("Khách hàng")}
+        title={t("Đăng nhập")}
+        lead={t("Lưu thông tin cho lần mua sau và theo dõi đơn hàng tại một nơi. Tài khoản không bắt buộc: nàng vẫn có thể đặt hàng và thanh toán COD mà không cần đăng ký.")}
       />
 
       <BrandAccountAuthPanel />
@@ -23,8 +23,10 @@ function render() {
 
 const route = createStorefrontRoute<LoginRouteProps, LoginViewModel>({
   load: loadLoginRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: () => buildLoginMetadata(),
   render,
 });
 
-export const metadata = buildLoginMetadata();
+export const generateMetadata = route.generateMetadata;
 export default route.Page;

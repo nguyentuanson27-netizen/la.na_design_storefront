@@ -1,7 +1,10 @@
+"use client";
+
 import { useId } from "react";
 
 import { voucherExpiryWarning, type VoucherPickerItem } from "@/routes/voucher-picker-model";
 import { VoucherIcon } from "./voucher-icons";
+import { useT } from "@/i18n/client";
 
 /**
  * One voucher of the picker (spec §7.3), drawn as a ticket. It is a toggle button: pressing a chosen voucher again un-chooses it, which is
@@ -17,6 +20,7 @@ export function VoucherCard({ item, onToggle, disabled, nowMs }: Readonly<{
   disabled: boolean;
   nowMs: number | null;
 }>) {
+  const t = useT();
   const descriptionId = useId();
   const unavailable = !item.selectable;
   const expiry = nowMs === null ? null : voucherExpiryWarning(item.endsAtIso, nowMs);
@@ -33,22 +37,22 @@ export function VoucherCard({ item, onToggle, disabled, nowMs }: Readonly<{
         data-voucher-id={item.id}
       >
         <span className="voucher-ticket__stub" aria-hidden="true">
-          <span className="voucher-ticket__val" data-long={item.valueLabel.length > 5 ? "true" : undefined}>{item.valueLabel}</span>
-          {item.valueSub ? <span className="voucher-ticket__sub">{item.valueSub}</span> : null}
+          <span className="voucher-ticket__val" data-long={item.valueLabel.length > 5 ? "true" : undefined}>{t(item.valueLabel)}</span>
+          {item.valueSub ? <span className="voucher-ticket__sub">{t(item.valueSub)}</span> : null}
         </span>
         <span className="voucher-ticket__body">
           <span className="voucher-ticket__main">
             <span aria-hidden="true" className="voucher-ticket__name">{item.name}</span>
             <span id={descriptionId} className="grid gap-px">
-              {item.condition ? <span className="voucher-ticket__cond">{item.condition}</span> : null}
+              {item.condition ? <span className="voucher-ticket__cond">{t(item.condition)}</span> : null}
               <span className="voucher-ticket__line">
                 {unavailable ? (
-                  item.disabledReason ? <span className="voucher-ticket__need">{item.disabledReason}</span> : null
+                  item.disabledReason ? <span className="voucher-ticket__need">{t(item.disabledReason)}</span> : null
                 ) : item.savingText ? (
-                  <span className="voucher-ticket__save"><span className="sr-only">Dự kiến giảm </span><span aria-hidden="true">{item.savingText}</span></span>
+                  <span className="voucher-ticket__save"><span className="sr-only">{t("Dự kiến giảm")}</span><span aria-hidden="true">{t(item.savingText)}</span></span>
                 ) : null}
-                {expiry ? <span className="voucher-ticket__warn"><VoucherIcon name="clock" className="h-3 w-3" />{expiry}</span> : null}
-                {item.publicCode ? <span className="voucher-ticket__code">Mã {item.publicCode}</span> : null}
+                {expiry ? <span className="voucher-ticket__warn"><VoucherIcon name="clock" className="h-3 w-3" />{t(expiry)}</span> : null}
+                {item.publicCode ? <span className="voucher-ticket__code">{t("Mã {code}", { code: item.publicCode })}</span> : null}
               </span>
             </span>
           </span>

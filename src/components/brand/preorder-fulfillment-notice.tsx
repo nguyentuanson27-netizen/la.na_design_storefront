@@ -1,4 +1,7 @@
+"use client";
+
 import type { PreorderFulfillmentNotice } from "@/commerce/preorder-fulfillment-presentation";
+import { useT } from "@/i18n/client";
 
 /**
  * Markup only, for master spec §30's preorder truth in the cart and at checkout.
@@ -26,6 +29,7 @@ export function BrandPreorderFulfillmentNotice({
    */
   titleId: string;
 }>) {
+  const t = useT();
   const preorderLabel = notice.preorderLabel;
 
   return (
@@ -47,7 +51,7 @@ export function BrandPreorderFulfillmentNotice({
         </p>
       ) : null}
       <p className="mt-2 text-sm leading-6 text-black/75">
-        Sau thời gian chuẩn bị, thời gian giao hàng dự kiến được tính thêm:
+        {t("Sau thời gian chuẩn bị, thời gian giao hàng dự kiến được tính thêm:")}
       </p>
       <ul className="mt-2 space-y-1 text-sm leading-6 text-black/75">
         {notice.shippingWindows.map((window) => (

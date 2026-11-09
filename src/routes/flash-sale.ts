@@ -1,3 +1,4 @@
+import { localizeListing } from "@/commerce/product-translation-runtime";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
@@ -44,6 +45,8 @@ export async function loadFlashSaleRoute({
     if (error instanceof RangeError) notFound();
     throw error;
   }
+
+  flashPage = await localizeListing(flashPage);
 
   const { page, products, totalCount, totalPages } = flashPage;
   const listTracking = buildProductListTracking({

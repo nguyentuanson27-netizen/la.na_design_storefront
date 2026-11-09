@@ -91,7 +91,7 @@ test("mega-menu: every top-level category and Sale open a panel, the other prima
 
   // A leaf category's panel links to the category itself, named for the category it opens.
   assert.match(headerSource, /\{hasChildren \? item\.label : "Xem tất cả"\}/);
-  assert.match(headerSource, /<span className="sr-only"> \{item\.label\}<\/span>/);
+  assert.match(headerSource, /<span className="sr-only"> \{t\(item\.label\)\}<\/span>/);
 
   // The media is landscape 16:9, up to 44rem wide, beside a link column no narrower than 7.5rem.
   assert.match(headerSource, /grid-cols-\[minmax\(7\.5rem,1fr\)_minmax\(0,44rem\)\]/);
@@ -194,7 +194,7 @@ test("F2a mobile navigation dialog: enforces full-screen accessible dialog, Esca
   assert.match(source, /id="mobile-navigation-dialog"/);
   assert.match(source, /role="dialog"/);
   assert.match(source, /aria-modal="true"/);
-  assert.match(source, /aria-label="Menu điều hướng"/);
+  assert.match(source, /aria-label=\{t\("Menu điều hướng"\)\}/);
 
   // Hamburger trigger button attributes
   assert.match(source, /aria-label="Menu"/);
@@ -203,7 +203,7 @@ test("F2a mobile navigation dialog: enforces full-screen accessible dialog, Esca
   assert.match(source, /aria-controls="mobile-navigation-dialog"/);
 
   // Close button inside dialog
-  assert.match(source, /aria-label="Đóng menu"/);
+  assert.match(source, /aria-label=\{t\("Đóng menu"\)\}/);
 
   // Escape key handler closes mobile nav
   assert.match(source, /event\.key === "Escape"/);
@@ -247,7 +247,7 @@ test("mobile navigation: subcategories are collapsed behind a per-category discl
   assert.match(source, /hidden=\{!isExpanded\}/);
   assert.match(
     source,
-    /aria-label=\{`\$\{isExpanded \? "Thu gọn" : "Mở rộng"\} \$\{item\.label\}`\}/,
+    /aria-label=\{t\(isExpanded \? "Thu gọn \{label\}" : "Mở rộng \{label\}", \{ label: t\(item\.label\) \}\)\}/,
     "the disclosure must name the category it opens, in Vietnamese",
   );
 

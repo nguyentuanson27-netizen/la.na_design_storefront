@@ -1,6 +1,9 @@
+"use client";
+
 import { ListingCardImage } from "@/components/brand/listing-view";
 import { ProductSelectLink } from "@/components/analytics/product-select-link";
 import type { ProductCardModel } from "@/components/headless/build-product-card-model";
+import { useT } from "@/i18n/client";
 
 /**
  * Markup only. Every brand throws this file away and writes its own.
@@ -31,6 +34,7 @@ export function ProductCard({
   /** The card sits in a listing's first row; see `PRODUCT_CARD_EAGER_COUNT`. */
   eager?: boolean;
 }) {
+  const t = useT();
   const {
     price,
     primaryImage,
@@ -45,7 +49,7 @@ export function ProductCard({
   return (
     <article className="group">
       <ProductSelectLink
-        ariaLabel={`Xem ${model.name}`}
+        ariaLabel={t("Xem {name}", { name: model.name })}
         className="product-visual-link block"
         href={model.href}
         event={model.selectEvent}
@@ -66,15 +70,15 @@ export function ProductCard({
                 </span>
               ) : null}
               {lastSizesLeft ? (
-                <span className="product-tag product-tag--clearance">Lẻ size - Chỉ còn ít</span>
+                <span className="product-tag product-tag--clearance">{t("Lẻ size - Chỉ còn ít")}</span>
               ) : null}
               {marketingBadge ? (
                 <span className={`product-tag product-tag--${marketingBadge.type}`}>
-                  {marketingBadge.label}
+                  {t(marketingBadge.label)}
                 </span>
               ) : null}
               {lowStockLabel ? (
-                <span className="product-tag product-tag--low-stock">{lowStockLabel}</span>
+                <span className="product-tag product-tag--low-stock">{t(lowStockLabel)}</span>
               ) : null}
             </div>
           ) : null}
@@ -118,26 +122,26 @@ export function ProductCard({
                     <circle cx="12" cy="13" r="8" />
                     <path d="M12 9v4l2.5 2.5M9 2h6" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  {flashSale.countdownText}
+                  {t(flashSale.countdownText)}
                 </p>
               ) : null}
               <p className="product-price font-display flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1 text-[15px] md:text-base">
-                <span className="sr-only">Giá gốc</span>
-                <del className="font-normal text-[#70584B] line-through">{price.compareAtText}</del>
-                <span className="sr-only">Giá Flash Sale</span>
-                <strong className="font-semibold text-[#9A3324]">{price.displayText}</strong>
+                <span className="sr-only">{t("Giá gốc")}</span>
+                <del className="font-normal text-[#70584B] line-through">{price.compareAtText ? t(price.compareAtText) : null}</del>
+                <span className="sr-only">{t("Giá Flash Sale")}</span>
+                <strong className="font-semibold text-[#9A3324]">{t(price.displayText)}</strong>
               </p>
             </>
           ) : price.compareAtText ? (
             <p className="product-price font-display flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1 text-[15px] md:text-base">
-              <span className="sr-only">Giá gốc</span>
-              <del className="font-normal text-[#70584B] line-through">{price.compareAtText}</del>
-              <span className="sr-only">{price.isListReference ? "Giá giảm" : "Giá khuyến mãi"}</span>
-              <strong className="font-semibold text-[#9A3324]">{price.displayText}</strong>
+              <span className="sr-only">{t("Giá gốc")}</span>
+              <del className="font-normal text-[#70584B] line-through">{price.compareAtText ? t(price.compareAtText) : null}</del>
+              <span className="sr-only">{t(price.isListReference ? "Giá giảm" : "Giá khuyến mãi")}</span>
+              <strong className="font-semibold text-[#9A3324]">{t(price.displayText)}</strong>
             </p>
           ) : (
             <p className="product-price font-display text-[15px] font-semibold text-[#3B2219] md:text-base">
-              {price.displayText}
+              {t(price.displayText)}
             </p>
           )}
           {/* F8a — availability, from the canonical projection. F5 reserved this slot and forbade
@@ -147,7 +151,7 @@ export function ProductCard({
               so both can render at once. Text, not colour, carries the state. */}
           {availabilityLabel ? (
             <p className="product-availability font-sans text-xs font-semibold uppercase tracking-[0.12em] text-[#70584B]">
-              {availabilityLabel}
+              {t(availabilityLabel)}
             </p>
           ) : null}
         </div>

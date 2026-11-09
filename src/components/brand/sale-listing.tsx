@@ -1,9 +1,14 @@
+"use client";
+
+import { useMemo } from "react";
+
 import { ListingEmptyState, ListingPreviousLink, ListingSubnav } from "@/components/brand/listing-chrome";
 import { PlpFilterPanel } from "@/components/brand/plp-filter-panel";
 import { EMPTY_PLP_FILTERS } from "@/components/headless/plp-filter-model";
 import { PlpInfiniteGrid } from "@/components/brand/plp-infinite-grid";
 import { SALE_CHILD_NAVIGATION, SALE_ROOT_NAVIGATION, type SaleListingKind } from "@/brand/sale.config";
 import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
+import { useT } from "@/i18n/client";
 
 /**
  * Markup shared by `/sale`, `/sale/uu-dai`, `/sale/flash-sale` and `/sale/xa-hang-le-size`. Which
@@ -14,11 +19,12 @@ import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
 
 /** Tất cả, then every sale sub-listing, with the current one marked. */
 export function SaleListingSubnav({ currentHref }: Readonly<{ currentHref: string }>) {
+  const t = useT();
   const items = [
     { label: "Tất cả", fullLabel: "Tất cả sản phẩm Sale", href: SALE_ROOT_NAVIGATION.href },
     ...SALE_CHILD_NAVIGATION.map(({ href, label }) => ({ label, href })),
   ].map((item) => ({ ...item, current: item.href === currentHref }));
-  return <ListingSubnav label="Danh mục Sale" items={items} />;
+  return <ListingSubnav label={t("Danh mục Sale")} items={items} />;
 }
 
 export function SaleListingBody({
@@ -34,7 +40,10 @@ export function SaleListingBody({
   /** Which campaign kind the listing shows; `null` is `/sale`, every active discount. */
   saleKind?: SaleListingKind | null;
 }>) {
+  const t = useT();
   const { filters } = data;
+  // Stable between renders: the grid starts over whenever it is handed a different list.
+  const initialProducts = useMemo(() => data.cards.map((card) => card.model), [data.cards]);
 
   // Nothing is on sale at all: there is nothing to filter, so the bar is not drawn either.
   if (data.totalCount === 0 && !filters?.filtered) {
@@ -43,10 +52,10 @@ export function SaleListingBody({
         <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
         <ListingEmptyState
           titleId="sale-empty-title"
-          eyebrow="Ưu đãi hiện tại"
-          title={emptyTitle}
-          copy="Sản phẩm sẽ xuất hiện tại đây khi có chương trình khuyến mãi đang hoạt động."
-          action={{ href: "/shop", label: "Xem toàn bộ cửa hàng" }}
+          eyebrow={t("Ưu đãi hiện tại")}
+          title={t(emptyTitle)}
+          copy={t("Sản phẩm sẽ xuất hiện tại đây khi có chương trình khuyến mãi đang hoạt động.")}
+          action={{ href: "/shop", label: t("Xem toàn bộ cửa hàng") }}
         />
       </div>
     );
@@ -55,7 +64,7 @@ export function SaleListingBody({
   return (
     <section aria-labelledby="sale-products-title" className="mt-8">
       <h2 id="sale-products-title" className="sr-only">
-        Sản phẩm đang giảm giá
+        {t("Sản phẩm đang giảm giá")}
       </h2>
       {/* Everything on a sale listing is in stock and on sale by construction, so the bar leaves
           out "Còn hàng" and "Sale". Its hidden count is live, because the count is what changes
@@ -78,9 +87,9 @@ export function SaleListingBody({
           <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
           <ListingEmptyState
             titleId="sale-empty-title"
-            eyebrow="Không tìm thấy"
-            title="Không có sản phẩm phù hợp."
-            copy="Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm đang giảm giá."
+            eyebrow={t("Không tìm thấy")}
+            title={t("Không có sản phẩm phù hợp.")}
+            copy={t("Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm đang giảm giá.")}
             action={filters ? { href: filters.basePath, label: "Xóa bộ lọc" } : undefined}
           />
         </div>
@@ -93,7 +102,7 @@ export function SaleListingBody({
             {/* Infinite scroll with a real "Xem thêm" link to the next page inside it, so a crawler
                 and a reader without script still page through the listing (§25). */}
             <PlpInfiniteGrid
-              initialProducts={data.cards.map((card) => card.model)}
+              initialProducts={initialProducts}
               totalCount={data.totalCount}
               totalPages={data.totalPages}
               initialPage={data.page}

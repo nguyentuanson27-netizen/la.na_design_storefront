@@ -1,3 +1,4 @@
+import { localizeCartViewNames } from "@/commerce/product-translation-runtime";
 import { connection } from "next/server";
 
 import { tryReadGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
@@ -25,7 +26,7 @@ export async function loadCartRoute(): Promise<RouteHandle<CartRouteViewModel>> 
   const voucherLinkOffer = vouchers === null ? null : await readPendingVoucherOfferToken();
 
   return sealRoute({
-    data: { ...buildCartViewModel({ ...cart, commerceTrackingEnabled: isCommerceTrackingEnabled(), shippingPolicy: tryReadGuestShippingPolicy() }), vouchers, voucherLinkOffer },
+    data: { ...(await localizeCartViewNames(buildCartViewModel({ ...cart, commerceTrackingEnabled: isCommerceTrackingEnabled(), shippingPolicy: tryReadGuestShippingPolicy() }))), vouchers, voucherLinkOffer },
     // Cart prices are re-resolved on every request, so nothing here is promotion-cached; the shared
     // default cadence is what the shell mounts.
     refreshAfterMs: 60_000,

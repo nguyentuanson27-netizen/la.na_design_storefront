@@ -1,6 +1,9 @@
-import Link from "next/link";
+"use client";
+
+import Link from "@/i18n/link";
 
 import type { PromotionBannerItem, PromotionBannerView, PromotionSavingRow } from "@/routes/cart-promotion-model";
+import { useT } from "@/i18n/client";
 
 /**
  * The promotion lines shared by the cart drawer, the cart page and checkout.
@@ -57,29 +60,30 @@ function Item({
   giftHref,
   onNavigate,
 }: Readonly<{ item: PromotionBannerItem; giftHref?: string; onNavigate?: () => void }>) {
+  const t = useT();
   const achieved = item.state === "achieved";
   return (
     <li data-promotion-state={item.state} data-promotion-kind={item.kind}>
       <div className="flex items-center gap-2">
         {achieved ? <Tick /> : <Gift />}
-        <p className={`min-w-0 flex-1 text-[0.8rem] leading-5 ${achieved ? "text-[#24472D]" : "text-[#3B2219]"}`}>{item.title}</p>
+        <p className={`min-w-0 flex-1 text-[0.8rem] leading-5 ${achieved ? "text-[#24472D]" : "text-[#3B2219]"}`}>{t(item.title)}</p>
         {item.needsGiftChoice && giftHref ? (
           <Link
             className="shrink-0 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#2A1810] underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
             href={giftHref}
             onClick={onNavigate}
           >
-            Chọn quà
+            {t("Chọn quà")}
           </Link>
         ) : null}
       </div>
       {item.progress ? (
         <div
-          aria-label={item.title}
+          aria-label={t(item.title)}
           aria-valuemax={100}
           aria-valuemin={0}
           aria-valuenow={item.progress.percent}
-          aria-valuetext={item.progress.label}
+          aria-valuetext={t(item.progress.label)}
           className="ml-6 mt-1.5 h-[3px] overflow-hidden rounded-full bg-[#3B2219]/10"
           role="progressbar"
         >
@@ -94,10 +98,11 @@ function Item({
 }
 
 export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, className = "" }: PromotionBannerProps) {
+  const t = useT();
   if (!view || view.items.length === 0) return null;
   return (
     <section
-      aria-label="Ưu đãi của nàng"
+      aria-label={t("Ưu đãi của nàng")}
       aria-live="polite"
       className={`border-y border-[#3B2219]/10 py-3 ${variant === "full" ? "max-w-xl" : ""} ${className}`}
       data-promotion-banner={variant}
@@ -120,19 +125,20 @@ export function PromotionProgressLine({
   item,
   lineRef,
 }: Readonly<{ item: PromotionBannerItem; lineRef?: (node: HTMLDivElement | null) => void }>) {
+  const t = useT();
   return (
     <div data-promotion-kind={item.kind} data-promotion-state={item.state} ref={lineRef}>
       <div className="flex items-start gap-2">
         <Gift />
-        <p className="line-clamp-2 min-w-0 flex-1 text-[0.78rem] leading-5 text-[#3B2219]">{item.title}</p>
+        <p className="line-clamp-2 min-w-0 flex-1 text-[0.78rem] leading-5 text-[#3B2219]">{t(item.title)}</p>
       </div>
       {item.progress ? (
         <div
-          aria-label={item.title}
+          aria-label={t(item.title)}
           aria-valuemax={100}
           aria-valuemin={0}
           aria-valuenow={item.progress.percent}
-          aria-valuetext={item.progress.label}
+          aria-valuetext={t(item.progress.label)}
           className="ml-6 mt-1 h-[3px] overflow-hidden rounded-full bg-[#3B2219]/10"
           role="progressbar"
         >
@@ -154,12 +160,13 @@ export function PromotionSavings({
   rows,
   className = "",
 }: Readonly<{ rows: readonly PromotionSavingRow[] | undefined; className?: string }>) {
+  const t = useT();
   if (!rows || rows.length === 0) return null;
   return (
-    <ul aria-label="Ưu đãi đã áp dụng" className={`space-y-1.5 ${className}`} data-promotion-savings>
+    <ul aria-label={t("Ưu đãi đã áp dụng")} className={`space-y-1.5 ${className}`} data-promotion-savings>
       {rows.map((row) => (
         <li className="flex items-baseline justify-between gap-4 text-xs font-medium text-[#24472D]" key={row.id}>
-          <span className="min-w-0">{row.label}</span>
+          <span className="min-w-0">{t(row.label)}</span>
           <span className="shrink-0">−{row.amountText}</span>
         </li>
       ))}

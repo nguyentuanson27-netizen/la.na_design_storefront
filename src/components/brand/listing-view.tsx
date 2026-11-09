@@ -20,6 +20,7 @@ import {
   type ListingView,
 } from "@/components/headless/listing-view-model";
 import { STOREFRONT_PRODUCTS_ALIAS_ANCHOR, STOREFRONT_PRODUCTS_ANCHOR } from "@/routes/storefront-anchors";
+import { useT } from "@/i18n/client";
 
 /**
  * The shopper's chosen photograph size ("kiểu xem"), shared by every listing on the site.
@@ -247,11 +248,12 @@ export function ListingViewToggle({
    */
   compact?: boolean;
 }>) {
+  const t = useT();
   const { view, setView } = useListingView();
   return (
     <div
       role="group"
-      aria-label="Kiểu xem ảnh"
+      aria-label={t("Kiểu xem ảnh")}
       className={`inline-flex items-center ${compact ? "gap-1.5" : "gap-1"} ${className}`}
     >
       {LISTING_VIEWS.map((option) => {
@@ -261,8 +263,8 @@ export function ListingViewToggle({
             key={option}
             type="button"
             aria-pressed={active}
-            aria-label={LISTING_VIEW_LABELS[option]}
-            title={LISTING_VIEW_LABELS[option]}
+            aria-label={t(LISTING_VIEW_LABELS[option])}
+            title={t(LISTING_VIEW_LABELS[option])}
             data-listing-view-option={option}
             onClick={() => setView(option)}
             className={`relative inline-flex h-9 w-9 items-center justify-center rounded border transition after:absolute after:content-[''] md:h-8 md:w-8 ${

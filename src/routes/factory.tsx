@@ -1,7 +1,15 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 
+import { getI18n, type RequestI18n } from "@/i18n/server";
+import { localizeMetadata } from "@/i18n/metadata";
+
 import { StorefrontRoute, type RouteHandle } from "./core.tsx";
+
+/** What a page's `render` receives about the request's language; see `RouteDefinition.render`. */
+export type { RequestI18n };
+/** For the few server components under `src/app` that are not routes (the not-found page). */
+export { getI18n };
 
 /**
  * Joins a loader to its markup, so a page module is left with wiring rather than decisions.
@@ -19,7 +27,11 @@ import { StorefrontRoute, type RouteHandle } from "./core.tsx";
 
 type RouteDefinition<P, D> = Readonly<{
   load: (props: P) => Promise<RouteHandle<D>>;
-  render: (data: D) => ReactNode;
+  /**
+   * The second argument is the request's language: `t` for text, `href` for in-site links, `locale`
+   * for formatting. A page that renders only Vietnamese can ignore it.
+   */
+  render: (data: D, i18n: RequestI18n) => ReactNode;
 }>;
 
 /** Metadata lives on the page: the factory supplies `generateMetadata` alongside `Page`. */
@@ -42,14 +54,24 @@ export function createStorefrontRoute<P, D>(
   generateMetadata?: (props: P) => Promise<Metadata>;
 } {
   const Page = async (props: P): Promise<ReactNode> => {
-    const handle = await definition.load(props);
+    const [handle, i18n] = await Promise.all([definition.load(props), getI18n()]);
     // The only construction of the shell. A page receives its data through the render prop, so
     // there is no arrangement in which markup renders and the shell's concerns do not.
-    return <StorefrontRoute<D> handle={handle}>{definition.render}</StorefrontRoute>;
+    return (
+      <StorefrontRoute<D> handle={handle}>{(data) => definition.render(data, i18n)}</StorefrontRoute>
+    );
   };
 
   if (definition.metadata === undefined) return { Page };
 
   const metadata = definition.metadata;
-  return { Page, generateMetadata: (props: P) => metadata(props) };
+  // The language is applied here, once, rather than in each builder: a builder returns the page's
+  // Vietnamese metadata and its canonical, and this moves both into the request's language.
+  return {
+    Page,
+    generateMetadata: async (props: P) => {
+      const [built, { locale, t }] = await Promise.all([metadata(props), getI18n()]);
+      return localizeMetadata(built, locale, t);
+    },
+  };
 }

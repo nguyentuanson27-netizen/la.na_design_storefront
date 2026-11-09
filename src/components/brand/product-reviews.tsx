@@ -17,6 +17,7 @@ import {
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 
 import { ReviewStars } from "./product-review-summary";
+import { useT } from "@/i18n/client";
 
 /**
  * The product page's review section: the summary, the product's own photographs, then the reviews
@@ -33,6 +34,7 @@ const PAGE_STEP = 10;
 const COLUMN = "mx-auto max-w-3xl px-6";
 
 function SummaryBlock({ summary }: Readonly<{ summary: NonNullable<ProductReviewSection["summary"]> }>) {
+  const t = useT();
   const fit = summary.fit === null ? null : fitShares(summary.fit);
   return (
     <div className="mt-3 text-center" data-review-summary="">
@@ -40,24 +42,24 @@ function SummaryBlock({ summary }: Readonly<{ summary: NonNullable<ProductReview
       <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
         <span className="font-display text-2xl leading-none text-[#2A1810]">{formatReviewAverage(summary.average)}</span>
         <ReviewStars value={summary.average} className="text-sm" />
-        <span className="text-xs text-[#70584B]">{summary.count} đánh giá</span>
+        <span className="text-xs text-[#70584B]">{t(`${summary.count} đánh giá`)}</span>
       </p>
 
       {fit === null ? null : (
         <p className="mt-2 text-xs text-[#70584B]" data-review-fit="">
-          <span className="font-semibold text-[#3B2219]">Về size:</span> Vừa vặn {fit.trueToSize}% · Hơi chật{" "}
-          {fit.small}% · Hơi rộng {fit.large}%
+          <span className="font-semibold text-[#3B2219]">{t("Về size:")}</span>{" "}
+          {t("Vừa vặn {fit}% · Hơi chật {small}% · Hơi rộng {large}%", { fit: fit.trueToSize, small: fit.small, large: fit.large })}
         </p>
       )}
 
       <details className="mx-auto mt-2 max-w-xs text-left" data-review-breakdown="">
         <summary className="cursor-pointer list-none text-center text-xs text-[#70584B] underline underline-offset-4 [&::-webkit-details-marker]:hidden">
-          Xem theo từng mức sao
+          {t("Xem theo từng mức sao")}
         </summary>
-        <ul className="mt-3 space-y-1.5" aria-label="Số đánh giá theo từng mức sao">
+        <ul className="mt-3 space-y-1.5" aria-label={t("Số đánh giá theo từng mức sao")}>
           {summary.distribution.map((count, index) => (
             <li key={index} className="flex items-center gap-2 text-xs text-[#3B2219]">
-              <span className="w-11 shrink-0">{5 - index} sao</span>
+              <span className="w-11 shrink-0">{t("{count} sao", { count: 5 - index })}</span>
               <span aria-hidden="true" className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#3B2219]/12">
                 <span
                   className="block h-full rounded-full bg-[#8A5A2B]"
@@ -84,6 +86,7 @@ function ReviewPhotoViewer({
   onClose: () => void;
   onStep: (delta: number) => void;
 }>) {
+  const t = useT();
   const dialogRef = useRef<HTMLDialogElement>(null);
   useScrollLock(index !== null);
 
@@ -112,7 +115,7 @@ function ReviewPhotoViewer({
   return (
     <dialog
       ref={dialogRef}
-      aria-label="Ảnh trong đánh giá"
+      aria-label={t("Ảnh trong đánh giá")}
       onClose={onClose}
       onKeyDown={handleKeyDown}
       className="m-auto h-[min(90vh,46rem)] w-[min(94vw,32rem)] max-w-none bg-transparent p-0 text-white backdrop:bg-black/85"
@@ -120,15 +123,15 @@ function ReviewPhotoViewer({
       {photo === null ? null : (
         <div className="relative h-full w-full">
           <Image src={photo.src} alt={photo.alt} fill sizes="(min-width: 640px) 32rem, 94vw" className="object-contain" />
-          <button type="button" onClick={onClose} aria-label="Đóng ảnh" className={`${button} right-2 top-2`}>
+          <button type="button" onClick={onClose} aria-label={t("Đóng ảnh")} className={`${button} right-2 top-2`}>
             ✕
           </button>
           {images.length > 1 ? (
             <>
-              <button type="button" onClick={() => onStep(-1)} aria-label="Ảnh trước" className={`${button} left-2 top-1/2 -translate-y-1/2`}>
+              <button type="button" onClick={() => onStep(-1)} aria-label={t("Ảnh trước")} className={`${button} left-2 top-1/2 -translate-y-1/2`}>
                 ‹
               </button>
-              <button type="button" onClick={() => onStep(1)} aria-label="Ảnh sau" className={`${button} right-2 top-1/2 -translate-y-1/2`}>
+              <button type="button" onClick={() => onStep(1)} aria-label={t("Ảnh sau")} className={`${button} right-2 top-1/2 -translate-y-1/2`}>
                 ›
               </button>
               <p className="absolute inset-x-0 bottom-2 text-center text-xs" aria-live="polite">
@@ -146,6 +149,7 @@ function ReviewCard({
   review,
   onOpenPhoto,
 }: Readonly<{ review: ProductReviewView; onOpenPhoto: (images: ProductReviewView["images"], index: number) => void }>) {
+  const t = useT();
   return (
     <article className="border-t border-[#3B2219]/15 py-5" data-review-id={review.id}>
       <div className="flex items-baseline justify-between gap-3">
@@ -157,9 +161,9 @@ function ReviewCard({
       <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
         <ReviewStars value={review.rating} className="text-sm" />
         {review.verifiedPurchase ? (
-          <span className="font-semibold text-[#2F5D3A]">✓ Đã mua hàng</span>
+          <span className="font-semibold text-[#2F5D3A]">{t("✓ Đã mua hàng")}</span>
         ) : null}
-        <span className="text-[#70584B]">{review.sourceLabel}</span>
+        <span className="text-[#70584B]">{t(review.sourceLabel)}</span>
       </p>
       {review.detailLine === null && review.fitLabel === null ? null : (
         <p className="mt-1 text-xs text-[#70584B]">
@@ -170,14 +174,14 @@ function ReviewCard({
         <p className="mt-3 whitespace-pre-line text-sm leading-6 text-[#3B2219]">{review.body}</p>
       )}
       {review.images.length === 0 ? null : (
-        <ul className="mt-3 flex flex-wrap gap-2" aria-label={`Ảnh của ${review.authorName}`}>
+        <ul className="mt-3 flex flex-wrap gap-2" aria-label={t("Ảnh của {name}", { name: review.authorName })}>
           {review.images.map((image, index) => (
             <li key={`${index}-${image.src}`}>
               <button
                 type="button"
                 onClick={() => onOpenPhoto(review.images, index)}
                 aria-haspopup="dialog"
-                aria-label={`Phóng to ảnh ${index + 1} trong ${review.images.length} của ${review.authorName}`}
+                aria-label={t("Phóng to ảnh {index} trong {total} của {name}", { index: index + 1, total: review.images.length, name: review.authorName })}
                 className="relative block h-[5.25rem] w-16 overflow-hidden rounded bg-[#D4C7B8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
               >
                 <Image src={image.src} alt="" fill sizes="64px" className="object-cover" />
@@ -188,7 +192,7 @@ function ReviewCard({
       )}
       {review.shopReply === null ? null : (
         <div className="mt-3 rounded-md bg-[#F0E9DE] px-3 py-2.5 text-xs leading-5 text-[#3B2219]">
-          <p className="font-semibold uppercase tracking-[0.08em] text-[#70584B]">{BRAND.identity.name} trả lời</p>
+          <p className="font-semibold uppercase tracking-[0.08em] text-[#70584B]">{t("{name} trả lời", { name: BRAND.identity.name })}</p>
           <p className="mt-0.5 whitespace-pre-line">{review.shopReply}</p>
         </div>
       )}
@@ -200,6 +204,7 @@ export function ProductReviews({
   section,
   photoRail = null,
 }: Readonly<{ section: ProductReviewSection; photoRail?: ReactNode }>) {
+  const t = useT();
   const [filter, setFilter] = useState<ReviewFilterKey>("all");
   const [shown, setShown] = useState(FIRST_PAGE);
   const [viewer, setViewer] = useState<{
@@ -232,10 +237,10 @@ export function ProductReviews({
     >
       <div className={COLUMN}>
         <h2 id="pdp-reviews-title" className="text-center font-display text-[1.0625rem] font-normal uppercase tracking-[0.3em]">
-          Đánh giá của khách
+          {t("Đánh giá của khách")}
         </h2>
         {section.summary === null ? (
-          <p className="mt-3 text-center text-xs text-[#70584B]">{section.count} đánh giá</p>
+          <p className="mt-3 text-center text-xs text-[#70584B]">{t(`${section.count} đánh giá`)}</p>
         ) : (
           <SummaryBlock summary={section.summary} />
         )}
@@ -245,7 +250,7 @@ export function ProductReviews({
 
       <div className={`${COLUMN} pb-14 pt-2`}>
         {filters.length === 0 ? null : (
-          <div className="-mx-6 overflow-x-auto px-6 py-2" role="group" aria-label="Lọc đánh giá">
+          <div className="-mx-6 overflow-x-auto px-6 py-2" role="group" aria-label={t("Lọc đánh giá")}>
             <div className="flex items-center gap-3.5">
               {filters.map((item) => (
                 <button
@@ -255,7 +260,7 @@ export function ProductReviews({
                   onClick={() => chooseFilter(item.key)}
                   className={chip(filter === item.key)}
                 >
-                  {item.label} ({item.count})
+                  {t(item.label)} ({item.count})
                 </button>
               ))}
             </div>
@@ -273,7 +278,7 @@ export function ProductReviews({
         </div>
 
         <p role="status" className="sr-only">
-          Đang hiển thị {visible.length} trên {matching.length} đánh giá
+          {t("Đang hiển thị {shown} trên {total} đánh giá", { shown: visible.length, total: matching.length })}
         </p>
         {matching.length > shown ? (
           <button
@@ -281,12 +286,12 @@ export function ProductReviews({
             onClick={() => setShown((current) => current + PAGE_STEP)}
             className="btn btn--outline mt-2 w-full"
           >
-            Xem thêm đánh giá ({matching.length - shown})
+            {t("Xem thêm đánh giá ({count})", { count: matching.length - shown })}
           </button>
         ) : null}
         {section.count > section.items.length ? (
           <p className="mt-4 text-center text-xs text-[#70584B]">
-            Đang hiển thị {section.items.length} đánh giá mới nhất trong {section.count}.
+            {t("Đang hiển thị {shown} đánh giá mới nhất trong {total}.", { shown: section.items.length, total: section.count })}
           </p>
         ) : null}
       </div>

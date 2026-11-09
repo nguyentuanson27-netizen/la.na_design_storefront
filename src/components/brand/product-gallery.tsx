@@ -8,6 +8,7 @@ import {
   resolveGalleryModel,
   type GalleryModelInput,
 } from "@/components/headless/resolve-gallery-model";
+import { useT } from "@/i18n/client";
 
 /**
  * F7a presentation only.
@@ -21,6 +22,7 @@ type BrandProductGalleryProps = Omit<GalleryModelInput, "manualSelection"> & Rea
 }>;
 
 export function BrandProductGallery({ preloadFirstImage = true, ...props }: BrandProductGalleryProps) {
+  const t = useT();
   const model = resolveGalleryModel(props);
 
   if (model.mode === "empty") {
@@ -33,7 +35,7 @@ export function BrandProductGallery({ preloadFirstImage = true, ...props }: Bran
           <span className="garment-silhouette" />
         </div>
         <p className="mt-3 text-xs uppercase tracking-[0.12em] text-black/60">
-          Hình ảnh sản phẩm đang được chuẩn hóa cho storefront.
+          {t("Hình ảnh sản phẩm đang được chuẩn hóa cho storefront.")}
         </p>
       </div>
     );
@@ -77,7 +79,7 @@ export function BrandProductGallery({ preloadFirstImage = true, ...props }: Bran
           <Image
             loader={pdpProductImageLoader}
             src={image.url}
-            alt={image.alt || `${props.productName} - Ảnh ${model.images.indexOf(image) + 1}`}
+            alt={image.alt || t("{name} - Ảnh {index}", { name: props.productName, index: model.images.indexOf(image) + 1 })}
             fill
             preload={preloadFirstImage && index === 0 && model.preloadsActiveImage}
             sizes="(min-width: 1024px) 30vw, 100vw"

@@ -1,3 +1,4 @@
+import { localizeListing } from "@/commerce/product-translation-runtime";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import {
@@ -47,6 +48,8 @@ export async function loadSaleRoute(
     if (error instanceof RangeError) notFound();
     throw error;
   }
+
+  page = await localizeListing(page);
 
   const { pricingRule, tracking } = await describeSalePage({ page, kind, now });
   const model = buildFlashSaleViewModel({

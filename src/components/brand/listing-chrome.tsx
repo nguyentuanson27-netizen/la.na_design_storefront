@@ -1,7 +1,11 @@
+"use client";
+
 import type { ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/i18n/link";
 
 import { LISTING_ACTION_BAR_CLASSES } from "@/components/headless/listing-view-model";
+
+import { useT } from "@/i18n/client";
 
 import { ListingViewToggle } from "./listing-view";
 
@@ -56,18 +60,19 @@ export function ListingSubnav({
   label,
   items,
 }: Readonly<{ label: string; items: readonly ListingSubnavItem[] }>) {
+  const t = useT();
   return (
-    <nav aria-label={label} className="-mx-6 mt-2 md:mx-0">
+    <nav aria-label={t(label)} className="-mx-6 mt-2 md:mx-0">
       <ul className="listing-subnav flex gap-x-6 overflow-x-auto px-6 md:flex-wrap md:gap-x-8 md:overflow-visible md:px-0">
         {items.map((item) => (
           <li key={item.href} className="shrink-0">
             <Link
               href={item.href}
               aria-current={item.current ? "page" : undefined}
-              aria-label={item.fullLabel && item.fullLabel !== item.label ? item.fullLabel : undefined}
+              aria-label={item.fullLabel && item.fullLabel !== item.label ? t(item.fullLabel) : undefined}
               className="listing-subnav-link inline-flex min-h-11 items-center whitespace-nowrap font-display text-xs uppercase tracking-[0.14em]"
             >
-              {item.label}
+              {t(item.label)}
             </Link>
           </li>
         ))}
@@ -102,11 +107,12 @@ export function ListingViewBar({
   rule = true,
   className = "",
 }: Readonly<{ totalCount: number; countLabel?: string; rule?: boolean; className?: string }>) {
+  const t = useT();
   return (
     <div className={`${rule ? "border-b border-[#3B2219]/15 pb-3 md:pb-4" : ""} ${className}`}>
       <div className={LISTING_ACTION_BAR_CLASSES.bar}>
         <span role="status" className="sr-only">
-          {totalCount} {countLabel}
+          {totalCount} {t(countLabel)}
         </span>
         <ListingViewToggle compact className="shrink-0" />
       </div>
@@ -146,20 +152,21 @@ export function ListingEmptyState({
   action?: Readonly<{ href: string; label: string }>;
   titleId: string;
 }>) {
+  const t = useT();
   return (
     <section aria-labelledby={titleId} className="py-20 text-center" data-ui-state="empty">
-      <p className="eyebrow text-[#70584B]">{eyebrow}</p>
+      <p className="eyebrow text-[#70584B]">{t(eyebrow)}</p>
       <h2 id={titleId} className="mx-auto mt-4 max-w-2xl font-display text-2xl font-normal text-[#2A1810] md:text-3xl">
-        {title}
+        {t(title)}
       </h2>
-      <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#3B2219]/70">{copy}</p>
+      <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#3B2219]/70">{t(copy)}</p>
       {action ? (
         <div className="mt-6">
           <Link
             href={action.href}
             className="btn btn--primary"
           >
-            {action.label}
+            {t(action.label)}
           </Link>
         </div>
       ) : null}
@@ -174,6 +181,7 @@ export function ListingEmptyState({
  * link -- which is also what lets a crawler walk the listing backwards. Absent on the first page.
  */
 export function ListingPreviousLink({ href }: Readonly<{ href: string | null }>) {
+  const t = useT();
   if (href === null) return null;
   return (
     <p className="mt-8">
@@ -182,7 +190,7 @@ export function ListingPreviousLink({ href }: Readonly<{ href: string | null }>)
         href={href}
         rel="prev"
       >
-        ← Trang trước
+        {t("← Trang trước")}
       </Link>
     </p>
   );
@@ -211,6 +219,7 @@ export function ListingPagination({
   previousHref: string | null;
   nextHref: string | null;
 }>) {
+  const t = useT();
   if (totalPages <= 1) return null;
 
   const linkClassName =
@@ -218,22 +227,22 @@ export function ListingPagination({
 
   return (
     <nav
-      aria-label={label}
+      aria-label={t(label)}
       className="mt-12 flex items-center justify-between gap-4 border-t border-[#3B2219]/15 pt-6"
     >
       {previousHref ? (
         <Link className={linkClassName} href={previousHref} rel="prev">
-          ← Trang trước
+          {t("← Trang trước")}
         </Link>
       ) : (
         <span aria-hidden="true" />
       )}
       <p className="text-xs uppercase tracking-wider text-[#70584B]">
-        Trang {page} / {totalPages}
+        {t("Trang {page} / {totalPages}", { page, totalPages })}
       </p>
       {nextHref ? (
         <Link className={linkClassName} href={nextHref} rel="next">
-          Trang sau →
+          {t("Trang sau →")}
         </Link>
       ) : (
         <span aria-hidden="true" />

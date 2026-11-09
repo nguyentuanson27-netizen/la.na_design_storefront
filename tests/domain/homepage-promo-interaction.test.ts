@@ -60,7 +60,7 @@ test("each promo tile has exactly one anchor, the CTA, and the image is not insi
 
 test("the CTA's accessible name carries the collection's canonical title", async () => {
   const source = await readFile(COMPONENT, "utf8");
-  assert.match(source, /\{tile\.ctaLabel\}\s*<span className="sr-only">: \{tile\.title\}<\/span>/);
+  assert.match(source, /\{t\(tile\.ctaLabel\)\}\s*<span className="sr-only">: \{t\(tile\.title\)\}<\/span>/);
 });
 
 test("the stretched whole-tile hit area exists only at the mobile breakpoint", async () => {

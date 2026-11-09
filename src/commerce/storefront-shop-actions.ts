@@ -10,6 +10,7 @@ import {
 import { SHOP_TITLE } from "../routes/metadata/shop.ts";
 import { SHOP_PAGE_SIZE } from "../routes/shop-model.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
+import { localizeListing } from "./product-translation-runtime.ts";
 import { listConfiguredStorefrontDiscoveryPage } from "./storefront-catalog-runtime.ts";
 import {
   buildStorefrontDiscoveryHref,
@@ -74,13 +75,16 @@ export async function loadShopNextPageAction(
     page: String(input.page),
   });
 
-  const catalogPage = await listConfiguredStorefrontDiscoveryPage({
-    discovery,
-    pageSize: SHOP_PAGE_SIZE,
-    now: new Date(),
-    // The same rule as the first page: under A-Z, what a shopper can buy leads.
-    inStockFirst: discovery.sort === "name-asc",
-  });
+  // Names in the shopper's language, applied after the read as on the first page.
+  const catalogPage = await localizeListing(
+    await listConfiguredStorefrontDiscoveryPage({
+      discovery,
+      pageSize: SHOP_PAGE_SIZE,
+      now: new Date(),
+      // The same rule as the first page: under A-Z, what a shopper can buy leads.
+      inStockFirst: discovery.sort === "name-asc",
+    }),
+  );
   // A page past the end is not an empty page, it is a URL that does not exist (the route 404s it).
   if (catalogPage.page > Math.max(catalogPage.totalPages, 1)) {
     throw new RangeError("Shop page is out of range");

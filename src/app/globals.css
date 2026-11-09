@@ -3730,6 +3730,59 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   }
 }
 
+/* The language switch: "VI / EN", the current language in bold and not a link. It sits first in the
+   desktop utility nav, inside the full-screen menu on small screens, and in the footer. */
+.language-switcher {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+}
+
+.language-switcher li {
+  min-height: var(--control-height);
+}
+
+.language-switcher a,
+.language-switcher [aria-current] {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+}
+
+@media (max-width: 900px) {
+  .language-switcher--header {
+    display: none;
+  }
+}
+
+@media (min-width: 900.02px) {
+  .language-switcher--menu {
+    display: none;
+  }
+}
+
+.mobile-menu .language-switcher--menu {
+  margin-top: var(--space-4);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+.mobile-menu .language-switcher--menu + .mobile-menu__utility {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.footer-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 /*
  * "Thử đồ AI" on the product photograph (try-on-dialog.tsx, `BrandTryOnMediaButton`): centred at the
  * bottom. The Flash Sale tag holds the bottom left and the photo counter the bottom right, so the

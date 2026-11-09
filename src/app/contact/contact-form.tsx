@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { submitContactForm } from "@/routes/contact-action";
+import { useT } from "@/components/brand/localization";
 
 type ContactResult = Awaited<ReturnType<typeof submitContactForm>>;
 type InvalidField = Extract<
@@ -58,6 +59,7 @@ function messageForResult(result: ContactResult): FormStatus {
 }
 
 export function ContactForm() {
+  const t = useT();
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState<FormStatus>({ kind: "idle" });
@@ -111,15 +113,15 @@ export function ContactForm() {
   return (
     <section className="mt-12 max-w-2xl border-t border-black/15 pt-10" aria-labelledby="contact-form-heading">
       <h2 id="contact-form-heading" className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
-        Gửi tin nhắn
+        {t("Gửi tin nhắn")}
       </h2>
       <p className="mt-3 text-sm leading-6 text-black/65">
-        Điền họ tên, email và nội dung cần hỗ trợ.
+        {t("Điền họ tên, email và nội dung cần hỗ trợ.")}
       </p>
 
       <form ref={formRef} className="mt-7 grid gap-6" onSubmit={handleSubmit}>
         <label className="block text-sm font-medium" htmlFor="contact-name">
-          Họ tên
+          {t("Họ tên")}
           <input
             className={FIELD_CLASS}
             id="contact-name"
@@ -132,7 +134,7 @@ export function ContactForm() {
           />
           {nameError ? (
             <span id="contact-name-error" className="mt-2 block text-sm leading-6" role="alert">
-              {nameError}
+              {t(nameError)}
             </span>
           ) : null}
         </label>
@@ -153,13 +155,13 @@ export function ContactForm() {
           />
           {emailError ? (
             <span id="contact-email-error" className="mt-2 block text-sm leading-6" role="alert">
-              {emailError}
+              {t(emailError)}
             </span>
           ) : null}
         </label>
 
         <label className="block text-sm font-medium" htmlFor="contact-message">
-          Nội dung
+          {t("Nội dung")}
           <textarea
             className={`${FIELD_CLASS} min-h-40 resize-y`}
             id="contact-message"
@@ -171,7 +173,7 @@ export function ContactForm() {
           />
           {messageError ? (
             <span id="contact-message-error" className="mt-2 block text-sm leading-6" role="alert">
-              {messageError}
+              {t(messageError)}
             </span>
           ) : null}
         </label>
@@ -182,7 +184,7 @@ export function ContactForm() {
             disabled={pending}
             type="submit"
           >
-            {pending ? "Đang gửi…" : "Gửi tin nhắn"}
+            {pending ? t("Đang gửi…") : t("Gửi tin nhắn")}
           </button>
         </div>
 
@@ -192,7 +194,7 @@ export function ContactForm() {
             role={status.kind === "error" ? "alert" : "status"}
             aria-live={status.kind === "error" ? "assertive" : "polite"}
           >
-            {status.message}
+            {t(status.message)}
           </p>
         ) : null}
       </form>

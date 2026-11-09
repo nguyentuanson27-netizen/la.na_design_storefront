@@ -1,3 +1,4 @@
+import { localizeProductNames } from "@/commerce/product-translation-runtime";
 import { connection } from "next/server";
 
 import {
@@ -27,7 +28,7 @@ export type LookbookRouteData = Readonly<{
 
 async function loadEdit(now: Date) {
   try {
-    const products = await listConfiguredStorefrontProducts(LOOKBOOK_PRODUCT_COUNT);
+    const products = await localizeProductNames(await listConfiguredStorefrontProducts(LOOKBOOK_PRODUCT_COUNT));
     return { products, ...(await resolveStorefrontPromotionForProducts({ products, now })) };
   } catch (error) {
     // An unconfigured Pancake shop is a deployment state: the editorial still reads.

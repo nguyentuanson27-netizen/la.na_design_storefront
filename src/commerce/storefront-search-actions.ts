@@ -60,6 +60,14 @@ export async function searchStorefrontSuggestionsAction(
     const { createStorefrontSearchSuggestionFinder } = await import(
       "./storefront-search-repository.ts"
     );
-    return createStorefrontSearchSuggestionFinder(prisma, readPancakeShopId())(trimmed);
+    const found = await createStorefrontSearchSuggestionFinder(prisma, readPancakeShopId())(trimmed);
+    // The English names are a nicety on top of a result that already stands: whatever goes wrong
+    // reading them, the suggestions are returned as found.
+    try {
+      const { localizeProductNames } = await import("./product-translation-runtime.ts");
+      return [...(await localizeProductNames(found))];
+    } catch {
+      return found;
+    }
   });
 }

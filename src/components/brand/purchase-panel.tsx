@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/link";
 import { createPortal } from "react-dom";
 import {
   useEffect,
@@ -37,6 +37,7 @@ import { resolveMobilePurchasePresentation } from "@/components/headless/variant
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import { SIZE_GUIDE_SHEET_QUERY, SizeGuideSheet } from "@/components/brand/size-guide-sheet";
 import type { ProductMappedSizeGuide } from "@/routes/product-model";
+import { useT } from "@/i18n/client";
 
 /**
  * Brand PDP purchase presentation.
@@ -173,22 +174,23 @@ const DIALOG_FOCUSABLE_SELECTOR = [
 
 /** The guide's notes and table: visible when there is no artwork, screen-reader-only beside it. */
 function SizeGuideFacts({ guide }: { guide: ProductMappedSizeGuide }) {
+  const t = useT();
   return (
     <>
       <p>{guide.circumferenceSemanticsNote}</p>
       {guide.tolerance ? (
         <p>
-          <strong>Dung sai:</strong> {guide.tolerance.note}
+          <strong>{t("Dung sai:")}</strong> {t(guide.tolerance.note)}
         </p>
       ) : null}
       <p>{guide.guidanceNote}</p>
 
       <table className="mt-2 w-full border-collapse text-left text-sm text-black">
-        <caption className="sr-only">{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
+        <caption className="sr-only">{t("Dữ liệu bảng size {title}", { title: t(guide.chart.title) })}</caption>
         <thead>
           <tr className="border-b border-black/15 bg-black/[0.03]">
             <th scope="col" className="py-3 pl-3 pr-4 font-semibold">
-              Thông số
+              {t("Thông số")}
             </th>
             {guide.chart.sizes.map((size) => (
               <th key={size} scope="col" className="px-3 py-3 text-right font-semibold">
@@ -227,6 +229,7 @@ function MappedSizeGuideDialog({
   closeButtonRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
 }>) {
+  const t = useT();
   function closeDialog() {
     dialogRef.current?.close();
   }
@@ -275,7 +278,7 @@ function MappedSizeGuideDialog({
   return (
     <dialog
       ref={dialogRef}
-      aria-label={`Hướng dẫn chọn size: ${guide.chart.title}`}
+      aria-label={t("Hướng dẫn chọn size: {title}", { title: t(guide.chart.title) })}
       data-size-guide-id={guide.id}
       tabIndex={-1}
       className={`m-auto max-w-2xl border-0 bg-transparent p-0 text-black shadow-none backdrop:bg-black/45 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100%-2rem)] ${
@@ -297,7 +300,7 @@ function MappedSizeGuideDialog({
           className={`${hasArtwork ? "fixed sm:absolute" : "absolute"} right-2 top-2 z-10 min-h-11 bg-[#FAF7F2] px-3 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]`}
           onClick={closeDialog}
         >
-          Đóng
+          {t("Đóng")}
         </button>
 
         {guide.imageUrl ? (
@@ -368,6 +371,7 @@ export function PurchasePanelView({
   /** Server-decided Flash Sale countdown and "Còn x" facts; none by default. */
   urgency?: ProductUrgency;
 }>) {
+  const t = useT();
   const {
     view,
     selection,
@@ -491,7 +495,7 @@ export function PurchasePanelView({
       outline: text ? "outline outline-2 outline-offset-4 outline-[#3B2219]" : "",
       line: text ? (
         <p id={id} className="mt-2 text-sm font-medium text-[#8A3A35]" role="alert">
-          {text}
+          {t(text)}
         </p>
       ) : null,
     };
@@ -502,11 +506,11 @@ export function PurchasePanelView({
     const valueCase = label === "Kích cỡ" ? "" : `inline-block ${SENTENCE_CASE}`;
     return (
       <legend className="text-sm leading-5 text-[#3B2219]/70">
-        <span>{label}</span>
+        <span>{t(label)}</span>
         {selectedValue === null ? null : (
           <span aria-hidden="true">
             {": "}
-            <span className={`font-medium text-[#2A1810] ${valueCase}`}>{selectedValue}</span>
+            <span className={`font-medium text-[#2A1810] ${valueCase}`}>{t(selectedValue)}</span>
           </span>
         )}
       </legend>
@@ -612,7 +616,7 @@ export function PurchasePanelView({
             onClick={isPanel ? showMainSizeGuide : showSheetSizeGuide}
           >
             <RulerIcon />
-            <span>Hướng dẫn chọn size</span>
+            <span>{t("Hướng dẫn chọn size")}</span>
           </button>
         )}
         {extra}
@@ -740,7 +744,7 @@ export function PurchasePanelView({
         */}
         {view.kindSelectionGuidance === null ? null : (
           <p id={kindGuidanceId} className="sr-only">
-            {view.kindSelectionGuidance}
+            {t(view.kindSelectionGuidance)}
           </p>
         )}
         <div className="mt-0.5 flex flex-wrap gap-x-2">
@@ -806,7 +810,7 @@ export function PurchasePanelView({
                 disabled={choice.disabled || isPending}
                 onChange={() => chooseColor(choice.value)}
               />
-              <span className={`${chipClass(choice.disabled)} ${SENTENCE_CASE}`}>{choice.value}</span>
+              <span className={`${chipClass(choice.disabled)} ${SENTENCE_CASE}`}>{t(choice.value)}</span>
             </label>
           ))}
         </div>
@@ -835,17 +839,17 @@ export function PurchasePanelView({
     // own line instead of running under the add button.
     return (
       <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-        <span className="sr-only">{priceDisplay.compareAtText ? (priceDisplay.isListReference ? "Giá giảm " : "Giá khuyến mãi ") : ""}</span>
+        <span className="sr-only">{priceDisplay.compareAtText ? t(priceDisplay.isListReference ? "Giá giảm" : "Giá khuyến mãi") + " " : ""}</span>
         <span
           className={`font-display text-base font-semibold tabular-nums ${clock ? "text-[#9A3324]" : ""}`}
         >
-          {priceDisplay.displayText}
+          {t(priceDisplay.displayText)}
         </span>
         {priceDisplay.compareAtText && clock ? (
           <>
-            <span className="sr-only">Giá gốc </span>
+            <span className="sr-only">{t("Giá gốc")}</span>
             <span className="text-xs tabular-nums text-black/55 line-through decoration-black/40">
-              {priceDisplay.compareAtText}
+              {priceDisplay.compareAtText ? t(priceDisplay.compareAtText) : null}
             </span>
           </>
         ) : priceDisplay.compareAtText ? (
@@ -859,8 +863,8 @@ export function PurchasePanelView({
     return (
       <span className="mt-0.5 flex items-center gap-1 text-xs font-bold tabular-nums text-[#D6262F]">
         <BoltIcon className="h-3 w-3 shrink-0" />
-        <span aria-hidden="true">Còn {clock.text}</span>
-        <span className="sr-only">{clock.spoken}</span>
+        <span aria-hidden="true">{t("Còn {time}", { time: t(clock.text) })}</span>
+        <span className="sr-only">{t(clock.spoken)}</span>
       </span>
     );
   }
@@ -872,7 +876,7 @@ export function PurchasePanelView({
         className={`text-sm font-semibold text-[#9A3324] ${surface === "panel" ? "mt-2.5" : "mt-3"}`}
         data-pdp-low-stock=""
       >
-        {lowStockLabel}
+        {lowStockLabel ? t(lowStockLabel) : null}
       </p>
     );
   }
@@ -883,12 +887,12 @@ export function PurchasePanelView({
       <span className="mt-0.5 block truncate text-xs text-black/60">
         {priceDisplay.compareAtText ? (
           <>
-            <span className="sr-only">Giá gốc </span>
-            <span className="tabular-nums line-through decoration-black/40">{priceDisplay.compareAtText}</span>
+            <span className="sr-only">{t("Giá gốc")}</span>
+            <span className="tabular-nums line-through decoration-black/40">{t(priceDisplay.compareAtText)}</span>
             {detail ? <span aria-hidden="true">{" · "}</span> : null}
           </>
         ) : null}
-        {detail}
+        {t(detail)}
       </span>
     );
   }
@@ -898,7 +902,7 @@ export function PurchasePanelView({
   return (
     <>
       <section
-        aria-label="Mua sản phẩm"
+        aria-label={t("Mua sản phẩm")}
         className="mt-1 border-t border-[#3B2219]/15 pt-6 lg:mt-0 lg:border-t-0 lg:pt-0"
       >
         {flashClock === null ? null : (
@@ -910,12 +914,12 @@ export function PurchasePanelView({
             {/* The digits tick every second, so they are hidden from assistive technology; the
                 sentence beside them changes once a minute and is not a live region. */}
             <span className="pdp-flash-strip__clock">
-              <span>Kết thúc sau</span>
+              <span>{t("Kết thúc sau")}</span>
               <span className="pdp-flash-strip__digits" aria-hidden="true">
                 {flashClock.days > 0 ? (
                   <>
                     <b>{flashClock.days}</b>
-                    <span className="pdp-flash-strip__unit">ngày</span>
+                    <span className="pdp-flash-strip__unit">{t("ngày")}</span>
                   </>
                 ) : null}
                 <b>{flashClock.hours}</b>:<b>{flashClock.minutes}</b>:<b>{flashClock.seconds}</b>
@@ -928,11 +932,11 @@ export function PurchasePanelView({
           <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-display text-[1.75rem] leading-tight font-normal tabular-nums tracking-[0.01em] text-[#2A1810]">
             {priceDisplay.compareAtText ? (
               <>
-                <span className="sr-only">Giá gốc </span>
+                <span className="sr-only">{t("Giá gốc")}</span>
                 <span className="align-baseline text-lg text-[#3B2219]/70 line-through decoration-[#3B2219]/40">
-                  {priceDisplay.compareAtText}
+                  {priceDisplay.compareAtText ? t(priceDisplay.compareAtText) : null}
                 </span>
-                <span className="sr-only">{flashClock === null ? (priceDisplay.isListReference ? "Giá giảm " : "Giá khuyến mãi ") : "Giá Flash Sale "}</span>
+                <span className="sr-only">{(flashClock === null ? t(priceDisplay.isListReference ? "Giá giảm" : "Giá khuyến mãi") : t("Giá Flash Sale")) + " "}</span>
                 {/* Red only for a Flash price, the one sale the page shouts about. */}
                 <span className={flashClock === null ? undefined : "text-[#9A3324]"}>{priceDisplay.displayText}</span>
                 {/* Solid, in the price's own colour: Flash red, otherwise the ink the price is set in. */}
@@ -951,11 +955,11 @@ export function PurchasePanelView({
               className="preorder-marker inline-flex items-center border border-[#3B2219] px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.1em]"
               data-purchase-state="preorder"
             >
-              {view.preorderLabel}
+              {t(view.preorderLabel)}
             </span>
           )}
           {view.hasPurchasableVariant ? null : (
-            <p className="text-xs uppercase tracking-[0.1em] text-[#3B2219]/70">Chưa thể mua online</p>
+            <p className="text-xs uppercase tracking-[0.1em] text-[#3B2219]/70">{t("Chưa thể mua online")}</p>
           )}
         </div>
 
@@ -976,22 +980,22 @@ export function PurchasePanelView({
           <button
             className="btn btn--primary w-full px-4 text-balance"
             type="button"
-            aria-label={view.buyNowAccessibleName}
+            aria-label={t(view.buyNowAccessibleName)}
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
             onClick={() => runPurchase("panel", buyNow)}
           >
-            {view.buyNowLabel}
+            {t(view.buyNowLabel)}
           </button>
           <button
             className="btn btn--outline w-full px-4 text-balance"
             type="button"
-            aria-label={view.addToBagAccessibleName}
+            aria-label={t(view.addToBagAccessibleName)}
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
             onClick={() => runPurchase("panel", addToBag)}
           >
-            {view.addToBagLabel}
+            {t(view.addToBagLabel)}
           </button>
         </div>
 
@@ -1003,7 +1007,7 @@ export function PurchasePanelView({
           {justAdded ? (
             <span className="inline-flex items-center gap-2">
               <CheckIcon />
-              {message}
+              {t(message)}
             </span>
           ) : (
             purchaseStatus
@@ -1021,13 +1025,13 @@ export function PurchasePanelView({
             className="btn btn--outline mt-2 w-full"
             onClick={handleViewCartClick}
           >
-            Xem giỏ hàng
+            {t("Xem giỏ hàng")}
           </Link>
         ) : null}
 
         {availabilityDateLabel === null ? null : (
           <p className="mt-1 text-xs text-black/55" role="status" aria-live="polite">
-            Dự kiến có hàng: {availabilityDateLabel}
+            {t("Dự kiến có hàng: {date}", { date: availabilityDateLabel })}
           </p>
         )}
 
@@ -1057,7 +1061,7 @@ export function PurchasePanelView({
             className="mx-auto mb-2 w-full max-w-[42rem] text-sm font-medium text-[#9A3324]"
             data-mobile-purchase-feedback=""
           >
-            {message}
+            {t(message)}
           </p>
         ) : null}
         <div className="mx-auto flex w-full max-w-[42rem] min-w-0 items-center gap-3">
@@ -1097,7 +1101,7 @@ export function PurchasePanelView({
             disabled={isPending}
             onClick={handleStickyAction}
           >
-            {mobilePresentation.stickyActionLabel}
+            {t(mobilePresentation.stickyActionLabel)}
           </button>
         </div>
       </section>
@@ -1114,7 +1118,7 @@ export function PurchasePanelView({
                 ref={sheetRef}
                 role="dialog"
                 aria-modal="true"
-                aria-label="Chọn lựa chọn sản phẩm"
+                aria-label={t("Chọn lựa chọn sản phẩm")}
                 className="absolute inset-x-0 bottom-0 max-h-[88dvh] overflow-hidden rounded-t-2xl bg-[#FAF7F2] shadow-2xl"
                 onKeyDown={handleSheetKeyDown}
               >
@@ -1122,7 +1126,7 @@ export function PurchasePanelView({
                   {/* The price stays in the header while choices are made: it moves with the kind. */}
                   <p className="m-0 min-w-0">
                     <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-black/55">
-                      Lựa chọn sản phẩm
+                      {t("Lựa chọn sản phẩm")}
                     </span>
                     <span className="mt-1 block">{renderCompactPrice()}</span>
                     {renderCompactDetail("")}
@@ -1131,7 +1135,7 @@ export function PurchasePanelView({
                     ref={sheetCloseRef}
                     type="button"
                     onClick={closeSheet}
-                    aria-label="Đóng lựa chọn sản phẩm"
+                    aria-label={t("Đóng lựa chọn sản phẩm")}
                     className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                   >
                     ×
@@ -1159,28 +1163,28 @@ export function PurchasePanelView({
                       <button
                         type="button"
                         className="btn btn--primary w-full px-3 text-balance"
-                        aria-label={view.buyNowAccessibleName}
+                        aria-label={t(view.buyNowAccessibleName)}
                         disabled={isPending}
                         aria-busy={isPending}
                         onClick={() => runPurchase("sheet", buyNow)}
                       >
-                        {view.buyNowLabel}
+                        {t(view.buyNowLabel)}
                       </button>
                       <button
                         type="button"
                         className="btn btn--outline w-full px-3 text-balance"
-                        aria-label={view.addToBagAccessibleName}
+                        aria-label={t(view.addToBagAccessibleName)}
                         disabled={isPending}
                         aria-busy={isPending}
                         onClick={() => runPurchase("sheet", () => addToBag(handleSheetAddAccepted))}
                       >
-                        {mobilePresentation.actionLabel}
+                        {t(mobilePresentation.actionLabel)}
                       </button>
                     </div>
                   ) : (
                     <button type="button" className="btn btn--primary w-full" disabled>
                       {view.selectedVariantId !== null && !view.canAdd
-                        ? mobilePresentation.unavailableMessage || "Lựa chọn này tạm hết"
+                        ? t(mobilePresentation.unavailableMessage || "Lựa chọn này tạm hết")
                         : mobilePresentation.actionLabel}
                     </button>
                   )}

@@ -5,6 +5,15 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { BRAND } from "../../src/brand/index.ts";
+import { unwrapTranslations } from "../support/untranslated-source.ts";
+
+/**
+ * A storefront source file as it read before its copy went through `t()` (see
+ * `tests/support/untranslated-source.ts`). These inventories pin the Vietnamese copy the page holds;
+ * wrapping that copy for English does not change what it says.
+ */
+const readBuyerSource = async (path: string): Promise<string> =>
+  unwrapTranslations(await readFile(path, "utf8"));
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const INVENTORY_FILE = "tests/integrations/storefront-language-inventory.test.ts";
@@ -14,6 +23,13 @@ const NON_BUYER_PREFIXES = [
   "src/generated/",
   "src/app/admin/",
   "tests/a11y-runtime/admin-",
+  // The English locale's translation data. It is English on purpose: it is what the English
+  // storefront shows, keyed by the Vietnamese this inventory protects. The ban on English buyer
+  // phrases is about English leaking into the Vietnamese storefront, and these files never render
+  // there. (The English storefront's own wording is checked in the English routes, not here.)
+  "src/i18n/catalog/",
+  "src/brand/messages",
+  "tests/domain/i18n-",
 ] as const;
 
 /**
@@ -265,8 +281,8 @@ test("U1b collections listing uses Vietnamese functional copy", async () => {
   // The listing's title and description are metadata copy and are checked where the canonical
   // metadata builder lives; everything a shopper reads is still checked on the page.
   const [source, metadataSource] = await Promise.all([
-    readFile(join(REPO_ROOT, "src/app/collections/page.tsx"), "utf8"),
-    readFile(join(REPO_ROOT, "src/routes/metadata/collections.ts"), "utf8"),
+    readBuyerSource(join(REPO_ROOT, "src/app/collections/page.tsx")),
+    readBuyerSource(join(REPO_ROOT, "src/routes/metadata/collections.ts")),
   ]);
   for (const expected of [
     'title: "Bộ sưu tập"',
@@ -284,7 +300,7 @@ test("U1b collections listing uses Vietnamese functional copy", async () => {
   // unchanged, and the ban list below is untouched.
   for (const expected of [
     'title="Bộ sưu tập"',
-    "Khám phá\n",
+    'label="Khám phá"',
     "Bộ sưu tập hiện tại",
     "Các bộ sưu tập đang được chuẩn bị.",
     "Bộ sưu tập sẽ xuất hiện tại đây khi sẵn sàng.",
@@ -295,9 +311,9 @@ test("U1b collections listing uses Vietnamese functional copy", async () => {
 
 test("U1b shop listing and loading use Vietnamese buyer-functional copy", async () => {
   const [pageSource, loadingSource, metadataSource] = await Promise.all([
-    readFile(join(REPO_ROOT, "src/app/shop/page.tsx"), "utf8"),
-    readFile(join(REPO_ROOT, "src/app/shop/loading.tsx"), "utf8"),
-    readFile(join(REPO_ROOT, "src/routes/metadata/shop.ts"), "utf8"),
+    readBuyerSource(join(REPO_ROOT, "src/app/shop/page.tsx")),
+    readBuyerSource(join(REPO_ROOT, "src/app/shop/loading.tsx")),
+    readBuyerSource(join(REPO_ROOT, "src/routes/metadata/shop.ts")),
   ]);
 
   // The listing's title is metadata copy, so it is checked where the canonical metadata builder
@@ -362,7 +378,7 @@ test("U1b shop listing and loading use Vietnamese buyer-functional copy", async 
 });
 
 test("U1b collection detail uses Vietnamese buyer-functional copy", async () => {
-  const source = await readFile(join(REPO_ROOT, "src/app/collections/[slug]/page.tsx"), "utf8");
+  const source = await readBuyerSource(join(REPO_ROOT, "src/app/collections/[slug]/page.tsx"));
 
   // No brand eyebrow in the page body. Paging is the category listing's infinite grid now, whose
   // "Xem thêm" button and crawler link carry their own Vietnamese copy.
@@ -447,8 +463,8 @@ test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability d
   // name is the same label under a different roof: renaming only the heading would leave the
   // superseded claim in the reports.
   const [markupSource, routeSource] = await Promise.all([
-    readFile(join(REPO_ROOT, "src/app/shop/[slug]/page.tsx"), "utf8"),
-    readFile(join(REPO_ROOT, "src/routes/product.ts"), "utf8"),
+    readBuyerSource(join(REPO_ROOT, "src/app/shop/[slug]/page.tsx")),
+    readBuyerSource(join(REPO_ROOT, "src/routes/product.ts")),
   ]);
   const source = `${markupSource}\n${routeSource}`;
 
@@ -494,8 +510,8 @@ test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability d
 
 test("U1c cart loading and error states use Giỏ hàng terminology", async () => {
   const [loadingSource, errorSource] = await Promise.all([
-    readFile(join(REPO_ROOT, "src/app/cart/loading.tsx"), "utf8"),
-    readFile(join(REPO_ROOT, "src/app/cart/error.tsx"), "utf8"),
+    readBuyerSource(join(REPO_ROOT, "src/app/cart/loading.tsx")),
+    readBuyerSource(join(REPO_ROOT, "src/app/cart/error.tsx")),
   ]);
 
   for (const expected of ["Mua sắm", "Đang tải giỏ hàng."]) {

@@ -10,6 +10,7 @@ import {
   parseSaleDiscoverySearchParams,
   type CategoryDiscoverySort,
 } from "./category-discovery-url.ts";
+import { localizeListing } from "./product-translation-runtime.ts";
 import { listConfiguredSalePage } from "./storefront-catalog-runtime.ts";
 
 /**
@@ -69,7 +70,10 @@ export async function loadSaleNextPageAction(
   });
 
   const now = new Date();
-  const salePage = await listConfiguredSalePage({ discovery, pageSize: SALE_PAGE_SIZE, kind, now });
+  // Names in the shopper's language, applied after the read as on the first page.
+  const salePage = await localizeListing(
+    await listConfiguredSalePage({ discovery, pageSize: SALE_PAGE_SIZE, kind, now }),
+  );
   const { pricingRule, tracking } = await describeSalePage({ page: salePage, kind, now });
 
   const model = buildFlashSaleViewModel({

@@ -11,7 +11,7 @@ import { PlpFilterPanel } from "@/components/brand/plp-filter-panel";
 import { PlpInfiniteGrid } from "@/components/brand/plp-infinite-grid";
 import { loadCollectionRoute, type CollectionRouteProps } from "@/routes/collection";
 import { COLLECTION_PRODUCTS_ANCHOR, type CollectionViewModel } from "@/routes/collection-model";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { buildCollectionMetadata } from "@/routes/metadata/collection";
 
 /**
@@ -25,7 +25,7 @@ import { buildCollectionMetadata } from "@/routes/metadata/collection";
  * crawlable next-page link for a reader without script.
  */
 
-function render(data: CollectionViewModel) {
+function render(data: CollectionViewModel, { t }: RequestI18n) {
   const { editorial } = data;
   // Where `#san-pham` lands: the title when the product controls follow it directly, otherwise the
   // controls themselves, so a tall gallery or video never sits between the shopper and the grid.
@@ -45,7 +45,7 @@ function render(data: CollectionViewModel) {
       {editorial.heroImage ? (
         <section
           className="collection-page-hero"
-          aria-label={`Ảnh bìa bộ sưu tập ${data.title}`}
+          aria-label={t("Ảnh bìa bộ sưu tập {title}", { title: data.title })}
           data-header-overlay-hero=""
           data-collection-hero=""
         >
@@ -60,7 +60,7 @@ function render(data: CollectionViewModel) {
               same anchor the homepage hero's CTA lands on. */}
           <div aria-hidden="true" className="collection-page-hero__scrim" />
           <a className="collection-page-hero__cue" href={`#${COLLECTION_PRODUCTS_ANCHOR}`}>
-            <span className="collection-page-hero__cue-label">Xem sản phẩm</span>
+            <span className="collection-page-hero__cue-label">{t("Xem sản phẩm")}</span>
             <span aria-hidden="true" className="collection-page-hero__cue-arrow">
               ↓
             </span>
@@ -105,13 +105,13 @@ function render(data: CollectionViewModel) {
         {editorial.gallery.length > 0 ? (
           <section
             className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-            aria-label={`Hình ảnh bộ sưu tập ${data.title}`}
+            aria-label={t("Hình ảnh bộ sưu tập {title}", { title: data.title })}
           >
             {editorial.gallery.map((url, index) => (
               <div key={url} className="relative aspect-[3/4] overflow-hidden bg-[var(--stone)]">
                 <Image
                   src={url}
-                  alt={`${data.title} — Ảnh ${index + 1}`}
+                  alt={t("{title} — Ảnh {index}", { title: data.title, index: index + 1 })}
                   fill
                   sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
                   className="object-cover"
@@ -124,7 +124,7 @@ function render(data: CollectionViewModel) {
         <section
           id={productsAnchorOnTitle ? "bo-loc" : COLLECTION_PRODUCTS_ANCHOR}
           className="collection-products-anchor mt-6 md:mt-12"
-          aria-label="Điều khiển bộ sưu tập"
+          aria-label={t("Điều khiển bộ sưu tập")}
         >
           {productsAnchorOnTitle ? null : (
             <span id="products" className="pointer-events-none absolute h-0 w-0" aria-hidden="true" />
@@ -141,14 +141,14 @@ function render(data: CollectionViewModel) {
         {data.totalCount === 0 && !data.filtered ? (
           <ListingEmptyState
             titleId="collection-empty-title"
-            eyebrow="Bộ sưu tập hiện tại"
-            title="Bộ sưu tập này chưa có sản phẩm."
-            copy="Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập."
+            eyebrow={t("Bộ sưu tập hiện tại")}
+            title={t("Bộ sưu tập này chưa có sản phẩm.")}
+            copy={t("Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập.")}
           />
         ) : (
           <section className="mt-4" aria-labelledby="collection-products-title">
             <h2 id="collection-products-title" className="sr-only">
-              Sản phẩm
+              {t("Sản phẩm")}
             </h2>
             {/* The anchors already sit above, on the title or the controls; the grid must not repeat them. */}
             <PlpInfiniteGrid

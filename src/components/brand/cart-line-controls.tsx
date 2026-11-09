@@ -1,6 +1,7 @@
 "use client";
 
 import { useCartLine, type UseCartLineInput } from "@/components/headless/use-cart-line";
+import { useT } from "@/i18n/client";
 
 /**
  * Markup only. Every brand throws this file away and writes its own.
@@ -17,6 +18,7 @@ export function BrandCartLineControls({
   totalText,
   ...props
 }: UseCartLineInput & Readonly<{ productName: string; totalText?: string }>) {
+  const t = useT();
   const line = useCartLine(props);
   const stepClassName =
     "inline-flex h-10 w-10 items-center justify-center text-lg text-black/80 transition hover:text-black disabled:cursor-not-allowed disabled:opacity-35";
@@ -25,7 +27,7 @@ export function BrandCartLineControls({
     <div className="mt-3">
       <div className="inline-flex items-center rounded-lg bg-black/[0.05]">
         <button
-          aria-label={line.decrementTarget < line.currentQuantity - 1 ? `Giảm ${productName} còn ${line.decrementTarget}` : `Bớt một ${productName}`}
+          aria-label={line.decrementTarget < line.currentQuantity - 1 ? t("Giảm {productName} còn {decrementTarget}", { productName, decrementTarget: line.decrementTarget }) : t("Bớt một {productName}", { productName })}
           className={stepClassName}
           disabled={!line.canDecrement}
           onClick={line.decrement}
@@ -34,7 +36,7 @@ export function BrandCartLineControls({
           <span aria-hidden="true">−</span>
         </button>
         <label className="sr-only" htmlFor={line.inputId}>
-          Số lượng
+          {t("Số lượng")}
         </label>
         <input
           id={line.inputId}
@@ -56,7 +58,7 @@ export function BrandCartLineControls({
           }}
         />
         <button
-          aria-label={`Thêm một ${productName}`}
+          aria-label={t("Thêm một {productName}", { productName })}
           className={stepClassName}
           disabled={!line.canIncrement}
           onClick={line.increment}
@@ -66,11 +68,11 @@ export function BrandCartLineControls({
         </button>
       </div>
       <p className={`mt-1.5 text-sm empty:hidden ${line.messageIsWarning ? "font-medium text-amber-800" : "text-black/60"}`} role="status" aria-live="polite">
-        {line.message}
+        {t(line.message)}
       </p>
       {totalText ? <p className="mt-3 font-semibold" data-line-total>{totalText}</p> : null}
       <button
-        aria-label={`Xóa ${productName} khỏi giỏ hàng`}
+        aria-label={t("Xóa {productName} khỏi giỏ hàng", { productName })}
         className="absolute right-0 top-0 inline-flex h-10 w-10 items-center justify-center text-black/70 transition hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
         disabled={!line.canRemove}
         onClick={line.removeLine}

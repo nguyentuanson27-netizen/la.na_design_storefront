@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { readUntranslated } from "../support/untranslated-source.ts";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -214,7 +214,7 @@ test("F4b a ?page=N deep link still reconstructs page N, and the grid never writ
   // The server renders only page N for such a URL. Writing it into the address bar while the grid
   // appends pages would make a reload or a Back from a product drop every page above N, so the
   // infinite grid leaves the URL on the page the shopper arrived at.
-  const hook = readFileSync(
+  const hook = readUntranslated(
     path.join(REPO_ROOT, "src/components/headless/use-plp-infinite-grid.ts"),
     "utf8",
   );
@@ -232,7 +232,7 @@ test("F4b a ?page=N deep link still reconstructs page N, and the grid never writ
 });
 
 test("F4b mobile PLP filter drawer: enforces focus trap, Escape dismissal, and opener restoration", () => {
-  const source = readFileSync(
+  const source = readUntranslated(
     path.join(REPO_ROOT, "src/components/brand/plp-filter-panel.tsx"),
     "utf8",
   );
@@ -347,7 +347,7 @@ test("F4b price filter contract: buildClearPriceHref clears only price bounds, p
 });
 
 test("F4b price filter UI contract: desktop price form, price pill clear link, input sync, and client validation", () => {
-  const source = readFileSync(
+  const source = readUntranslated(
     path.join(REPO_ROOT, "src/components/brand/plp-filter-panel.tsx"),
     "utf8",
   );
@@ -407,11 +407,11 @@ test("F4b price filter UI contract: desktop price form, price pill clear link, i
 });
 
 test("F4b infinite grid: consumes server nextCursor and announces errors via accessible live region", () => {
-  const hookSource = readFileSync(
+  const hookSource = readUntranslated(
     path.join(REPO_ROOT, "src/components/headless/use-plp-infinite-grid.ts"),
     "utf8",
   );
-  const gridSource = readFileSync(
+  const gridSource = readUntranslated(
     path.join(REPO_ROOT, "src/components/brand/plp-infinite-grid.tsx"),
     "utf8",
   );
@@ -468,11 +468,11 @@ test("F4b infinite grid: consumes server nextCursor and announces errors via acc
 });
 
 test("F8a product card presents availability without duplicating any stock threshold", () => {
-  const cardSource = readFileSync(
+  const cardSource = readUntranslated(
     path.join(REPO_ROOT, "src/components/brand/product-card.tsx"),
     "utf8",
   );
-  const modelSource = readFileSync(
+  const modelSource = readUntranslated(
     path.join(REPO_ROOT, "src/components/headless/build-product-card-model.ts"),
     "utf8",
   );
@@ -520,7 +520,7 @@ test("F8a product card presents availability without duplicating any stock thres
 
 
 test("the infinite grid routes its page requests through the stale-request guard", () => {
-  const hook = readFileSync(
+  const hook = readUntranslated(
     path.join(REPO_ROOT, "src/components/headless/use-plp-infinite-grid.ts"),
     "utf8",
   );

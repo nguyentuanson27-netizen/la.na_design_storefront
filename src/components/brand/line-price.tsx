@@ -1,3 +1,7 @@
+"use client";
+
+import { useT } from "@/i18n/client";
+
 /**
  * A line's price, with its per-product promotion on the line itself: the catalog price struck through
  * and the percentage off beside it. Without a promotion it is just the price. Shared by the drawer,
@@ -10,21 +14,22 @@ export function LinePrice({
   discountPercent,
   className = "",
 }: Readonly<{ priceText: string; isListReference?: boolean; originalPriceText?: string; discountPercent?: number; className?: string }>) {
-  if (!originalPriceText) return <span className={className}>{priceText}</span>;
+  const t = useT();
+  if (!originalPriceText) return <span className={className}>{t(priceText)}</span>;
   return (
     <span className={`inline-flex flex-wrap items-baseline gap-x-1.5 ${className}`} data-line-discount>
       <s className="font-normal text-[#70584B]">
-        <span className="sr-only">Giá gốc </span>
+        <span className="sr-only">{t("Giá gốc")}</span>
         {originalPriceText}
       </s>
       <span>
-        <span className="sr-only">{isListReference ? "Giá giảm " : "Giá khuyến mãi "}</span>
-        {priceText}
+        <span className="sr-only">{t(isListReference ? "Giá giảm" : "Giá khuyến mãi") + " "}</span>
+        {t(priceText)}
       </span>
       {discountPercent ? (
         <span className="rounded-sm bg-[#2F5D3A]/10 px-1 py-px text-[0.65rem] font-semibold leading-4 text-[#24472D]">
           <span aria-hidden="true">−{discountPercent}%</span>
-          <span className="sr-only">giảm {discountPercent}%</span>
+          <span className="sr-only">{t("giảm {percent}%", { percent: discountPercent })}</span>
         </span>
       ) : null}
     </span>

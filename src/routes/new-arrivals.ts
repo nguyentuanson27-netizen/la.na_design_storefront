@@ -1,3 +1,4 @@
+import { localizeListing } from "@/commerce/product-translation-runtime";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
@@ -44,6 +45,8 @@ export async function loadNewArrivalsRoute({
     if (error instanceof RangeError) notFound();
     throw error;
   }
+
+  catalogPage = await localizeListing(catalogPage);
 
   // A page past the end is not an empty listing, it is a URL that does not exist. Page 1 of an
   // empty catalog still is one, which is what the empty state is for.

@@ -1,7 +1,7 @@
-import Link from "next/link";
+import Link from "@/components/brand/localized-link";
 
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
-import { createStorefrontRoute } from "@/routes/factory";
+import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import type { PolicyHubViewModel } from "@/routes/evergreen-model";
 import { buildPoliciesMetadata } from "@/routes/metadata/policies";
 import { loadPoliciesRoute, type PoliciesRouteProps } from "@/routes/policies";
@@ -20,14 +20,20 @@ import { loadPoliciesRoute, type PoliciesRouteProps } from "@/routes/policies";
 const POLICY_LINK =
   "underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4";
 
-function render(data: PolicyHubViewModel) {
+function render(data: PolicyHubViewModel, { t, locale }: RequestI18n) {
   return (
     <PageShell>
       <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Chính sách" }]} />
       <PageHeader
-        eyebrow="Chính sách"
-        title="Thông tin & chính sách"
+        eyebrow={t("Chính sách")}
+        title={t("Thông tin & chính sách")}
       />
+
+      {locale === "vi" ? null : (
+        <p className="mt-6 max-w-2xl border-l-2 border-[#8B5E3C]/40 pl-4 text-sm leading-6 text-black/65" data-translation-notice>
+          {t("Bản dịch tiếng Anh chỉ mang tính tham khảo. Khi có khác biệt, bản tiếng Việt được ưu tiên áp dụng.")}
+        </p>
+      )}
 
       <div className="mt-10 grid max-w-3xl gap-16">
         {data.topics.map((topic) => (
@@ -36,11 +42,11 @@ function render(data: PolicyHubViewModel) {
               id={`${topic.id}-heading`}
               className="font-display text-2xl tracking-[-0.03em] md:text-3xl"
             >
-              {topic.title}
+              {t(topic.title)}
             </h2>
-            <p className="mt-3 max-w-2xl text-base leading-7 text-black/70">{topic.detail}</p>
+            <p className="mt-3 max-w-2xl text-base leading-7 text-black/70">{t(topic.detail)}</p>
             {topic.note === null ? null : (
-              <p className="mt-2 max-w-2xl text-base leading-7 text-black/70">{topic.note}</p>
+              <p className="mt-2 max-w-2xl text-base leading-7 text-black/70">{t(topic.note)}</p>
             )}
 
             {topic.sections.length === 0 ? null : (
@@ -48,20 +54,20 @@ function render(data: PolicyHubViewModel) {
                 {topic.sections.map((section) => (
                   <div key={section.heading}>
                     <h3 className="font-display text-xl tracking-[-0.02em] md:text-2xl">
-                      {section.heading}
+                      {t(section.heading)}
                     </h3>
                     {section.paragraphs.map((paragraph) => (
                       <p
                         key={paragraph}
                         className="mt-3 max-w-2xl text-base leading-7 text-black/70"
                       >
-                        {paragraph}
+                        {t(paragraph)}
                       </p>
                     ))}
                     {section.items.length === 0 ? null : (
                       <ul className="mt-3 max-w-2xl list-disc space-y-2 pl-5 text-base leading-7 text-black/70">
                         {section.items.map((item) => (
-                          <li key={item}>{item}</li>
+                          <li key={item}>{t(item)}</li>
                         ))}
                       </ul>
                     )}
@@ -70,7 +76,7 @@ function render(data: PolicyHubViewModel) {
                         key={paragraph}
                         className="mt-3 max-w-2xl text-base leading-7 text-black/70"
                       >
-                        {paragraph}
+                        {t(paragraph)}
                       </p>
                     ))}
                   </div>
@@ -81,7 +87,7 @@ function render(data: PolicyHubViewModel) {
             {topic.linkLabel === null ? null : (
               <p className="mt-6">
                 <Link className={POLICY_LINK} href={topic.href}>
-                  {topic.linkLabel}
+                  {t(topic.linkLabel)}
                 </Link>
               </p>
             )}

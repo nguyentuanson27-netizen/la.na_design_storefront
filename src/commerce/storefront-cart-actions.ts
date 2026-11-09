@@ -15,6 +15,7 @@ import { createStorefrontCartRepository } from "./storefront-cart-repository.ts"
 import { scheduleMetaAddToCartSafely } from "./meta-request-context.ts";
 import { tryReadGuestShippingPolicy } from "./guest-shipping-policy.ts";
 import { getCurrentStorefrontCartBenefits } from "./storefront-cart-runtime.ts";
+import { localizeCartViewNames } from "./product-translation-runtime.ts";
 import { buildCartViewModel, type CartViewModel } from "../routes/cart-model.ts";
 
 async function createActionRuntime() {
@@ -96,11 +97,13 @@ export async function getStorefrontCartLines() {
  * ids the drawer has no reason to receive.
  */
 export async function getStorefrontCartView(): Promise<CartViewModel> {
-  const model = buildCartViewModel({
-    ...(await getCurrentStorefrontCartBenefits(new Date())),
-    commerceTrackingEnabled: false,
-    shippingPolicy: tryReadGuestShippingPolicy(),
-  });
+  const model = await localizeCartViewNames(
+    buildCartViewModel({
+      ...(await getCurrentStorefrontCartBenefits(new Date())),
+      commerceTrackingEnabled: false,
+      shippingPolicy: tryReadGuestShippingPolicy(),
+    }),
+  );
   const view: { -readonly [K in keyof CartViewModel]: CartViewModel[K] } = { ...model };
   delete view.gifts;
   return view;
