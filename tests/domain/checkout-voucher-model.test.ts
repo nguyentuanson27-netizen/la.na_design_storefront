@@ -83,6 +83,20 @@ test("a checkout without vouchers is unchanged: no voucher row, no waiver", () =
   assert.equal(model.summary!.totalText, vnd("930.000"));
 });
 
+test("a saving the quote does not name still shows as a programme row, so the bill is never the bare subtotal", () => {
+  const quote = buildBenefitCheckoutQuoteFacts({
+    paid: [{ groupKey: "g|p", pancakeVariationId: "var-1", quantity: 2, unitPriceVnd: 400_000, steps: [], fulfillmentState: "READY" }],
+    gifts: [],
+    entitlements: [],
+  })!;
+  const model = buildBenefitCheckoutViewModel({ lines: [cartLine], render: { ...render(), facts: quote, proof: issueBenefitQuoteProof({ quote, cartId, secret })!, digest: benefitQuoteDigest(quote), voucher: undefined } });
+  const summary = model.summary!;
+  assert.ok(summary, "the bill is still shown");
+  assert.equal(summary.valueText, vnd("900.000"));
+  assert.deepEqual(summary.discounts.map((row) => [row.label, row.amountText]), [["Ưu đãi chương trình", `−${vnd("100.000")}`]]);
+  assert.equal(summary.totalText, vnd("830.000"));
+});
+
 test("order summary: a waiver needs a positive amount and never changes the value", () => {
   const base = { goodsAfterDiscountsVnd: 850_000, discounts: [], shippingFeeVnd: 0 };
   assert.equal(buildOrderSummary({ ...base, shippingVoucher: { label: "x", waivedVnd: 0 } }), null);

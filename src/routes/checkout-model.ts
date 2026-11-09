@@ -503,17 +503,30 @@ export function buildBenefitCheckoutViewModel(
   const shippingVoucher = render.voucher && render.voucher.shippingWaivedVnd > 0 && render.voucher.shippingCampaignId !== null
     ? { label: render.voucher.names.get(render.voucher.shippingCampaignId) ?? "Voucher vận chuyển", waivedVnd: render.voucher.shippingWaivedVnd }
     : undefined;
-  const summary = listedValueVnd === null || !voucherConsistent
+  const namedDiscounts = [...(promotions?.savings ?? []), ...voucherRows];
+  const summaryBase = {
+    goodsAfterDiscountsVnd: facts.paidSubtotalVnd,
+    shippingFeeVnd: facts.shippingFeeVnd,
+    giftQuantity,
+    expectedTotalVnd: facts.totalVnd,
+    ...(shippingVoucher ? { shippingVoucher } : {}),
+  };
+  // The strict bill: the named discounts must close the gap to the lines' listed value exactly.
+  const strictSummary = listedValueVnd === null || !voucherConsistent
+    ? null
+    : buildOrderSummary({ ...summaryBase, discounts: namedDiscounts, expectedValueVnd: listedValueVnd });
+  // When they do not (a programme saving the quote does not name, a line with no listed price), the shopper must still see every
+  // discount the order carries, not the bare subtotal. Voucher rows stay exact; whatever the lines' listed value says
+  // is still unaccounted for is shown as one generic programme row, so the bill adds up by construction.
+  const residualVnd = listedValueVnd === null ? 0 : listedValueVnd - facts.paidSubtotalVnd - namedDiscounts.reduce((sum, row) => sum + row.amountVnd, 0);
+  const summary = strictSummary ?? (!voucherConsistent
     ? null
     : buildOrderSummary({
-        goodsAfterDiscountsVnd: facts.paidSubtotalVnd,
-        discounts: [...(promotions?.savings ?? []), ...voucherRows],
-        shippingFeeVnd: facts.shippingFeeVnd,
-        giftQuantity,
-        expectedTotalVnd: facts.totalVnd,
-        expectedValueVnd: listedValueVnd,
-        ...(shippingVoucher ? { shippingVoucher } : {}),
-      });
+        ...summaryBase,
+        discounts: Number.isSafeInteger(residualVnd) && residualVnd > 0
+          ? [...namedDiscounts, Object.freeze({ id: "program:other", label: "Ưu đãi chương trình", amountVnd: residualVnd, amountText: currency.format(residualVnd) })]
+          : namedDiscounts,
+      }));
 
   const listPriceSavingsText = describeListPriceSavings(input.lines, facts.paidSubtotalVnd);
   return Object.freeze({
