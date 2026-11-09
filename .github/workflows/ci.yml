@@ -398,16 +398,21 @@ jobs:
     # rate, and on identical steps in the same run Linux was the faster of the two anyway
     # (`pnpm install` 9.0s against 17.7s).
     runs-on: ubuntu-latest
-    # Four shards, each on its own runner with its own database. The suite used to run as one
+    # Six shards, each on its own runner with its own database. The suite used to run as one
     # serial 12.6-minute block; the specs cannot share a worker because they park and restore
     # global rows, so the parallelism is taken across machines instead of inside one.
     #
+    # Playwright splits by test count, not by duration, so the shards are never equal: with four, the
+    # slowest ran 7.8-9.3 minutes and the fastest about 4, and the slowest is what the run waits for
+    # (it holds `csp-enforce` and the Meta pixel specs, ~40s each). More, smaller shards shorten that
+    # tail; the count here and the `--shard=N/6` below must change together.
+    #
     # `fail-fast: false` on purpose: one shard going red should still let the others report, or a
-    # single failure hides the state of three quarters of the suite.
+    # single failure hides the state of most of the suite.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     # A ceiling for a hung shard, not a target. Each shard is expected to finish in a few minutes,
     # and a run that approaches this number is a regression worth reading rather than a new normal
     # to raise again.
@@ -491,7 +496,7 @@ jobs:
         working-directory: tests/a11y-runtime
         env:
           LA_E2E_PREBUILT_DIST_DIR: .next-e2e
-        run: npx playwright test --config playwright.config.ts --shard=${{ matrix.shard }}/4
+        run: npx playwright test --config playwright.config.ts --shard=${{ matrix.shard }}/6
 
   # H3-V (Voucher v1, AC-42 / AC-43): the REAL hold Server Action driven from a browser against a production
   # build (`next build` + `next start`). The test-only route lives in tests/fixtures/voucher-hold-harness and is
