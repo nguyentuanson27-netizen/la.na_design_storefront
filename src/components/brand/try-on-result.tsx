@@ -165,7 +165,7 @@ export function BrandTryOnResult({
         </button>
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-2 right-2 bg-[#FAF7F2]/90 px-2 py-1 text-[11px] font-semibold text-[#3B2219]"
+          className="pointer-events-none absolute bottom-2 right-2 whitespace-nowrap bg-[#FAF7F2]/90 px-2 py-1 text-[11px] font-semibold text-[#3B2219]"
         >
           Phóng to
         </span>
