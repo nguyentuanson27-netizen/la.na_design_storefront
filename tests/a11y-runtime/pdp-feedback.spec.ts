@@ -244,10 +244,8 @@ test("a product without its own photographs shows the brand's under the brand ti
   // The two brand photographs and the calibrated tagged one, which joins the brand gallery.
   await expect(section.getByRole("button", { name: /^Phóng to ảnh/ })).toHaveCount(3);
   await expect(page.getByRole("heading", { name: "Khách hàng diện mẫu này" })).toHaveCount(0);
-  // Three shared photographs are enough for a strip, and it says whose they are.
-  const strip = page.locator("[data-pdp-photo-strip]");
-  await expect(strip).toHaveAttribute("data-strip-kind", "brand");
-  await expect(strip).not.toContainText("mẫu này");
+  // The shared photographs never make a strip under the price; they live in the rail at the bottom.
+  await expect(page.locator("[data-pdp-photo-strip]")).toHaveCount(0);
   await assertPageQuality(page);
 });
 
