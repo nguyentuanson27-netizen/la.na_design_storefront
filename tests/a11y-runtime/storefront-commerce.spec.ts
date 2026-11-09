@@ -1197,7 +1197,7 @@ test("the phone sticky bar's add-to-cart button adds exactly one unit, opens the
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
   const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
-  const addToCart = stickyBar.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
+  const addToCart = stickyBar.getByRole("button", { name: "Thêm vào giỏ từ thanh mua nhanh", exact: true });
 
   // Nothing chosen yet: the bar asks for the choices and offers no add button.
   await expect(addToCart).toHaveCount(0);
@@ -1226,7 +1226,7 @@ test("a failed add from the phone sticky bar's add-to-cart button opens no drawe
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
   await chooseBlackMediumThenCloseSheet(page);
   const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
-  const addToCart = stickyBar.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
+  const addToCart = stickyBar.getByRole("button", { name: "Thêm vào giỏ từ thanh mua nhanh", exact: true });
   await expect(addToCart).toBeEnabled();
 
   await page.route("**/shop/**", async (route) => {
@@ -1258,7 +1258,7 @@ test("at 320px the sticky bar's price, add-to-cart and buy-now buttons do not ov
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
   const buyNow = await chooseBlackMediumThenCloseSheet(page);
   const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
-  const addToCart = stickyBar.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
+  const addToCart = stickyBar.getByRole("button", { name: "Thêm vào giỏ từ thanh mua nhanh", exact: true });
   await expect(addToCart).toBeVisible();
 
   const price = stickyBar.locator("p").first();

@@ -1077,7 +1077,7 @@ export function PurchasePanelView({
             <button
               className="btn btn--outline min-h-11 w-11 shrink-0 px-0"
               type="button"
-              aria-label={view.addToBagAccessibleName}
+              aria-label={view.quickAddAccessibleName}
               title={view.addToBagLabel}
               aria-busy={isPending}
               disabled={isPending}
