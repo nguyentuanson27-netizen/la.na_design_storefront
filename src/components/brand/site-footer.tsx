@@ -230,7 +230,7 @@ export async function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>
 
       <div className="footer-meta-row">
         <p className="footer-meta">© 2026 {BRAND.identity.name}</p>
-        <LanguageSwitcher className="language-switcher language-switcher--footer" />
+        <LanguageSwitcher placement="footer" className="language-switcher language-switcher--footer" />
       </div>
     </footer>
   );

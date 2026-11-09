@@ -2,7 +2,7 @@
 
 import { usePathname as useAddressBarPathname, useSearchParams } from "next/navigation";
 
-import { useLocale } from "@/i18n/client";
+import { useLocale, useT } from "@/i18n/client";
 import {
   LANGUAGE_SWITCHER_ORDER,
   LOCALE_LANGUAGE_TAG,
@@ -10,6 +10,12 @@ import {
   switchLocalePath,
   type Locale,
 } from "@/i18n/locale";
+
+const LANDMARK_NAME = {
+  header: "Ngôn ngữ",
+  menu: "Ngôn ngữ (menu)",
+  footer: "Ngôn ngữ (chân trang)",
+} as const;
 
 const SHORT_CODE: Readonly<Record<Locale, string>> = { vi: "VI", en: "EN" };
 
@@ -24,7 +30,16 @@ const SHORT_CODE: Readonly<Record<Locale, string>> = { vi: "VI", en: "EN" };
  */
 export function LanguageSwitcher({
   className,
-}: Readonly<{ className?: string }>) {
+  placement,
+}: Readonly<{
+  className?: string;
+  /**
+   * Where this copy sits. The header, the mobile menu and the footer each carry one, and a page may
+   * not hold several navigation landmarks with the same name, so each is named for its place.
+   */
+  placement: "header" | "menu" | "footer";
+}>) {
+  const t = useT();
   const current = useLocale();
   const pathname = useAddressBarPathname();
   const query = useSearchParams().toString();
@@ -32,7 +47,7 @@ export function LanguageSwitcher({
   return (
     <nav
       className={className}
-      aria-label={current === "en" ? "Language" : "Ngôn ngữ"}
+      aria-label={t(LANDMARK_NAME[placement])}
       data-language-switcher=""
     >
       <ul className="flex items-center gap-1.5">

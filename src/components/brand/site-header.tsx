@@ -380,7 +380,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
 
         {/* Utility Navigation */}
         <nav className="utility-nav" aria-label={t("Tiện ích")}>
-          <LanguageSwitcher className="language-switcher language-switcher--header" />
+          <LanguageSwitcher placement="header" className="language-switcher language-switcher--header" />
           {NAVIGATION.utility.map((item, index) => {
             const isSearch = index === 0;
             const isAccount = index === 1;
@@ -552,7 +552,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
               })}
             </ul>
 
-            <LanguageSwitcher className="language-switcher language-switcher--menu" />
+            <LanguageSwitcher placement="menu" className="language-switcher language-switcher--menu" />
 
             {/* Mobile Utility Links */}
             <ul className="mobile-menu__utility">
