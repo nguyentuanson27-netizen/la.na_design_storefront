@@ -418,7 +418,13 @@ export function BrandProductMediaStage({
         </div>
       </dialog>
 
-      {overlayAction ? <div className="pdp-stage__overlay-action">{overlayAction}</div> : null}
+      {/* Shares the bottom left with the Flash Sale tag below, so it rides above that tag while the sale
+          is on (`data-flash-sale`) instead of covering it. */}
+      {overlayAction ? (
+        <div className="pdp-stage__overlay-action" data-flash-sale={flashSale ? "true" : undefined}>
+          {overlayAction}
+        </div>
+      ) : null}
 
       {video ? (
         <div className="pdp-video-anchor" data-single-image={images.length === 1 ? "true" : undefined}>

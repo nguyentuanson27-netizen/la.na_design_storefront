@@ -3742,6 +3742,23 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   bottom: 1rem;
 }
 
+/* The Flash Sale tag (`.pdp-flash-tag`, 1.375rem high) holds this same corner; the control rides above
+   it with a small gap rather than over it. Keep the two corner offsets in step with `.pdp-flash-tag`. */
+.pdp-stage__overlay-action[data-flash-sale="true"] {
+  bottom: calc(1rem + 1.375rem + 0.5rem);
+}
+
+@media (min-width: 64rem) {
+  .pdp-stage__overlay-action {
+    left: var(--shell-gutter);
+    bottom: 1.5rem;
+  }
+
+  .pdp-stage__overlay-action[data-flash-sale="true"] {
+    bottom: calc(1.5rem + 1.375rem + 0.5rem);
+  }
+}
+
 .pdp-tryon-media-button {
   display: inline-flex;
   min-height: 2.75rem;

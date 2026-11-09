@@ -1668,3 +1668,32 @@ test("another product's try-on still being made is announced on the first step, 
     `/shop/${slugs.eligible}`,
   );
 });
+
+test("on a Flash Sale product the on-photo button rides above the FLASH SALE tag instead of covering it", async ({
+  page,
+}) => {
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${ENABLED_URL}/shop/${slugs.eligible}`, { waitUntil: "networkidle" });
+    // The seeded product is not on sale; put the page's own Flash Sale markup in its place, which is
+    // what the media stage renders (`pdp-flash-tag`) and what the button's container keys off.
+    await page.evaluate(() => {
+      const stage = document.querySelector(".pdp-stage");
+      const action = document.querySelector<HTMLElement>(".pdp-stage__overlay-action");
+      if (!stage || !action) throw new Error("media stage not found");
+      const tag = document.createElement("span");
+      tag.className = "product-tag product-tag--flash pdp-flash-tag";
+      tag.textContent = "FLASH SALE";
+      tag.setAttribute("data-testid", "flash-tag");
+      stage.appendChild(tag);
+      action.setAttribute("data-flash-sale", "true");
+    });
+    const button = await page.getByRole("button", { name: "Thử lên người", exact: true }).boundingBox();
+    const tag = await page.getByTestId("flash-tag").boundingBox();
+    expect(button).not.toBeNull();
+    expect(tag).not.toBeNull();
+    // Same left edge, button wholly above the tag, and a visible gap between them.
+    expect(Math.abs(button!.x - tag!.x)).toBeLessThanOrEqual(1);
+    expect(button!.y + button!.height).toBeLessThanOrEqual(tag!.y - 4);
+  }
+});
