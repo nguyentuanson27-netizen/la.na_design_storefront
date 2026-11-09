@@ -1,3 +1,4 @@
+import { compressTryOnResult } from "@/integrations/try-on/result-image";
 import { handleTryOnPost, handleTryOnQuotaGet } from "@/commerce/try-on-endpoint";
 import {
   peekTryOnQuota,
@@ -16,7 +17,11 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  return handleTryOnPost(request, { service: tryOnService, resolveIdentity: resolveTryOnIdentity });
+  return handleTryOnPost(request, {
+    service: tryOnService,
+    resolveIdentity: resolveTryOnIdentity,
+    optimizeResult: compressTryOnResult,
+  });
 }
 
 export async function GET(request: Request) {

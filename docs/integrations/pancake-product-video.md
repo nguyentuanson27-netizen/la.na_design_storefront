@@ -57,7 +57,10 @@ The route passes that small projection to the existing media stage.
 
 The video is one 9:16 frame at every width; where it sits depends on the layout. Below `lg` (phone)
 it is a frame on the photograph's right edge, about a quarter of the photo's height above its bottom,
-outside the swipe track. From `lg` up it is a floating mini-player (168 px wide, pinned 1.5 rem from
+outside the swipe track. It is pinned (CSS `position: sticky`, no scroll listener): as the shopper
+scrolls down the photograph it stays on screen 4 rem under the masthead, stops 4 rem short of the
+photograph's bottom (clear of the counter and Flash Sale tag) and leaves with the photograph, so it
+never reaches the price or buy buttons. From `lg` up it is a floating mini-player (168 px wide, pinned 1.5 rem from
 the viewport's right and 6.5 rem from its bottom, in the column above the chat button, z-index 44,
 under the header and dialogs) with a close button (`Đóng video nhỏ`). It needs a window at least 520px
 tall (299px player + 104px offset + the ~88px sticky header); a shorter desktop window (`dock`) gets

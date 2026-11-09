@@ -1,3 +1,11 @@
+import {
+  TRY_ON_CLIENT_EVENTS,
+  TRY_ON_OPEN_SOURCES,
+  TRY_ON_RATINGS,
+  type TryOnClientEventName,
+  type TryOnOpenSource,
+  type TryOnRating,
+} from "../commerce/try-on-client-events.ts";
 import { TRY_ON_FAILURE_REASONS, type TryOnFailureReason } from "../commerce/try-on-policy.ts";
 
 /**
@@ -18,6 +26,10 @@ export type TryOnSignalName =
   | "try_on.generation_failed"
   | "try_on.safety_blocked"
   | "try_on.rate_limited"
+  /** The attempt of a request that failed for a reason of ours was given back. */
+  | "try_on.attempt_refunded"
+  /** A step the shopper took in the browser (see `TryOnClientEvent`); counted, never an image. */
+  | "try_on.client_event"
   /** A request sent to the Vertex overflow instead of Flow; `cause` says why. */
   | "try_on.overflow_routed"
   /** Flow marked down after this outcome; requests go to the overflow for a while. */
@@ -59,6 +71,10 @@ export type TryOnSignalInput = Readonly<{
   productSlug?: string;
   provider?: TryOnSignalProvider;
   cause?: TryOnSignalCause;
+  /** `try_on.client_event` only: which browser-side step, from where, and a thumb if it was one. */
+  clientEvent?: TryOnClientEventName;
+  source?: TryOnOpenSource;
+  rating?: TryOnRating;
 }>;
 
 export type TryOnSignal = Readonly<{
@@ -69,6 +85,9 @@ export type TryOnSignal = Readonly<{
   productSlug?: string;
   provider?: TryOnSignalProvider;
   cause?: TryOnSignalCause;
+  clientEvent?: TryOnClientEventName;
+  source?: TryOnOpenSource;
+  rating?: TryOnRating;
 }>;
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -97,6 +116,11 @@ export function buildTryOnSignal(input: TryOnSignalInput): TryOnSignal {
   }
   if (input.provider !== undefined && PROVIDERS.includes(input.provider)) signal.provider = input.provider;
   if (input.cause !== undefined && CAUSES.includes(input.cause)) signal.cause = input.cause;
+  if (input.clientEvent !== undefined && TRY_ON_CLIENT_EVENTS.includes(input.clientEvent)) {
+    signal.clientEvent = input.clientEvent;
+  }
+  if (input.source !== undefined && TRY_ON_OPEN_SOURCES.includes(input.source)) signal.source = input.source;
+  if (input.rating !== undefined && TRY_ON_RATINGS.includes(input.rating)) signal.rating = input.rating;
   return signal;
 }
 

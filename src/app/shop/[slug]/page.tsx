@@ -71,19 +71,19 @@ function render(data: ProductRouteData, { t }: RequestI18n) {
 
   // A product with its own review photographs shows those, not the shared brand gallery as well:
   // two walls of customer photographs say the same thing twice, and the shared one is not about this
-  // product. The brand rail (and the link to it) stays for a product with no review photographs.
+  // product. The brand rail stays at the bottom of the page for a product with no review photographs;
+  // nothing near the price points to it (no strip, no link under the buy buttons).
   const reviewsHavePhotos = data.reviews !== null && data.reviews.photoCount > 0;
   const feedback = data.feedback !== null && data.feedback.scope === "brand" && reviewsHavePhotos
     ? null
     : data.feedback;
-  // The photographs under the price: this product's review photographs, its own tagged ones, or the
-  // shop's shared gallery -- each worded for what it is. A product or brand strip also carries the
-  // link the purchase panel used to hold, so that link steps aside for it.
+  // The photographs under the price: this product's review photographs or its own tagged ones, and
+  // nothing otherwise -- the shop's shared gallery shows only in its rail at the bottom of the page.
+  // A product strip also carries the link the purchase panel used to hold, so that link steps aside
+  // for it.
   const photoStrip = resolveCustomerPhotoStrip({
     reviews: data.reviews,
     feedback,
-    slug: data.slug,
-    brandName: BRAND.identity.name,
   });
 
   const identity = (
@@ -252,7 +252,6 @@ function render(data: ProductRouteData, { t }: RequestI18n) {
         <div className="mt-5 text-sm text-[#3B2219]" data-pdp-vouchers="">
           <p className="pdp-voucher-label">{t("Voucher có thể áp dụng cho giỏ hàng:")}</p>
           <VoucherTeaserChips items={data.voucherTeaser} />
-          <p className="mt-1.5 text-xs text-[#3B2219]/70">{t("Nàng chọn voucher trong giỏ hàng. Voucher chỉ áp dụng khi giỏ đủ điều kiện.")}</p>
         </div>
       )}
     </>
@@ -275,7 +274,7 @@ function render(data: ProductRouteData, { t }: RequestI18n) {
           </li>
         ))}
       </ul>
-      {feedback === null || stripReplacesFeedbackLink(photoStrip) ? null : (
+      {feedback === null || feedback.scope === "brand" || stripReplacesFeedbackLink(photoStrip) ? null : (
         <p className="mt-2 flex items-center gap-2.5 text-sm text-[#3B2219]/80">
           <AssuranceIcon kind="photos" />
           <a className={PANEL_LINK} href={`#${FEEDBACK_SECTION_ID}`}>

@@ -3396,6 +3396,29 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
 }
 .pdp-video-slot__close svg { width: 16px; height: 16px; }
 .pdp-video-slot__close:focus-visible { outline: 3px solid var(--paper); outline-offset: 2px; box-shadow: 0 0 0 6px var(--chocolate); }
+/* Below `lg` the frame is pinned: it rests where it always has (a quarter of the photograph's height
+   up from the bottom, 1rem from the right edge) and, as the shopper scrolls down through the
+   photograph, stays on screen just under the masthead instead of scrolling away with the top of the
+   photograph. It runs out with the photograph: sticky stops at the bottom of the photograph's box
+   (4rem clear of it, so the counter and the Flash Sale tag stay uncovered) and leaves with it, so it
+   never reaches the price or the buy buttons. Pure CSS, so there is no scroll listener and no jump.
+   Sticky needs the photograph not to be a scroll container, hence `overflow: visible` for `hidden`
+   (never `clip`: a clipping ancestor takes away the lazy-load margin, so the gallery's second
+   photograph would stop being fetched ahead of the first swipe), and the cell the slot sits in to
+   stop clipping its own box. The phone gallery's track clips the photographs itself. */
+@media (max-width: 1023.98px) {
+  .pdp-stage { overflow: visible; }
+  .pdp-video-anchor .pdp-stage__cell { overflow: visible; container-type: size; }
+  .pdp-video-slot {
+    --pdp-video-width: clamp(88px, 25vw, 112px);
+    position: sticky;
+    top: calc(var(--masthead-height) + 4rem);
+    right: auto;
+    bottom: auto;
+    width: var(--pdp-video-width);
+    margin: calc(74cqh - var(--pdp-video-width) * 16 / 9) 1rem 4rem auto;
+  }
+}
 @media (min-width: 1024px) {
   .pdp-video-anchor {
     right: auto;
@@ -3627,7 +3650,8 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   /* PDP teaser: small tickets in one swipeable row, never a promise. Press one to read its full sentence. */
   .voucher-chips { display: flex; gap: 0.625rem; margin: 0.5rem -0.125rem 0; overflow-x: auto; padding: 0.25rem 0.125rem 0.5rem; scroll-snap-type: x proximity; list-style: none; }
   .voucher-chips > li { flex: none; scroll-snap-align: start; }
-  /* one ticket for the PDP's promotion offers (a list item) and its voucher teaser (a toggle button) */
+  .voucher-chips > li.voucher-chip { min-height: 3.25rem; }
+  /* one ticket for the PDP's promotion offers and its voucher teaser (both list items) */
   .voucher-chip { position: relative; display: inline-flex; align-items: stretch; max-width: 100%; overflow: hidden; border-radius: 0.5rem; background: #fffdfa; box-shadow: inset 0 0 0 1px rgba(59, 34, 25, 0.22); --voucher-notch: var(--paper); }
   button.voucher-chip { min-height: 3.25rem; border: 0; padding: 0; color: var(--ink); font-family: var(--font-sans); text-align: left; cursor: pointer; }
   .voucher-chip::before,
@@ -3646,7 +3670,6 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .voucher-chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
   .voucher-chip__text > b { font-family: var(--font-display); font-size: 0.9375rem; font-weight: 700; line-height: 1.2; }
   .voucher-chip__text > small { font-size: 0.71875rem; line-height: 1.35; color: rgba(59, 34, 25, 0.72); }
-  .voucher-chip-info { margin: 0.375rem 0 0; border-left: 3px solid var(--vc); border-radius: 0.375rem; background: var(--vc-tint); padding: 0.625rem 0.75rem; font-size: 0.8125rem; line-height: 1.45; }
 
   /*
    * Gifts (UI refresh): the "Quà dành cho nàng" panel in the cart and at checkout, in the same ticket language as the vouchers. Gifts have their
@@ -3758,4 +3781,85 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+}
+
+/*
+ * "Thử đồ AI" on the product photograph (try-on-dialog.tsx, `BrandTryOnMediaButton`): centred at the
+ * bottom. The Flash Sale tag holds the bottom left and the photo counter the bottom right, so the
+ * middle is the one place on the photograph nothing else claims. It is drawn on the photograph's own
+ * baseline (a few px under the tag's, because it is a little taller, so the centres line up).
+ *
+ * Below 360px the tag and the button would touch; while a sale is on (`data-flash-sale`) the button
+ * then rides above the tag instead. Keep the corner offsets in step with `.pdp-flash-tag`.
+ */
+.pdp-stage__overlay-action {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: calc(1rem - 0.1875rem);
+  transform: translateX(-50%);
+}
+
+@media (min-width: 64rem) {
+  .pdp-stage__overlay-action {
+    bottom: calc(1.5rem - 0.1875rem);
+  }
+}
+
+@media (max-width: 22.4375rem) {
+  .pdp-stage__overlay-action[data-flash-sale="true"] {
+    left: 1rem;
+    bottom: calc(1rem + 1.375rem + 0.5rem);
+    transform: none;
+  }
+}
+
+/*
+ * Small and deliberate: a 28px solid chocolate pill with cream text and the "AI" in warm gold, the
+ * brand's darkest tone on a light photograph, so it is the one calm thing that draws the eye. The
+ * painted box is small; the touch target is not, a transparent `::after` grows it to 44px.
+ */
+.pdp-tryon-media-button {
+  position: relative;
+  display: inline-flex;
+  height: 1.75rem;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0 0.75rem 0 0.625rem;
+  border: 1px solid rgba(250, 247, 242, 0.28);
+  border-radius: 999px;
+  background: #3b2219;
+  color: #faf7f2;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow:
+    0 0 0 1px rgba(42, 24, 16, 0.2),
+    0 6px 16px rgba(42, 24, 16, 0.28);
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+
+.pdp-tryon-media-button svg {
+  width: 0.8125rem;
+  height: 0.8125rem;
+}
+
+.pdp-tryon-media-button__ai {
+  color: #f2cf8e;
+  letter-spacing: 0.06em;
+}
+
+.pdp-tryon-media-button::after {
+  content: "";
+  position: absolute;
+  inset: -0.5rem -0.375rem;
+}
+
+.pdp-tryon-media-button:hover {
+  background: #52332a;
+  box-shadow:
+    0 0 0 1px rgba(42, 24, 16, 0.3),
+    0 6px 18px rgba(42, 24, 16, 0.34);
 }

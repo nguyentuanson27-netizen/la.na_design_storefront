@@ -116,6 +116,28 @@ function RulerIcon() {
   );
 }
 
+function CartPlusIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      width="22"
+      height="22"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0"
+    >
+      <path d="M3 4h2.2l2 11h9.6l1.7-7.5H6.2" />
+      <circle cx="9" cy="19.5" r="1.2" />
+      <circle cx="16" cy="19.5" r="1.2" />
+      <path d="M12.5 9v4M10.5 11h4" />
+    </svg>
+  );
+}
+
 function CheckIcon() {
   return (
     <svg
@@ -629,6 +651,17 @@ export function PurchasePanelView({
     requestStorefrontCartDrawerOpen();
   }
 
+  /** The bar's second action: add the unit and show the bag, the shopper stays on the product. */
+  function handleStickyAddToBag() {
+    runPurchase("panel", () =>
+      addToBag(() => {
+        window.requestAnimationFrame(() => {
+          requestStorefrontCartDrawerOpen();
+        });
+      }),
+    );
+  }
+
   function handleStickyAction() {
     if (!mobilePresentation.readyToAdd) {
       openSheet();
@@ -802,8 +835,10 @@ export function PurchasePanelView({
   function renderCompactPrice(clock: FlashClock | null = null) {
     // During a Flash Sale the bar's second line is the countdown, so the struck price moves up
     // beside the Flash price and the percentage stays in the panel, where it is said once.
+    // `flex-wrap`, not `whitespace-nowrap`: beside two buttons on a 320-360px bar the struck price drops to its
+    // own line instead of running under the add button.
     return (
-      <span className="flex min-w-0 items-baseline gap-x-2 whitespace-nowrap">
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
         <span className="sr-only">{priceDisplay.compareAtText ? t(priceDisplay.isListReference ? "Giá giảm" : "Giá khuyến mãi") + " " : ""}</span>
         <span
           className={`font-display text-base font-semibold tabular-nums ${clock ? "text-[#9A3324]" : ""}`}
@@ -1042,6 +1077,19 @@ export function PurchasePanelView({
               ? renderCompactDetail(productName || mobilePresentation.actionLabel)
               : renderFlashCompact(flashClock)}
           </p>
+          {mobilePresentation.readyToAdd ? (
+            <button
+              className="btn btn--outline min-h-11 w-11 shrink-0 px-0"
+              type="button"
+              aria-label={view.quickAddAccessibleName}
+              title={view.addToBagLabel}
+              aria-busy={isPending}
+              disabled={isPending}
+              onClick={handleStickyAddToBag}
+            >
+              <CartPlusIcon />
+            </button>
+          ) : null}
           <button
             ref={stickyTriggerRef}
             className="btn btn--primary min-w-0 max-w-[60%] shrink px-3 text-balance"

@@ -10,11 +10,13 @@ import {
   tryOnWaitProgress,
 } from "@/components/headless/try-on-model";
 import { useTryOnSession, type TryOnJob } from "@/components/headless/try-on-session";
+import { trackTryOn } from "@/components/headless/try-on-track";
+import { useT } from "@/i18n/client";
+import type { Translator } from "@/i18n/translate";
+import { STOREFRONT_PURCHASE_ANCHOR } from "@/routes/storefront-anchors";
 
 import { BrandTryOnResult } from "./try-on-result";
 import { BrandTryOnWaiting, useTryOnElapsedSeconds } from "./try-on-waiting";
-import { useT } from "@/i18n/client";
-import type { Translator } from "@/i18n/translate";
 
 /**
  * The try-on the shopper started, minimised: a small card bottom left on every page while the picture
@@ -34,6 +36,14 @@ const TEXT_BUTTON = `min-h-11 text-sm font-semibold underline underline-offset-4
 function productHref(job: TryOnJob): string {
   return `/shop/${encodeURIComponent(job.productSlug)}`;
 }
+
+/** The product page at its purchase panel: where a shopper who likes the picture chooses a size. */
+function chooseSizeHref(job: TryOnJob): string {
+  return `${productHref(job)}#${STOREFRONT_PURCHASE_ANCHOR}`;
+}
+
+const FOOTER =
+  "sticky bottom-0 z-10 -mx-5 mt-4 border-t border-black/10 bg-[#FAF7F2] px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3";
 
 function announcement(job: TryOnJob, t: Translator): string {
   if (job.status === "loading") return t("Đang tạo ảnh thử đồ cho {productName}.", { productName: job.productName });
@@ -67,8 +77,9 @@ export function BrandTryOnDock() {
     setViewerOpen(false);
     const keep = keepOnCloseRef.current;
     keepOnCloseRef.current = false;
-    // An outcome the shopper has looked at goes when they close it, as the dialog has always done.
-    if (!keep && job !== null && job.status !== "loading") discard(job.id);
+    // An outcome the shopper has looked at goes when they close it, but a picture is kept in the
+    // session so it can be compared with the next one (try-on-session.tsx).
+    if (!keep && job !== null && job.status !== "loading") discard(job.id, { keep: true });
   }
 
   function leaveForProduct() {
@@ -151,7 +162,7 @@ export function BrandTryOnDock() {
         onClose={handleViewerClosed}
       >
         {viewerOpen && job !== null ? (
-          <div className="px-5 pb-5 pt-4">
+          <div className="px-5 pt-4">
             <div className="flex items-start justify-between gap-4">
               <h2 className="font-display text-2xl font-normal tracking-[-0.02em]">{t("Thử đồ")}</h2>
               <button type="button" className={`shrink-0 px-2 ${TEXT_BUTTON}`} onClick={() => viewerRef.current?.close()}>
@@ -167,34 +178,53 @@ export function BrandTryOnDock() {
                 <p className="text-sm">{t("Đang tạo ảnh thử đồ cho nàng…")}</p>
                 <p className="mt-1 text-sm text-black/70">{TRY_ON_WAIT_NOTE}</p>
                 <BrandTryOnWaiting photoUrl={job.photoUrl} startedAt={job.startedAt} />
-                <button type="button" className="btn btn--outline mt-4 w-full px-4" onClick={() => viewerRef.current?.close()}>
-                  {t("Xem tiếp trong lúc chờ")}
-                </button>
+                <div className={FOOTER}>
+                  <button type="button" className="btn btn--outline w-full px-4" onClick={() => viewerRef.current?.close()}>
+                    {t("Xem tiếp trong lúc chờ")}
+                  </button>
+                </div>
               </>
             ) : null}
 
             {job.status === "success" && job.result ? (
-              <BrandTryOnResult
-                result={job.result}
-                productName={job.productName}
-                productSlug={job.productSlug}
-                isTeen={isTeenAgeState(job.ageState)}
-                secondaryAction={
-                  <Link href={productHref(job)} className="btn btn--outline px-4" onClick={leaveForProduct}>
-                    {t("Xem sản phẩm")}
+              <>
+                <BrandTryOnResult
+                  result={job.result}
+                  productName={job.productName}
+                  productSlug={job.productSlug}
+                  isTeen={isTeenAgeState(job.ageState)}
+                  beforeUrl={job.photoUrl}
+                  secondaryAction={
+                    <button type="button" className="btn btn--outline px-3" onClick={() => viewerRef.current?.close()}>
+                      {t("Đóng")}
+                    </button>
+                  }
+                />
+                <div className={FOOTER}>
+                  <Link
+                    href={chooseSizeHref(job)}
+                    className="btn btn--primary w-full px-4"
+                    onClick={() => {
+                      trackTryOn({ event: "to_cart", productSlug: job.productSlug });
+                      leaveForProduct();
+                    }}
+                  >
+                    {t("Chọn size & thêm vào giỏ")}
                   </Link>
-                }
-              />
+                </div>
+              </>
             ) : null}
 
             {job.status === "error" ? (
               <>
                 <p role="alert" className="mt-2 text-sm font-semibold text-[#8a1c1c]">
-                  {job.errorMessage}
+                  {job.errorMessage ? t(job.errorMessage) : null}
                 </p>
-                <Link href={productHref(job)} className="btn btn--outline mt-4 w-full px-4" onClick={leaveForProduct}>
-                  {t("Về trang sản phẩm")}
-                </Link>
+                <div className={FOOTER}>
+                  <Link href={productHref(job)} className="btn btn--outline w-full px-4" onClick={leaveForProduct}>
+                    {t("Về trang sản phẩm")}
+                  </Link>
+                </div>
               </>
             ) : null}
           </div>

@@ -222,6 +222,11 @@ for (const [quantity, width] of [[0,390],[1,1440],[2,390]] as const) {
       await picker.getByRole("button",{name:"Nhận quà này",exact:true}).click();
       await expect(picker.locator("[data-gift-progress]")).toContainText(`Đã thêm ${n}/2`);
       await expect(picker).toHaveAttribute("aria-busy","false");
+      // The shown confirmation is brief, but the live region still names the gift that was saved even
+      // though the list collapses right after (the panel is compact here, so no title or progress text).
+      const status=picker.getByRole("status");
+      await expect(status).toContainText("Đã thêm vào đơn: Khăn quà — Trắng / M");
+      await expect(status.locator('[aria-hidden="true"]')).toHaveText("Đã thêm vào đơn.");
       // A confirmed save collapses the list; the buyer reopens it to take the next gift.
       await expect(toggle).toHaveAttribute("aria-expanded","false");
       if(n<quantity) {
@@ -232,10 +237,16 @@ for (const [quantity, width] of [[0,390],[1,1440],[2,390]] as const) {
     }
     // Nothing saved, nothing collapsed.
     if(quantity===0) await expect(picker.getByRole("button",{name:"Thu gọn quà tặng",exact:true})).toHaveAttribute("aria-expanded","true");
-    await picker.getByRole("button",{name:"Quay lại thanh toán",exact:true}).click();
-    await expect(page.getByRole("heading",{name:"Tổng kết thanh toán",exact:true})).toBeFocused();
     await expectReceiving(page);
     if(quantity===0) await expect(page.locator("[data-payment-gift-draft]")).toContainText("chưa được thêm");
+    if(quantity>0) {
+      // With no "Quay lại thanh toán" link, a keyboard buyer leaves the collapsed picker by Tab, and Shift+Tab comes back.
+      await toggle.focus();
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => { const el=document.activeElement; return !!el && el!==document.body && !el.closest("#cart-gifts"); }), "Tab leaves the picker for the next control").toBe(true);
+      await page.keyboard.press("Shift+Tab");
+      await expect(toggle).toBeFocused();
+    }
     expect(await prisma.orderMirror.count()).toBe(ordersBefore);
     expect(await prisma.variantCapacityReservation.count()).toBe(holdsBefore);
     await page.screenshot({path:`test-results/gift-checkout-${width}-${quantity}.png`,fullPage:true});
@@ -406,10 +417,7 @@ for (const scenario of ["delayed", "committed-readback", "uncommitted-readback",
         : scenario === "tab-away" ? page.getByLabel("Họ và tên", { exact: false })
           : page.getByRole("heading", { name: "Tổng kết thanh toán", exact: true });
       if (scenario === "uncommitted-readback") await destination.click();
-      else {
-        await picker.getByRole("button", { name: "Quay lại thanh toán", exact: true }).focus();
-        await page.keyboard.press(scenario === "tab-away" ? "Tab" : "Enter");
-      }
+      else await destination.focus();
       await expect(destination).toBeFocused();
       await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeDisabled();
       release();
@@ -559,7 +567,6 @@ test("AC11/22/25: committed gift with lost responses stays locked until readback
   await expect(picker.getByText("Đã thêm vào đơn", { exact: true })).toHaveCount(0);
   expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(1);
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/2");
-  await picker.getByRole("button",{name:"Quay lại thanh toán",exact:true}).click();
   await expect(page.getByRole("button",{name:"Đặt hàng COD",exact:true})).toBeDisabled();
   loseRead=false;
   await retry.click();

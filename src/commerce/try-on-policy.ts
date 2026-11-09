@@ -76,3 +76,22 @@ export const TRY_ON_FAILURE_REASONS = [
   "DAILY_LIMIT_REACHED",
 ] as const;
 export type TryOnFailureReason = (typeof TRY_ON_FAILURE_REASONS)[number];
+
+/**
+ * The failures that are ours rather than the shopper's: the attempt they spent is given back
+ * (daily count only; `try-on-rate-limit.ts`) and the browser says so. `SAFETY_BLOCKED` is not here
+ * on purpose — the provider spent its work on that photo, and refunding it would let anyone probe
+ * the safety filter for free — and neither is anything the shopper's own request got wrong.
+ */
+export const TRY_ON_REFUNDED_REASONS: readonly TryOnFailureReason[] = Object.freeze([
+  "UNAVAILABLE",
+  "BUSY",
+  "PRODUCT_IMAGE_UNAVAILABLE",
+  "AUTH_FAILED",
+  "TIMEOUT",
+  "GENERATION_FAILED",
+]);
+
+export function isRefundedTryOnReason(reason: TryOnFailureReason): boolean {
+  return TRY_ON_REFUNDED_REASONS.includes(reason);
+}

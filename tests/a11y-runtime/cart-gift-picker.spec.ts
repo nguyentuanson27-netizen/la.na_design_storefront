@@ -321,7 +321,8 @@ test("mobile keyboard picker saves partial/full/zero choices without changing pa
   expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(0);
   await picker.getByRole("button", { name: "Nhận quà này" }).focus();
   await page.keyboard.press("Enter");
-  await expect(picker.getByRole("status")).toContainText("Đã thêm vào đơn");
+  await expect(picker.getByRole("status")).toContainText("Đã thêm vào đơn: Khăn quà — Trắng / M");
+  await expect(picker.getByRole("status")).toContainText("Còn 1 suất chưa chọn");
   await expect(picker).toContainText("Đã thêm 1/2");
   // A confirmed save collapses the list and hands keyboard focus to the toggle instead of the hidden button.
   const toggle = picker.locator("button[aria-controls]");

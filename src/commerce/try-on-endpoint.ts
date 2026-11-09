@@ -1,5 +1,7 @@
+import type { TryOnSignalInput } from "../operations/try-on-observability.ts";
+import { parseTryOnClientEvent } from "./try-on-client-events.ts";
 import { readBoundedBody } from "./try-on-image.ts";
-import { TRY_ON_MAX_IMAGE_BYTES, type TryOnFailureReason } from "./try-on-policy.ts";
+import { TRY_ON_MAX_IMAGE_BYTES, type TryOnFailureReason, type TryOnImageMimeType } from "./try-on-policy.ts";
 import type { TryOnIdentity, TryOnQuotaStatus } from "./try-on-rate-limit.ts";
 import type { TryOnServiceInput, TryOnServiceResult } from "./try-on-service.ts";
 
@@ -53,13 +55,23 @@ export type TryOnEndpointDependencies = Readonly<{
   resolveIdentity: (headers: Headers) => Promise<TryOnIdentity | null>;
   /** Overridable for tests only; production uses `TRY_ON_BODY_READ_TIMEOUT_MS`. */
   bodyReadTimeoutMs?: number;
+  /**
+   * Shrinks the finished picture before it is sent (the provider's is several MB). Failing to do so
+   * is not a failure: whatever it throws, the provider's own image is sent instead.
+   */
+  optimizeResult?: (
+    image: Readonly<{ bytes: Uint8Array; mimeType: TryOnImageMimeType }>,
+  ) => Promise<Readonly<{ bytes: Uint8Array; mimeType: TryOnImageMimeType }>>;
 }>;
 
 // Responses are per-shopper and may carry a generated image of them: never cacheable.
 const NO_STORE = { "cache-control": "no-store" } as const;
 
-function failure(reason: TryOnFailureReason): Response {
-  return Response.json({ ok: false, reason }, { status: STATUS_BY_REASON[reason], headers: NO_STORE });
+function failure(reason: TryOnFailureReason, refunded = false): Response {
+  return Response.json(
+    refunded ? { ok: false, reason, refunded: true } : { ok: false, reason },
+    { status: STATUS_BY_REASON[reason], headers: NO_STORE },
+  );
 }
 
 /**
@@ -84,7 +96,12 @@ function isSameOrigin(headers: Headers): boolean {
 
 export async function handleTryOnPost(
   request: Request,
-  { service, resolveIdentity, bodyReadTimeoutMs = TRY_ON_BODY_READ_TIMEOUT_MS }: TryOnEndpointDependencies,
+  {
+    service,
+    resolveIdentity,
+    bodyReadTimeoutMs = TRY_ON_BODY_READ_TIMEOUT_MS,
+    optimizeResult,
+  }: TryOnEndpointDependencies,
 ): Promise<Response> {
   if (!isSameOrigin(request.headers)) return Response.json({ ok: false }, { status: 403, headers: NO_STORE });
 
@@ -124,12 +141,20 @@ export async function handleTryOnPost(
       },
     });
 
-    if (!result.ok) return failure(result.reason);
+    if (!result.ok) return failure(result.reason, result.refunded === true);
+    let image = result.image;
+    if (optimizeResult) {
+      try {
+        image = await optimizeResult(image);
+      } catch {
+        // Sending the provider's picture as it is beats failing a generation that succeeded.
+      }
+    }
     return Response.json(
       {
         ok: true,
-        mimeType: result.image.mimeType,
-        imageBase64: Buffer.from(result.image.bytes).toString("base64"),
+        mimeType: image.mimeType,
+        imageBase64: Buffer.from(image.bytes).toString("base64"),
       },
       { headers: NO_STORE },
     );
@@ -177,4 +202,51 @@ export async function handleTryOnQuotaGet(
   } catch {
     return Response.json({ ok: false }, { status: 503, headers: NO_STORE });
   }
+}
+
+/** Small: a client event is a handful of closed-vocabulary fields. */
+export const TRY_ON_EVENT_MAX_BYTES = 1024;
+
+export type TryOnEventEndpointDependencies = Readonly<{
+  emit: (signal: TryOnSignalInput) => void;
+}>;
+
+/**
+ * Where the browser reports the steps the server cannot see (`try-on-client-events.ts`): opened from
+ * where, photo chosen, how far they got, what they did with the picture, a thumb. Same-origin only,
+ * for the reason the POST is, and a body of at most 1 KB. It changes no state, spends no quota and
+ * calls no provider; it writes one line to the same stream as every other try-on signal, so a hostile
+ * page or a script can at worst add noise to a counter, and an invalid body is dropped without a
+ * word. `204`, always, once the request is plausibly ours: the browser is not waiting for an answer
+ * and must not be able to learn anything from one.
+ */
+export async function handleTryOnEventPost(
+  request: Request,
+  { emit }: TryOnEventEndpointDependencies,
+): Promise<Response> {
+  if (!isSameOrigin(request.headers)) return Response.json({ ok: false }, { status: 403, headers: NO_STORE });
+  try {
+    const declaredLength = Number(request.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > TRY_ON_EVENT_MAX_BYTES) {
+      return new Response(null, { status: 204, headers: NO_STORE });
+    }
+    const bytes = await readBoundedBody(request.body, TRY_ON_EVENT_MAX_BYTES, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (bytes === null) return new Response(null, { status: 204, headers: NO_STORE });
+    const event = parseTryOnClientEvent(JSON.parse(new TextDecoder().decode(bytes)));
+    if (event !== null) {
+      emit({
+        name: "try_on.client_event",
+        clientEvent: event.event,
+        productSlug: event.productSlug,
+        source: event.source,
+        rating: event.rating,
+        reason: event.reason,
+      });
+    }
+  } catch {
+    // Malformed, slow or cut off: nothing to record.
+  }
+  return new Response(null, { status: 204, headers: NO_STORE });
 }

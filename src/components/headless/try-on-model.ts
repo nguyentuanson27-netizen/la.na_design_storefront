@@ -120,6 +120,9 @@ const FAILURE_COPY: Readonly<Record<TryOnFailureReason, string>> = {
   GENERATION_FAILED: "Chưa tạo được ảnh thử đồ. Nàng thử lại nhé.",
 };
 
+/** Appended when the server says it gave the attempt back (a failure of ours; `try-on-policy.ts`). */
+export const TRY_ON_REFUND_NOTE = "La.na đã hoàn lại lượt thử cho nàng.";
+
 export const TRY_ON_NETWORK_FAILURE_MESSAGE = "Không kết nối được. Nàng kiểm tra mạng rồi thử lại nhé.";
 
 /** The reason if it is one the server can send, else `null`. */
@@ -182,9 +185,17 @@ export function tryOnQuotaUpsell(
   };
 }
 
-/** Sign in or sign up, then come straight back to this product. */
+/** The query parameter that opens a product page with its try-on dialog already open. */
+export const TRY_ON_DEEPLINK_PARAM = "thu-do";
+
+/** The product page with the try-on dialog open: the card icon's target and the way back from signing in. */
+export function tryOnProductHref(productSlug: string): string {
+  return `/shop/${encodeURIComponent(productSlug)}?${TRY_ON_DEEPLINK_PARAM}=1`;
+}
+
+/** Sign in or sign up, then come straight back to this product, with try-on open again. */
 export function tryOnLoginHref(productSlug: string): string {
-  return buildLoginHref(`/shop/${encodeURIComponent(productSlug)}`);
+  return buildLoginHref(tryOnProductHref(productSlug));
 }
 
 /**
@@ -254,10 +265,6 @@ export function tryOnWaitStageIndex(elapsedSeconds: number): number {
 }
 
 export const TRY_ON_BETA_BADGE = "Đang phát triển";
-
-/** The feature is young; say so plainly and kindly, without promising what it cannot yet do. */
-export const TRY_ON_BETA_NOTE =
-  "Thử đồ bằng AI là tính năng mới, vẫn đang được La.na hoàn thiện từng ngày. Ảnh có thể chưa thật sự hoàn hảo, cảm ơn nàng đã thử cùng La.na.\nNàng có góp ý gì cứ nhắn trực tiếp cho La.na qua Messenger hoặc Zalo nhé";
 
 /** What makes a photo work, in the order a shopper decides: what to choose, then what to avoid. */
 export const TRY_ON_PHOTO_DOS: readonly string[] = [

@@ -161,3 +161,26 @@ test("peekQuota never goes below zero for an identity that is out of attempts", 
   for (let attempt = 0; attempt < 5; attempt += 1) limiter.consumeAttempt(guest(), attempt * MINUTE);
   assert.equal(limiter.peekQuota(guest(), 5 * MINUTE).remaining, 0);
 });
+
+test("a refund gives back one daily attempt, never the minute window, and never goes below zero", () => {
+  const limiter = createTryOnRateLimiter();
+  assert.deepEqual(limiter.consumeAttempt(guest(), 0), { ok: true });
+  assert.equal(limiter.peekQuota(guest(), 0).remaining, 4);
+
+  limiter.refundAttempt(guest(), 1);
+  assert.equal(limiter.peekQuota(guest(), 1).remaining, 5);
+  // The minute is still spent.
+  assert.deepEqual(limiter.consumeAttempt(guest(), 30_000), { ok: false, reason: "RATE_LIMITED" });
+
+  // Refunding with nothing spent is a no-op.
+  limiter.refundAttempt(guest(), 2);
+  limiter.refundAttempt(guest(), 3);
+  assert.equal(limiter.peekQuota(guest(), 3).remaining, 5);
+});
+
+test("a refund of an identity that was never seen changes nothing for anyone else", () => {
+  const limiter = createTryOnRateLimiter();
+  assert.deepEqual(limiter.consumeAttempt(member(), 0), { ok: true });
+  limiter.refundAttempt(guest(), 1);
+  assert.equal(limiter.peekQuota(member(), 1).remaining, 9);
+});

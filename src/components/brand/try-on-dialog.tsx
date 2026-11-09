@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useId, useRef, type KeyboardEvent, type RefObject } from "react";
 
 import { BRAND } from "@/brand";
+import { useT } from "@/i18n/client";
 import {
   resolveTryOnPrivacyDisclosure,
   type TryOnDisclosureProvider,
@@ -10,7 +12,6 @@ import {
 import {
   TRY_ON_AGE_OPTIONS,
   TRY_ON_BETA_BADGE,
-  TRY_ON_BETA_NOTE,
   TRY_ON_BLOCKED_AGE_MESSAGE,
   TRY_ON_LIKENESS_ACKNOWLEDGEMENT,
   TRY_ON_PHOTO_DONTS,
@@ -21,11 +22,12 @@ import {
   TRY_ON_WAIT_NOTE,
   isLoginRequired,
 } from "@/components/headless/try-on-model";
+import { trackTryOn } from "@/components/headless/try-on-track";
 import { useTryOn } from "@/components/headless/use-try-on";
 
+import { BrandTryOnKept } from "./try-on-kept";
 import { BrandTryOnResult } from "./try-on-result";
 import { BrandTryOnWaiting } from "./try-on-waiting";
-import { useT } from "@/i18n/client";
 
 /**
  * Virtual try-on on the PDP (`docs/specs/storefront-virtual-try-on.md` §6, §13, §14).
@@ -46,8 +48,10 @@ import { useT } from "@/i18n/client";
  * has seen is dropped on close, as before; one they have not seen yet waits in the dock.
  *
  * A bottom sheet below `sm`, a centred 440 px modal from `sm` up. Three short steps — photo, age and
- * confirmation, result — so no step needs scrolling on a phone but the teen path, and the result is
- * the whole of the last step instead of something below a long form.
+ * confirmation, result — and each step's one main button sits in a footer that stays at the bottom
+ * of the sheet (`FOOTER`), so it is reachable on a phone however long the step above it is. The
+ * main button of the last step is not "again" or "download" but the thing the shopper came for:
+ * choosing a size (`onChooseSize`).
  */
 
 const FOCUSABLE_SELECTOR = [
@@ -64,6 +68,12 @@ const FOCUS_RING =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]";
 const PEER_FOCUS_RING =
   "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219]";
+/**
+ * The step's main action, kept at the bottom of the scrolling sheet. It bleeds to the sheet's edges
+ * (the content has `px-5`) and keeps clear of the home indicator.
+ */
+const FOOTER =
+  "sticky bottom-0 z-10 -mx-5 mt-4 border-t border-black/10 bg-[#FAF7F2] px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3";
 const TEXT_BUTTON = `min-h-11 text-sm font-semibold underline underline-offset-4 ${FOCUS_RING}`;
 
 function PersonIcon() {
@@ -118,6 +128,37 @@ export function BrandTryOnTrigger({
 }
 
 /**
+ * "Thử đồ AI" on the product photograph itself, where a shopper is already looking at the garment
+ * and wondering how it would look on them (amendment 2026-11-09). It is the same dialog as the link
+ * beside the size guide, not a second feature, centred at the bottom of the photograph: the left is
+ * the Flash Sale tag's and the right the photo counter's.
+ *
+ * Its accessible name is "Mở thử đồ AI", which contains the visible words (a label must) and, by not
+ * starting with "Thử đồ", leaves the size-guide link the only control with that name.
+ */
+export function BrandTryOnMediaButton({
+  onOpen,
+  buttonRef,
+}: Readonly<{ onOpen: () => void; buttonRef: RefObject<HTMLButtonElement | null> }>) {
+  const t = useT();
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      className={`pdp-tryon-media-button ${FOCUS_RING}`}
+      aria-label={t("Mở thử đồ AI")}
+      aria-haspopup="dialog"
+      onClick={onOpen}
+    >
+      <PersonIcon />
+      <span aria-hidden="true">
+        {t("Thử đồ")} <span className="pdp-tryon-media-button__ai">AI</span>
+      </span>
+    </button>
+  );
+}
+
+/**
  * A small prompt that floats just above the phone's purchase bar once the shopper has scrolled past
  * the entry point, so a shopper who read the description is reminded without the page gaining a
  * banner. It leaves the right edge free for the chat button, and can be put away.
@@ -166,6 +207,7 @@ export function BrandTryOnDialog({
   open,
   onOpenChange,
   returnFocusRef,
+  onChooseSize,
 }: Readonly<{
   productSlug: string;
   productName: string;
@@ -174,6 +216,11 @@ export function BrandTryOnDialog({
   onOpenChange: (open: boolean) => void;
   /** Whatever opened the dialog: focus goes back there, so it must be the control the shopper used. */
   returnFocusRef: RefObject<HTMLElement | null>;
+  /**
+   * The shopper has seen the picture and wants to buy: take them to the size choice on the page.
+   * Called after the dialog has been closed; it only has to bring the purchase panel into view.
+   */
+  onChooseSize: () => void;
 }>) {
   const t = useT();
   const ids = useId();
@@ -293,6 +340,16 @@ export function BrandTryOnDialog({
         <h3 ref={headingRef} tabIndex={-1} className={headingClass}>
           {t("Chọn ảnh của nàng")}
         </h3>
+        {tryOn.busyMessage ? (
+          <div className="mb-3 border-l-[3px] border-[#3B2219] bg-[#3B2219]/5 px-3 py-2 text-[13px] leading-5 text-black/80">
+            <p>{t(tryOn.busyMessage)}</p>
+            {tryOn.busyHref ? (
+              <Link href={tryOn.busyHref} className={`mt-1 inline-block min-h-6 font-semibold underline underline-offset-4 ${FOCUS_RING}`}>
+                {t("Xem ảnh đang tạo")}
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
         {phase === "error" && tryOn.errorMessage ? (
           <p role="alert" className={`mb-3 text-sm font-semibold ${ERROR_TEXT}`}>
             {t(tryOn.errorMessage)}
@@ -369,9 +426,7 @@ export function BrandTryOnDialog({
             </ul>
           </div>
         </div>
-        <p className="mt-3 text-xs leading-5 text-black/60">
-          {t("Chỉ 3 bước nhẹ nhàng: chọn ảnh, xác nhận, nhận ảnh thử đồ sau khoảng 30–60 giây.")}
-        </p>
+        <BrandTryOnKept items={tryOn.kept} onRemove={tryOn.removeKept} />
         {tryOn.quotaLine ? (
           <p className="mt-3 border-t border-black/10 pt-3 text-[13px] leading-5 text-black/75">
             {t(tryOn.quotaLine)}
@@ -385,14 +440,6 @@ export function BrandTryOnDialog({
             ) : null}
           </p>
         ) : null}
-        <button
-          type="button"
-          className="btn btn--primary mt-4 w-full px-4"
-          disabled={!tryOn.canContinue}
-          onClick={tryOn.continueToConfirm}
-        >
-          {t("Tiếp tục")}
-        </button>
       </>
     );
   }
@@ -484,20 +531,6 @@ export function BrandTryOnDialog({
             {t(tryOn.busyMessage)}
           </p>
         ) : null}
-        <button
-          type="button"
-          className="btn btn--primary mt-4 w-full px-4"
-          disabled={!tryOn.canGenerate}
-          aria-describedby={showHint || tryOn.busyMessage ? hintId : undefined}
-          onClick={tryOn.generate}
-        >
-          {t("Tạo ảnh thử đồ")}
-        </button>
-        {showHint ? (
-          <p id={hintId} className="mt-2 text-xs text-black/60">
-            {t("Để tạo ảnh, hãy {steps}.", { steps: tryOn.missingSteps.map((step) => t(step)).join(", ") })}
-          </p>
-        ) : null}
       </>
     );
   }
@@ -515,25 +548,11 @@ export function BrandTryOnDialog({
               <p className="mt-1 text-black/70">{TRY_ON_WAIT_NOTE}</p>
             </>
           ) : null}
-          {phase === "success" ? "Đã tạo xong ảnh thử đồ." : null}
+          {phase === "success" ? t("Đã tạo xong ảnh thử đồ.") : null}
         </div>
 
         {phase === "loading" ? (
-          <>
-            <BrandTryOnWaiting photoUrl={tryOn.jobPhotoUrl ?? tryOn.previewUrl} startedAt={tryOn.jobStartedAt} />
-            {/* The page behind has the size guide, the materials and the purchase panel; closing the
-                dialog is how the shopper reaches them, and the generation carries on regardless. */}
-            <button
-              type="button"
-              className="btn btn--outline mt-4 w-full px-4"
-              onClick={closeDialog}
-            >
-              {t("Xem tiếp sản phẩm trong lúc chờ")}
-            </button>
-            <p className="mt-2 text-center text-xs leading-5 text-black/60">
-              {t("Chọn size, xem chất liệu hay hướng dẫn chọn size ngay trên trang. Ảnh xong sẽ hiện ở góc màn hình.")}
-            </p>
-          </>
+          <BrandTryOnWaiting photoUrl={tryOn.jobPhotoUrl ?? tryOn.previewUrl} startedAt={tryOn.jobStartedAt} />
         ) : null}
 
         {phase === "success" && result ? (
@@ -543,8 +562,9 @@ export function BrandTryOnDialog({
               productName={productName}
               productSlug={productSlug}
               isTeen={tryOn.isTeen}
+              beforeUrl={tryOn.jobPhotoUrl ?? tryOn.previewUrl}
               secondaryAction={
-                <button type="button" className="btn btn--outline px-4" onClick={tryOn.backToConfirm}>
+                <button type="button" className="btn btn--outline px-3" onClick={tryOn.backToConfirm}>
                   {t("Tạo lại")}
                 </button>
               }
@@ -568,24 +588,106 @@ export function BrandTryOnDialog({
                 <p className="mt-1">{t(tryOn.quotaUpsell.body)}</p>
               </div>
             ) : null}
-            {isLoginRequired(tryOn.errorReason) || tryOn.quotaUpsell ? (
-              <a href={tryOn.loginHref} className="btn btn--primary mt-4 w-full px-4">
-                {t("Đăng ký hoặc đăng nhập")}
-              </a>
-            ) : null}
-            {isLoginRequired(tryOn.errorReason) ? null : (
-              <button
-                type="button"
-                className={`btn btn--outline w-full px-4 ${tryOn.quotaUpsell ? "mt-3" : "mt-4"}`}
-                onClick={tryOn.backToConfirm}
-              >
-                {t("Quay lại")}
-              </button>
-            )}
           </>
         ) : null}
       </>
     );
+  }
+
+  /** The step's main button(s), always at the bottom of the sheet. */
+  function renderFooter() {
+    if (tryOn.step === "photo") {
+      return (
+        <div className={FOOTER}>
+          <button
+            type="button"
+            className="btn btn--primary w-full px-4"
+            disabled={!tryOn.canContinue}
+            onClick={tryOn.continueToConfirm}
+          >
+            {t("Tiếp tục")}
+          </button>
+        </div>
+      );
+    }
+
+    if (tryOn.step === "confirm") {
+      return (
+        <div className={FOOTER}>
+          <button
+            type="button"
+            className="btn btn--primary w-full px-4"
+            disabled={!tryOn.canGenerate}
+            aria-describedby={showHint || tryOn.busyMessage ? hintId : undefined}
+            onClick={tryOn.generate}
+          >
+            {t("Tạo ảnh thử đồ")}
+          </button>
+          {showHint ? (
+            <p id={hintId} className="mt-2 text-xs text-black/60">
+              {t("Để tạo ảnh, hãy {steps}.", { steps: tryOn.missingSteps.map((step) => t(step)).join(", ") })}
+            </p>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (phase === "loading") {
+      return (
+        <div className={FOOTER}>
+          {/* The page behind has the size guide, the materials and the purchase panel; closing the
+              dialog is how the shopper reaches them, and the generation carries on regardless. */}
+          <button type="button" className="btn btn--outline w-full px-4" onClick={closeDialog}>
+            {t("Xem tiếp sản phẩm trong lúc chờ")}
+          </button>
+          <p className="mt-2 text-center text-xs leading-5 text-black/60">
+            {t("Chọn size, xem chất liệu hay hướng dẫn chọn size ngay trên trang. Ảnh xong sẽ hiện ở góc màn hình.")}
+          </p>
+        </div>
+      );
+    }
+
+    if (phase === "success") {
+      return (
+        <div className={FOOTER}>
+          <button
+            type="button"
+            className="btn btn--primary w-full px-4"
+            onClick={() => {
+              trackTryOn({ event: "to_cart", productSlug });
+              closeDialog();
+              onChooseSize();
+            }}
+          >
+            {t("Chọn size & thêm vào giỏ")}
+          </button>
+        </div>
+      );
+    }
+
+    if (phase === "error" && tryOn.errorMessage) {
+      const needsLogin = isLoginRequired(tryOn.errorReason) || tryOn.quotaUpsell !== null;
+      return (
+        <div className={FOOTER}>
+          {needsLogin ? (
+            <a href={tryOn.loginHref} className="btn btn--primary w-full px-4">
+              {t("Đăng ký hoặc đăng nhập")}
+            </a>
+          ) : null}
+          {isLoginRequired(tryOn.errorReason) ? null : (
+            <button
+              type="button"
+              className={`btn w-full px-4 ${needsLogin ? "btn--outline mt-3" : "btn--primary"}`}
+              onClick={tryOn.backToConfirm}
+            >
+              {t("Quay lại")}
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    return null;
   }
 
   return (
@@ -598,7 +700,7 @@ export function BrandTryOnDialog({
       onClose={handleClosed}
       onKeyDown={containFocus}
     >
-      <div className="px-5 pb-5 pt-4">
+      <div className="px-5 pt-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h2 id={titleId} className="font-display text-2xl font-normal tracking-[-0.02em]">
@@ -616,20 +718,13 @@ export function BrandTryOnDialog({
             {t("Đóng")}
           </button>
         </div>
-        <p className="mb-3 text-xs leading-5 text-black/60">
-          {t("Xem {productName} trên ảnh của nàng. Kết quả do AI tạo, chỉ mang tính tham khảo.", { productName })}
-        </p>
-        {step === "photo" ? (
-          <p className="mb-3 whitespace-pre-line border-l-[3px] border-[#3B2219]/40 bg-[#3B2219]/5 px-3 py-2 text-xs leading-5 text-black/70">
-            {TRY_ON_BETA_NOTE}
-          </p>
-        ) : null}
         {renderProgress()}
         <div className="min-h-[24rem]">
           {step === "photo" ? renderPhotoStep() : null}
           {step === "confirm" ? renderConfirmStep() : null}
           {step === "result" ? renderResultStep() : null}
         </div>
+        {renderFooter()}
       </div>
     </dialog>
   );

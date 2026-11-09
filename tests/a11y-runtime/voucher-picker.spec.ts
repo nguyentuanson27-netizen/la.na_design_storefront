@@ -335,7 +335,6 @@ test("V17: the PDP names the vouchers that cover the product and promises nothin
   const teaser = page.locator("[data-pdp-vouchers]");
   await expect(teaser).toBeVisible();
   await expect(teaser).toContainText("Giảm 50.000đ cho đơn từ 600.000đ");
-  await expect(teaser).toContainText("Voucher chỉ áp dụng khi giỏ đủ điều kiện");
   await expect(teaser).not.toContainText("KOL");
   expect(await prisma.voucherHold.count({ where: { campaign: { pancakeShopId: SHOP } } })).toBe(0);
   expect((await new AxeBuilder({ page }).include("[data-pdp-vouchers]").withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);

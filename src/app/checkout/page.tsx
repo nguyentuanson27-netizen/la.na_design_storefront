@@ -146,7 +146,6 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
   const totalsBlock = (
     <>
       {data.summary ? <OrderSummary summary={data.summary} /> : fallbackTotals}
-      {data.listPriceSavingsText ? <p className="mt-3 font-semibold" data-list-price-savings>{t("Tiết kiệm so với giá niêm yết: {amount}", { amount: data.listPriceSavingsText })}</p> : null}
     </>
   );
 

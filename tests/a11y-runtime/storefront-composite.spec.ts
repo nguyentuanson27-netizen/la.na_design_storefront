@@ -476,7 +476,7 @@ test("a product with kind, colour and size draws them in that order on both surf
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/shop/${colourSetSlug}`, { waitUntil: "networkidle" });
-  await page.getByRole("region", { name: "Mua nhanh" }).getByRole("button").click();
+  await page.getByRole("region", { name: "Mua nhanh" }).getByRole("button").last().click();
   const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
   await expect(sheet).toBeVisible();
   await sheet.getByRole("group", { name: "Loại", exact: true }).locator("label").filter({ hasText: /^FULL SET$/ }).click();

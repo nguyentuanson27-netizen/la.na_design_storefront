@@ -8,7 +8,16 @@ import type { TryOnDisclosedProviders } from "@/commerce/try-on-provider";
 import { BrandProductGallery } from "@/components/brand/product-gallery";
 import { BrandProductMediaStage } from "@/components/brand/product-media-stage";
 import { PurchasePanelView } from "@/components/brand/purchase-panel";
-import { BrandTryOnDialog, BrandTryOnNudge, BrandTryOnTrigger } from "@/components/brand/try-on-dialog";
+import {
+  BrandTryOnDialog,
+  BrandTryOnMediaButton,
+  BrandTryOnNudge,
+  BrandTryOnTrigger,
+} from "@/components/brand/try-on-dialog";
+import type { TryOnOpenSource } from "@/commerce/try-on-client-events";
+import { TRY_ON_DEEPLINK_PARAM } from "@/components/headless/try-on-model";
+import { trackTryOn } from "@/components/headless/try-on-track";
+import { STOREFRONT_PURCHASE_ANCHOR, storefrontScrollBehavior } from "@/routes/storefront-anchors";
 import { useTryOnSession } from "@/components/headless/try-on-session";
 import type { ProductUrgency } from "@/components/headless/product-urgency";
 import {
@@ -89,6 +98,7 @@ export function BrandProductDetail({
   // the phone reminder opened it, the entry point is by definition above the viewport, and focusing
   // it would leave focus on a control the shopper cannot see.
   const tryOnNudgeOpenRef = useRef<HTMLButtonElement | null>(null);
+  const tryOnMediaOpenRef = useRef<HTMLButtonElement | null>(null);
   const tryOnReturnFocusRef = useRef<HTMLElement | null>(null);
   // The phone-only reminder appears once the shopper has scrolled *past* the entry point (it is
   // above the viewport), not while it is still ahead of them, and can be put away for this visit.
@@ -105,9 +115,24 @@ export function BrandProductDetail({
     if (tryOnSlug === null) return;
     return registerDialog(tryOnSlug, () => {
       tryOnReturnFocusRef.current = tryOnTriggerRef.current;
+      trackTryOn({ event: "open", productSlug: tryOnSlug, source: "dock" });
       setTryOnOpen(true);
     });
   }, [tryOnSlug, registerDialog]);
+
+  // A product card's "thử đồ" icon, and the way back from signing in, arrive as `?thu-do=1`: the
+  // dialog opens by itself once, and the parameter is removed so a reload or a shared link does not.
+  useEffect(() => {
+    if (tryOnSlug === null) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get(TRY_ON_DEEPLINK_PARAM) !== "1") return;
+    url.searchParams.delete(TRY_ON_DEEPLINK_PARAM);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    openTryOnFrom(tryOnTriggerRef.current, "deeplink");
+    // Once per arrival: the parameter is gone now, and re-running with the new `openTryOnFrom`
+    // each render would only find nothing to do.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tryOnSlug]);
 
   useEffect(() => {
     const trigger = tryOnTriggerRef.current;
@@ -119,9 +144,19 @@ export function BrandProductDetail({
     return () => observer.disconnect();
   }, [hasTryOn]);
 
-  function openTryOnFrom(opener: HTMLElement | null) {
+  function openTryOnFrom(opener: HTMLElement | null, source: TryOnOpenSource) {
     tryOnReturnFocusRef.current = opener;
+    if (tryOnSlug !== null) trackTryOn({ event: "open", productSlug: tryOnSlug, source });
     setTryOnOpen(true);
+  }
+
+  /** The dialog has closed itself; bring the size choice into view, as the anchor links do. */
+  function scrollToPurchasePanel() {
+    window.requestAnimationFrame(() => {
+      const panel = document.getElementById(STOREFRONT_PURCHASE_ANCHOR);
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      panel?.scrollIntoView({ behavior: storefrontScrollBehavior(reduce), block: "start" });
+    });
   }
 
   function handleTryOnOpenChange(open: boolean) {
@@ -144,6 +179,14 @@ export function BrandProductDetail({
         selectedVariantId={controller.view.selectedVariantId}
         galleryIndexByVariantId={galleryIndexByVariantId}
         flashSale={urgency.flash !== null}
+        overlayAction={
+          hasTryOn ? (
+            <BrandTryOnMediaButton
+              buttonRef={tryOnMediaOpenRef}
+              onOpen={() => openTryOnFrom(tryOnMediaOpenRef.current, "media")}
+            />
+          ) : null
+        }
       />
 
       <div className="mx-auto max-w-[1600px] px-6 pb-10 pt-5 md:pb-16 md:pt-7 lg:py-16">
@@ -191,14 +234,14 @@ export function BrandProductDetail({
                 hasTryOn && scrolledPastTryOn && !tryOnNudgeDismissed && tryOnSession.job === null ? (
                   <BrandTryOnNudge
                     openRef={tryOnNudgeOpenRef}
-                    onOpen={() => openTryOnFrom(tryOnNudgeOpenRef.current)}
+                    onOpen={() => openTryOnFrom(tryOnNudgeOpenRef.current, "nudge")}
                     onDismiss={() => setTryOnNudgeDismissed(true)}
                   />
                 ) : null
               }
               tryOnTrigger={
                 tryOn === null ? null : (
-                  <BrandTryOnTrigger triggerRef={tryOnTriggerRef} onOpen={() => openTryOnFrom(tryOnTriggerRef.current)} />
+                  <BrandTryOnTrigger triggerRef={tryOnTriggerRef} onOpen={() => openTryOnFrom(tryOnTriggerRef.current, "link")} />
                 )
               }
             />
@@ -223,6 +266,7 @@ export function BrandProductDetail({
           open={tryOnOpen}
           onOpenChange={handleTryOnOpenChange}
           returnFocusRef={tryOnReturnFocusRef}
+          onChooseSize={scrollToPurchasePanel}
         />
       )}
     </>
