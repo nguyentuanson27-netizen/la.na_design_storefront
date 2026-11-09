@@ -515,18 +515,20 @@ export function buildBenefitCheckoutViewModel(
   const strictSummary = listedValueVnd === null || !voucherConsistent
     ? null
     : buildOrderSummary({ ...summaryBase, discounts: namedDiscounts, expectedValueVnd: listedValueVnd });
-  // When they do not (a programme saving the quote does not name, a line with no listed price), the shopper must still see every
-  // discount the order carries, not the bare subtotal. Voucher rows stay exact; whatever the lines' listed value says
-  // is still unaccounted for is shown as one generic programme row, so the bill adds up by construction.
-  const residualVnd = listedValueVnd === null ? 0 : listedValueVnd - facts.paidSubtotalVnd - namedDiscounts.reduce((sum, row) => sum + row.amountVnd, 0);
-  const summary = strictSummary ?? (!voucherConsistent
-    ? null
-    : buildOrderSummary({
+  // When they do not close it because a programme saving is not named by the quote, show the remainder as one generic
+  // programme row. This only ever happens with a proven listed value and a positive, safe remainder; the value is still checked
+  // against the lines' listed value. No listed value, or named discounts that already exceed it, still gives no bill.
+  let summary = strictSummary;
+  if (summary === null && listedValueVnd !== null && voucherConsistent) {
+    const residualVnd = listedValueVnd - facts.paidSubtotalVnd - namedDiscounts.reduce((sum, row) => sum + row.amountVnd, 0);
+    if (Number.isSafeInteger(residualVnd) && residualVnd > 0) {
+      summary = buildOrderSummary({
         ...summaryBase,
-        discounts: Number.isSafeInteger(residualVnd) && residualVnd > 0
-          ? [...namedDiscounts, Object.freeze({ id: "program:other", label: "Ưu đãi chương trình", amountVnd: residualVnd, amountText: currency.format(residualVnd) })]
-          : namedDiscounts,
-      }));
+        discounts: [...namedDiscounts, Object.freeze({ id: "program:other", label: "Ưu đãi chương trình", amountVnd: residualVnd, amountText: currency.format(residualVnd) })],
+        expectedValueVnd: listedValueVnd,
+      });
+    }
+  }
 
   const listPriceSavingsText = describeListPriceSavings(input.lines, facts.paidSubtotalVnd);
   return Object.freeze({
