@@ -500,6 +500,10 @@ export const STOREFRONT_EN: Readonly<Record<string, string>> = {
   "Địa chỉ kinh doanh & nhận hàng đổi trả": "Business address & returns address",
   "Sau thời gian chuẩn bị, thời gian giao hàng dự kiến được tính thêm:": "After preparation, the estimated delivery time is added:",
   "Sau thời điểm sẵn sàng, thời gian giao hàng dự kiến đã được lưu cùng đơn:": "After the ready date, the estimated delivery time saved with the order is:",
+  "Sản phẩm {label} dự kiến sẵn sàng vào": "The {label} item is expected to be ready on",
+  "{min}–{max} ngày": "{min}–{max} days",
+  "Đơn hàng có cả sản phẩm sẵn hàng và sản phẩm {label}. Toàn bộ đơn sẽ được giữ lại và giao cùng nhau trong một lần sau khi sản phẩm {readyLabel} sẵn sàng. Sản phẩm sẵn hàng không được giao trước.":
+    "This order has both in-stock items and {label} items. The whole order is held and shipped together in one parcel once the {readyLabel} items are ready. In-stock items are not shipped ahead.",
   ". Ngày này được lưu tại thời điểm đơn hàng được hệ thống xác nhận thành công.": ". This date was saved when the system confirmed the order.",
   "kể từ khi đơn hàng được hệ thống xác nhận thành công": "from when the system confirmed the order",
 
