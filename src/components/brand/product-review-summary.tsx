@@ -72,8 +72,8 @@ export function ProductRatingLink({ section }: Readonly<{ section: ProductReview
 
 /**
  * Under the price: a few customer photographs and one tap to the rail they come from. What it says
- * follows its source (`resolveCustomerPhotoStrip`): this product's review photographs, its own tagged
- * photographs, or the shop's shared gallery.
+ * follows its source (`resolveCustomerPhotoStrip`): this product's review photographs or its own tagged
+ * photographs. A product with neither has no strip.
  */
 export function CustomerPhotoStrip({ strip }: Readonly<{ strip: CustomerPhotoStripModel }>) {
   return (
