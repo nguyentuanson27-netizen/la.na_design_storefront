@@ -242,9 +242,8 @@ test("cart, drawer and checkout show list reference/savings while charging uncha
   await expect(page.locator("[data-line-discount]").first()).toContainText(
     /590.000/,
   );
-  await expect(page.locator("[data-list-price-savings]").first()).toContainText(
-    /159.000/,
-  );
+  // The checkout bill does not repeat the list-price saving beneath the total.
+  await expect(page.locator("[data-list-price-savings]")).toHaveCount(0);
 });
 
 test("cart savings labels switch ON/OFF while payable campaign money stays unchanged on mobile", async ({ page }) => {
