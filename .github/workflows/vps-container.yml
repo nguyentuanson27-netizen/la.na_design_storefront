@@ -13,6 +13,8 @@ on:
       - src/**
       - services/flow-worker/**
       - next.config.mjs
+      # This file's own limits (timeouts, steps) are only proven by running it.
+      - .github/workflows/vps-container.yml
   push:
     branches:
       - main
@@ -27,6 +29,8 @@ on:
       - src/**
       - services/flow-worker/**
       - next.config.mjs
+      # This file's own limits (timeouts, steps) are only proven by running it.
+      - .github/workflows/vps-container.yml
   workflow_dispatch:
 
 permissions:

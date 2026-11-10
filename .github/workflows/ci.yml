@@ -402,10 +402,12 @@ jobs:
     # serial 12.6-minute block; the specs cannot share a worker because they park and restore
     # global rows, so the parallelism is taken across machines instead of inside one.
     #
-    # Playwright splits by test count, not by duration, so the shards are never equal: with four, the
+    # Playwright shards by file here (`fullyParallel` is off, since the specs share database state), and
+    # balances by number of tests, not by duration, so the shards are never equal: with four, the
     # slowest ran 7.8-9.3 minutes and the fastest about 4, and the slowest is what the run waits for
-    # (it holds `csp-enforce` and the Meta pixel specs, ~40s each). More, smaller shards shorten that
-    # tail; the count here and the `--shard=N/6` below must change together.
+    # (it held `csp-enforce` and the Meta pixel specs, ~40s per slow test). A file cannot be split, so
+    # more shards help only while the heaviest files are not together. The count here and the
+    # `--shard=N/6` below must change together; `admin-a11y-runtime-result` is the check to require.
     #
     # `fail-fast: false` on purpose: one shard going red should still let the others report, or a
     # single failure hides the state of most of the suite.
@@ -497,6 +499,23 @@ jobs:
         env:
           LA_E2E_PREBUILT_DIST_DIR: .next-e2e
         run: npx playwright test --config playwright.config.ts --shard=${{ matrix.shard }}/6
+
+  admin-a11y-runtime-result:
+    # One check with a stable name for the whole browser suite. The shard checks are named
+    # `admin-a11y-runtime (N)`, so a branch rule that pins them by name stops covering a shard the day
+    # the count changes (it went from 4 to 6); a rule that requires this one cannot drift, because it
+    # passes only when every shard did, however many there are. Same shape as `verify-runtime` above.
+    needs: [admin-a11y-runtime]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every browser accessibility shard
+        env:
+          SHARDS: ${{ needs.admin-a11y-runtime.result }}
+        run: |
+          echo "admin-a11y-runtime (all shards): $SHARDS"
+          test "$SHARDS" = success
 
   # H3-V (Voucher v1, AC-42 / AC-43): the REAL hold Server Action driven from a browser against a production
   # build (`next build` + `next start`). The test-only route lives in tests/fixtures/voucher-hold-harness and is
