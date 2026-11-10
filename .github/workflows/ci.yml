@@ -102,6 +102,17 @@ jobs:
           python3 -m unittest discover -s services/flow-worker/tests -v
           python3 -m compileall -q services/flow-worker/flow_worker
 
+      # Next's build cache (`.next/cache`) turns a cold ~60s production build into ~10s when most files are
+      # unchanged. Pull requests restore the newest one `main` saved; only `main` saves, so a branch never
+      # evicts it.
+      - name: Restore Next build cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: .next/cache
+          key: nextjs-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            nextjs-build-${{ hashFiles('pnpm-lock.yaml') }}-
+
       - name: Build
         env:
           LA_SHIPPING_FEE_VND: "17000"
@@ -109,14 +120,21 @@ jobs:
           LA_FREE_SHIPPING_MIN_QUANTITY: "5"
         run: pnpm build
 
+      - name: Save Next build cache
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: .next/cache
+          key: nextjs-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+
 
   verify-runtime-shard-1:
     needs: identity
-    # The half that needs a running system: the first half of the database suite, the HTTP smokes
-    # that spawn a server, and the production-start checks that need a real build. The database
-    # suite grew from 3m40s to 7m by October 2026, so it is split in two by file: this job runs
-    # shard 1 and `verify-db-shard-2` runs shard 2 on its own runner and database, side by side.
-    # `verify-runtime` below is the check that stands for both.
+    # The first half of the database suite, on its own runner and database beside
+    # `verify-db-shard-2` (the suite grew from 3m40s to 7m by October 2026, so it is split in two by
+    # file). The HTTP smokes and the production-start checks used to follow it here and made this the
+    # longest job after the browser suite; they are `verify-runtime-smoke` now. `verify-runtime` below
+    # is the check that stands for all three.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -175,6 +193,62 @@ jobs:
         # `pnpm test:db` with the shard flag, which Node only honours before the file list.
         run: node --env-file-if-exists=.env.test.local --experimental-strip-types --test --test-concurrency=1 --test-shard=1/2 tests/database/*.test.ts
 
+  verify-runtime-smoke:
+    needs: identity
+    # The checks that need a running server or a real production build: the HTTP smokes that spawn one,
+    # the shipping-policy and production-start runs against `next start`, and the release preflight.
+    # Split off `verify-runtime-shard-1` so they run beside the database suite instead of after it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ${{ needs.identity.outputs.database-name }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ${{ needs.identity.outputs.database-name }}"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ needs.identity.outputs.database-name }}
+      BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_IP_HEADER: x-ci-client-ip
+      APP_DOMAIN: localhost:3000
+      SEARCH_INDEXING_ENABLED: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      # Before `setup-node`, so its `cache: pnpm` can ask pnpm where its store is.
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          pnpm --version
+
+      - name: Install from lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Deploy database migrations
+        run: pnpm prisma:migrate:deploy
+
       - name: Next HTTP security smoke
         run: node --experimental-strip-types scripts/cart-server-action-http-smoke.ts
 
@@ -186,6 +260,17 @@ jobs:
 
       - name: Authenticated admin HTTP authorization smoke
         run: node --experimental-strip-types scripts/admin-authz-http-smoke.ts
+
+      # Next's build cache (`.next/cache`) turns a cold ~60s production build into ~10s when most files are
+      # unchanged. Pull requests restore the newest one `main` saved; only `main` saves, so a branch never
+      # evicts it.
+      - name: Restore Next build cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: .next/cache
+          key: nextjs-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            nextjs-build-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Build
         env:
@@ -315,7 +400,6 @@ jobs:
             console.log("Production start smoke verified: 200 OK and Google-Site-Verification/1.0 crawler receives meta tag in <head>");
           '
 
-
   verify-db-shard-2:
     needs: identity
     # The second half of the database suite (see `verify-runtime-shard-1`). Same setup, nothing else.
@@ -376,19 +460,20 @@ jobs:
 
   verify-runtime:
     # The runtime check as it was named before the database suite was split, so a branch rule that
-    # requires `verify-runtime` keeps covering the whole suite: it passes only when both halves did.
-    needs: [verify-runtime-shard-1, verify-db-shard-2]
+    # requires `verify-runtime` keeps covering the whole suite: it passes only when every part did.
+    needs: [verify-runtime-shard-1, verify-db-shard-2, verify-runtime-smoke]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require both halves of the runtime verification
+      - name: Require every part of the runtime verification
         env:
           SHARD_1: ${{ needs.verify-runtime-shard-1.result }}
           SHARD_2: ${{ needs.verify-db-shard-2.result }}
+          SMOKE: ${{ needs.verify-runtime-smoke.result }}
         run: |
-          echo "verify-runtime-shard-1: $SHARD_1, verify-db-shard-2: $SHARD_2"
-          test "$SHARD_1" = success && test "$SHARD_2" = success
+          echo "verify-runtime-shard-1: $SHARD_1, verify-db-shard-2: $SHARD_2, verify-runtime-smoke: $SMOKE"
+          test "$SHARD_1" = success && test "$SHARD_2" = success && test "$SMOKE" = success
 
   admin-a11y-runtime:
     needs: identity
@@ -398,16 +483,24 @@ jobs:
     # rate, and on identical steps in the same run Linux was the faster of the two anyway
     # (`pnpm install` 9.0s against 17.7s).
     runs-on: ubuntu-latest
-    # Four shards, each on its own runner with its own database. The suite used to run as one
+    # Six shards, each on its own runner with its own database. The suite used to run as one
     # serial 12.6-minute block; the specs cannot share a worker because they park and restore
     # global rows, so the parallelism is taken across machines instead of inside one.
     #
+    # The specs run one file at a time per shard (`fullyParallel` is off, since they share database
+    # state), and Playwright's own `--shard` balances by number of tests, not by duration: with it the
+    # shards ran 4 to 8.5 minutes and the run waited for the slowest. Which files a shard runs is
+    # therefore planned by `scripts/a11y-shard-plan.ts` from the measured time of each file
+    # (`tests/a11y-runtime/shard-weights.json`), which puts them all within a few percent of each
+    # other. The number of shards is the length of the list below; nothing else needs to change with it.
+    # `admin-a11y-runtime-result` is the check to require.
+    #
     # `fail-fast: false` on purpose: one shard going red should still let the others report, or a
-    # single failure hides the state of three quarters of the suite.
+    # single failure hides the state of most of the suite.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     # A ceiling for a hung shard, not a target. Each shard is expected to finish in a few minutes,
     # and a run that approaches this number is a regression worth reading rather than a new normal
     # to raise again.
@@ -480,6 +573,17 @@ jobs:
       # tests/a11y-runtime/next-server-mode.ts) instead of each spec compiling its pages in its own
       # `next dev`: what shoppers get, several times faster per page, and free of the dev-only
       # re-navigation and focus flakes seen with next 16.4.x.
+      # Next's build cache (`.next-e2e/cache`) turns a cold ~60s production build into ~10s when most files are
+      # unchanged. Pull requests restore the newest one `main` saved; only `main` saves, so a branch never
+      # evicts it.
+      - name: Restore Next build cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: .next-e2e/cache
+          key: nextjs-e2e-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            nextjs-e2e-build-${{ hashFiles('pnpm-lock.yaml') }}-
+
       - name: Build app for browser specs
         env:
           NODE_ENV: production
@@ -487,11 +591,41 @@ jobs:
           NEXT_TELEMETRY_DISABLED: "1"
         run: pnpm build
 
+      - name: Save Next build cache
+        if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: .next-e2e/cache
+          key: nextjs-e2e-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+
       - name: Run admin browser accessibility runtime
         working-directory: tests/a11y-runtime
         env:
           LA_E2E_PREBUILT_DIST_DIR: .next-e2e
-        run: npx playwright test --config playwright.config.ts --shard=${{ matrix.shard }}/4
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t SPECS < <(node --experimental-strip-types ../../scripts/a11y-shard-plan.ts "${{ matrix.shard }}" "${{ strategy.job-total }}")
+          # No file filter would make Playwright run the whole suite on every shard.
+          test "${#SPECS[@]}" -gt 0
+          npx playwright test --config playwright.config.ts "${SPECS[@]}"
+
+  admin-a11y-runtime-result:
+    # One check with a stable name for the whole browser suite. The shard checks are named
+    # `admin-a11y-runtime (N)`, so a branch rule that pins them by name stops covering a shard the day
+    # the count changes (it went from 4 to 6); a rule that requires this one cannot drift, because it
+    # passes only when every shard did, however many there are. Same shape as `verify-runtime` above.
+    needs: [admin-a11y-runtime]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every browser accessibility shard
+        env:
+          SHARDS: ${{ needs.admin-a11y-runtime.result }}
+        run: |
+          echo "admin-a11y-runtime (all shards): $SHARDS"
+          test "$SHARDS" = success
 
   # H3-V (Voucher v1, AC-42 / AC-43): the REAL hold Server Action driven from a browser against a production
   # build (`next build` + `next start`). The test-only route lives in tests/fixtures/voucher-hold-harness and is

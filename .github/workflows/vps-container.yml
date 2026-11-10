@@ -13,6 +13,8 @@ on:
       - src/**
       - services/flow-worker/**
       - next.config.mjs
+      # This file's own limits (timeouts, steps) are only proven by running it.
+      - .github/workflows/vps-container.yml
   push:
     branches:
       - main
@@ -27,6 +29,8 @@ on:
       - src/**
       - services/flow-worker/**
       - next.config.mjs
+      # This file's own limits (timeouts, steps) are only proven by running it.
+      - .github/workflows/vps-container.yml
   workflow_dispatch:
 
 permissions:
@@ -43,7 +47,11 @@ jobs:
   verify-flow-worker-image:
     needs: identity
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # A ceiling for a hung build, not a target: a normal run finishes this whole workflow in under 4
+    # minutes (the job itself in less than that). A GitHub timeout
+    # also waits up to 5 more minutes for the runner to stop, so one stuck `docker build` at 10
+    # held the run for 15; at 6 it is cut after about 11.
+    timeout-minutes: 6
     env:
       PROJECT_SLUG: ${{ needs.identity.outputs.project-slug }}
     steps:
