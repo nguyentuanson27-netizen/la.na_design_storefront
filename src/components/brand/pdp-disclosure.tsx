@@ -5,11 +5,10 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 /**
  * Below-`lg` compaction for the PDP's reading blocks.
  *
- * On a phone the product information and the delivery/returns facts stack under the purchase panel,
- * all of it open, so a long description pushed the policies a shopper checks before buying many
- * screens down. Below `lg` the secondary blocks fold into one tappable row each and the description
- * shows its opening lines with "Xem thêm". From `lg` up nothing changes: the two columns already sit
- * side by side, so every block is drawn open and no toggle is rendered.
+ * On a phone the product information and delivery/returns facts stack under the purchase panel.
+ * The description starts fully visible; the material, shipping and returns disclosures start open,
+ * while other sections may retain their collapsed default. Shoppers can still collapse them.
+ * From `lg` up nothing changes: every block is drawn open and no toggle is rendered.
  *
  * Both are CSS-first (`hidden lg:block`) so the server-rendered page has no layout shift and the
  * desktop composition never waits on script. The content itself stays server-rendered children.
@@ -46,13 +45,16 @@ export function PdpDisclosure({
   titleId,
   title,
   children,
+  initiallyOpen = false,
 }: Readonly<{
   /** The desktop heading's id; the section is named by it on every viewport. */
   titleId: string;
   title: string;
   children: ReactNode;
+  /** Initial mobile state; desktop content is always visible. */
+  initiallyOpen?: boolean;
 }>) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const panelId = useId();
 
   return (
@@ -80,13 +82,13 @@ export function PdpDisclosure({
 }
 
 /**
- * Content shown by its opening lines below `lg`, with "Xem thêm" when there is more to read.
+ * Product description starts fully expanded, including on phones.
  *
- * The toggle appears only when the content actually overflows the clamp, measured after layout and
- * again on resize, so a two-line description never offers to expand into the same two lines.
+ * Long descriptions still offer "Thu gọn" / "Xem thêm"; short ones have no redundant toggle.
+ * Measure against the 9rem mobile clamp even while expanded, then remeasure on resize.
  */
 export function PdpClampedContent({ children }: Readonly<{ children: ReactNode }>) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [overflows, setOverflows] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const contentId = useId();
@@ -94,7 +96,11 @@ export function PdpClampedContent({ children }: Readonly<{ children: ReactNode }
   useEffect(() => {
     const content = contentRef.current;
     if (content === null) return;
-    const measure = () => setOverflows(content.scrollHeight > content.clientHeight + 1);
+    const measure = () => {
+      // Tailwind's max-h-36 below is 9rem, irrespective of whether it is currently applied.
+      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+      setOverflows(content.scrollHeight > 9 * rem + 1);
+    };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
@@ -114,7 +120,7 @@ export function PdpClampedContent({ children }: Readonly<{ children: ReactNode }
       >
         {children}
       </div>
-      {overflows || expanded ? (
+      {overflows ? (
         <button
           type="button"
           aria-expanded={expanded}
