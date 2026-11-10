@@ -22,8 +22,6 @@ import {
 } from "@/components/brand/product-gallery-layout";
 import { preloadImageForViewport } from "@/components/brand/viewport-image-preload";
 
-import type { PancakePdpVideo } from "@/commerce/pancake-pdp-video";
-import { BrandProductVideoOverlay } from "./product-video-overlay";
 import { useT } from "@/i18n/client";
 
 const DRAG_THRESHOLD_PX = 48;
@@ -54,7 +52,6 @@ type BrandProductMediaStageProps = Readonly<{
   galleryIndexByVariantId: Readonly<Record<string, number>>;
   /** The product is on Flash Sale: the photograph carries the tag its card carries. */
   flashSale?: boolean;
-  video?: PancakePdpVideo | null;
   /**
    * A control that sits at the photograph's bottom centre (virtual try-on's "Thử đồ AI"). It is the
    * caller's to build and own; the stage only gives it a place that clears the Flash Sale tag (left),
@@ -69,7 +66,6 @@ export function BrandProductMediaStage({
   selectedVariantId,
   galleryIndexByVariantId,
   flashSale = false,
-  video = null,
   overlayAction = null,
 }: BrandProductMediaStageProps) {
   const t = useT();
@@ -425,15 +421,6 @@ export function BrandProductMediaStage({
       {overlayAction ? (
         <div className="pdp-stage__overlay-action" data-flash-sale={flashSale ? "true" : undefined}>
           {overlayAction}
-        </div>
-      ) : null}
-
-      {video ? (
-        <div className="pdp-video-anchor" data-single-image={images.length === 1 ? "true" : undefined}>
-          {/* Match the first photo's cell, including its portrait width inside a desktop half. */}
-          <div className="pdp-stage__cell">
-            <BrandProductVideoOverlay key={video.src} video={video} productName={productName} />
-          </div>
         </div>
       ) : null}
 

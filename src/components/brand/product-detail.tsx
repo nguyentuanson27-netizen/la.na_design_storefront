@@ -7,6 +7,7 @@ import type { StorefrontProductMedia } from "@/commerce/product-media";
 import type { TryOnDisclosedProviders } from "@/commerce/try-on-provider";
 import { BrandProductGallery } from "@/components/brand/product-gallery";
 import { BrandProductMediaStage } from "@/components/brand/product-media-stage";
+import { BrandProductVideoOverlay } from "@/components/brand/product-video-overlay";
 import { PurchasePanelView } from "@/components/brand/purchase-panel";
 import {
   BrandTryOnDialog,
@@ -171,10 +172,17 @@ export function BrandProductDetail({
   }
 
   return (
-    <>
+    <article className="pdp-product-scope relative">
+      {video ? (
+        <div className="pdp-video-anchor" data-single-image={media.gallery.length <= 1 ? "true" : undefined}>
+          <div className="pdp-stage__cell">
+            <BrandProductVideoOverlay key={video.src} video={video} productName={productName} />
+          </div>
+        </div>
+      ) : null}
+
       <BrandProductMediaStage
         media={media}
-        video={video}
         productName={productName}
         selectedVariantId={controller.view.selectedVariantId}
         galleryIndexByVariantId={galleryIndexByVariantId}
@@ -269,6 +277,6 @@ export function BrandProductDetail({
           onChooseSize={scrollToPurchasePanel}
         />
       )}
-    </>
+    </article>
   );
 }

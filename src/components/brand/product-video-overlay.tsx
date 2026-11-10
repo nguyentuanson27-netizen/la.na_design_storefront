@@ -99,7 +99,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
   // price and the buy buttons.
   useEffect(() => {
     if (!floatingLayout) return;
-    const gallery = opener.current?.closest(".pdp-stage");
+    const gallery = opener.current?.closest(".pdp-stage") ?? document.querySelector<HTMLElement>(".pdp-stage");
     if (!gallery) return;
     let frame = 0;
     const update = () => {
@@ -225,7 +225,7 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
         aria-label={t("Đóng video nhỏ")}
         onClick={() => {
           releaseVideo(preview.current);
-          const gallery = opener.current?.closest<HTMLElement>(".pdp-stage");
+          const gallery = opener.current?.closest<HTMLElement>(".pdp-stage") ?? document.querySelector<HTMLElement>(".pdp-stage");
           gallery?.focus({ preventScroll: true });
           setStopped(true);
         }}
