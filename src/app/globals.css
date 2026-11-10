@@ -3422,7 +3422,8 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     margin-top: calc(var(--masthead-height) + 4rem);
     margin-left: auto;
     margin-right: 1rem;
-    margin-bottom: 2rem;
+    /* Release before feedback even at fractional viewport heights. */
+    margin-bottom: 3rem;
     pointer-events: auto;
   }
 }
