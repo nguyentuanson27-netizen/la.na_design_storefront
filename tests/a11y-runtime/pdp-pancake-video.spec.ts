@@ -249,17 +249,27 @@ test("the preview plays only while a quarter of it is on screen and not when the
   await expect(preview).toHaveAttribute("data-playing", "true");
   const frame = (await tile.boundingBox())!;
   const paused = () => preview.evaluate((element: HTMLVideoElement) => element.paused);
-  // The frame is pinned, so it only leaves the screen with the photograph: it rests 4rem above the
-  // photograph's bottom edge. Scroll so that `visible` of the frame is still above the top of the viewport.
+  // The sticky preview now leaves at the end of the product, not the end of the photograph.
+  // Derive the visible fraction from that boundary, including the CSS clearance below the tile.
   const scrollUntilVisible = (visible: number) => page.evaluate(([fraction, height]) => {
-    const stageBottom = document.querySelector(".pdp-stage")!.getBoundingClientRect().bottom + window.scrollY;
-    window.scrollTo({ top: stageBottom - 64 - fraction * height, behavior: "instant" });
+    const anchor = document.querySelector<HTMLElement>(".pdp-video-anchor");
+    const slot = anchor?.querySelector<HTMLElement>(".pdp-video-slot");
+    if (!anchor || !slot) throw new Error("Product video anchor is missing");
+    const productBottom = anchor.getBoundingClientRect().bottom + window.scrollY;
+    const bottomClearance = parseFloat(getComputedStyle(slot).marginBottom);
+    window.scrollTo({ top: productBottom - bottomClearance - fraction * height, behavior: "instant" });
   }, [visible, frame.height] as const);
-  // Only a sliver (10%) of the frame is left at the top of the viewport: it stands still.
+  const visibleFraction = async () => {
+    const box = await tile.boundingBox();
+    return box ? Math.max(0, Math.min(1, (box.y + box.height) / box.height)) : 0;
+  };
+  // Less than a quarter is visible: the muted preview must pause.
   await scrollUntilVisible(0.1);
+  await expect.poll(visibleFraction).toBeLessThan(0.25);
   await expect.poll(paused).toBe(true);
   // Half of it back on screen: it plays again.
   await scrollUntilVisible(0.5);
+  await expect.poll(visibleFraction).toBeGreaterThan(0.25);
   await expect.poll(paused).toBe(false);
   // Closing the dialog while the frame is out of view must not start it in the background.
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
