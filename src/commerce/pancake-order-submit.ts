@@ -905,8 +905,6 @@ export function createPancakeOrderSubmissionService(
     );
     if (secondaryTag) noteWithMarker = `${noteWithMarker} ${secondaryTag}`;
 
-    const addressDetailWithMarker = `${contact.addressDetail} ${orderMarker}`;
-
     let geoNames: { provinceName: string; communeName: string } | undefined;
     if (contact.districtRef === null) {
       // Still before the write boundary: a geo outage is a retryable DRAFT, never a half-described
@@ -928,7 +926,7 @@ export function createPancakeOrderSubmissionService(
       provinceRef: contact.provinceRef,
       districtRef: contact.districtRef,
       communeRef: contact.communeRef,
-      addressDetail: addressDetailWithMarker,
+      addressDetail: contact.addressDetail,
       note: noteWithMarker,
       paymentMethod: order.paymentMethod,
       shippingFeeVnd,
