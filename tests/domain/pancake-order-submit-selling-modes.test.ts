@@ -651,7 +651,7 @@ test("shared component: STANDARD line cannot borrow flexible negative allowance"
   assert.equal(createCalled, false);
 });
 
-test("Request embeds canonical [ORDER:publicCode] marker in note and shipping address", async () => {
+test("Pancake request preserves the shipping address and keeps the order marker in note", async () => {
   const prismaMock = buildMockPrisma({ sellingMode: "STANDARD" });
   let capturedRequest: PancakeCreateOrderRequest | null = null;
 
@@ -670,8 +670,8 @@ test("Request embeds canonical [ORDER:publicCode] marker in note and shipping ad
 
   assert.ok(capturedRequest);
   const req: PancakeCreateOrderRequest = capturedRequest;
-  assert.ok(req.note?.includes(`[ORDER:${publicCode}]`));
-  assert.ok(req.shipping_address.address.includes(`[ORDER:${publicCode}]`));
+  assert.equal(req.note, `Test Order Note [ORDER:${publicCode}]`);
+  assert.equal(req.shipping_address.address, "123 Test Street");
 });
 
 test("Definite HTTP 4xx rejection marks order as REJECTED with ORDER_REJECTED", async () => {
