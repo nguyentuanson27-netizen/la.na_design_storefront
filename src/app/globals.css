@@ -3396,19 +3396,21 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
 }
 .pdp-video-slot__close svg { width: 16px; height: 16px; }
 .pdp-video-slot__close:focus-visible { outline: 3px solid var(--paper); outline-offset: 2px; box-shadow: 0 0 0 6px var(--chocolate); }
-/* Below `lg` the frame is pinned: it rests where it always has (a quarter of the photograph's height
-   up from the bottom, 1rem from the right edge) and, as the shopper scrolls down through the
-   photograph, stays on screen just under the masthead instead of scrolling away with the top of the
-   photograph. It runs out with the photograph: sticky stops at the bottom of the photograph's box
-   (4rem clear of it, so the counter and the Flash Sale tag stay uncovered) and leaves with it, so it
-   never reaches the price or the buy buttons. Pure CSS, so there is no scroll listener and no jump.
-   Sticky needs the photograph not to be a scroll container, hence `overflow: visible` for `hidden`
-   (never `clip`: a clipping ancestor takes away the lazy-load margin, so the gallery's second
-   photograph would stop being fetched ahead of the first swipe), and the cell the slot sits in to
-   stop clipping its own box. The phone gallery's track clips the photographs itself. */
+/* Below `lg` the frame is pinned: it rests in the upper right quadrant of the hero photo
+   (4rem clear of the masthead, 1rem from the right edge, matching the approved red-box position)
+   and stays pinned across the entire product section as the shopper scrolls down. It leaves when
+   reaching the customer feedback section ("Khách hàng & La.na") at the bottom of the product scope.
+   Pure CSS sticky, so there is no scroll listener and no layout jump. */
 @media (max-width: 1023.98px) {
-  .pdp-stage { overflow: visible; }
-  .pdp-video-anchor .pdp-stage__cell { overflow: visible; container-type: size; }
+  .pdp-video-anchor {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 44;
+  }
+  .pdp-video-anchor .pdp-stage__cell {
+    display: contents;
+  }
   .pdp-video-slot {
     --pdp-video-width: clamp(88px, 25vw, 112px);
     position: sticky;
@@ -3416,15 +3418,27 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     right: auto;
     bottom: auto;
     width: var(--pdp-video-width);
-    margin: calc(74cqh - var(--pdp-video-width) * 16 / 9) 1rem 4rem auto;
+    aspect-ratio: 9 / 16;
+    margin-top: calc(var(--masthead-height) + 4rem);
+    margin-left: auto;
+    margin-right: 1rem;
+    /* Release before feedback even at fractional viewport heights. */
+    margin-bottom: 3rem;
+    pointer-events: auto;
   }
 }
 @media (min-width: 1024px) {
   .pdp-video-anchor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100svh;
     right: auto;
     width: 50%;
     display: flex;
     justify-content: center;
+    pointer-events: none;
+    z-index: 4;
   }
   .pdp-video-anchor[data-single-image="true"] { width: 100%; }
   /* The small poster tile on the photograph: the desktop layout before the preview is up, after the
