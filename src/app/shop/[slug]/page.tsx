@@ -128,7 +128,7 @@ function render(data: ProductRouteData, { t }: RequestI18n) {
           <h2 id="pdp-description-title" className="pdp-section-title font-display text-xl font-normal tracking-[-0.02em] lg:text-2xl">
             {t("Mô tả sản phẩm")}
           </h2>
-          {/* Below `lg` the description opens on its first lines; the blocks after it fold. */}
+          {/* The full description opens by default at every width; long copy remains collapsible. */}
           <PdpClampedContent>
             {editorial.description ? (
               <p className="mt-3 max-w-xl whitespace-pre-line text-sm leading-6 text-black/70">{editorial.description}</p>
@@ -145,7 +145,7 @@ function render(data: ProductRouteData, { t }: RequestI18n) {
       ) : null}
 
       {editorial.material ? (
-        <PdpDisclosure titleId="pdp-material-title" title={t("Chất liệu")}>
+        <PdpDisclosure titleId="pdp-material-title" title={t("Chất liệu")} initiallyOpen>
           <p className="max-w-xl text-sm leading-6 text-black/70 lg:mt-3">{editorial.material}</p>
         </PdpDisclosure>
       ) : null}
@@ -173,7 +173,7 @@ function render(data: ProductRouteData, { t }: RequestI18n) {
       // with a rule, so a second top rule would draw a doubled line.
       className={`border-black/20 lg:border-t ${hasProductInformation ? "" : "border-t"}`}
     >
-      <PdpDisclosure titleId="pdp-shipping-title" title={t("Giao hàng")}>
+      <PdpDisclosure titleId="pdp-shipping-title" title={t("Giao hàng")} initiallyOpen>
         <div className="max-w-xl space-y-1 text-sm leading-6 text-black/70 lg:mt-3">
           <p>{t(data.shipping.coverage)}</p>
           <p>{t(data.shipping.innerCityLabel)}: {t(data.shipping.innerCityEstimate)}</p>
@@ -185,7 +185,7 @@ function render(data: ProductRouteData, { t }: RequestI18n) {
         </div>
       </PdpDisclosure>
 
-      <PdpDisclosure titleId="pdp-returns-title" title={t("Đổi trả")}>
+      <PdpDisclosure titleId="pdp-returns-title" title={t("Đổi trả")} initiallyOpen>
         <div className="max-w-xl space-y-1 text-sm leading-6 text-black/70 lg:mt-3">
           <p>{t(data.returns.returnWindow)}</p>
           <p>{t(data.returns.refundWindow)}</p>
