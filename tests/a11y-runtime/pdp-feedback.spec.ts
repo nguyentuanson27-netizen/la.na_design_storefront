@@ -194,6 +194,11 @@ test.beforeEach(async ({ page }) => {
 test("a product's own tagged photographs show under its own heading, an uncalibrated one included", async ({ page }) => {
   await page.goto(`${BASE_URL}/shop/${products.own.slug}`, { waitUntil: "networkidle" });
 
+  // A short description is fully visible on load without an unnecessary collapse toggle.
+  const shortDescription = page.locator('section[aria-labelledby="pdp-description-title"]');
+  await expect(shortDescription.locator(".pdp-clamped")).toHaveAttribute("data-clamped", "false");
+  await expect(shortDescription.getByRole("button", { name: /^(Xem thêm|Thu gọn)$/ })).toHaveCount(0);
+
   const section = rail(page);
   await expect(section.getByRole("heading", { level: 2, name: "Khách hàng diện mẫu này" })).toBeVisible();
   const photos = section.getByRole("button", { name: /^Phóng to ảnh/ });
