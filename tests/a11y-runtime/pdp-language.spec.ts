@@ -104,7 +104,8 @@ test.beforeAll(async () => {
       content: {
         create: {
           status: "PUBLISHED",
-          editorialDescription: "Áo khoác thử nghiệm cho PDP language contract.",
+          editorialDescription: Array.from({ length: 16 }, (_, i) => `Dòng mô tả sản phẩm thử nghiệm ${i + 1}.`).join("\n"),
+          material: "100% cotton dệt kim mềm mại.",
           sizeGuide: "ao-dai",
           careInstructions: "Giặt nhẹ và phơi nơi thoáng mát.",
         },
@@ -195,5 +196,48 @@ test("PDP uses Vietnamese buyer-functional copy and keeps truthful availability 
   await expect(page.getByRole("heading", { level: 3, name: "Care" })).toHaveCount(0);
   await expect(page.getByText(/phía máy chủ|client/)).toHaveCount(0);
 
+  await assertPageQuality(page);
+});
+
+test("PDP description, material, shipping and returns start fully expanded on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+
+  const description = page.locator('section[aria-labelledby="pdp-description-title"]');
+  const descriptionText = description.locator(".pdp-clamped");
+  await expect(descriptionText).toHaveAttribute("data-clamped", "false");
+  await expect(descriptionText).not.toHaveClass(/max-h-36/);
+  await expect(descriptionText).toContainText("Dòng mô tả sản phẩm thử nghiệm 16.");
+  await description.getByRole("button", { name: "Thu gọn" }).click();
+  await expect(descriptionText).toHaveAttribute("data-clamped", "true");
+  await description.getByRole("button", { name: "Xem thêm" }).click();
+  await expect(descriptionText).toHaveAttribute("data-clamped", "false");
+
+  for (const [titleId, title] of [
+    ["pdp-material-title", "Chất liệu"],
+    ["pdp-shipping-title", "Giao hàng"],
+    ["pdp-returns-title", "Đổi trả"],
+  ] as const) {
+    const section = page.locator(`section[aria-labelledby="${titleId}"]`);
+    const toggle = section.getByRole("button", { name: title, exact: true });
+    const body = section.locator(":scope > div[id]");
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(body).toBeVisible();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(body).toBeHidden();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(body).toBeVisible();
+  }
+
+  // Only the four requested blocks change; care instructions keep their original default.
+  const care = page.locator('section[aria-labelledby="pdp-care-title"]');
+  await expect(care.getByRole("button", { name: "Hướng dẫn bảo quản" })).toHaveAttribute("aria-expanded", "false");
+
+  // Desktop still renders every section as static, fully visible content.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(care.locator(":scope > div[id]")).toBeVisible();
+  await expect(page.locator('section[aria-labelledby="pdp-material-title"] > div[id]')).toBeVisible();
   await assertPageQuality(page);
 });
