@@ -246,7 +246,14 @@ class NanoBanana21PickerTest(unittest.TestCase):
 
 @unittest.skipUnless(HAS_GFLOW and HAS_PLAYWRIGHT, "needs gflow-cli 0.82.1 and playwright")
 class AgentPanelDismissalTest(unittest.TestCase):
-    """Proactive panel dismissal and agent mode toggle on Flow's migrated composer."""
+    """gflow's real _exit_agent_mode, patched to close Flow's Agent panel first."""
+
+    PANEL = """<flow-agent-panel>
+      <button id="panel-close"><mat-icon>close</mat-icon></button>
+    </flow-agent-panel>"""
+    # Flow's own image viewer / dialogs also carry a close icon; the patch must never touch them.
+    VIEWER = """<div class="viewer"><button id="viewer-close" aria-label="Close"><mat-icon>close</mat-icon></button></div>"""
+    TRIGGER = """<button class="settings-trigger-button" hidden></button>"""
 
     @classmethod
     def setUpClass(cls):
@@ -257,26 +264,11 @@ class AgentPanelDismissalTest(unittest.TestCase):
             raise unittest.SkipTest("needs a Chromium/Chrome binary")
         install_like_the_worker()
 
-    def test_dismiss_panel_and_exit_agent_mode(self):
+    def run_exit(self, body: str, script: str = ""):
         from gflow_cli.api.transports import migrated_composer as mc
         from playwright.async_api import async_playwright
 
-        html = """<!doctype html><html><body>
-        <div class="panel">
-          <button class="header-action" aria-label="Đóng"><mat-icon>close</mat-icon></button>
-        </div>
-        <button class="agent-mode-chip" aria-pressed="true">Tác nhân</button>
-        <button class="settings-trigger-button" hidden></button>
-        <script>
-        const closeBtn = document.querySelector('button.header-action');
-        const chip = document.querySelector('button.agent-mode-chip');
-        const trigger = document.querySelector('.settings-trigger-button');
-        closeBtn.onclick = () => { closeBtn.remove(); };
-        chip.onclick = () => {
-          chip.setAttribute('aria-pressed', 'false');
-          trigger.removeAttribute('hidden');
-        };
-        </script></body></html>"""
+        html = f"<!doctype html><html><body>{body}<script>{script}</script></body></html>"
 
         async def scenario():
             async with async_playwright() as playwright:
@@ -284,19 +276,58 @@ class AgentPanelDismissalTest(unittest.TestCase):
                 try:
                     page = await browser.new_page()
                     await page.set_content(html)
-                    composer = mc.MigratedComposer()
-                    state, err = await composer._exit_agent_mode(page)
-                    chip_pressed = await page.locator("button.agent-mode-chip[aria-pressed='true']").count()
-                    trigger_visible = await page.locator(".settings-trigger-button").is_visible()
-                    return state, err, chip_pressed, trigger_visible
+                    state, err = await mc.MigratedComposer._exit_agent_mode(page)
+                    return {
+                        "state": state,
+                        "err": err,
+                        "panel": await page.locator("flow-agent-panel").count(),
+                        "viewer": await page.locator("#viewer-close").count(),
+                        "pressed": await page.locator("button.agent-mode-chip[aria-pressed='true']").count(),
+                        "trigger": await page.locator(".settings-trigger-button").is_visible(),
+                    }
                 finally:
                     await browser.close()
 
-        state, err, chip_pressed, trigger_visible = asyncio.run(scenario())
-        self.assertIsNone(err)
-        self.assertEqual(state, "clicked")
-        self.assertEqual(chip_pressed, 0)
-        self.assertTrue(trigger_visible)
+        return asyncio.run(scenario())
+
+    CLOSE_PANEL = "document.getElementById('panel-close').onclick = () => document.querySelector('flow-agent-panel').remove();"
+    UNPRESS_CHIP = (
+        "const chip = document.querySelector('button.agent-mode-chip');"
+        "chip.onclick = () => { chip.setAttribute('aria-pressed', 'false');"
+        " document.querySelector('.settings-trigger-button').removeAttribute('hidden'); };"
+    )
+
+    def test_closes_the_panel_and_turns_a_pressed_chip_off(self):
+        chip = '<button class="agent-mode-chip" aria-pressed="true">Tác nhân</button>'
+        result = self.run_exit(self.PANEL + chip + self.TRIGGER, self.CLOSE_PANEL + self.UNPRESS_CHIP)
+        self.assertIsNone(result["err"])
+        self.assertEqual(result["state"], "clicked")
+        self.assertEqual(result["panel"], 0)
+        self.assertEqual(result["pressed"], 0)
+        self.assertTrue(result["trigger"])
+
+    def test_a_closed_panel_alone_is_not_reported_as_an_agent_only_account(self):
+        # No chip in the page: gflow's own answer would be "absent", which it raises as
+        # FlowAgentUiError (exit 25). Closing the panel was the fix, so gflow must wait for the trigger.
+        reveal = "document.getElementById('panel-close').onclick = () => {"
+        reveal += " document.querySelector('flow-agent-panel').remove();"
+        reveal += " document.querySelector('.settings-trigger-button').removeAttribute('hidden'); };"
+        result = self.run_exit(self.PANEL + self.TRIGGER, reveal)
+        self.assertIsNone(result["err"])
+        self.assertEqual(result["state"], "clicked")
+        self.assertEqual(result["panel"], 0)
+        self.assertTrue(result["trigger"])
+
+    def test_without_an_agent_panel_nothing_is_clicked_and_the_state_is_gflows_own(self):
+        result = self.run_exit(self.VIEWER + self.TRIGGER)
+        self.assertEqual(result["state"], "absent")
+        self.assertEqual(result["viewer"], 1)
+
+    def test_an_unrelated_close_button_is_left_alone_when_the_panel_is_open(self):
+        chip = '<button class="agent-mode-chip" aria-pressed="true">Tác nhân</button>'
+        result = self.run_exit(self.VIEWER + self.PANEL + chip + self.TRIGGER, self.CLOSE_PANEL + self.UNPRESS_CHIP)
+        self.assertEqual(result["state"], "clicked")
+        self.assertEqual(result["viewer"], 1)
 
 
 if __name__ == "__main__":
