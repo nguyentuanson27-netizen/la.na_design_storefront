@@ -1430,7 +1430,7 @@ main nav[aria-label="Breadcrumb"] a {
   gap: 0.5rem 0.75rem;
   min-height: 2.875rem;
   padding: 0.375rem 0.625rem 0.375rem 0.75rem;
-  border-radius: 0.5rem;
+  border-radius: 0;
   background: linear-gradient(110deg, #ffb238 0%, #ff6a1a 30%, #e5282f 70%, #b8123f 100%);
   color: #ffffff;
   box-shadow: 0 2px 6px rgba(184, 18, 63, 0.25);

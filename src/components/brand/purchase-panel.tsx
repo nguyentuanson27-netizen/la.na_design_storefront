@@ -342,7 +342,6 @@ export function PurchasePanelView({
   productName = "",
   sizeGuide,
   tryOnTrigger = null,
-  mobileNudge = null,
   sizeHelp = null,
   sizeGuideZaloHref = null,
   assurance = null,
@@ -358,8 +357,6 @@ export function PurchasePanelView({
    * elsewhere and shares no state with this panel; it appears on the panel only, not in the options sheet.
    */
   tryOnTrigger?: ReactNode;
-  /** Floats just above the phone purchase bar (e.g. a reminder of try-on); absolutely placed, so it never resizes the bar. */
-  mobileNudge?: ReactNode;
   /** Server-built ways to ask the shop about size (chat links), under the size guide on the panel only. */
   sizeHelp?: ReactNode;
   /** The shop's Zalo chat link, offered on the phone size-guide sheet; `null` hides that button. */
@@ -1049,7 +1046,6 @@ export function PurchasePanelView({
         }`}
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
-        {mobileNudge}
         {/*
           A rejected buy-now from this bar happens with the sheet closed and the panel's own status
           far off screen, so the failure is said here, beside the button that was pressed. It is not

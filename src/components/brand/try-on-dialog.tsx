@@ -99,8 +99,7 @@ function PersonIcon() {
 /**
  * The entry point: a text link beside "Hướng dẫn chọn size", in the same style, because both help
  * the shopper choose (owner request 2026-10-08). It was briefly a full-width outlined row of its own,
- * which pushed the purchase buttons down; the phone reminder (`BrandTryOnNudge`) is what keeps a
- * shopper who read past it from missing it. A small mark says it is still in development, and the
+ * which pushed the purchase buttons down. A small mark says it is still in development, and the
  * accessible name says the rest of what the row used to: on your own photo, free. Its name still
  * begins "Thử đồ".
  */
@@ -155,48 +154,6 @@ export function BrandTryOnMediaButton({
         {t("Thử đồ")} <span className="pdp-tryon-media-button__ai">AI</span>
       </span>
     </button>
-  );
-}
-
-/**
- * A small prompt that floats just above the phone's purchase bar once the shopper has scrolled past
- * the entry point, so a shopper who read the description is reminded without the page gaining a
- * banner. It leaves the right edge free for the chat button, and can be put away.
- */
-export function BrandTryOnNudge({
-  onOpen,
-  onDismiss,
-  openRef,
-}: Readonly<{
-  onOpen: () => void;
-  onDismiss: () => void;
-  /** The coordinator's handle on the button that opens the dialog, so focus can come back to it. */
-  openRef: RefObject<HTMLButtonElement | null>;
-}>) {
-  const t = useT();
-  return (
-    <div className="absolute bottom-full left-4 mb-2 flex max-w-[calc(100%-5.5rem)] items-stretch border border-[#3B2219] bg-[#FAF7F2] shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
-      <button
-        ref={openRef}
-        type="button"
-        className={`flex min-h-11 min-w-0 items-center gap-2 px-3 text-left text-[13px] leading-4 text-[#3B2219] ${FOCUS_RING}`}
-        aria-haspopup="dialog"
-        onClick={onOpen}
-      >
-        <PersonIcon />
-        <span>
-          Chưa chắc hợp? <span className="font-semibold underline underline-offset-4">{t("Thử đồ bằng ảnh của nàng")}</span>
-        </span>
-      </button>
-      <button
-        type="button"
-        aria-label={t("Ẩn gợi ý thử đồ")}
-        className={`min-h-11 min-w-11 shrink-0 border-l border-[#3B2219]/20 text-lg leading-none text-[#3B2219]/70 ${FOCUS_RING}`}
-        onClick={onDismiss}
-      >
-        <span aria-hidden="true">×</span>
-      </button>
-    </div>
   );
 }
 

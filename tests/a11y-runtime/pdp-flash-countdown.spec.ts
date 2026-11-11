@@ -425,7 +425,7 @@ test("Flash Sale keeps the original desktop styling and a full-bleed mobile coun
     };
   });
   expect(desktop).toEqual({
-    radius: "8px",
+    radius: "0px",
     labelFontSize: "13px",
     labelColor: "rgb(255, 255, 255)",
     digitBackground: "rgb(255, 255, 255)",

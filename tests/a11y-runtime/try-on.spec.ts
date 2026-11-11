@@ -465,35 +465,6 @@ test("an eligible apparel PDP offers Thử đồ at phone and desktop widths, be
   expect(tryOnProductFetches()).toHaveLength(0);
 });
 
-test("opened from the phone reminder, closing returns focus to the reminder, which is on screen", async ({
-  page,
-}) => {
-  await page.goto(`${ENABLED_URL}/shop/${slugs.eligible}`, { waitUntil: "networkidle" });
-  const entry = triggerOf(page);
-  await expect(entry).toBeVisible();
-
-  // The reminder appears only once the entry point has been scrolled above the viewport.
-  const nudge = page.getByRole("button", { name: /^Chưa chắc hợp\?/ });
-  await expect(nudge).toBeHidden();
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await expect(nudge).toBeVisible();
-  expect(await entry.evaluate((element) => element.getBoundingClientRect().bottom)).toBeLessThan(0);
-
-  await nudge.click();
-  const dialog = dialogOf(page);
-  await expect(dialog).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
-
-  // Focus is on the control the shopper used, not the off-screen entry point, and it is visible.
-  await expect(nudge).toBeFocused();
-  await expect(entry).not.toBeFocused();
-  const box = (await nudge.boundingBox())!;
-  const viewport = page.viewportSize()!;
-  expect(box.y).toBeGreaterThanOrEqual(0);
-  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
-});
-
 test("a WebP-first dress offers Thử đồ; accessory and uncategorised products do not", async ({ page }) => {
   await page.goto(`${ENABLED_URL}/shop/${slugs.webpFirst}`, { waitUntil: "networkidle" });
   await expect(triggerOf(page)).toBeVisible();
