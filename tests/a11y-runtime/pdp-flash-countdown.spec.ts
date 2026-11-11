@@ -408,7 +408,7 @@ test("Flash Sale keeps the original desktop styling and a full-bleed mobile coun
   await page.goto(BASE_URL + "/shop/" + setSlug, { waitUntil: "networkidle" });
   const strip = page.locator("[data-pdp-flash]");
   await expect(strip).toBeVisible();
-  await expect(strip.getByText("Kết thúc sau")).toBeVisible();
+  await expect(strip.getByText("Kết thúc sau", { exact: true })).toBeVisible();
 
   const desktop = await strip.evaluate((node) => {
     const label = getComputedStyle(node.querySelector(".pdp-flash-strip__label")!);
