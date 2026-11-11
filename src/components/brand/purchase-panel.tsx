@@ -911,22 +911,24 @@ export function PurchasePanelView({
               <BoltIcon className="pdp-flash-strip__bolt" />
               FLASH SALE
             </span>
-            {/* The visual clock ticks every second; assistive technology gets a stable,
-                minute-granularity sentence instead of an announcement every second. */}
+            {/* The digits tick every second, so they are hidden from assistive technology; the
+                sentence beside them changes once a minute and is not a live region. */}
             <span className="pdp-flash-strip__clock">
+              <span>{t("Kết thúc sau")}</span>
               <span className="pdp-flash-strip__digits" aria-hidden="true">
                 {flashClock.days > 0 ? (
-                  <span className="pdp-flash-strip__days">{flashClock.days} {t("ngày")}</span>
+                  <>
+                    <b>{flashClock.days}</b>
+                    <span className="pdp-flash-strip__unit">{t("ngày")}</span>
+                  </>
                 ) : null}
-                <span className="pdp-flash-strip__time">
-                  {flashClock.hours}:{flashClock.minutes}:{flashClock.seconds}
-                </span>
+                <b>{flashClock.hours}</b>:<b>{flashClock.minutes}</b>:<b>{flashClock.seconds}</b>
               </span>
               <span className="sr-only">{flashClock.spoken}</span>
             </span>
           </div>
         )}
-        <div className={`flex items-baseline justify-between gap-6 ${flashClock === null ? "" : "mt-3"}`}>
+        <div className={`flex items-baseline justify-between gap-6 ${flashClock === null ? "" : "mt-3 lg:mt-4"}`}>
           <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-display text-[1.75rem] leading-tight font-normal tabular-nums tracking-[0.01em] text-[#2A1810]">
             {priceDisplay.compareAtText ? (
               <>

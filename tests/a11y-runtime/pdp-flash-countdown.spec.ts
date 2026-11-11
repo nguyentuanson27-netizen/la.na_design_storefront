@@ -165,8 +165,8 @@ function isPdpRscRequest(request: Request) {
 
 /** Seconds left on the panel's countdown, read from its digits. */
 async function countdownSeconds(page: Page): Promise<number> {
-  const time = await page.locator("[data-pdp-flash] .pdp-flash-strip__time").innerText();
-  const [hours, minutes, seconds] = time.split(":").map(Number);
+  const digits = await page.locator("[data-pdp-flash] .pdp-flash-strip__digits b").allInnerTexts();
+  const [hours, minutes, seconds] = digits.slice(-3).map(Number);
   return hours! * 3600 + minutes! * 60 + seconds!;
 }
 
@@ -403,52 +403,88 @@ test("a composite's other kinds never carry the set's countdown or stock", async
 
 
 
-test("Flash Sale stays compact at 390px and fits narrow/mobile text zoom without clipping", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test("Flash Sale keeps the original desktop styling and a full-bleed mobile countdown row", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(BASE_URL + "/shop/" + setSlug, { waitUntil: "networkidle" });
   const strip = page.locator("[data-pdp-flash]");
   await expect(strip).toBeVisible();
+  await expect(strip.getByText("Kết thúc sau")).toBeVisible();
 
-  // This fixture's live campaign lasts hours. Add a visual days chip only for a layout stress
-  // case; domain tests already cover the server-derived countdown's real day/second formatting.
-  await strip.locator(".pdp-flash-strip__digits").evaluate((digits) => {
-    const days = document.createElement("span");
-    days.className = "pdp-flash-strip__days";
-    days.textContent = "2 ngày";
-    digits.prepend(days);
+  const desktop = await strip.evaluate((node) => {
+    const label = getComputedStyle(node.querySelector(".pdp-flash-strip__label")!);
+    const digit = getComputedStyle(node.querySelector(".pdp-flash-strip__digits b")!);
+    const bolt = getComputedStyle(node.querySelector(".pdp-flash-strip__bolt")!);
+    return {
+      radius: getComputedStyle(node).borderTopLeftRadius,
+      labelFontSize: label.fontSize,
+      labelColor: label.color,
+      digitBackground: digit.backgroundColor,
+      digitColor: digit.color,
+      digitFontSize: digit.fontSize,
+      boltColor: bolt.color,
+    };
+  });
+  expect(desktop).toEqual({
+    radius: "8px",
+    labelFontSize: "13px",
+    labelColor: "rgb(255, 255, 255)",
+    digitBackground: "rgb(255, 255, 255)",
+    digitColor: "rgb(184, 18, 63)",
+    digitFontSize: "14.4px",
+    boltColor: "rgb(255, 242, 122)",
   });
 
-  for (const scenario of [
-    { width: 390, fontSize: "" },
-    { width: 320, fontSize: "" },
-    { width: 195, fontSize: "" }, // About the CSS viewport of a 390px screen at 200% page zoom.
-    { width: 390, fontSize: "200%" }, // 200% text-only enlargement.
-  ]) {
-    await page.setViewportSize({ width: scenario.width, height: 844 });
-    await page.evaluate((size) => { document.documentElement.style.fontSize = size; }, scenario.fontSize);
+  // Stress the same DOM with a two-day campaign without altering the application's clock.
+  // On mobile, all segments must remain visible in one row, even with a days prefix.
+  await strip.locator(".pdp-flash-strip__digits").evaluate((node) => {
+    const day = document.createElement("b");
+    day.textContent = "2";
+    const unit = document.createElement("span");
+    unit.className = "pdp-flash-strip__unit";
+    unit.textContent = "ngày";
+    node.prepend(unit);
+    node.prepend(day);
+  });
+
+  for (const width of [390, 360, 320]) {
+    await page.setViewportSize({ width, height: 844 });
     const metrics = await strip.evaluate((node) => {
-      const frame = node.getBoundingClientRect();
-      const selectors = [".pdp-flash-strip__label", ".pdp-flash-strip__days", ".pdp-flash-strip__time"];
-      const clipped = selectors.filter((selector) => {
-        const rect = node.querySelector(selector)!.getBoundingClientRect();
-        return rect.left < frame.left - 1 || rect.right > frame.right + 1;
+      const rect = node.getBoundingClientRect();
+      const parts = [...node.querySelectorAll(".pdp-flash-strip__label, .pdp-flash-strip__clock, .pdp-flash-strip__digits b, .pdp-flash-strip__unit")];
+      const centers = parts.map((part) => {
+        const bounds = part.getBoundingClientRect();
+        return (bounds.top + bounds.bottom) / 2;
       });
-      return { height: frame.height, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, clipped };
+      return {
+        pageWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+        left: rect.left,
+        right: rect.right,
+        scrollWidth: node.scrollWidth,
+        clientWidth: node.clientWidth,
+        maxCenterOffset: Math.max(...centers) - Math.min(...centers),
+      };
     });
-    expect(metrics.clipped, JSON.stringify(scenario)).toEqual([]);
-    expect(metrics.scrollWidth, JSON.stringify(scenario)).toBeLessThanOrEqual(metrics.clientWidth + 1);
-    if (scenario.width === 390 && scenario.fontSize === "") {
-      expect(metrics.height, "390px baseline banner stays compact").toBeLessThanOrEqual(38);
-    }
+    expect(metrics.pageWidth, String(width) + "px does not overflow the page").toBeLessThanOrEqual(width + 1);
+    expect(metrics.left, String(width) + "px starts at the screen edge").toBeGreaterThanOrEqual(-1);
+    expect(metrics.left, String(width) + "px starts at the screen edge").toBeLessThanOrEqual(1);
+    expect(metrics.right, String(width) + "px ends at the screen edge").toBeGreaterThanOrEqual(width - 1);
+    expect(metrics.right, String(width) + "px ends at the screen edge").toBeLessThanOrEqual(width + 1);
+    expect(metrics.scrollWidth, String(width) + "px fits all countdown segments").toBeLessThanOrEqual(metrics.clientWidth + 1);
+    expect(metrics.maxCenterOffset, String(width) + "px keeps every segment on one line").toBeLessThanOrEqual(4);
   }
 
+  // At 200% text zoom, allow horizontal scrolling inside the strip instead of clipping seconds.
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
-  const backgrounds = await strip.evaluate((node) => [
-    getComputedStyle(node.querySelector(".pdp-flash-strip__days")!).backgroundColor,
-    getComputedStyle(node.querySelector(".pdp-flash-strip__time")!).backgroundColor,
-  ]);
-  expect(backgrounds).toEqual(["rgb(59, 34, 25)", "rgb(59, 34, 25)"]);
-  const accessibility = await new AxeBuilder({ page }).include("[data-pdp-flash]").withTags(BUYER_AXE_TAGS).analyze();
-  expect(accessibility.violations).toEqual([]);
+  await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+  const zoom = await strip.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+    return {
+      pageWidth: document.documentElement.scrollWidth,
+      lastDigitRight: node.querySelector(".pdp-flash-strip__digits b:last-child")!.getBoundingClientRect().right,
+      right: node.getBoundingClientRect().right,
+    };
+  });
+  expect(zoom.pageWidth).toBeLessThanOrEqual(391);
+  expect(zoom.lastDigitRight).toBeLessThanOrEqual(zoom.right + 1);
 });

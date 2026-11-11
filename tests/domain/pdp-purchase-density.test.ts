@@ -21,26 +21,29 @@ test("PDP removes collection chips and the unnecessary mobile divider above the 
   assert.doesNotMatch(panel, /mt-1 border-t border-\[#3B2219\]\/15 pt-6/);
 });
 
-test("PDP Flash Sale is one compact row while keeping the live clock and spoken countdown", () => {
+test("Flash Sale keeps the original desktop styles and fills the mobile viewport without wrapping", () => {
   const panel = read("src/components/brand/purchase-panel.tsx");
   const css = read("src/app/globals.css");
   const strip = /\.pdp-flash-strip\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+  const label = /\.pdp-flash-strip__label\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+  const digit = /\.pdp-flash-strip__digits b\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
 
-  assert.match(strip, /display:\s*flex;/);
-  assert.match(strip, /flex-wrap:\s*wrap;/);
-  const digits = /\.pdp-flash-strip__digits\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-  assert.match(digits, /flex-wrap:\s*wrap;/);
-  const dayCss = /\.pdp-flash-strip__days\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-  const timeCss = /\.pdp-flash-strip__time\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-  assert.match(dayCss, /background:\s*#3b2219;/);
-  assert.match(timeCss, /background:\s*#3b2219;/);
-  assert.match(strip, /min-height:\s*2\.25rem;/);
-  assert.match(strip, /padding:\s*0\.25rem 0\.625rem;/);
+  assert.match(strip, /border-radius:\s*0\.5rem;/);
+  assert.match(strip, /min-height:\s*2\.875rem;/);
+  assert.match(label, /font-size:\s*0\.8125rem;/);
+  assert.match(digit, /background:\s*#ffffff;/);
+  assert.match(digit, /color:\s*#b8123f;/);
+  assert.match(digit, /font-size:\s*0\.9rem;/);
 
-  assert.match(panel, /flashClock === null \? null : \(\s*<div className="pdp-flash-strip" data-pdp-flash=""/);
-  assert.match(panel, /flashClock\.days > 0/);
-  assert.match(panel, /\{flashClock\.hours\}:\{flashClock\.minutes\}:\{flashClock\.seconds\}/);
+  const mobile = /@media \(max-width: 63\.999rem\)\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
+  assert.match(mobile, /width:\s*100vw;/);
+  assert.match(mobile, /margin-inline-start:\s*calc\(50% - 50vw\);/);
+  assert.match(mobile, /flex-wrap:\s*nowrap;/);
+  assert.match(mobile, /overflow-x:\s*auto;/);
+
+  assert.match(panel, /className="pdp-flash-strip" data-pdp-flash=""/);
+  assert.match(panel, /<span>\{t\("Kết thúc sau"\)\}<\/span>/);
+  assert.match(panel, /<b>\{flashClock\.hours\}<\/b>:<b>\{flashClock\.minutes\}<\/b>:<b>\{flashClock\.seconds\}<\/b>/);
   assert.match(panel, /className="sr-only">\{flashClock\.spoken\}/);
-  assert.doesNotMatch(panel, /<span>\{t\("Kết thúc sau"\)\}<\/span>/);
-  assert.match(panel, /flashClock === null \? "" : "mt-3"/);
+  assert.match(panel, /flashClock === null \? "" : "mt-3 lg:mt-4"/);
 });
