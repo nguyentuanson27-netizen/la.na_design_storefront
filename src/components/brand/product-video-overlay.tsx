@@ -91,21 +91,35 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
     // The observer measures geometry only: a background tab or a minimised window still "intersects".
     document.addEventListener("visibilitychange", sync);
 
-    // In client-side SPA navigation, user gestures unlock autoplay if initially throttled by the browser
+    // A browser may reject the first muted play() after client-side navigation. Only user-activation
+    // events can unlock it: pointerdown for mouse, pointerup for touch/pen, or Enter/Space on keyboard.
+    // Keep the handlers until teardown. An early gesture before IntersectionObserver marks the
+    // preview visible must not consume the only chance to resume it.
     const tryPlay = () => {
       if (previewVisible.current && !previewHeld.current && !document.hidden && element.paused) {
         element.muted = true;
         void element.play().catch(() => undefined);
       }
     };
-    window.addEventListener("pointerdown", tryPlay, { once: true, passive: true });
-    window.addEventListener("scroll", tryPlay, { once: true, passive: true });
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === "mouse") tryPlay();
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      if (event.pointerType !== "mouse") tryPlay();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Enter" || event.key === " ") tryPlay();
+    };
+    window.addEventListener("pointerdown", onPointerDown, { passive: true });
+    window.addEventListener("pointerup", onPointerUp, { passive: true });
+    window.addEventListener("keydown", onKeyDown);
 
     return () => {
       observer.disconnect();
       document.removeEventListener("visibilitychange", sync);
-      window.removeEventListener("pointerdown", tryPlay);
-      window.removeEventListener("scroll", tryPlay);
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("keydown", onKeyDown);
       previewVisible.current = false;
       releaseVideo(element);
       // A replacement preview has not painted a frame, even if this instance had been playing.
