@@ -6,6 +6,7 @@ import type { StorefrontProjectionOption } from "../../src/commerce/storefront-p
 import {
   buildProductViewModel,
   resolveInitialGalleryIndex,
+  selectSellableRelatedProducts,
   type ProductViewModelInput,
 } from "../../src/routes/product-model.ts";
 import type { TrackingEvent } from "../../src/tracking/commerce-events.ts";
@@ -166,4 +167,52 @@ test("the view model is frozen so markup cannot mutate a decision it was handed"
 
   assert.equal(Object.isFrozen(model), true);
   assert.equal(Object.isFrozen(model.editorial), true);
+});
+
+/* ------------------------------------------------------------- related: skip what cannot be bought */
+
+function relatedProduct(id: string, stock: number | null) {
+  return {
+    id,
+    slug: `related-${id}`,
+    name: `Liên quan ${id}`,
+    media,
+    variants:
+      stock === null
+        ? []
+        : [
+            {
+              id: `${id}-v1`,
+              pancakeVariationId: `${id}-p1`,
+              color: "Kem",
+              size: "M",
+              sellableStock: stock,
+              retailPrice: 749000,
+              retailPriceAfterDiscount: 749000,
+            },
+          ],
+  };
+}
+
+test("related products with nothing left to buy give their slot to the next candidate", () => {
+  const picked = selectSellableRelatedProducts(
+    [relatedProduct("a", 0), relatedProduct("b", 3), relatedProduct("c", 0), relatedProduct("d", 5), relatedProduct("e", 2)],
+    { limit: 2 },
+  );
+  assert.deepEqual(picked.map((product) => product.id), ["b", "d"]);
+});
+
+test("related selection keeps the given order and stops at the limit", () => {
+  const picked = selectSellableRelatedProducts(
+    [relatedProduct("a", 1), relatedProduct("b", 1), relatedProduct("c", 1)],
+    { limit: 2 },
+  );
+  assert.deepEqual(picked.map((product) => product.id), ["a", "b"]);
+});
+
+test("a related grid made only of sold-out products is empty rather than a row of 'Hết hàng'", () => {
+  assert.deepEqual(
+    selectSellableRelatedProducts([relatedProduct("a", 0), relatedProduct("b", null)], { limit: 4 }),
+    [],
+  );
 });

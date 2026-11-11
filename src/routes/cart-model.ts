@@ -302,9 +302,10 @@ function promotionsEntry(
   state: CartGiftState | undefined,
   blocked: boolean | undefined,
   lines: readonly StorefrontCartLine[],
+  upsellCampaignIds: ReadonlySet<string> | undefined,
 ): { promotions?: PromotionBannerView } {
   if (blocked || !state) return {};
-  const promotions = buildCartPromotionView(state, listedUnitPrices(lines));
+  const promotions = buildCartPromotionView(state, listedUnitPrices(lines), upsellCampaignIds);
   return promotions ? { promotions } : {};
 }
 
@@ -323,6 +324,8 @@ export function buildCartViewModel(
     shippingPolicy?: GuestShippingPolicy; shippingQuote?: ShippingQuote;
     /** Each line's Flash Sale countdown and "Còn x", read on the server; absent where it was not read. */
     lineUrgency?: CartLineUrgency;
+    /** Campaigns the server confirmed as live upsell opportunities (`readCartUpsellCampaignIds`); absent = no listing links. */
+    upsellCampaignIds?: ReadonlySet<string>;
   }>,
 ): CartViewModel {
   const subtotal = cartAvailableSubtotal(input.lines);
@@ -383,7 +386,7 @@ export function buildCartViewModel(
     commerceTrackingEnabled: input.commerceTrackingEnabled,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
-    ...promotionsEntry(state, benefitBlocked, input.lines),
+    ...promotionsEntry(state, benefitBlocked, input.lines, input.upsellCampaignIds),
     ...savingsEntry(input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true),
     ...(!input.benefitsUnavailable && describeListPriceSavings(input.lines, paidBenefits?.subtotalVnd ?? subtotal) ? { listPriceSavingsText: describeListPriceSavings(input.lines, paidBenefits?.subtotalVnd ?? subtotal)! } : {}),
     ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines), input.shippingQuote),

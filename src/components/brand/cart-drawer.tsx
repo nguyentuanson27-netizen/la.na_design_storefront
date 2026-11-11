@@ -378,7 +378,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
             <div className="space-y-3 border-t border-[#3B2219]/10 bg-[#FAF7F2] px-6 pb-4 pt-4">
               {footerProgress ? (
                 <div className="border-b border-[#3B2219]/10 pb-3">
-                  <PromotionProgressLine item={footerProgress} lineRef={observeNudge} />
+                  <PromotionProgressLine item={footerProgress} lineRef={observeNudge} onNavigate={() => leave("offers")} />
                 </div>
               ) : null}
               {cart.listPriceSavingsText ? <p className="text-sm font-semibold" data-list-price-savings>{t("Tiết kiệm so với giá niêm yết: {amount}", { amount: cart.listPriceSavingsText })}</p> : null}

@@ -55,6 +55,22 @@ function Gift() {
   );
 }
 
+/** The way from a "mua thêm" milestone to the products that reach it, the same link checkout's banner offers. */
+function OffersLink({ href, onNavigate }: Readonly<{ href: string; onNavigate?: () => void }>) {
+  const t = useT();
+  return (
+    <Link
+      className="ml-6 mt-1 inline-flex min-h-11 items-center text-[0.78rem] font-semibold text-[#2A1810] underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
+      data-promotion-offers-link=""
+      href={href}
+      onClick={onNavigate}
+      prefetch={false}
+    >
+      {t("Chọn thêm món")}
+    </Link>
+  );
+}
+
 function Item({
   item,
   giftHref,
@@ -93,6 +109,7 @@ function Item({
           />
         </div>
       ) : null}
+      {item.offersHref ? <OffersLink href={item.offersHref} onNavigate={onNavigate} /> : null}
     </li>
   );
 }
@@ -124,7 +141,8 @@ export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, 
 export function PromotionProgressLine({
   item,
   lineRef,
-}: Readonly<{ item: PromotionBannerItem; lineRef?: (node: HTMLDivElement | null) => void }>) {
+  onNavigate,
+}: Readonly<{ item: PromotionBannerItem; lineRef?: (node: HTMLDivElement | null) => void; onNavigate?: () => void }>) {
   const t = useT();
   return (
     <div data-promotion-kind={item.kind} data-promotion-state={item.state} ref={lineRef}>
@@ -148,6 +166,7 @@ export function PromotionProgressLine({
           />
         </div>
       ) : null}
+      {item.offersHref ? <OffersLink href={item.offersHref} onNavigate={onNavigate} /> : null}
     </div>
   );
 }

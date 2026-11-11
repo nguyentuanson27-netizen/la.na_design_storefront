@@ -236,7 +236,7 @@ test("a product with reviews shows the rating under its name and its own photogr
 
   const strip = page.locator("[data-pdp-photo-strip]");
   await expect(strip).toBeVisible();
-  await expect(strip).toContainText("Ảnh khách diện mẫu này");
+  await expect(strip).toContainText("Đánh giá sản phẩm");
   await expect(strip).toContainText("6 ảnh thật");
   await expect(strip).toHaveAttribute("href", "#pdp-review-photos");
 
@@ -253,7 +253,7 @@ test("a product with reviews shows the rating under its name and its own photogr
 test("the review section computes its summary from the published reviews and hides the draft", async ({ page }) => {
   await page.goto(`${BASE_URL}/shop/${products.rich.slug}`, { waitUntil: "networkidle" });
 
-  await expect(section(page).getByRole("heading", { level: 2, name: "Đánh giá của khách" })).toBeVisible();
+  await expect(section(page).getByRole("heading", { level: 2, name: "Đánh giá sản phẩm" })).toBeVisible();
   const summary = section(page).locator("[data-review-summary]");
   await expect(summary).toContainText("4,6");
   await expect(summary).toContainText("7 đánh giá");
@@ -312,7 +312,11 @@ test("the product's own photographs rail replaces the shared brand gallery and o
 
   const rails = page.locator('[data-pdp-region="feedback"]');
   await expect(rails).toHaveCount(1);
-  await expect(rails.getByRole("heading", { level: 2, name: "Ảnh khách diện mẫu này" })).toBeVisible();
+  // The rail sits under the "Đánh giá sản phẩm" heading, so its own heading is kept for assistive
+  // technology only and draws no visible text.
+  const railHeading = rails.getByRole("heading", { level: 2, name: "Ảnh khách diện mẫu này" });
+  await expect(railHeading).toHaveCount(1);
+  await expect(railHeading).toHaveClass(/sr-only/);
   await expect(rails.getByRole("button", { name: /^Phóng to ảnh/ })).toHaveCount(6);
   // The shared brand gallery and the link to it would say the same thing about no product in particular.
   await expect(page.getByRole("heading", { name: "Khách hàng & La.na" })).toHaveCount(0);

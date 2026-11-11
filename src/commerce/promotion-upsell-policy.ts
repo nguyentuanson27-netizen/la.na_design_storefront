@@ -108,3 +108,14 @@ export function compareUpsellCandidates(a: { deltaVnd: number; campaignId: strin
   const text = (x: string, y: string) => x < y ? -1 : x > y ? 1 : 0;
   return a.deltaVnd - b.deltaVnd || text(a.campaignId, b.campaignId) || text(a.productId, b.productId) || text(a.variantId, b.variantId);
 }
+
+/**
+ * The campaigns the cart may link to the eligible-products listing: exactly the ones the listing itself
+ * will accept (`getScope` checks `findUpsellOpportunities`), so a link is never offered to a page that would
+ * answer "the offer has changed". Empty when the upsell flag is off or there is no readable gift state.
+ * Server only: it reads the environment.
+ */
+export function readCartUpsellCampaignIds(state: CartGiftState | undefined, shopId: number): ReadonlySet<string> {
+  if (!state || !isPromotionUpsellEnabled(shopId)) return new Set();
+  return new Set(findUpsellOpportunities(state).map((opportunity) => opportunity.campaignId));
+}

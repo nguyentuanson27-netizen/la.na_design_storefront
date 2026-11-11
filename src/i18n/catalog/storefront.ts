@@ -243,7 +243,7 @@ export const STOREFRONT_EN: Readonly<Record<string, string>> = {
   "Hình ảnh sản phẩm đang được chuẩn hóa cho storefront.": "Product images are being prepared for the storefront.",
 
   // ── Reviews ───────────────────────────────────────────────────────
-  "Đánh giá của khách": "Customer reviews",
+  "Đánh giá sản phẩm": "Product reviews",
   "{count} đánh giá": "{count} reviews",
   "1 đánh giá": "1 review",
   "{count} có ảnh": "{count} with photos",
@@ -325,6 +325,7 @@ export const STOREFRONT_EN: Readonly<Record<string, string>> = {
   "Ưu đãi hiện tại": "Current offers",
   "Ưu đãi": "Offers",
   "Chọn quà": "Choose a gift",
+  "Chọn thêm món": "Choose more items",
   "Chọn quà ngay": "Choose a gift now",
   "Quà tặng": "Gift",
   "Quà tặng trong giỏ": "Gifts in your cart",

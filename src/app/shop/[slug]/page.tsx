@@ -328,6 +328,7 @@ function render(data: ProductRouteData, { t }: RequestI18n) {
               <FeedbackRail
                 id={PRODUCT_REVIEW_PHOTOS_ANCHOR}
                 headingId="pdp-review-photos-title"
+                hideTitle
                 surface="product"
                 title={t("Ảnh khách diện mẫu này")}
                 ctaLabel={t("Xem thêm")}

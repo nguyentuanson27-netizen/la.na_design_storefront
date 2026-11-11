@@ -237,7 +237,7 @@ export function ProductReviews({
     >
       <div className={COLUMN}>
         <h2 id="pdp-reviews-title" className="text-center font-display text-[1.0625rem] font-normal uppercase tracking-[0.3em]">
-          {t("Đánh giá của khách")}
+          {t("Đánh giá sản phẩm")}
         </h2>
         {section.summary === null ? (
           <p className="mt-3 text-center text-xs text-[#70584B]">{t(`${section.count} đánh giá`)}</p>

@@ -535,9 +535,15 @@ const RELATED_CANDIDATES_PER_CATEGORY = MAX_RELATED_PRODUCTS * 4;
  */
 export async function listConfiguredRelatedStorefrontProducts(
   currentProduct: Readonly<{ id: string }>,
+  /**
+   * How many to resolve. The PDP asks for more than it shows, then keeps the first few that can
+   * actually be bought: the resolver's "availability truth" is publication, not stock, so a sold-out
+   * pick would otherwise take one of the few slots.
+   */
+  limit: number = MAX_RELATED_PRODUCTS,
 ) {
   const shopId = readPancakeShopId();
-  const cacheKey = storefrontCacheKey(["related-products", shopId, currentProduct.id]);
+  const cacheKey = storefrontCacheKey(["related-products", shopId, currentProduct.id, String(limit)]);
   return cachedRead(relatedProductsCache, cacheKey, async () => {
     const catalog = createStorefrontCatalogRepository(prisma);
     const merchandising = createMerchandisingRepository(prisma);
@@ -552,8 +558,9 @@ export async function listConfiguredRelatedStorefrontProducts(
         merchandising.listCategoryRelatedCandidates({
           shopId,
           categoryKey,
-          limit: RELATED_CANDIDATES_PER_CATEGORY,
+          limit: Math.max(RELATED_CANDIDATES_PER_CATEGORY, limit),
         }),
+      limit,
     });
 
     return catalog.listProductsByIds({ shopId, ids: ordered.map((product) => product.id) });
