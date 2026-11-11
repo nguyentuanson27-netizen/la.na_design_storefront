@@ -792,14 +792,15 @@ test.describe("touch recovery after SPA autoplay refusal", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.addInitScript(() => {
       const originalPlay = HTMLMediaElement.prototype.play;
-      let touchGranted = false;
-      // A controlled NotAllowedError simulates a browser that requires a touch gesture.
+      let touchCount = 0;
+      // The first touch is refused; only the second unlocks playback. A once-only
+      // pointerup listener would be exhausted and this test would remain paused.
       window.addEventListener("pointerup", (event) => {
-        if (event.pointerType === "touch") touchGranted = true;
+        if (event.pointerType === "touch") touchCount++;
       }, { capture: true });
       HTMLMediaElement.prototype.play = function () {
         if (this instanceof HTMLVideoElement && !this.controls &&
-            this.getAttribute("src")?.endsWith("/b.mp4") && !touchGranted) {
+            this.getAttribute("src")?.endsWith("/b.mp4") && touchCount < 2) {
           return Promise.reject(new DOMException("User gesture required", "NotAllowedError"));
         }
         return originalPlay.call(this);
@@ -823,6 +824,8 @@ test.describe("touch recovery after SPA autoplay refusal", () => {
     await heading.scrollIntoViewIfNeeded();
     const title = await heading.boundingBox();
     expect(title).not.toBeNull();
+    await page.touchscreen.tap(title!.x + 8, title!.y + 8);
+    await expect(preview).toHaveAttribute("data-playing", "false");
     await page.touchscreen.tap(title!.x + 8, title!.y + 8);
     await expect(preview).toHaveAttribute("data-playing", "true");
     await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.3);
