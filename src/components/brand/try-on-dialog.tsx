@@ -99,8 +99,7 @@ function PersonIcon() {
 /**
  * The entry point: a text link beside "Hướng dẫn chọn size", in the same style, because both help
  * the shopper choose (owner request 2026-10-08). It was briefly a full-width outlined row of its own,
- * which pushed the purchase buttons down; the phone reminder (`BrandTryOnNudge`) is what keeps a
- * shopper who read past it from missing it. A small mark says it is still in development, and the
+ * which pushed the purchase buttons down. A small mark says it is still in development, and the
  * accessible name says the rest of what the row used to: on your own photo, free. Its name still
  * begins "Thử đồ".
  */
@@ -156,24 +155,6 @@ export function BrandTryOnMediaButton({
       </span>
     </button>
   );
-}
-
-/**
- * A small prompt that floats just above the phone's purchase bar once the shopper has scrolled past
- * the entry point, so a shopper who read the description is reminded without the page gaining a
- * banner. It leaves the right edge free for the chat button, and can be put away.
- */
-export function BrandTryOnNudge({
-  onOpen: _onOpen,
-  onDismiss: _onDismiss,
-  openRef: _openRef,
-}: Readonly<{
-  onOpen: () => void;
-  onDismiss: () => void;
-  /** The coordinator's handle on the button that opens the dialog, so focus can come back to it. */
-  openRef: RefObject<HTMLButtonElement | null>;
-}>) {
-  return null;
 }
 
 export function BrandTryOnDialog({

@@ -28,7 +28,7 @@ test("Flash Sale keeps the original desktop styles and fills the mobile viewport
   const label = /\.pdp-flash-strip__label\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
   const digit = /\.pdp-flash-strip__digits b\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
 
-  assert.match(strip, /border-radius:\s*0\.5rem;/);
+  assert.match(strip, /border-radius:\s*0;/);
   assert.match(strip, /min-height:\s*2\.875rem;/);
   assert.match(label, /font-size:\s*0\.8125rem;/);
   assert.match(digit, /background:\s*#ffffff;/);
