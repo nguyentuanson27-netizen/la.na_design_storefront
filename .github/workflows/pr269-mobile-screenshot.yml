@@ -1,0 +1,89 @@
+name: PR269 390px Flash Sale screenshot
+
+on:
+  pull_request:
+    paths:
+      - 'src/components/brand/purchase-panel.tsx'
+      - 'src/app/shop/**'
+      - 'src/app/globals.css'
+      - 'tests/a11y-runtime/pdp-flash-countdown.spec.ts'
+      - '.github/workflows/pr269-mobile-screenshot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture-390px:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: la_na_design
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d la_na_design"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/la_na_design
+      BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
+      BETTER_AUTH_URL: http://127.0.0.1:3344
+      BETTER_AUTH_IP_HEADER: x-ci-client-ip
+      APP_DOMAIN: 127.0.0.1:3344
+      SEARCH_INDEXING_ENABLED: 'false'
+      NEXT_TELEMETRY_DISABLED: '1'
+      PANCAKE_SHOP_ID: '920051'
+    steps:
+      - name: Checkout PR source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install app from lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate Prisma client and migrate test DB
+        run: |
+          pnpm prisma:generate
+          pnpm prisma:migrate:deploy
+
+      - name: Install Playwright tooling
+        working-directory: tests/a11y-runtime
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install chromium
+
+      - name: Build exact PR app for browser preview
+        env:
+          NODE_ENV: production
+          NEXT_DIST_DIR: .next-e2e
+        run: pnpm build
+
+      - name: Open real PDP in Chromium and capture 390px screenshot
+        working-directory: tests/a11y-runtime
+        env:
+          LA_E2E_PREBUILT_DIST_DIR: .next-e2e
+        run: npx playwright test pdp-flash-countdown.spec.ts --config playwright.config.ts --project chromium-mobile --grep "PR269 screenshot"
+
+      - name: Upload unedited screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr269-pdp-mobile-390
+          path: tests/a11y-runtime/test-results/pr269-mobile-390.jpg
+          if-no-files-found: error
+          retention-days: 7
