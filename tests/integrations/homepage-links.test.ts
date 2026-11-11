@@ -43,8 +43,8 @@ const UNAPPROVED_SUPPORT_PATHS = new Set([
 ]);
 const LOCKED_IMG_SRC =
   "img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc}${zaloAdsImgSrc}${gtmImgSrc};";
-const LOCKED_MEDIA_SRC =
-  "media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};";
+// Narrowed when the Pancake chat plugin was removed: its sounds origin is gone, catalog media stays.
+const LOCKED_MEDIA_SRC = "media-src 'self' https://content.pancake.vn;";
 // img-src interpolates reviewed measurement beacon origins, so pinning the directive alone would
 // no longer pin the hosts it admits. The expressions that supply those origins are locked too,
 // which keeps the guarantee intact: no image origin reaches the policy without editing a locked
