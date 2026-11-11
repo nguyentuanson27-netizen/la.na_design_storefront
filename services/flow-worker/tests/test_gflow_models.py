@@ -244,5 +244,60 @@ class NanoBanana21PickerTest(unittest.TestCase):
         self.assertIn("refusing to generate with another model", str(error))
 
 
+@unittest.skipUnless(HAS_GFLOW and HAS_PLAYWRIGHT, "needs gflow-cli 0.82.1 and playwright")
+class AgentPanelDismissalTest(unittest.TestCase):
+    """Proactive panel dismissal and agent mode toggle on Flow's migrated composer."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.browser_path = _browser_executable()
+        if cls.browser_path is None:
+            if os.environ.get("FLOW_REQUIRE_BROWSER_TESTS"):
+                raise RuntimeError("FLOW_REQUIRE_BROWSER_TESTS is set but no browser was found")
+            raise unittest.SkipTest("needs a Chromium/Chrome binary")
+        install_like_the_worker()
+
+    def test_dismiss_panel_and_exit_agent_mode(self):
+        from gflow_cli.api.transports import migrated_composer as mc
+        from playwright.async_api import async_playwright
+
+        html = """<!doctype html><html><body>
+        <div class="panel">
+          <button class="header-action" aria-label="Đóng"><mat-icon>close</mat-icon></button>
+        </div>
+        <button class="agent-mode-chip" aria-pressed="true">Tác nhân</button>
+        <button class="settings-trigger-button" hidden></button>
+        <script>
+        const closeBtn = document.querySelector('button.header-action');
+        const chip = document.querySelector('button.agent-mode-chip');
+        const trigger = document.querySelector('.settings-trigger-button');
+        closeBtn.onclick = () => { closeBtn.remove(); };
+        chip.onclick = () => {
+          chip.setAttribute('aria-pressed', 'false');
+          trigger.removeAttribute('hidden');
+        };
+        </script></body></html>"""
+
+        async def scenario():
+            async with async_playwright() as playwright:
+                browser = await playwright.chromium.launch(executable_path=self.browser_path, args=["--no-sandbox"])
+                try:
+                    page = await browser.new_page()
+                    await page.set_content(html)
+                    composer = mc.MigratedComposer()
+                    state, err = await composer._exit_agent_mode(page)
+                    chip_pressed = await page.locator("button.agent-mode-chip[aria-pressed='true']").count()
+                    trigger_visible = await page.locator(".settings-trigger-button").is_visible()
+                    return state, err, chip_pressed, trigger_visible
+                finally:
+                    await browser.close()
+
+        state, err, chip_pressed, trigger_visible = asyncio.run(scenario())
+        self.assertIsNone(err)
+        self.assertEqual(state, "clicked")
+        self.assertEqual(chip_pressed, 0)
+        self.assertTrue(trigger_visible)
+
+
 if __name__ == "__main__":
     unittest.main()

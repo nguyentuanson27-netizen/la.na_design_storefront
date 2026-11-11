@@ -20,6 +20,11 @@
    ``policy.QUOTA_EXHAUSTED_MARKER`` and the refusal reasons, which the worker reads as "Pro
    quota exhausted". WireFormatError is used on purpose: gflow retries RateLimitError, which would
    spend the request budget re-running a Pro attempt that cannot succeed.
+5. **Agent Panel & Agent Mode Dismissal.** When Google Flow opens a project with existing items,
+   it opens the conversational agent panel or toggles the Agent chip ("Tác nhân"), hiding
+   ``.settings-trigger-button`` and causing gflow-cli to misclassify the account as an agent-only
+   cohort (FlowAgentUiError, exit 25). The patch dismisses the panel and toggles the chip off to
+   restore the classic composer.
 
 Installed only inside the gflow subprocess the worker starts (``flow_worker.gflow_launcher``).
 Every patch above lives on flow.google.com's composer; gflow's labs driver maps ``nano2`` to Nano
@@ -156,6 +161,7 @@ def install() -> None:
     original_select_image_model = composer_cls._select_image_model
     original_submit_refusal = mc._submit_refusal
     original_body_problem = mc._image_body_problem
+    original_ensure_editor = composer_cls.ensure_editor
 
     mc.IMAGE_MODEL_MENU_MATCHERS[ImageModel.NARWHAL] = mc.ModelMenuMatcher(
         NANO_BANANA_2_1_LABEL, excludes=("Lite",)
@@ -193,7 +199,80 @@ def install() -> None:
             return problem
         return nano_banana_2_1_body_problem(body, configured_model_key())
 
+    async def _dismiss_agent_panel(page: Any) -> bool:
+        selectors = [
+            "button.header-action:has(mat-icon:has-text('close'))",
+            "button[aria-label='Đóng']",
+            "button[aria-label='Close']",
+            "flow-agent-panel button:has(mat-icon:has-text('close'))",
+        ]
+        dismissed = False
+        for sel in selectors:
+            try:
+                btns = await page.locator(sel).all()
+                for btn in btns:
+                    if await btn.is_visible():
+                        await btn.click(timeout=2500)
+                        await page.wait_for_timeout(300)
+                        dismissed = True
+                        break
+            except Exception:
+                pass
+        return dismissed
+
+    async def _exit_agent_mode(cls: Any, page: Any) -> tuple[mc.AgentModeExit, Exception | None]:
+        await _dismiss_agent_panel(page)
+        if not await cls._agent_chip_pressed(page):
+            trigger = page.locator(mc.READY_ANCHOR).first
+            if await trigger.count() and await trigger.is_visible():
+                return "clicked", None
+            return "absent", None
+
+        try:
+            await page.locator(mc.AGENT_MODE_CHIP).first.click(timeout=5000)
+            await page.wait_for_timeout(300)
+        except Exception as e:
+            return "blocked", e
+        return "clicked", None
+
+    async def ensure_editor(self: Any, page: Any, project_id: str, *, timeout_s: float = 30.0) -> None:
+        target = mc.MIGRATED_PROJECT_URL.format(project_id=project_id)
+        current = str(getattr(page, "url", "") or "")
+        if not current.startswith(target):
+            await page.goto(target, wait_until="domcontentloaded", timeout=45_000)
+        await self._dismiss_dialog(page)
+        await self._dismiss_cookie_bar(page)
+
+        # Proactively dismiss any agent panel
+        await _dismiss_agent_panel(page)
+
+        # Proactively toggle agent mode chip off if active
+        try:
+            chip = page.locator(mc.AGENT_MODE_CHIP).first
+            if await chip.count() and await chip.is_visible():
+                await chip.click(timeout=3000)
+                await page.wait_for_timeout(300)
+        except Exception:
+            pass
+
+        try:
+            await original_ensure_editor(self, page, project_id, timeout_s=timeout_s)
+        except Exception:
+            # Fallback recovery before aborting
+            await _dismiss_agent_panel(page)
+            try:
+                chip = page.locator(mc.AGENT_MODE_CHIP).first
+                if await chip.count() and await chip.is_visible():
+                    await chip.click(timeout=3000)
+                    await page.wait_for_timeout(400)
+            except Exception:
+                pass
+            trigger = page.locator(mc.READY_ANCHOR).first
+            await trigger.wait_for(state="visible", timeout=10_000)
+
     composer_cls._select_image_model = select_image_model
+    composer_cls._exit_agent_mode = classmethod(_exit_agent_mode)
+    composer_cls.ensure_editor = ensure_editor
     # Module globals on purpose: gflow's submit observers look them up at call time.
     mc._submit_refusal = submit_refusal
     mc._image_body_problem = image_body_problem
