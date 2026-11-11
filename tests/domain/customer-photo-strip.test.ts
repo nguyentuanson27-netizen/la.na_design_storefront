@@ -37,14 +37,14 @@ function review(photoCount: number, id = "r"): ProductReviewRow {
 const resolve = (overrides: Partial<Parameters<typeof resolveCustomerPhotoStrip>[0]> = {}) =>
   resolveCustomerPhotoStrip({ reviews: null, feedback: null, ...overrides });
 
-test("review photographs of the product itself come first, and say 'mẫu này'", () => {
+test("review photographs of the product itself come first, and are titled 'Đánh giá sản phẩm'", () => {
   const strip = resolve({
     reviews: buildProductReviewSection([review(4)]),
     feedback: { scope: "brand", images: images(8) },
   });
   assert.equal(strip?.kind, "review");
   assert.equal(strip?.href, "#pdp-review-photos");
-  assert.equal(strip?.title, "Ảnh khách diện mẫu này");
+  assert.equal(strip?.title, "Đánh giá sản phẩm");
   assert.equal(strip?.subtitle, "4 ảnh thật · bấm để xem");
   assert.equal(strip?.photos.length, STRIP_THUMBNAIL_COUNT);
 });
@@ -57,11 +57,11 @@ test("fewer than three review photographs leave the strip to the next source", (
   assert.equal(strip?.kind, "product");
 });
 
-test("a product's own tagged photographs say 'mẫu này' and keep their order", () => {
+test("a product's own tagged photographs are titled 'Đánh giá sản phẩm' and keep their order", () => {
   const strip = resolve({ feedback: { scope: "product", images: images(6) } });
   assert.equal(strip?.kind, "product");
   assert.equal(strip?.href, `#${PRODUCT_FEEDBACK_ANCHOR}`);
-  assert.equal(strip?.title, "Ảnh khách diện mẫu này");
+  assert.equal(strip?.title, "Đánh giá sản phẩm");
   assert.equal(strip?.subtitle, "6 ảnh thật · bấm để xem");
   assert.deepEqual([...(strip?.photos ?? [])], [src(0), src(1), src(2), src(3)]);
 });

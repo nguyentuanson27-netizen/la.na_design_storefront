@@ -96,6 +96,36 @@ export type ProductViewModel = Readonly<{
   relatedCards: readonly Readonly<{ id: string; model: ProductCardModel }>[];
 }>;
 
+/**
+ * The first `limit` related products a shopper could actually buy, in the order given.
+ *
+ * Judged by the same card model the grid renders, so "sold out" here means exactly what the card
+ * would say: every option refused. A product that is only partly sold out (some sizes left) or only
+ * sells on preorder stays. A grid of "Hết hàng" cards recommends nothing, so those are skipped and
+ * the next candidate takes the slot.
+ */
+export function selectSellableRelatedProducts<T extends RelatedProduct>(
+  products: readonly T[],
+  { pricingRule, limit }: Readonly<{ pricingRule?: StorefrontPricingRule; limit: number }>,
+): readonly T[] {
+  const kept: T[] = [];
+  for (const product of products) {
+    if (kept.length >= limit) break;
+    const card = buildProductCardModel({
+      slug: product.slug,
+      name: product.name,
+      media: product.media,
+      variants: product.variants,
+      productCapacity: product.productCapacity,
+      flashSale: product.flashSale,
+      pricingRule,
+      selectEvent: null,
+    });
+    if (card.availability !== "out-of-stock") kept.push(product);
+  }
+  return Object.freeze(kept);
+}
+
 export type ProductViewModelInput = Readonly<{
   slug: string;
   name: string;

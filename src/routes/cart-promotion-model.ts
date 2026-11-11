@@ -1,5 +1,6 @@
 import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
 import type { StackStep } from "../commerce/gift-quantity-stack.ts";
+import type { ShippingMilestone } from "../commerce/shipping-campaign.ts";
 
 /**
  * What the cart drawer, the cart page and checkout say about the promotions a basket has reached.
@@ -20,12 +21,23 @@ export type PromotionBannerItem = Readonly<{
   /** Stable React key. */
   id: string;
   state: "achieved" | "progress";
-  kind: "TIER" | "GIFT";
+  kind: "TIER" | "GIFT" | "SHIPPING";
   title: string;
   /** Present for `progress` items only: how close the basket is to the next slot. */
   progress: Readonly<{ percent: number; label: string }> | null;
   /** Gift slots still waiting for a choice; the cart page offers the picker for these. */
   needsGiftChoice: boolean;
+  /**
+   * `progress` items only: how many more pieces reach the milestone, when it is counted in pieces.
+   * Orders the nudges (fewest pieces first); it is never shown.
+   */
+  shortfallQuantity?: number;
+  /**
+   * `progress` items only: the eligible-products listing for this milestone's campaign. Present only
+   * when the server confirmed the campaign is a live upsell opportunity for this cart (the same rule
+   * checkout's banner uses), so following it never lands on an empty "offer changed" page.
+   */
+  offersHref?: string;
 }>;
 
 /** One saving the basket has earned, named by the campaign that gave it ("Mua 5 giảm 10%"). */
@@ -163,13 +175,31 @@ function tierItem(savings: readonly PromotionSavingRow[]): PromotionBannerItem |
   });
 }
 
+/**
+ * The order the "mua thêm" nudges compete in, nearest first.
+ *
+ * "Nearest" is the share of the way along the bar: it is the one measure a milestone counted in
+ * pieces and one counted in money have in common, so a 555.000 ₫ gap at 86% beats a 3-piece gap at 25%.
+ * When two bars are equally far along, the one needing fewer pieces wins (a piece-counted milestone
+ * beats a money one). Anything still tied keeps the order the campaigns were read in, so the choice
+ * never flickers between renders.
+ */
+function compareNearest(a: PromotionBannerItem, b: PromotionBannerItem): number {
+  const byProgress = (b.progress?.percent ?? 0) - (a.progress?.percent ?? 0);
+  if (byProgress !== 0) return byProgress;
+  if (a.shortfallQuantity === b.shortfallQuantity) return 0;
+  if (a.shortfallQuantity === undefined) return 1;
+  if (b.shortfallQuantity === undefined) return -1;
+  return a.shortfallQuantity - b.shortfallQuantity;
+}
+
 function view(items: readonly PromotionBannerItem[], savings: readonly PromotionSavingRow[]): PromotionBannerView | null {
   if (items.length === 0 && savings.length === 0) return null;
   // Reached conditions read first. Of the bars toward what is not yet reached, only the nearest one
   // is shown: several competing "buy more" nudges is noise, and the nearest is the one worth acting on.
   const nearest = items
     .filter((item) => item.state === "progress")
-    .reduce<PromotionBannerItem | null>((best, item) => (best === null || (item.progress?.percent ?? 0) > (best.progress?.percent ?? 0) ? item : best), null);
+    .reduce<PromotionBannerItem | null>((best, item) => (best === null || compareNearest(item, best) < 0 ? item : best), null);
   return Object.freeze({
     savingsVnd: savings.reduce((sum, row) => sum + row.amountVnd, 0),
     savings: Object.freeze([...savings]),
@@ -272,8 +302,14 @@ export function buildCartPromotionView(
   state: CartGiftState | undefined,
   /** The unit price each cart line is listed at (per-product promotions only), by `lineKey`. */
   listedUnitPriceVnd?: ReadonlyMap<string, number>,
+  /** Campaigns the server confirmed as live upsell opportunities; only these get a listing link. */
+  upsellCampaignIds?: ReadonlySet<string>,
 ): PromotionBannerView | null {
   const benefits = state?.quote.benefits;
+  const offersHref = (campaignId: string): { offersHref?: string } =>
+    campaignId !== "" && upsellCampaignIds?.has(campaignId) === true
+      ? { offersHref: `/offers/eligible?campaign=${encodeURIComponent(campaignId)}` }
+      : {};
   if (!state || !benefits?.enabled || !benefits.ok) return null;
 
   const savings = tierSavingRows(
@@ -323,6 +359,8 @@ export function buildCartPromotionView(
           label: `Còn thiếu ${shortfall.quantity} sản phẩm`,
         }),
         needsGiftChoice: false,
+        shortfallQuantity: shortfall.quantity,
+        ...offersHref(entry.campaignId),
       }));
     } else if (campaign.trigger !== "QUANTITY" && shortfall.subtotalVnd && campaign.minimumSubtotalVnd !== null) {
       items.push(Object.freeze({
@@ -335,6 +373,7 @@ export function buildCartPromotionView(
           label: `Còn thiếu ${currency.format(shortfall.subtotalVnd)}`,
         }),
         needsGiftChoice: false,
+        ...offersHref(entry.campaignId),
       }));
     }
   });
@@ -355,6 +394,8 @@ export function buildCartPromotionView(
         label: `Còn thiếu ${next.shortfallQuantity} sản phẩm áp dụng`,
       }),
       needsGiftChoice: false,
+      shortfallQuantity: next.shortfallQuantity,
+      ...offersHref(progress.campaignId),
     }));
   }
 
@@ -374,10 +415,46 @@ export function buildCartPromotionView(
         label: `Còn thiếu ${currency.format(next.shortfallVnd)}`,
       }),
       needsGiftChoice: false,
+      ...offersHref(progress.campaignId),
     }));
   }
 
   return view(items, savings);
+}
+
+/**
+ * Adds the free-shipping milestone to a basket's banner. It competes with the other "mua thêm" bars on
+ * the same terms (nearest wins, one bar shown), and works without any gift or quantity promotion: a
+ * cart with only a shipping campaign still gets its nudge.
+ *
+ * Counted in pieces, like the quantity milestones, and linked to the products that count toward it.
+ */
+export function withShippingMilestone(
+  banner: PromotionBannerView | null | undefined,
+  milestone: ShippingMilestone | null | undefined,
+): PromotionBannerView | null {
+  if (!milestone || !(milestone.shortfallQuantity >= 1)) return banner ?? null;
+  const shipping: PromotionBannerItem = Object.freeze({
+    id: "shipping-next",
+    state: "progress",
+    kind: "SHIPPING",
+    title: `Mua thêm ${milestone.shortfallQuantity} sản phẩm áp dụng để được miễn phí vận chuyển`,
+    progress: Object.freeze({
+      percent: progressPercent(milestone.shortfallQuantity, milestone.minimumQuantity),
+      label: `Còn thiếu ${milestone.shortfallQuantity} sản phẩm áp dụng`,
+    }),
+    needsGiftChoice: false,
+    shortfallQuantity: milestone.shortfallQuantity,
+    ...(milestone.listingHref === null ? {} : { offersHref: milestone.listingHref }),
+  });
+  const items = banner?.items ?? [];
+  const shown = items.find((item) => item.state === "progress");
+  if (shown !== undefined && compareNearest(shown, shipping) <= 0) return banner ?? null;
+  return Object.freeze({
+    savingsVnd: banner?.savingsVnd ?? 0,
+    savings: banner?.savings ?? Object.freeze([]),
+    items: Object.freeze([...items.filter((item) => item.state === "achieved"), shipping]),
+  });
 }
 
 /** The checkout facts the banner reads: each line's role and discount steps. */

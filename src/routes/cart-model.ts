@@ -12,11 +12,11 @@ import type { CartLineUrgency, CartLineUrgencyFacts } from "../commerce/storefro
 import type { TrustedProductImage } from "../commerce/product-media.ts";
 import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
 import { buildCartGiftPickerModel, type CartGiftPickerModel } from "./cart-gift-model.ts";
-import { buildCartPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
+import { buildCartPromotionView, withShippingMilestone, type PromotionBannerView } from "./cart-promotion-model.ts";
 import { describeLineDiscount } from "./line-discount-model.ts";
 import { buildOrderSummary, type OrderSummaryView } from "./order-summary-model.ts";
 import type { GuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
-import { shippingFeeFromQuote, type ShippingQuote } from "../commerce/shipping-campaign.ts";
+import { shippingFeeFromQuote, type ShippingMilestone, type ShippingQuote } from "../commerce/shipping-campaign.ts";
 
 /**
  * Everything the cart route decides, as one pure function.
@@ -302,9 +302,14 @@ function promotionsEntry(
   state: CartGiftState | undefined,
   blocked: boolean | undefined,
   lines: readonly StorefrontCartLine[],
+  upsellCampaignIds: ReadonlySet<string> | undefined,
+  shippingMilestone: ShippingMilestone | null | undefined,
 ): { promotions?: PromotionBannerView } {
-  if (blocked || !state) return {};
-  const promotions = buildCartPromotionView(state, listedUnitPrices(lines));
+  if (blocked) return {};
+  const promotions = withShippingMilestone(
+    state ? buildCartPromotionView(state, listedUnitPrices(lines), upsellCampaignIds) : null,
+    shippingMilestone,
+  );
   return promotions ? { promotions } : {};
 }
 
@@ -323,6 +328,10 @@ export function buildCartViewModel(
     shippingPolicy?: GuestShippingPolicy; shippingQuote?: ShippingQuote;
     /** Each line's Flash Sale countdown and "Còn x", read on the server; absent where it was not read. */
     lineUrgency?: CartLineUrgency;
+    /** Campaigns the server confirmed as live upsell opportunities (`readCartUpsellCampaignIds`); absent = no listing links. */
+    upsellCampaignIds?: ReadonlySet<string>;
+    /** How close the basket is to free shipping when it has not earned it (`readShippingResolution`); absent = no nudge. */
+    shippingMilestone?: ShippingMilestone | null;
   }>,
 ): CartViewModel {
   const subtotal = cartAvailableSubtotal(input.lines);
@@ -383,7 +392,7 @@ export function buildCartViewModel(
     commerceTrackingEnabled: input.commerceTrackingEnabled,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
-    ...promotionsEntry(state, benefitBlocked, input.lines),
+    ...promotionsEntry(state, benefitBlocked, input.lines, input.upsellCampaignIds, input.shippingMilestone),
     ...savingsEntry(input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true),
     ...(!input.benefitsUnavailable && describeListPriceSavings(input.lines, paidBenefits?.subtotalVnd ?? subtotal) ? { listPriceSavingsText: describeListPriceSavings(input.lines, paidBenefits?.subtotalVnd ?? subtotal)! } : {}),
     ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines), input.shippingQuote),

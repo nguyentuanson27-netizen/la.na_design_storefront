@@ -3,7 +3,7 @@ import { MAX_CATEGORY_MEMBERSHIPS } from "./category-taxonomy.ts";
 import { deriveCampaignLifecycle } from "./promotion-campaign-lifecycle.ts";
 import type { Prisma } from "../generated/prisma/client.ts";
 import { readGuestShippingPolicy, type GuestShippingPolicy } from "./guest-shipping-policy.ts";
-import { evaluateShippingCampaigns, MAX_SHIPPING_CAMPAIGNS, MAX_SHIPPING_QUOTE_LINES, validateShippingCampaign, type ShippingCampaign, type ShippingQuote } from "./shipping-campaign.ts";
+import { resolveShipping, MAX_SHIPPING_CAMPAIGNS, MAX_SHIPPING_QUOTE_LINES, validateShippingCampaign, type ShippingCampaign, type ShippingQuote, type ShippingResolution } from "./shipping-campaign.ts";
 
 export type ShippingReadClient = Pick<Prisma.TransactionClient, "shippingPromotionCampaign" | "variantMirror" | "productCategoryMembership">;
 export const shippingCampaignSelection = {
@@ -40,21 +40,28 @@ export async function readActiveShippingCampaigns(client: ShippingReadClient, sh
   return rows.map(toShippingCampaign).filter((campaign) => deriveCampaignLifecycle({ ...campaign, now }).status === "ACTIVE");
 }
 
-/** Server-only inputs: caller-owned PAID cart/order items, not gift lines or a browser's eligibility count. */
-export async function readShippingQuote({ client, shopId, now, paidItems, hasOtherPromotions, policy = readGuestShippingPolicy() }: Readonly<{
+type ShippingReadInput = Readonly<{
   client: ShippingReadClient & Pick<Prisma.TransactionClient, "$executeRaw">;
   shopId: number;
   now: Date;
   paidItems: readonly Readonly<{ variantId: string; quantity: number }>[];
   hasOtherPromotions: boolean;
   policy?: GuestShippingPolicy;
-}>): Promise<ShippingQuote> {
+}>;
+
+/** Server-only inputs: caller-owned PAID cart/order items, not gift lines or a browser's eligibility count. */
+export async function readShippingQuote(input: ShippingReadInput): Promise<ShippingQuote> {
+  return (await readShippingResolution(input)).quote;
+}
+
+/** The quote and, when free shipping is not yet earned, how far the basket is from it (the cart's nudge). */
+export async function readShippingResolution({ client, shopId, now, paidItems, hasOtherPromotions, policy = readGuestShippingPolicy() }: ShippingReadInput): Promise<ShippingResolution> {
   assertShopId(shopId);
   if (!Array.isArray(paidItems) || paidItems.length > MAX_SHIPPING_QUOTE_LINES || paidItems.some((item) => !/^[A-Za-z0-9_-]{1,64}$/.test(item.variantId) || !Number.isSafeInteger(item.quantity) || item.quantity <= 0)) throw new RangeError("Invalid shipping paid items");
   if (!Number.isSafeInteger(paidItems.reduce((sum, item) => sum + item.quantity, 0))) throw new RangeError("Shipping quantity overflow");
   await lockShippingCampaignRead(client, shopId);
   const campaigns = await readActiveShippingCampaigns(client, shopId, now);
-  if (campaigns.length === 0 || paidItems.length === 0) return evaluateShippingCampaigns({ campaigns, lines: [], policy, now, hasOtherPromotions });
+  if (campaigns.length === 0 || paidItems.length === 0) return resolveShipping({ campaigns, lines: [], policy, now, hasOtherPromotions });
   const variantIds = [...new Set(paidItems.map((item) => item.variantId))];
   const variants = await client.variantMirror.findMany({
     where: { id: { in: variantIds }, product: { pancakeShopId: shopId } },
@@ -68,7 +75,7 @@ export async function readShippingQuote({ client, shopId, now, paidItems, hasOth
   const categories = new Map(productIds.map((id) => [id, [] as string[]]));
   for (const row of membership) categories.get(row.productId)?.push(row.categoryKey);
   const products = new Map(variants.map((variant) => [variant.id, { productId: variant.productId, categoryKeys: categories.get(variant.productId)! }]));
-  return evaluateShippingCampaigns({ campaigns, policy, now, hasOtherPromotions, lines: paidItems.map((item) => ({ role: "PAID", product: products.get(item.variantId)!, quantity: item.quantity })) });
+  return resolveShipping({ campaigns, policy, now, hasOtherPromotions, lines: paidItems.map((item) => ({ role: "PAID", product: products.get(item.variantId)!, quantity: item.quantity })) });
 }
 
 /** Copied with the accepted amounts; identifiers remain auditable even if campaign configuration later changes. */

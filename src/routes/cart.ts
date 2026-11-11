@@ -2,6 +2,8 @@ import { localizeCartViewNames } from "@/commerce/product-translation-runtime";
 import { connection } from "next/server";
 
 import { tryReadGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
+import { readCartUpsellCampaignIds } from "@/commerce/promotion-upsell-policy";
+import { readPancakeShopId } from "@/integrations/pancake/config";
 import { getCurrentStorefrontCartBenefits } from "@/commerce/storefront-cart-runtime";
 import { loadCurrentVoucherPicker, readPendingVoucherOfferToken } from "@/commerce/voucher-picker-runtime";
 import { buildCartViewEvent } from "@/components/analytics/cart-funnel-tracking";
@@ -26,7 +28,7 @@ export async function loadCartRoute(): Promise<RouteHandle<CartRouteViewModel>> 
   const voucherLinkOffer = vouchers === null ? null : await readPendingVoucherOfferToken();
 
   return sealRoute({
-    data: { ...(await localizeCartViewNames(buildCartViewModel({ ...cart, commerceTrackingEnabled: isCommerceTrackingEnabled(), shippingPolicy: tryReadGuestShippingPolicy() }))), vouchers, voucherLinkOffer },
+    data: { ...(await localizeCartViewNames(buildCartViewModel({ ...cart, commerceTrackingEnabled: isCommerceTrackingEnabled(), shippingPolicy: tryReadGuestShippingPolicy(), upsellCampaignIds: readCartUpsellCampaignIds("giftState" in cart ? cart.giftState : undefined, readPancakeShopId()) }))), vouchers, voucherLinkOffer },
     // Cart prices are re-resolved on every request, so nothing here is promotion-cached; the shared
     // default cadence is what the shell mounts.
     refreshAfterMs: 60_000,

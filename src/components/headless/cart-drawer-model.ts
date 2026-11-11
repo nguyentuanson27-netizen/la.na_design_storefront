@@ -17,7 +17,7 @@ export function checkoutBlockedMessages(
 export const CART_DRAWER_EXIT_EVENT = "CartDrawerExit";
 
 /** Where the shopper went from the drawer: the order button, the cart page, a product, a gift choice, or nowhere. */
-export type CartDrawerExit = "checkout" | "cart" | "product" | "gift" | "close";
+export type CartDrawerExit = "checkout" | "cart" | "product" | "gift" | "offers" | "close";
 
 /**
  * The parameters of one {@link CART_DRAWER_EXIT_EVENT}, read against `exit_to`:

@@ -295,6 +295,7 @@ export function FeedbackRail({
   headingId = "home-feedback-title",
   surface = "home",
   id,
+  hideTitle = false,
 }: Readonly<{
   title: string;
   ctaLabel: string;
@@ -304,6 +305,12 @@ export function FeedbackRail({
   surface?: "home" | "product";
   /** The section's own id, for an in-page link to it. */
   id?: string;
+  /**
+   * Keeps the heading for assistive technology and the region's name but draws no text: the product
+   * page's review photographs sit directly under the "Đánh giá sản phẩm" heading that already says
+   * what they are.
+   */
+  hideTitle?: boolean;
 }>) {
   const t = useT();
   const viewer = useFeedbackViewer(images.length);
@@ -317,9 +324,15 @@ export function FeedbackRail({
       data-homepage-region={surface === "home" ? "feedback" : undefined}
       data-pdp-region={surface === "product" ? "feedback" : undefined}
     >
-      <div className="section-heading-row">
-        <h2 id={headingId}>{title}</h2>
-      </div>
+      {hideTitle ? (
+        <h2 id={headingId} className="sr-only">
+          {title}
+        </h2>
+      ) : (
+        <div className="section-heading-row">
+          <h2 id={headingId}>{title}</h2>
+        </div>
+      )}
       <div
         ref={viewportRef}
         className="feedback-rail__viewport"

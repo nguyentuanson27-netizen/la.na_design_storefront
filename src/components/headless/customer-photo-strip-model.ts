@@ -52,7 +52,7 @@ export function resolveCustomerPhotoStrip({
     return Object.freeze({
       kind: "review",
       href: `#${PRODUCT_REVIEW_PHOTOS_ANCHOR}`,
-      title: "Ảnh khách diện mẫu này",
+      title: "Đánh giá sản phẩm",
       subtitle: `${reviews.photoCount} ảnh thật · bấm để xem`,
       photos: Object.freeze(reviews.photos.slice(0, STRIP_THUMBNAIL_COUNT).map((photo) => photo.src)),
     });
@@ -67,7 +67,7 @@ export function resolveCustomerPhotoStrip({
   return Object.freeze({
     kind: "product",
     href: `#${PRODUCT_FEEDBACK_ANCHOR}`,
-    title: "Ảnh khách diện mẫu này",
+    title: "Đánh giá sản phẩm",
     subtitle: `${sources.length} ảnh thật · bấm để xem`,
     photos: Object.freeze(sources.slice(0, STRIP_THUMBNAIL_COUNT)),
   });

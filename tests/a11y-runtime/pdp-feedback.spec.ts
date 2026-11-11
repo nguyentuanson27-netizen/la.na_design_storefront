@@ -211,7 +211,7 @@ test("a product's own tagged photographs show under its own heading, an uncalibr
   const jump = page.locator("[data-pdp-photo-strip]");
   await expect(jump).toHaveAttribute("data-strip-kind", "product");
   await expect(jump).toHaveAttribute("href", "#pdp-feedback");
-  await expect(jump).toContainText("Ảnh khách diện mẫu này");
+  await expect(jump).toContainText("Đánh giá sản phẩm");
   await expect(jump).toContainText("3 ảnh thật");
   await expect(page.getByRole("link", { name: "Xem 3 ảnh khách hàng diện mẫu này" })).toHaveCount(0);
 

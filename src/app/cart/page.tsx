@@ -138,13 +138,13 @@ function render(data: CartRouteViewModel, { t }: RequestI18n) {
                 <div className="relative min-w-0 pr-10">
                   {line.productSlug ? (
                     <Link
-                      className="text-base font-medium uppercase tracking-[0.04em] transition hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                      className="text-base font-medium transition hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                       href={`/shop/${encodeURIComponent(line.productSlug)}`}
                     >
                       {line.productName}
                     </Link>
                   ) : (
-                    <h2 className="text-base font-medium uppercase tracking-[0.04em]">{line.productName}</h2>
+                    <h2 className="text-base font-medium">{line.productName}</h2>
                   )}
                   <p className="mt-1 text-sm text-black/65">{t(line.optionLabel)}</p>
                   {/* §30 — the marker has to survive the trip from the PDP, so it rides the line

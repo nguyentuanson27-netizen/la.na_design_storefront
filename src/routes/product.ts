@@ -18,6 +18,7 @@ import {
   listConfiguredRelatedStorefrontProducts,
   resolveStorefrontPromotionForProducts,
 } from "@/commerce/storefront-catalog-runtime";
+import { MAX_RELATED_PRODUCTS } from "@/commerce/storefront-related-products";
 import { withListingFlashSale } from "@/commerce/storefront-listing-flash-sale";
 import { selectStorefrontProductLevelOptions } from "@/commerce/storefront-projection";
 import { getStorefrontResolvedPriceRange } from "@/commerce/storefront-product";
@@ -49,9 +50,16 @@ import {
   buildProductFeedbackSection,
   buildProductUrgency,
   buildProductViewModel,
+  selectSellableRelatedProducts,
   type ProductFeedbackSection,
   type ProductViewModel,
 } from "./product-model.ts";
+
+/**
+ * Related candidates read per page: three times the grid, so a few sold-out picks cannot leave it
+ * short. `selectSellableRelatedProducts` keeps the first `MAX_RELATED_PRODUCTS` that can be bought.
+ */
+const RELATED_CANDIDATE_POOL = MAX_RELATED_PRODUCTS * 3;
 
 /** The product page's loader: the product, its related grid, the deep link, and the JSON-LD. */
 
@@ -119,7 +127,7 @@ export async function loadProductRoute({
   // clock; the promotion pass below is what applies `requestNow` to the products it returns.
   const sizeGuideId = product.sizeGuide;
   const [relatedSource, sizeGuideImageUrl, tryOn, feedback, promotionOffers, voucherTeaser, reviews] = await Promise.all([
-    listConfiguredRelatedStorefrontProducts(product),
+    listConfiguredRelatedStorefrontProducts(product, RELATED_CANDIDATE_POOL),
     isApprovedSizeGuideId(sizeGuideId)
       ? createSizeGuideMediaRepository(prisma).readImageUrl(sizeGuideId)
       : null,
@@ -136,10 +144,9 @@ export async function loadProductRoute({
     now: requestNow,
   });
   // Related cards carry the Flash presentation every other listing gives them.
-  const relatedWithFlash = withListingFlashSale(
-    relatedProducts,
-    promotion.campaignsByVariantId,
-    requestNow,
+  const relatedWithFlash = selectSellableRelatedProducts(
+    withListingFlashSale(relatedProducts, promotion.campaignsByVariantId, requestNow),
+    { pricingRule: promotion.pricingRule, limit: MAX_RELATED_PRODUCTS },
   );
   const urgency = buildProductUrgency({
     variants: product.variants,

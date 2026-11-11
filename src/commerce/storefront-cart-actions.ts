@@ -8,6 +8,7 @@ import type { AnonymousCartCookieWrite } from "./anonymous-cart-cookie.ts";
 import { createAnonymousCartMutationService } from "./anonymous-cart-mutation.ts";
 import { createCartGiftSelectionService } from "./cart-gift-selection.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import { readCartUpsellCampaignIds } from "./promotion-upsell-policy.ts";
 import { resolveAnonymousCartRequest } from "./anonymous-cart-request.ts";
 import { createCartLineAuthorityResolver } from "./cart-line-authority.ts";
 import { createStorefrontCartPublicActions } from "./storefront-cart-public-actions.ts";
@@ -97,11 +98,13 @@ export async function getStorefrontCartLines() {
  * ids the drawer has no reason to receive.
  */
 export async function getStorefrontCartView(): Promise<CartViewModel> {
+  const cart = await getCurrentStorefrontCartBenefits(new Date());
   const model = await localizeCartViewNames(
     buildCartViewModel({
-      ...(await getCurrentStorefrontCartBenefits(new Date())),
+      ...cart,
       commerceTrackingEnabled: false,
       shippingPolicy: tryReadGuestShippingPolicy(),
+      upsellCampaignIds: readCartUpsellCampaignIds("giftState" in cart ? cart.giftState : undefined, readPancakeShopId()),
     }),
   );
   const view: { -readonly [K in keyof CartViewModel]: CartViewModel[K] } = { ...model };

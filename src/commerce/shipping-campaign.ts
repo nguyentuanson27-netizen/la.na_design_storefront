@@ -1,3 +1,4 @@
+import { categoryByKey } from "./category-taxonomy.ts";
 import { buildScopeResolver, validateScopeConfig, type ScopeConfig, type ScopeProductFacts } from "./gift-quantity-scope.ts";
 import { calculateGuestShippingFeeVnd, type GuestShippingPolicy } from "./guest-shipping-policy.ts";
 import { deriveCampaignLifecycle } from "./promotion-campaign-lifecycle.ts";
@@ -32,6 +33,27 @@ export type ShippingQuote = Readonly<{
   feeVnd: number;
   campaign: Readonly<{ id: string; revision: number; name: string; minimumQuantity: number; qualifyingQuantity: number }> | null;
 }>;
+/**
+ * The free-shipping campaign the basket is closest to, when none applies yet: the cart's "mua thêm" nudge.
+ * Public copy only (no campaign id, revision or product ids), so it can ride to the browser. It claims what
+ * `evaluateShippingCampaigns` would then decide, so only campaigns that stack with other promotions
+ * (`stackingEnabled`) are ever promised. A campaign that cannot stack is withheld even while the basket
+ * has no other promotion: the extra piece itself may switch one on (a quantity tier that starts at the
+ * same count, a sale-priced item), and the quote would then drop free shipping.
+ */
+export type ShippingMilestone = Readonly<{
+  name: string;
+  minimumQuantity: number;
+  qualifyingQuantity: number;
+  /** Pieces still needed, always at least 1. */
+  shortfallQuantity: number;
+  /**
+   * Where the shopper finds products that count: the campaign's single category, otherwise the whole shop.
+   * `null` when no page lists exactly the eligible products (a scope with exclusions), so no link is offered.
+   */
+  listingHref: string | null;
+}>;
+export type ShippingResolution = Readonly<{ quote: ShippingQuote; milestone: ShippingMilestone | null }>;
 export type ShippingCampaignLine = Readonly<{ role: "PAID" | "GIFT"; product: ScopeProductFacts; quantity: number }>;
 
 function validDate(value: unknown): value is Date | null {
@@ -56,14 +78,22 @@ export function validateShippingCampaign(input: unknown):
   return { ok: true, value: Object.freeze({ name: name.name, startsAt: raw.startsAt, endsAt: raw.endsAt, minimumQuantity: raw.minimumQuantity, priority: raw.priority, stackingEnabled: raw.stackingEnabled, scope: scope.scope }) };
 }
 
-/** One fee decision from one clock and server-owned paid lines; gifts and other campaigns never define its scope. */
-export function evaluateShippingCampaigns({ campaigns, lines, policy, now, hasOtherPromotions }: Readonly<{
+type ShippingEvaluationInput = Readonly<{
   campaigns: readonly ShippingCampaign[];
   lines: readonly ShippingCampaignLine[];
   policy: GuestShippingPolicy;
   now: Date;
   hasOtherPromotions: boolean;
-}>): ShippingQuote {
+}>;
+
+/** One fee decision from one clock and server-owned paid lines; gifts and other campaigns never define its scope. */
+export function evaluateShippingCampaigns(input: ShippingEvaluationInput): ShippingQuote {
+  return resolveShipping(input).quote;
+}
+
+/** The same decision, plus how close the basket is to free shipping when it has not earned it. */
+export function resolveShipping(input: ShippingEvaluationInput): ShippingResolution {
+  const { campaigns, lines, policy, now, hasOtherPromotions } = input;
   const baseFeeVnd = calculateGuestShippingFeeVnd({ subtotalVnd: 0, totalQuantity: 1 }, policy);
   if (!(now instanceof Date) || !Number.isFinite(now.getTime()) || typeof hasOtherPromotions !== "boolean" || !Array.isArray(campaigns) || campaigns.length > MAX_SHIPPING_CAMPAIGNS || !Array.isArray(lines) || lines.length > MAX_SHIPPING_QUOTE_LINES) throw new RangeError("Invalid shipping evaluation input");
   let paidQuantity = 0;
@@ -73,6 +103,7 @@ export function evaluateShippingCampaigns({ campaigns, lines, policy, now, hasOt
     if (!Number.isSafeInteger(paidQuantity)) throw new RangeError("Shipping paid quantity overflow");
   }
   const seen = new Set<string>();
+  let milestone: ShippingMilestone | null = null;
   const normalized = campaigns.map((campaign) => {
     const validated = validateShippingCampaign(campaign);
     if (!validated.ok || !/^[A-Za-z0-9_-]{1,64}$/.test(campaign.id) || seen.has(campaign.id) || !Number.isSafeInteger(campaign.revision) || campaign.revision < 1 || campaign.revision > 2_147_483_647 || typeof campaign.isEnabled !== "boolean" || !validDate(campaign.enabledAt) || !validDate(campaign.disabledAt)) throw new RangeError("Invalid shipping campaign");
@@ -83,10 +114,33 @@ export function evaluateShippingCampaigns({ campaigns, lines, policy, now, hasOt
     if (deriveCampaignLifecycle({ ...campaign, now }).status !== "ACTIVE" || (hasOtherPromotions && !campaign.stackingEnabled)) continue;
     const matches = buildScopeResolver(campaign.scope, null);
     const qualifyingQuantity = lines.reduce((sum, line) => line.role === "PAID" && matches(line.product) ? sum + line.quantity : sum, 0);
-    if (qualifyingQuantity < campaign.minimumQuantity) continue;
-    return Object.freeze({ baseFeeVnd, feeVnd: 0, campaign: Object.freeze({ id: campaign.id, revision: campaign.revision, name: campaign.name, minimumQuantity: campaign.minimumQuantity, qualifyingQuantity }) });
+    if (qualifyingQuantity < campaign.minimumQuantity) {
+      // Nothing is promised for a campaign that cannot stack: whether it still applies after one more
+      // piece depends on promotions that piece may start, which this read cannot prove.
+      if (!campaign.stackingEnabled) continue;
+      // Campaigns are visited by priority, so on equal distance the earlier one keeps the nudge.
+      const shortfallQuantity = campaign.minimumQuantity - qualifyingQuantity;
+      if (milestone === null || shortfallQuantity < milestone.shortfallQuantity) {
+        milestone = Object.freeze({ name: campaign.name, minimumQuantity: campaign.minimumQuantity, qualifyingQuantity, shortfallQuantity, listingHref: shippingListingHref(campaign.scope) });
+      }
+      continue;
+    }
+    return Object.freeze({ quote: Object.freeze({ baseFeeVnd, feeVnd: 0, campaign: Object.freeze({ id: campaign.id, revision: campaign.revision, name: campaign.name, minimumQuantity: campaign.minimumQuantity, qualifyingQuantity }) }), milestone: null });
   }
-  return Object.freeze({ baseFeeVnd, feeVnd: baseFeeVnd, campaign: null });
+  return Object.freeze({ quote: Object.freeze({ baseFeeVnd, feeVnd: baseFeeVnd, campaign: null }), milestone });
+}
+
+/**
+ * One category and nothing hand-picked: that category's listing. Anything broader or mixed: the whole shop.
+ * Exclusions beat category membership in the scope, and no listing filters them out, so a scope with any
+ * gets no link rather than a page of products that do not count.
+ */
+function shippingListingHref(scope: ShippingCampaignValues["scope"]): string | null {
+  if (scope.excludeProductIds.length > 0) return null;
+  if (scope.categoryKeys.length === 1 && scope.includeProductIds.length === 0) {
+    return categoryByKey(scope.categoryKeys[0]!)?.path ?? "/shop";
+  }
+  return "/shop";
 }
 
 /** Internal quote projection only. Public actions never accept this object from a browser. */
