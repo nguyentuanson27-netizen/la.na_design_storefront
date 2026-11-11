@@ -1424,7 +1424,8 @@ main nav[aria-label="Breadcrumb"] a {
 
 .pdp-flash-strip {
   display: flex;
-  flex-wrap: nowrap;
+  /* Keep one 36px row when it fits; wrap rather than clip at 320px or large text. */
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
@@ -1458,24 +1459,34 @@ main nav[aria-label="Breadcrumb"] a {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
+  max-width: 100%;
 }
 
 .pdp-flash-strip__digits {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.375rem;
+  max-width: 100%;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
 .pdp-flash-strip__days {
+  border-radius: 0.25rem;
+  background: #3b2219;
+  color: #ffffff;
+  padding: 0.1875rem 0.375rem;
   font-size: 0.6875rem;
   font-weight: 700;
+  line-height: 1.25rem;
 }
 
 .pdp-flash-strip__time {
   border-radius: 0.25rem;
-  background: rgba(59, 34, 25, 0.25);
+  background: #3b2219;
+  color: #ffffff;
   padding: 0.1875rem 0.375rem;
   font-size: 0.8125rem;
   font-weight: 800;
