@@ -156,7 +156,8 @@ for (const width of [320, 390, 768, 1024, 1440]) {
       await expect.poll(async () => Math.round((await tile.boundingBox())!.y)).toBeGreaterThanOrEqual(150);
       const pinned = (await tile.boundingBox())!;
       expect(pinned.y).toBeLessThanOrEqual(154);
-      expect(width - pinned.x - pinned.width).toBeCloseTo(16, 0);
+      // Flush with the viewport's right edge (owner-approved 2026-11-11): no gap, only the left corners are rounded.
+      expect(width - pinned.x - pinned.width).toBeCloseTo(0, 0);
       const pinnedCounter = (await counter.boundingBox())!;
       expect(pinned.y + pinned.height).toBeLessThanOrEqual(pinnedCounter.y);
       // It stays pinned through the product, and leaves when scrolling to the customer feedback section ("Khách hàng & La.na").
