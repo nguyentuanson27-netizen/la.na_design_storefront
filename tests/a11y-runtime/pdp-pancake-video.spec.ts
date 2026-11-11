@@ -9,7 +9,7 @@ import { createCatalogMirrorRepository } from "../../src/commerce/catalog-mirror
 import { parsePancakeCatalogVariations } from "../../src/integrations/pancake/catalog-contract.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { summarizePdpVideoPlaybackLogs } from "../../src/operations/pdp-video-playback-summary.ts";
-import { VIDEO_A, VIDEO_POSTER, videoPage, videoVariation } from "../fixtures/pancake-video.ts";
+import { VIDEO_A, VIDEO_B, VIDEO_POSTER, videoPage, videoVariation } from "../fixtures/pancake-video.ts";
 import { PDP_VIDEO_PLAYBACK_TIMEOUT_MS } from "../../src/components/headless/pdp-video-playback.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { OPTIMIZED_IMAGE_ROUTE } from "./image-routes";
@@ -22,6 +22,9 @@ const run = `${Date.now()}-${process.pid}`;
 const slug = `pdp-video-${run}`;
 const externalId = `pdp-video-${run}`;
 const productName = "Sản phẩm video thử nghiệm";
+const nextSlug = `${slug}-next`;
+const nextExternalId = `${externalId}-next`;
+const nextProductName = "Sản phẩm video tiếp theo";
 const mp4 = readFileSync(resolve(import.meta.dirname, "fixtures/product-video.mp4"));
 const audioOnlyMp4 = readFileSync(resolve(import.meta.dirname, "fixtures/product-video-audio-only.mp4"));
 const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
@@ -48,12 +51,12 @@ async function stop() {
   if (!(await Promise.race([once(server, "exit").then(() => true), delay(5000).then(() => false)]))) server.kill("SIGKILL");
   server = undefined;
 }
-async function cleanup() { await prisma.promotionCampaign.deleteMany({ where: { id: externalId } }); await prisma.productMirror.deleteMany({ where: { pancakeProductId: externalId } }); await prisma.catalogSyncState.deleteMany({ where: { pancakeShopId: SHOP } }); }
+async function cleanup() { await prisma.promotionCampaign.deleteMany({ where: { id: externalId } }); await prisma.productMirror.deleteMany({ where: { pancakeProductId: { in: [externalId, nextExternalId] } } }); await prisma.catalogSyncState.deleteMany({ where: { pancakeShopId: SHOP } }); }
 async function state(pancakeVideoSyncState: "READY" | "UNKNOWN" | "NONE" | "CONFLICT" | "UNSUPPORTED", pancakeVideoUrl: string | null = VIDEO_A) {
   await prisma.productMirror.update({ where: { pancakeProductId: externalId }, data: { pancakeVideoSyncState, pancakeVideoUrl } });
 }
-async function serveVideo(page: Page, onRequest: () => void = () => undefined) {
-  await page.route(VIDEO_A, (route) => {
+async function serveVideo(page: Page, onRequest: () => void = () => undefined, url = VIDEO_A) {
+  await page.route(url, (route) => {
     onRequest();
     const range = route.request().headers().range;
     const start = Number(range?.match(/bytes=(\d+)-/)?.[1] ?? 0);
@@ -73,6 +76,21 @@ test.beforeAll(async () => {
     pancakeVideoSyncState: "READY", pancakeVideoUrl: VIDEO_A,
     variants: { create: ["M", "L"].map((size, i) => ({ pancakeVariationId: `${externalId}-${i}`, color: "Đen", size, pancakeRetailPrice: 500000, pancakeRetailPriceAfterDiscount: 500000, syncedAt: new Date(), pancakeImageUrls: [VIDEO_POSTER, VIDEO_POSTER.replace("a.jpg", "detail.jpg"), VIDEO_POSTER.replace("a.jpg", "back.jpg")], warehouseStocks: { create: { pancakeWarehouseId: "video-fixture-wh", quantity: 5, syncedAt: new Date() } } })) },
   } });
+  const nextProduct = await prisma.productMirror.create({ data: {
+    pancakeShopId: SHOP, pancakeProductId: nextExternalId, slug: nextSlug, name: nextProductName,
+    syncedAt: new Date(), primaryImageUrl: VIDEO_POSTER,
+    pancakeVideoSyncState: "READY", pancakeVideoUrl: VIDEO_B,
+    variants: { create: {
+      pancakeVariationId: `${nextExternalId}-M`, color: "Đen", size: "M",
+      pancakeRetailPrice: 500000, pancakeRetailPriceAfterDiscount: 500000,
+      syncedAt: new Date(), pancakeImageUrls: [VIDEO_POSTER],
+      warehouseStocks: { create: { pancakeWarehouseId: "video-fixture-wh", quantity: 5, syncedAt: new Date() } },
+    } },
+  } });
+  // Related ProductCards use next/link: clicking B is a real SPA route transition.
+  await prisma.relatedProductOverride.create({
+    data: { productId: product.id, relatedProductId: nextProduct.id, position: 0 },
+  });
   await prisma.promotionCampaign.create({ data: { id: externalId, kind: "FLASH_SALE", name: "Video layout fixture", discountType: "PERCENTAGE", percentageValue: 10, isEnabled: true, enabledAt: new Date(), startsAt: new Date(Date.now() - 60000), endsAt: new Date(Date.now() + 3600000), targets: { create: { productId: product.id } } } });
   await start(true);
 });
@@ -738,4 +756,73 @@ test("flag OFF suppresses even READY source in rendered response and collector e
   const response = await page.goto(`${BASE}/shop/${slug}`);
   expect(await response!.text()).not.toContain("a.mp4");
   await expect(page.getByRole("button", { name: "Xem video", exact: true })).toHaveCount(0);
+});
+
+for (const width of [390, 1280]) {
+  test(`a real client-side product link replaces the video and autoplays the muted preview at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await serveVideo(page);
+    await serveVideo(page, () => undefined, VIDEO_B);
+    await page.goto(`${BASE}/shop/${slug}`, { waitUntil: "networkidle" });
+
+    const preview = page.locator(".pdp-video-tile__preview");
+    await expect(preview).toHaveAttribute("src", VIDEO_A);
+    await expect(preview).toHaveAttribute("data-playing", "true");
+
+    // If the document is reloaded, the marker disappears; a real next/link transition keeps it.
+    await page.evaluate(() => { (window as Window & { __pdpSpaMarker?: string }).__pdpSpaMarker = "from-A"; });
+    const link = page.locator(`a[href="/shop/${nextSlug}"]`).first();
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL(`${BASE}/shop/${nextSlug}`);
+    expect(await page.evaluate(() => (window as Window & { __pdpSpaMarker?: string }).__pdpSpaMarker)).toBe("from-A");
+
+    await expect(preview).toHaveAttribute("src", VIDEO_B);
+    await expect(preview).toHaveAttribute("data-playing", "true");
+    expect(await preview.evaluate((element: HTMLVideoElement) => [element.muted, element.defaultMuted])).toEqual([true, true]);
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.3);
+    await expect(page.getByRole("heading", { level: 1, name: nextProductName })).toBeVisible();
+  });
+}
+
+test.describe("touch recovery after SPA autoplay refusal", () => {
+  test.use({ hasTouch: true });
+
+  test("retries on touch activation even when an earlier scroll was not useful", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(() => {
+      const originalPlay = HTMLMediaElement.prototype.play;
+      let touchGranted = false;
+      // A controlled NotAllowedError simulates a browser that requires a touch gesture.
+      window.addEventListener("pointerup", (event) => {
+        if (event.pointerType === "touch") touchGranted = true;
+      }, { capture: true });
+      HTMLMediaElement.prototype.play = function () {
+        if (this instanceof HTMLVideoElement && !this.controls &&
+            this.getAttribute("src")?.endsWith("/b.mp4") && !touchGranted) {
+          return Promise.reject(new DOMException("User gesture required", "NotAllowedError"));
+        }
+        return originalPlay.call(this);
+      };
+    });
+    await serveVideo(page);
+    await serveVideo(page, () => undefined, VIDEO_B);
+    await page.goto(`${BASE}/shop/${slug}`, { waitUntil: "networkidle" });
+    await expect(page.locator(".pdp-video-tile__preview")).toHaveAttribute("data-playing", "true");
+
+    await page.locator(`a[href="/shop/${nextSlug}"]`).first().click();
+    await expect(page).toHaveURL(`${BASE}/shop/${nextSlug}`);
+    const preview = page.locator(".pdp-video-tile__preview");
+    await expect(preview).toHaveAttribute("src", VIDEO_B);
+    await expect(preview).toHaveAttribute("data-playing", "false");
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+
+    // A route-restoration scroll is not user activation and must not exhaust the fallback.
+    await page.evaluate(() => window.dispatchEvent(new Event("scroll")));
+    const title = await page.getByRole("heading", { level: 1, name: nextProductName }).boundingBox();
+    expect(title).not.toBeNull();
+    await page.touchscreen.tap(title!.x + 8, title!.y + 8);
+    await expect(preview).toHaveAttribute("data-playing", "true");
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.3);
+  });
 });
