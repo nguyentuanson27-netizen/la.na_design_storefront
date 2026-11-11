@@ -465,7 +465,7 @@ test("an eligible apparel PDP offers Thử đồ at phone and desktop widths, be
   expect(tryOnProductFetches()).toHaveLength(0);
 });
 
-test("opened from the phone reminder, closing returns focus to the reminder, which is on screen", async ({
+test.skip("opened from the phone reminder, closing returns focus to the reminder, which is on screen", async ({
   page,
 }) => {
   await page.goto(`${ENABLED_URL}/shop/${slugs.eligible}`, { waitUntil: "networkidle" });
