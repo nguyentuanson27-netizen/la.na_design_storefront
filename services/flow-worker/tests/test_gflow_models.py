@@ -3,6 +3,7 @@ import glob
 import importlib.util
 import json
 import os
+import time
 import unittest
 from unittest.mock import patch
 
@@ -242,6 +243,177 @@ class NanoBanana21PickerTest(unittest.TestCase):
         self.assertIsNone(label)
         self.assertIsInstance(error, UiSelectorDriftError)
         self.assertIn("refusing to generate with another model", str(error))
+
+
+@unittest.skipUnless(HAS_GFLOW and HAS_PLAYWRIGHT, "needs gflow-cli 0.82.1 and playwright")
+class AgentPanelDismissalTest(unittest.TestCase):
+    """gflow's real _exit_agent_mode, patched to close Flow's Agent panel first."""
+
+    PANEL = """<flow-agent-panel>
+      <button id="panel-close"><mat-icon>close</mat-icon></button>
+    </flow-agent-panel>"""
+    # Flow's own image viewer / dialogs also carry a close icon; the patch must never touch them.
+    VIEWER = """<div class="viewer"><button id="viewer-close" aria-label="Close"><mat-icon>close</mat-icon></button></div>"""
+    TRIGGER = """<button class="settings-trigger-button" hidden></button>"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.browser_path = _browser_executable()
+        if cls.browser_path is None:
+            if os.environ.get("FLOW_REQUIRE_BROWSER_TESTS"):
+                raise RuntimeError("FLOW_REQUIRE_BROWSER_TESTS is set but no browser was found")
+            raise unittest.SkipTest("needs a Chromium/Chrome binary")
+        install_like_the_worker()
+
+    def run_exit(self, body: str, script: str = ""):
+        from gflow_cli.api.transports import migrated_composer as mc
+        from playwright.async_api import async_playwright
+
+        html = f"<!doctype html><html><body>{body}<script>{script}</script></body></html>"
+
+        async def scenario():
+            async with async_playwright() as playwright:
+                browser = await playwright.chromium.launch(executable_path=self.browser_path, args=["--no-sandbox"])
+                try:
+                    page = await browser.new_page()
+                    await page.set_content(html)
+                    state, err = await mc.MigratedComposer._exit_agent_mode(page)
+                    return {
+                        "state": state,
+                        "err": err,
+                        "panel": await page.locator("flow-agent-panel").count(),
+                        "viewer": await page.locator("#viewer-close").count(),
+                        "pressed": await page.locator("button.agent-mode-chip[aria-pressed='true']").count(),
+                        "trigger": await page.locator(".settings-trigger-button").is_visible(),
+                    }
+                finally:
+                    await browser.close()
+
+        return asyncio.run(scenario())
+
+    CLOSE_PANEL = "document.getElementById('panel-close').onclick = () => document.querySelector('flow-agent-panel').remove();"
+    UNPRESS_CHIP = (
+        "const chip = document.querySelector('button.agent-mode-chip');"
+        "chip.onclick = () => { chip.setAttribute('aria-pressed', 'false');"
+        " document.querySelector('.settings-trigger-button').removeAttribute('hidden'); };"
+    )
+
+    def test_closes_the_panel_and_turns_a_pressed_chip_off(self):
+        chip = '<button class="agent-mode-chip" aria-pressed="true">Tác nhân</button>'
+        result = self.run_exit(self.PANEL + chip + self.TRIGGER, self.CLOSE_PANEL + self.UNPRESS_CHIP)
+        self.assertIsNone(result["err"])
+        self.assertEqual(result["state"], "clicked")
+        self.assertEqual(result["panel"], 0)
+        self.assertEqual(result["pressed"], 0)
+        self.assertTrue(result["trigger"])
+
+    def test_a_closed_panel_alone_is_not_reported_as_an_agent_only_account(self):
+        # No chip in the page: gflow's own answer would be "absent", which it raises as
+        # FlowAgentUiError (exit 25). Closing the panel was the fix, so gflow must wait for the trigger.
+        reveal = "document.getElementById('panel-close').onclick = () => {"
+        reveal += " document.querySelector('flow-agent-panel').remove();"
+        reveal += " document.querySelector('.settings-trigger-button').removeAttribute('hidden'); };"
+        result = self.run_exit(self.PANEL + self.TRIGGER, reveal)
+        self.assertIsNone(result["err"])
+        self.assertEqual(result["state"], "clicked")
+        self.assertEqual(result["panel"], 0)
+        self.assertTrue(result["trigger"])
+
+    def test_without_an_agent_panel_nothing_is_clicked_and_the_state_is_gflows_own(self):
+        result = self.run_exit(self.VIEWER + self.TRIGGER)
+        self.assertEqual(result["state"], "absent")
+        self.assertEqual(result["viewer"], 1)
+
+    def test_an_unrelated_close_button_is_left_alone_when_the_panel_is_open(self):
+        chip = '<button class="agent-mode-chip" aria-pressed="true">Tác nhân</button>'
+        result = self.run_exit(self.VIEWER + self.PANEL + chip + self.TRIGGER, self.CLOSE_PANEL + self.UNPRESS_CHIP)
+        self.assertEqual(result["state"], "clicked")
+        self.assertEqual(result["viewer"], 1)
+
+    def test_a_closed_panel_with_the_trigger_still_hidden_keeps_gflows_absent_verdict(self):
+        # Closing the panel does not prove a classic composer exists: no chip + hidden trigger is
+        # gflow's agent-only signature, so it must not be turned into "clicked".
+        close_only = "document.getElementById('panel-close').onclick = () => document.querySelector('flow-agent-panel').remove();"
+        result = self.run_exit(self.PANEL + self.TRIGGER, close_only)
+        self.assertEqual(result["state"], "absent")
+        self.assertFalse(result["trigger"])
+
+    # --- through gflow's real ensure_editor ---------------------------------------------------
+
+    PROJECT = "33333333-3333-4333-8333-333333333333"
+    CHIP = '<button class="agent-mode-chip" aria-pressed="false">Tác nhân</button>'
+
+    def run_editor(self, body: str, script: str = "", *, timeout_s: float = 30.0):
+        from gflow_cli.api.transports import migrated_composer as mc
+        from playwright.async_api import async_playwright
+
+        html = f"<!doctype html><html><body>{body}<script>{script}</script></body></html>"
+
+        async def scenario():
+            async with async_playwright() as playwright:
+                browser = await playwright.chromium.launch(executable_path=self.browser_path, args=["--no-sandbox"])
+                try:
+                    page = await browser.new_page()
+                    await page.route(
+                        "https://flow.google.com/**",
+                        lambda route: route.fulfill(status=200, content_type="text/html", body=html),
+                    )
+                    started = time.monotonic()
+                    error = None
+                    try:
+                        await mc.MigratedComposer().ensure_editor(page, self.PROJECT, timeout_s=timeout_s)
+                    except Exception as exc:  # the typed error is the assertion
+                        error = exc
+                    return {
+                        "error": error,
+                        "elapsed": time.monotonic() - started,
+                        "viewer": await page.locator("#viewer-close").count(),
+                        "panel": await page.locator("flow-agent-panel").count(),
+                    }
+                finally:
+                    await browser.close()
+
+        return asyncio.run(scenario())
+
+    def test_ensure_editor_leaves_a_late_rendered_agent_panel_long_before_the_readiness_timeout(self):
+        # The panel mounts 1.5s after load (Angular hydration), hides the trigger, and closing it
+        # brings the trigger back. gflow alone would sit out the whole 30s gate first.
+        mount = (
+            "setTimeout(() => {"
+            " document.body.insertAdjacentHTML('afterbegin',"
+            " '<flow-agent-panel><button id=\"panel-close\"><mat-icon>close</mat-icon></button></flow-agent-panel>');"
+            " document.getElementById('panel-close').onclick = () => {"
+            "  document.querySelector('flow-agent-panel').remove();"
+            "  document.querySelector('.settings-trigger-button').removeAttribute('hidden'); };"
+            "}, 1500);"
+        )
+        result = self.run_editor(self.VIEWER + self.TRIGGER, mount, timeout_s=30.0)
+        self.assertIsNone(result["error"])
+        self.assertLess(result["elapsed"], 10.0)
+        self.assertEqual(result["panel"], 0)
+        self.assertEqual(result["viewer"], 1)
+
+    def test_ensure_editor_turns_a_pressed_chip_off_without_waiting_out_the_gate(self):
+        chip = '<button class="agent-mode-chip" aria-pressed="true">Tác nhân</button>'
+        result = self.run_editor(chip + self.TRIGGER, self.UNPRESS_CHIP, timeout_s=30.0)
+        self.assertIsNone(result["error"])
+        self.assertLess(result["elapsed"], 10.0)
+
+    def test_ensure_editor_touches_nothing_on_a_healthy_composer(self):
+        trigger = '<button class="settings-trigger-button"></button>'
+        result = self.run_editor(self.VIEWER + self.CHIP + trigger)
+        self.assertIsNone(result["error"])
+        self.assertLess(result["elapsed"], 3.0)
+        self.assertEqual(result["viewer"], 1)
+
+    def test_ensure_editor_keeps_the_typed_agent_only_error_when_closing_the_panel_does_not_help(self):
+        from gflow_cli.errors import FlowAgentUiError
+
+        close_only = "document.getElementById('panel-close').onclick = () => document.querySelector('flow-agent-panel').remove();"
+        result = self.run_editor(self.PANEL + self.TRIGGER, close_only, timeout_s=6.0)
+        self.assertIsInstance(result["error"], FlowAgentUiError)
+        self.assertFalse(result["error"].retryable)
+        self.assertEqual(result["panel"], 0)
 
 
 if __name__ == "__main__":
