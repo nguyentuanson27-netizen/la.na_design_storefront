@@ -445,7 +445,7 @@ export function withShippingMilestone(
     }),
     needsGiftChoice: false,
     shortfallQuantity: milestone.shortfallQuantity,
-    offersHref: milestone.listingHref,
+    ...(milestone.listingHref === null ? {} : { offersHref: milestone.listingHref }),
   });
   const items = banner?.items ?? [];
   const shown = items.find((item) => item.state === "progress");

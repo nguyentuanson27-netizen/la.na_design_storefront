@@ -36,8 +36,10 @@ export type ShippingQuote = Readonly<{
 /**
  * The free-shipping campaign the basket is closest to, when none applies yet: the cart's "mua thêm" nudge.
  * Public copy only (no campaign id, revision or product ids), so it can ride to the browser. It claims what
- * `evaluateShippingCampaigns` would then decide: only campaigns that are active and may stack with the
- * promotions already on the basket are considered.
+ * `evaluateShippingCampaigns` would then decide, so only campaigns that stack with other promotions
+ * (`stackingEnabled`) are ever promised. A campaign that cannot stack is withheld even while the basket
+ * has no other promotion: the extra piece itself may switch one on (a quantity tier that starts at the
+ * same count, a sale-priced item), and the quote would then drop free shipping.
  */
 export type ShippingMilestone = Readonly<{
   name: string;
@@ -45,8 +47,11 @@ export type ShippingMilestone = Readonly<{
   qualifyingQuantity: number;
   /** Pieces still needed, always at least 1. */
   shortfallQuantity: number;
-  /** Where the shopper finds products that count: the campaign's single category, otherwise the whole shop. */
-  listingHref: string;
+  /**
+   * Where the shopper finds products that count: the campaign's single category, otherwise the whole shop.
+   * `null` when no page lists exactly the eligible products (a scope with exclusions), so no link is offered.
+   */
+  listingHref: string | null;
 }>;
 export type ShippingResolution = Readonly<{ quote: ShippingQuote; milestone: ShippingMilestone | null }>;
 export type ShippingCampaignLine = Readonly<{ role: "PAID" | "GIFT"; product: ScopeProductFacts; quantity: number }>;
@@ -110,6 +115,9 @@ export function resolveShipping(input: ShippingEvaluationInput): ShippingResolut
     const matches = buildScopeResolver(campaign.scope, null);
     const qualifyingQuantity = lines.reduce((sum, line) => line.role === "PAID" && matches(line.product) ? sum + line.quantity : sum, 0);
     if (qualifyingQuantity < campaign.minimumQuantity) {
+      // Nothing is promised for a campaign that cannot stack: whether it still applies after one more
+      // piece depends on promotions that piece may start, which this read cannot prove.
+      if (!campaign.stackingEnabled) continue;
       // Campaigns are visited by priority, so on equal distance the earlier one keeps the nudge.
       const shortfallQuantity = campaign.minimumQuantity - qualifyingQuantity;
       if (milestone === null || shortfallQuantity < milestone.shortfallQuantity) {
@@ -122,8 +130,13 @@ export function resolveShipping(input: ShippingEvaluationInput): ShippingResolut
   return Object.freeze({ quote: Object.freeze({ baseFeeVnd, feeVnd: baseFeeVnd, campaign: null }), milestone });
 }
 
-/** One category and no hand-picked products: that category's listing. Anything broader or mixed: the whole shop. */
-function shippingListingHref(scope: ShippingCampaignValues["scope"]): string {
+/**
+ * One category and nothing hand-picked: that category's listing. Anything broader or mixed: the whole shop.
+ * Exclusions beat category membership in the scope, and no listing filters them out, so a scope with any
+ * gets no link rather than a page of products that do not count.
+ */
+function shippingListingHref(scope: ShippingCampaignValues["scope"]): string | null {
+  if (scope.excludeProductIds.length > 0) return null;
   if (scope.categoryKeys.length === 1 && scope.includeProductIds.length === 0) {
     return categoryByKey(scope.categoryKeys[0]!)?.path ?? "/shop";
   }
