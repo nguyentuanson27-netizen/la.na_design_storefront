@@ -819,7 +819,9 @@ test.describe("touch recovery after SPA autoplay refusal", () => {
 
     // A route-restoration scroll is not user activation and must not exhaust the fallback.
     await page.evaluate(() => window.dispatchEvent(new Event("scroll")));
-    const title = await page.getByRole("heading", { level: 1, name: nextProductName }).boundingBox();
+    const heading = page.getByRole("heading", { level: 1, name: nextProductName });
+    await heading.scrollIntoViewIfNeeded();
+    const title = await heading.boundingBox();
     expect(title).not.toBeNull();
     await page.touchscreen.tap(title!.x + 8, title!.y + 8);
     await expect(preview).toHaveAttribute("data-playing", "true");
