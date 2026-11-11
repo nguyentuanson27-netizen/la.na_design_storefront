@@ -21,11 +21,12 @@
    quota exhausted". WireFormatError is used on purpose: gflow retries RateLimitError, which would
    spend the request budget re-running a Pro attempt that cannot succeed.
 5. **Agent panel dismissal.** When Flow opens a project with existing items it can open the Agent
-   panel ("Tác nhân") over the composer and hide ``.settings-trigger-button``, so gflow reads the
-   account as agent-only (FlowAgentUiError, exit 25). ``_exit_agent_mode`` closes the
-   ``flow-agent-panel`` first and, if that was the blocker, reports "clicked" so gflow waits for the
-   trigger instead of giving up. gflow's own ``ensure_editor`` still runs unchanged, so its typed
-   errors (agent-only, landing page, drift) reach the worker intact.
+   panel ("Tác nhân") over the composer and hide ``.settings-trigger-button``. gflow only reacts
+   after its 30s readiness wait, so ``ensure_editor`` first polls (up to 8s, taken out of that same
+   budget) for an open ``flow-agent-panel`` or a pressed chip with the trigger hidden and runs
+   ``_exit_agent_mode``, which closes the panel first. It reports "clicked" for a closed panel only
+   once the trigger is back; otherwise gflow's own verdict stands, including FlowAgentUiError for an
+   agent-only account. gflow's ``ensure_editor`` runs unwrapped, so its typed errors reach the worker.
 
 Installed only inside the gflow subprocess the worker starts (``flow_worker.gflow_launcher``).
 Every patch above lives on flow.google.com's composer; gflow's labs driver maps ``nano2`` to Nano
@@ -38,10 +39,16 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from importlib import metadata
 from typing import Any
 
 from .policy import QUOTA_EXHAUSTED_MARKER
+
+# Agent-panel recovery, spent out of gflow's own 30s readiness budget (never added to it).
+EARLY_RECOVERY_S = 8.0
+EARLY_RECOVERY_POLL_MS = 250
+PANEL_CLOSE_SETTLE_MS = 3000
 
 GFLOW_VERSION = "0.82.1"
 REQUIRED_FLOW_HOST = "flow.google.com"
@@ -163,6 +170,7 @@ def install() -> None:
     original_submit_refusal = mc._submit_refusal
     original_body_problem = mc._image_body_problem
     original_exit_agent_mode = composer_cls._exit_agent_mode
+    original_ensure_editor = composer_cls.ensure_editor
 
     mc.IMAGE_MODEL_MENU_MATCHERS[ImageModel.NARWHAL] = mc.ModelMenuMatcher(
         NANO_BANANA_2_1_LABEL, excludes=("Lite",)
@@ -222,14 +230,54 @@ def install() -> None:
         dismissed = await _dismiss_agent_panel(page)
         state, error = await original_exit_agent_mode(page)
         if state == "absent" and dismissed:
-            # The panel was the blocker and it is closed now. "absent" would make gflow call the
-            # account agent-only (FlowAgentUiError, exit 25); "clicked" makes it wait for the
-            # settings trigger to come back and report drift if it does not.
+            # Closing the panel proves nothing about the composer. Only when the settings trigger
+            # is back is "clicked" (gflow waits for it) honest; a trigger that stays hidden with no
+            # chip is gflow's agent-only verdict (FlowAgentUiError), which "absent" keeps intact.
+            try:
+                await page.locator(mc.READY_ANCHOR).first.wait_for(
+                    state="visible", timeout=PANEL_CLOSE_SETTLE_MS
+                )
+            except Exception:
+                return state, error
             return "clicked", None
         return state, error
 
+    async def _recover_early(self: Any, page: Any, deadline: float) -> None:
+        """Leave agent mode as soon as Flow has rendered it, instead of after gflow's 30s gate.
+
+        Acts only on what is observed: an open ``flow-agent-panel`` or a pressed chip while the
+        settings trigger is not visible. A healthy composer (trigger visible) is never touched,
+        and polling rather than one probe is what survives Angular mounting after ``goto``.
+        """
+        trigger = page.locator(mc.READY_ANCHOR).first
+        while time.monotonic() < deadline:
+            if await trigger.count() and await trigger.is_visible():
+                return
+            if await page.locator("flow-agent-panel").first.is_visible() or await self._agent_chip_pressed(page):
+                await self._exit_agent_mode(page)
+                return
+            await page.wait_for_timeout(EARLY_RECOVERY_POLL_MS)
+
+    async def ensure_editor(self: Any, page: Any, project_id: str, *, timeout_s: float = 30.0) -> None:
+        target = mc.MIGRATED_PROJECT_URL.format(project_id=project_id)
+        if not str(getattr(page, "url", "") or "").startswith(target):
+            await page.goto(target, wait_until="domcontentloaded", timeout=45_000)
+        started = time.monotonic()
+        try:
+            await self._dismiss_dialog(page)
+            await self._dismiss_cookie_bar(page)
+            await _recover_early(self, page, started + min(EARLY_RECOVERY_S, timeout_s / 2))
+        except Exception:
+            # Best effort only: gflow's own gate below still runs and reports the real state.
+            pass
+        # Same total budget as gflow's: the early window is spent out of it, never added to it.
+        remaining = max(timeout_s - (time.monotonic() - started), 1.0)
+        # Not wrapped: FlowAgentUiError, landing-page and drift errors reach the worker unchanged.
+        await original_ensure_editor(self, page, project_id, timeout_s=remaining)
+
     composer_cls._select_image_model = select_image_model
     composer_cls._exit_agent_mode = classmethod(_exit_agent_mode)
+    composer_cls.ensure_editor = ensure_editor
     # Module globals on purpose: gflow's submit observers look them up at call time.
     mc._submit_refusal = submit_refusal
     mc._image_body_problem = image_body_problem
