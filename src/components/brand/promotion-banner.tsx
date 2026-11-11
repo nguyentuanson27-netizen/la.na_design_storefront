@@ -60,7 +60,8 @@ function OffersLink({ href, onNavigate }: Readonly<{ href: string; onNavigate?: 
   const t = useT();
   return (
     <Link
-      className="ml-6 mt-1 inline-flex min-h-11 items-center text-[0.78rem] font-semibold text-[#2A1810] underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
+      // Beside the sentence, like "Chọn quà": a 44px target that borrows its height from the row's margins instead of adding a line.
+      className="-my-2.5 inline-flex min-h-11 shrink-0 items-center whitespace-nowrap text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#2A1810] underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
       data-promotion-offers-link=""
       href={href}
       onClick={onNavigate}
@@ -102,6 +103,7 @@ function Item({
             {t("Chọn quà")}
           </Link>
         ) : null}
+        {item.offersHref ? <OffersLink href={item.offersHref} onNavigate={onNavigate} /> : null}
       </div>
       {item.progress ? (
         <div
@@ -119,7 +121,6 @@ function Item({
           />
         </div>
       ) : null}
-      {item.offersHref ? <OffersLink href={item.offersHref} onNavigate={onNavigate} /> : null}
     </li>
   );
 }
@@ -158,7 +159,8 @@ export function PromotionProgressLine({
     <div data-promotion-kind={item.kind} data-promotion-state={item.state} ref={lineRef}>
       <div className="flex items-start gap-2">
         {item.kind === "SHIPPING" ? <Truck /> : <Gift />}
-        <p className="line-clamp-2 min-w-0 flex-1 text-[0.78rem] leading-5 text-[#3B2219]">{t(item.title)}</p>
+        <p className={`${item.offersHref ? "line-clamp-3" : "line-clamp-2"} min-w-0 flex-1 text-[0.78rem] leading-5 text-[#3B2219]`}>{t(item.title)}</p>
+        {item.offersHref ? <OffersLink href={item.offersHref} onNavigate={onNavigate} /> : null}
       </div>
       {item.progress ? (
         <div
@@ -176,7 +178,6 @@ export function PromotionProgressLine({
           />
         </div>
       ) : null}
-      {item.offersHref ? <OffersLink href={item.offersHref} onNavigate={onNavigate} /> : null}
     </div>
   );
 }
