@@ -14,7 +14,10 @@ test("PDP removes collection chips and the unnecessary mobile divider above the 
 
   assert.doesNotMatch(page, /pdp-collection-row|data\.collections\.map/);
   assert.doesNotMatch(css, /\.pdp-collection-row/);
-  assert.match(panel, /className="mt-3 lg:mt-0"/);
+  // The mobile grid already supplies 24px row gap. For an active Flash Sale, -16px
+  // leaves just 8px below the product heading; standard products retain their spacing.
+  assert.match(panel, /className=\\{flashClock === null \\? "mt-3 lg:mt-0" : "-mt-4 lg:mt-0"\\}/);
+  assert.doesNotMatch(panel, /className="-mt-4 lg:mt-0"/);
   assert.doesNotMatch(panel, /mt-1 border-t border-\[#3B2219\]\/15 pt-6/);
 });
 

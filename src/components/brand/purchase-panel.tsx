@@ -903,7 +903,7 @@ export function PurchasePanelView({
     <>
       <section
         aria-label={t("Mua sản phẩm")}
-        className="mt-3 lg:mt-0"
+        className={flashClock === null ? "mt-3 lg:mt-0" : "-mt-4 lg:mt-0"}
       >
         {flashClock === null ? null : (
           <div className="pdp-flash-strip" data-pdp-flash="">
