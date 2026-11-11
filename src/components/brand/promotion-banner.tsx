@@ -71,6 +71,16 @@ function OffersLink({ href, onNavigate }: Readonly<{ href: string; onNavigate?: 
   );
 }
 
+function Truck() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4 shrink-0 text-[#70584B]" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path d="M2 6h11v10H2zM13 9h4l3 3v4h-7" />
+      <circle cx="6.5" cy="17.5" r="1.8" />
+      <circle cx="16.5" cy="17.5" r="1.8" />
+    </svg>
+  );
+}
+
 function Item({
   item,
   giftHref,
@@ -81,7 +91,7 @@ function Item({
   return (
     <li data-promotion-state={item.state} data-promotion-kind={item.kind}>
       <div className="flex items-center gap-2">
-        {achieved ? <Tick /> : <Gift />}
+        {achieved ? <Tick /> : item.kind === "SHIPPING" ? <Truck /> : <Gift />}
         <p className={`min-w-0 flex-1 text-[0.8rem] leading-5 ${achieved ? "text-[#24472D]" : "text-[#3B2219]"}`}>{t(item.title)}</p>
         {item.needsGiftChoice && giftHref ? (
           <Link
@@ -147,7 +157,7 @@ export function PromotionProgressLine({
   return (
     <div data-promotion-kind={item.kind} data-promotion-state={item.state} ref={lineRef}>
       <div className="flex items-start gap-2">
-        <Gift />
+        {item.kind === "SHIPPING" ? <Truck /> : <Gift />}
         <p className="line-clamp-2 min-w-0 flex-1 text-[0.78rem] leading-5 text-[#3B2219]">{t(item.title)}</p>
       </div>
       {item.progress ? (

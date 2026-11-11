@@ -5,7 +5,7 @@ import { createStorefrontCartRepository } from "./storefront-cart-repository.ts"
 import { cookies } from "next/headers";
 import { createCartGiftSelectionService } from "./cart-gift-selection.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
-import { readShippingQuote } from "./shipping-campaign-repository.ts";
+import { readShippingResolution } from "./shipping-campaign-repository.ts";
 import { readGuestShippingPolicy } from "./guest-shipping-policy.ts";
 import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contract.ts";
 
@@ -40,14 +40,14 @@ export async function getCurrentStorefrontCartBenefits(now = new Date()) {
   if (cart.lines.length === 0 || ("benefitsUnavailable" in cart && cart.benefitsUnavailable)) return cart;
   const state = "giftState" in cart ? cart.giftState : undefined;
   try {
-    const shippingQuote = await prisma.$transaction((tx) => readShippingQuote({
+    const { quote: shippingQuote, milestone: shippingMilestone } = await prisma.$transaction((tx) => readShippingResolution({
       client: tx, shopId: readPancakeShopId(), now, policy: readGuestShippingPolicy(),
       paidItems: cart.lines.filter((line) => line.available),
       hasOtherPromotions: Boolean(state?.selections.length) ||
         Boolean(state?.quote.benefits.enabled && state.quote.benefits.ok && state.quote.benefits.groups.some((group) => group.steps.some((step) => step.outputPriceVnd < step.inputPriceVnd))) ||
         cart.lines.some((line) => line.price !== null && line.basePrice !== undefined && line.price < line.basePrice),
     }));
-    return { ...cart, shippingQuote };
+    return { ...cart, shippingQuote, shippingMilestone };
   } catch {
     // Unknown shipping is not "no campaign": hide totals and close checkout instead of guessing a fee.
     return { ...cart, benefitsUnavailable: true };
