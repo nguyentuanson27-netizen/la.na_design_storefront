@@ -1028,7 +1028,8 @@ test("homepage carries only the refreshed composition while retired Lookbook and
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Essential Outerwear" })).toHaveAttribute("href", "/collections/essential-outerwear");
+  // The owner removed collection links under the PDP title.
+  await expect(page.getByRole("link", { name: "Essential Outerwear" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /draft capsule/i })).toHaveCount(0);
   await expect(page.getByText("Draft Capsule")).toHaveCount(0);
   await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
@@ -1043,8 +1044,8 @@ test("homepage carries only the refreshed composition while retired Lookbook and
   await addToBag.click();
   await expect(page.getByText("Đã thêm sản phẩm vào giỏ hàng.")).toBeVisible();
 
-  await page.getByRole("link", { name: "Essential Outerwear" }).click();
-  await page.waitForURL("**/collections/essential-outerwear");
+  // The collection route still works, but the retired PDP chip is no longer its entry point.
+  await page.goto(BASE_URL + "/collections/essential-outerwear", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "Essential Outerwear" })).toBeVisible();
   await expectRuntimePageClean(page);
 });

@@ -169,7 +169,7 @@ test.beforeAll(async () => {
       },
     ],
   });
-  // Enough long collection names that the badge row under the product name cannot fit at any width.
+  // Multiple assigned collections ensure the PDP does not render collection chips.
   await prisma.collectionDefinition.createMany({
     data: badgeSlugs.map((slug, index) => ({
       slug,
@@ -733,33 +733,14 @@ test("on a phone a collection's filters open in the listing drawer, sizes, price
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("the product page's collection badges stay on one line and fade only while they scroll", async ({ page }) => {
-  for (const width of [390, 640, 768, 1023]) {
+test("PDP keeps collection badges out of the product identity at all widths", async ({ page }) => {
+  // This product belongs to five collections, but none should render as a PDP chip.
+  for (const width of [320, 390, 640, 768, 1023, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto(`${BASE_URL}/shop/${badgeProductSlug}`, { waitUntil: "networkidle" });
-    const row = page.locator(".pdp-collection-row");
-    await expect(row.getByRole("link")).toHaveCount(badgeSlugs.length);
-    const facts = await row.evaluate((element) => {
-      const tops = [...element.querySelectorAll("a")].map((link) => Math.round(link.getBoundingClientRect().top));
-      return {
-        oneLine: new Set(tops).size === 1,
-        scrolls: element.scrollWidth > element.clientWidth,
-        masked: getComputedStyle(element).maskImage !== "none",
-        paddingLeft: parseFloat(getComputedStyle(element).paddingLeft),
-      };
-    });
-    expect(facts.oneLine, `${width}px keeps one line`).toBe(true);
-    expect(facts.scrolls, `${width}px scrolls`).toBe(true);
-    expect(facts.masked, `${width}px shows the fade while it scrolls`).toBe(true);
-    // The fade covers the first 24px, which the row's own padding must hold clear of the first badge.
-    expect(facts.paddingLeft, `${width}px clears the fade`).toBeGreaterThanOrEqual(24);
+    const response = await page.goto(BASE_URL + "/shop/" + badgeProductSlug, { waitUntil: "networkidle" });
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("heading", { level: 1, name: "Badge Runtime Dress " + suffix })).toBeVisible();
+    await expect(page.locator(".pdp-collection-row")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Runtime Badge Collection Number 1" })).toHaveCount(0);
   }
-
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${BASE_URL}/shop/${badgeProductSlug}`, { waitUntil: "networkidle" });
-  const wide = await page.locator(".pdp-collection-row").evaluate((element) => ({
-    masked: getComputedStyle(element).maskImage !== "none",
-    wraps: getComputedStyle(element).flexWrap === "wrap",
-  }));
-  expect(wide).toEqual({ masked: false, wraps: true });
 });

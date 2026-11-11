@@ -27,7 +27,13 @@ test("PDP Flash Sale is one compact row while keeping the live clock and spoken 
   const strip = /\.pdp-flash-strip\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
 
   assert.match(strip, /display:\s*flex;/);
-  assert.match(strip, /flex-wrap:\s*nowrap;/);
+  assert.match(strip, /flex-wrap:\s*wrap;/);
+  const digits = /\.pdp-flash-strip__digits\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+  assert.match(digits, /flex-wrap:\s*wrap;/);
+  const dayCss = /\.pdp-flash-strip__days\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+  const timeCss = /\.pdp-flash-strip__time\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+  assert.match(dayCss, /background:\s*#3b2219;/);
+  assert.match(timeCss, /background:\s*#3b2219;/);
   assert.match(strip, /min-height:\s*2\.25rem;/);
   assert.match(strip, /padding:\s*0\.25rem 0\.625rem;/);
 
