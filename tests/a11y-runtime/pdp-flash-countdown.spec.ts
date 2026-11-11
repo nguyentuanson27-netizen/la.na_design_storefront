@@ -165,8 +165,8 @@ function isPdpRscRequest(request: Request) {
 
 /** Seconds left on the panel's countdown, read from its digits. */
 async function countdownSeconds(page: Page): Promise<number> {
-  const digits = await page.locator("[data-pdp-flash] .pdp-flash-strip__digits b").allInnerTexts();
-  const [hours, minutes, seconds] = digits.slice(-3).map(Number);
+  const time = await page.locator("[data-pdp-flash] .pdp-flash-strip__time").innerText();
+  const [hours, minutes, seconds] = time.split(":").map(Number);
   return hours! * 3600 + minutes! * 60 + seconds!;
 }
 
@@ -401,45 +401,3 @@ test("a composite's other kinds never carry the set's countdown or stock", async
   await expect(lowStock).toHaveText("Size M chỉ còn 1 sản phẩm");
 });
 
-
-/**
- * Temporary PR269 screenshot evidence. This is the real Next production build in Chromium,
- * using the test-owned Flash Sale set because CI has no private production catalog snapshot.
- */
-test("PR269 screenshot: 390px mobile Flash Sale after spacing adjustment", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  const response = await page.goto(BASE_URL + "/shop/" + setSlug, { waitUntil: "networkidle" });
-  expect(response?.status()).toBe(200);
-
-  const heading = page.getByRole("heading", { level: 1 });
-  const flashStrip = page.locator("[data-pdp-flash]");
-  await expect(heading).toBeVisible();
-  await expect(flashStrip).toBeVisible();
-
-  await page.evaluate(() => {
-    const title = document.querySelector("h1");
-    if (title) window.scrollTo(0, Math.max(0, window.scrollY + title.getBoundingClientRect().top - 86));
-  });
-  await page.waitForTimeout(300);
-
-  const measure = await page.evaluate(() => {
-    const title = document.querySelector("h1")!.getBoundingClientRect();
-    const strip = document.querySelector("[data-pdp-flash]")!.getBoundingClientRect();
-    return {
-      viewportWidth: window.innerWidth,
-      documentWidth: document.documentElement.scrollWidth,
-      titleBottom: Math.round(title.bottom),
-      stripTop: Math.round(strip.top),
-      gapPx: Math.round(strip.top - title.bottom),
-      flashHeight: Math.round(strip.height),
-    };
-  });
-
-  const screenshotPath = resolve(APP_ROOT, "tests/a11y-runtime/test-results/pr269-mobile-390.jpg");
-  await page.screenshot({ path: screenshotPath, type: "jpeg", quality: 88, fullPage: false, animations: "disabled" });
-  console.log("PR269_MOBILE_390_REAL_BROWSER_EVIDENCE", JSON.stringify(measure), screenshotPath);
-  expect(measure.viewportWidth).toBe(390);
-  expect(measure.documentWidth).toBeLessThanOrEqual(391);
-  expect(measure.gapPx).toBeGreaterThanOrEqual(0);
-  expect(measure.gapPx).toBeLessThanOrEqual(24);
-});
