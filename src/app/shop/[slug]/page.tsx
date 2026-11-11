@@ -98,19 +98,6 @@ function render(data: ProductRouteData, { t }: RequestI18n) {
       {/* Stars and the average once there are enough reviews, else just how many. */}
       {data.reviews === null ? null : <ProductRatingLink section={data.reviews} />}
 
-      {data.collections.length > 0 ? (
-        <div className="pdp-collection-row -mx-6 mt-3 flex gap-2 overflow-x-auto px-6 lg:mx-0 lg:mt-4 lg:flex-wrap lg:overflow-visible lg:px-0">
-          {data.collections.map((collection) => (
-            <Link
-              key={collection.slug}
-              href={`/collections/${collection.slug}`}
-              className="badge badge--stone shrink-0 whitespace-nowrap transition-colors hover:border-black"
-            >
-              {collection.title}
-            </Link>
-          ))}
-        </div>
-      ) : null}
     </>
   );
 

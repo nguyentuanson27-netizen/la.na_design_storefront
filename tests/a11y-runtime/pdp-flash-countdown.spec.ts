@@ -400,3 +400,91 @@ test("a composite's other kinds never carry the set's countdown or stock", async
   await expect(productPrice(page).getByText(/49\.000/)).toBeVisible();
   await expect(lowStock).toHaveText("Size M chỉ còn 1 sản phẩm");
 });
+
+
+
+test("Flash Sale keeps the original desktop styling and a full-bleed mobile countdown row", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(BASE_URL + "/shop/" + setSlug, { waitUntil: "networkidle" });
+  const strip = page.locator("[data-pdp-flash]");
+  await expect(strip).toBeVisible();
+  await expect(strip.getByText("Kết thúc sau", { exact: true })).toBeVisible();
+
+  const desktop = await strip.evaluate((node) => {
+    const label = getComputedStyle(node.querySelector(".pdp-flash-strip__label")!);
+    const digit = getComputedStyle(node.querySelector(".pdp-flash-strip__digits b")!);
+    const bolt = getComputedStyle(node.querySelector(".pdp-flash-strip__bolt")!);
+    return {
+      radius: getComputedStyle(node).borderTopLeftRadius,
+      labelFontSize: label.fontSize,
+      labelColor: label.color,
+      digitBackground: digit.backgroundColor,
+      digitColor: digit.color,
+      digitFontSize: digit.fontSize,
+      boltColor: bolt.color,
+    };
+  });
+  expect(desktop).toEqual({
+    radius: "8px",
+    labelFontSize: "13px",
+    labelColor: "rgb(255, 255, 255)",
+    digitBackground: "rgb(255, 255, 255)",
+    digitColor: "rgb(184, 18, 63)",
+    digitFontSize: "14.4px",
+    boltColor: "rgb(255, 242, 122)",
+  });
+
+  // Stress the same DOM with a two-day campaign without altering the application's clock.
+  // On mobile, all segments must remain visible in one row, even with a days prefix.
+  await strip.locator(".pdp-flash-strip__digits").evaluate((node) => {
+    const day = document.createElement("b");
+    day.textContent = "2";
+    const unit = document.createElement("span");
+    unit.className = "pdp-flash-strip__unit";
+    unit.textContent = "ngày";
+    node.prepend(unit);
+    node.prepend(day);
+  });
+
+  for (const width of [390, 360, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    const metrics = await strip.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const parts = [...node.querySelectorAll(".pdp-flash-strip__label, .pdp-flash-strip__clock, .pdp-flash-strip__digits b, .pdp-flash-strip__unit")];
+      const centers = parts.map((part) => {
+        const bounds = part.getBoundingClientRect();
+        return (bounds.top + bounds.bottom) / 2;
+      });
+      return {
+        pageWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+        left: rect.left,
+        right: rect.right,
+        scrollWidth: node.scrollWidth,
+        clientWidth: node.clientWidth,
+        maxCenterOffset: Math.max(...centers) - Math.min(...centers),
+      };
+    });
+    expect(metrics.pageWidth, String(width) + "px does not overflow the page").toBeLessThanOrEqual(width + 1);
+    expect(metrics.left, String(width) + "px starts at the screen edge").toBeGreaterThanOrEqual(-1);
+    expect(metrics.left, String(width) + "px starts at the screen edge").toBeLessThanOrEqual(1);
+    expect(metrics.right, String(width) + "px ends at the screen edge").toBeGreaterThanOrEqual(width - 1);
+    expect(metrics.right, String(width) + "px ends at the screen edge").toBeLessThanOrEqual(width + 1);
+    expect(metrics.scrollWidth, String(width) + "px fits all countdown segments").toBeLessThanOrEqual(metrics.clientWidth + 1);
+    expect(metrics.maxCenterOffset, String(width) + "px keeps every segment on one line").toBeLessThanOrEqual(4);
+  }
+
+  // At 200% text zoom, allow horizontal scrolling inside the strip instead of clipping seconds.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+  const zoom = await strip.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+    return {
+      pageWidth: document.documentElement.scrollWidth,
+      lastDigitRight: node.querySelector(".pdp-flash-strip__digits b:last-child")!.getBoundingClientRect().right,
+      right: node.getBoundingClientRect().right,
+    };
+  });
+  expect(zoom.pageWidth).toBeLessThanOrEqual(391);
+  expect(zoom.lastDigitRight).toBeLessThanOrEqual(zoom.right + 1);
+});

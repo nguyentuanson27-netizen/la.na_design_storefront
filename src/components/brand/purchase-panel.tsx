@@ -903,7 +903,7 @@ export function PurchasePanelView({
     <>
       <section
         aria-label={t("Mua sản phẩm")}
-        className="mt-1 border-t border-[#3B2219]/15 pt-6 lg:mt-0 lg:border-t-0 lg:pt-0"
+        className={flashClock === null ? "mt-3 lg:mt-0" : "-mt-4 lg:mt-0"}
       >
         {flashClock === null ? null : (
           <div className="pdp-flash-strip" data-pdp-flash="">
@@ -928,7 +928,7 @@ export function PurchasePanelView({
             </span>
           </div>
         )}
-        <div className={`flex items-baseline justify-between gap-6 ${flashClock === null ? "" : "mt-4"}`}>
+        <div className={`flex items-baseline justify-between gap-6 ${flashClock === null ? "" : "mt-3 lg:mt-4"}`}>
           <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-display text-[1.75rem] leading-tight font-normal tabular-nums tracking-[0.01em] text-[#2A1810]">
             {priceDisplay.compareAtText ? (
               <>
