@@ -210,6 +210,80 @@ for (const width of [320, 390, 768, 1024, 1440]) {
   });
 }
 
+for (const width of [390, 1280]) {
+  test(`a real client-side product link replaces the video and autoplays the muted preview at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await serveVideo(page);
+    await serveVideo(page, () => undefined, VIDEO_B);
+    await page.goto(`${BASE}/shop/${slug}`, { waitUntil: "networkidle" });
+
+    const preview = page.locator(".pdp-video-tile__preview");
+    await expect(preview).toHaveAttribute("src", VIDEO_A);
+    await expect(preview).toHaveAttribute("data-playing", "true");
+
+    // If the document is reloaded, the marker disappears; a real next/link transition keeps it.
+    await page.evaluate(() => { (window as Window & { __pdpSpaMarker?: string }).__pdpSpaMarker = "from-A"; });
+    const link = page.locator(`a[href="/shop/${nextSlug}"]`).first();
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL(`${BASE}/shop/${nextSlug}`);
+    expect(await page.evaluate(() => (window as Window & { __pdpSpaMarker?: string }).__pdpSpaMarker)).toBe("from-A");
+
+    await expect(preview).toHaveAttribute("src", VIDEO_B);
+    await expect(preview).toHaveAttribute("data-playing", "true");
+    expect(await preview.evaluate((element: HTMLVideoElement) => [element.muted, element.defaultMuted])).toEqual([true, true]);
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.3);
+    await expect(page.getByRole("heading", { level: 1, name: nextProductName })).toBeVisible();
+  });
+}
+
+test.describe("touch recovery after SPA autoplay refusal", () => {
+  test.use({ hasTouch: true });
+
+  test("retries on touch activation even when an earlier scroll was not useful", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(() => {
+      const originalPlay = HTMLMediaElement.prototype.play;
+      let touchCount = 0;
+      // The first touch is refused; only the second unlocks playback. A once-only
+      // pointerup listener would be exhausted and this test would remain paused.
+      window.addEventListener("pointerup", (event) => {
+        if (event.pointerType === "touch") touchCount++;
+      }, { capture: true });
+      HTMLMediaElement.prototype.play = function () {
+        if (this instanceof HTMLVideoElement && !this.controls &&
+            this.getAttribute("src")?.endsWith("/b.mp4") && touchCount < 2) {
+          return Promise.reject(new DOMException("User gesture required", "NotAllowedError"));
+        }
+        return originalPlay.call(this);
+      };
+    });
+    await serveVideo(page);
+    await serveVideo(page, () => undefined, VIDEO_B);
+    await page.goto(`${BASE}/shop/${slug}`, { waitUntil: "networkidle" });
+    await expect(page.locator(".pdp-video-tile__preview")).toHaveAttribute("data-playing", "true");
+
+    await page.locator(`a[href="/shop/${nextSlug}"]`).first().click();
+    await expect(page).toHaveURL(`${BASE}/shop/${nextSlug}`);
+    const preview = page.locator(".pdp-video-tile__preview");
+    await expect(preview).toHaveAttribute("src", VIDEO_B);
+    await expect(preview).toHaveAttribute("data-playing", "false");
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
+
+    // A route-restoration scroll is not user activation and must not exhaust the fallback.
+    await page.evaluate(() => window.dispatchEvent(new Event("scroll")));
+    const heading = page.getByRole("heading", { level: 1, name: nextProductName });
+    await heading.scrollIntoViewIfNeeded();
+    const title = await heading.boundingBox();
+    expect(title).not.toBeNull();
+    await page.touchscreen.tap(title!.x + 8, title!.y + 8);
+    await expect(preview).toHaveAttribute("data-playing", "false");
+    await page.touchscreen.tap(title!.x + 8, title!.y + 8);
+    await expect(preview).toHaveAttribute("data-playing", "true");
+    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.3);
+  });
+});
+
 test("one-photo desktop gallery anchors the fallback tile inside its centered primary photo", async ({ page }) => {
   // Reduced motion leaves the desktop frame a poster: the original small tile on the photograph.
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -746,81 +820,6 @@ test("collector enforces server origin, strict schema and actual byte bounds ove
   expect(response.status()).toBe(204);
   await expect.poll(() => collectedPlayback().attempts).toBe(1);
 });
-
-for (const width of [390, 1280]) {
-  test(`a real client-side product link replaces the video and autoplays the muted preview at ${width}px`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 900 });
-    await serveVideo(page);
-    await serveVideo(page, () => undefined, VIDEO_B);
-    await page.goto(`${BASE}/shop/${slug}`, { waitUntil: "networkidle" });
-
-    const preview = page.locator(".pdp-video-tile__preview");
-    await expect(preview).toHaveAttribute("src", VIDEO_A);
-    await expect(preview).toHaveAttribute("data-playing", "true");
-
-    // If the document is reloaded, the marker disappears; a real next/link transition keeps it.
-    await page.evaluate(() => { (window as Window & { __pdpSpaMarker?: string }).__pdpSpaMarker = "from-A"; });
-    const link = page.locator(`a[href="/shop/${nextSlug}"]`).first();
-    await expect(link).toBeVisible();
-    await link.click();
-    await expect(page).toHaveURL(`${BASE}/shop/${nextSlug}`);
-    expect(await page.evaluate(() => (window as Window & { __pdpSpaMarker?: string }).__pdpSpaMarker)).toBe("from-A");
-
-    await expect(preview).toHaveAttribute("src", VIDEO_B);
-    await expect(preview).toHaveAttribute("data-playing", "true");
-    expect(await preview.evaluate((element: HTMLVideoElement) => [element.muted, element.defaultMuted])).toEqual([true, true]);
-    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.3);
-    await expect(page.getByRole("heading", { level: 1, name: nextProductName })).toBeVisible();
-  });
-}
-
-test.describe("touch recovery after SPA autoplay refusal", () => {
-  test.use({ hasTouch: true });
-
-  test("retries on touch activation even when an earlier scroll was not useful", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.addInitScript(() => {
-      const originalPlay = HTMLMediaElement.prototype.play;
-      let touchCount = 0;
-      // The first touch is refused; only the second unlocks playback. A once-only
-      // pointerup listener would be exhausted and this test would remain paused.
-      window.addEventListener("pointerup", (event) => {
-        if (event.pointerType === "touch") touchCount++;
-      }, { capture: true });
-      HTMLMediaElement.prototype.play = function () {
-        if (this instanceof HTMLVideoElement && !this.controls &&
-            this.getAttribute("src")?.endsWith("/b.mp4") && touchCount < 2) {
-          return Promise.reject(new DOMException("User gesture required", "NotAllowedError"));
-        }
-        return originalPlay.call(this);
-      };
-    });
-    await serveVideo(page);
-    await serveVideo(page, () => undefined, VIDEO_B);
-    await page.goto(`${BASE}/shop/${slug}`, { waitUntil: "networkidle" });
-    await expect(page.locator(".pdp-video-tile__preview")).toHaveAttribute("data-playing", "true");
-
-    await page.locator(`a[href="/shop/${nextSlug}"]`).first().click();
-    await expect(page).toHaveURL(`${BASE}/shop/${nextSlug}`);
-    const preview = page.locator(".pdp-video-tile__preview");
-    await expect(preview).toHaveAttribute("src", VIDEO_B);
-    await expect(preview).toHaveAttribute("data-playing", "false");
-    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.paused)).toBe(true);
-
-    // A route-restoration scroll is not user activation and must not exhaust the fallback.
-    await page.evaluate(() => window.dispatchEvent(new Event("scroll")));
-    const heading = page.getByRole("heading", { level: 1, name: nextProductName });
-    await heading.scrollIntoViewIfNeeded();
-    const title = await heading.boundingBox();
-    expect(title).not.toBeNull();
-    await page.touchscreen.tap(title!.x + 8, title!.y + 8);
-    await expect(preview).toHaveAttribute("data-playing", "false");
-    await page.touchscreen.tap(title!.x + 8, title!.y + 8);
-    await expect(preview).toHaveAttribute("data-playing", "true");
-    await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.3);
-  });
-});
-
 test("flag OFF suppresses even READY source in rendered response and collector events", async ({ page, request }) => {
   await stop();
   await start(false);
