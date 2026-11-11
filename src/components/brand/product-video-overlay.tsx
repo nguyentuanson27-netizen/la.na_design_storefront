@@ -70,11 +70,17 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
   useEffect(() => {
     const element = preview.current;
     if (!element) return;
+    element.muted = true;
+    element.defaultMuted = true;
     // One decision for every trigger: it plays only while it is visible enough, the dialog is not
     // holding the shopper's attention and the tab is actually being looked at.
     const sync = () => {
-      if (previewVisible.current && !previewHeld.current && !document.hidden) void element.play().catch(() => undefined);
-      else element.pause();
+      if (previewVisible.current && !previewHeld.current && !document.hidden) {
+        element.muted = true;
+        void element.play().catch(() => undefined);
+      } else {
+        element.pause();
+      }
     };
     const observer = new IntersectionObserver((entries) => {
       const entry = entries[entries.length - 1];
@@ -84,9 +90,22 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
     observer.observe(element);
     // The observer measures geometry only: a background tab or a minimised window still "intersects".
     document.addEventListener("visibilitychange", sync);
+
+    // In client-side SPA navigation, user gestures unlock autoplay if initially throttled by the browser
+    const tryPlay = () => {
+      if (previewVisible.current && !previewHeld.current && !document.hidden && element.paused) {
+        element.muted = true;
+        void element.play().catch(() => undefined);
+      }
+    };
+    window.addEventListener("pointerdown", tryPlay, { once: true, passive: true });
+    window.addEventListener("scroll", tryPlay, { once: true, passive: true });
+
     return () => {
       observer.disconnect();
       document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("pointerdown", tryPlay);
+      window.removeEventListener("scroll", tryPlay);
       previewVisible.current = false;
       releaseVideo(element);
       // A replacement preview has not painted a frame, even if this instance had been playing.
@@ -108,14 +127,17 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
     schedule();
+    // After SPA transition, scroll-to-top may settle shortly after mount
+    const timer = setTimeout(schedule, 100);
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
     return () => {
       if (frame) cancelAnimationFrame(frame);
+      clearTimeout(timer);
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
     };
-  }, [floatingLayout]);
+  }, [floatingLayout, video.src]);
 
   function failPreview() {
     releaseVideo(preview.current);
@@ -158,7 +180,10 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
     dialog.current?.close();
     opener.current?.focus({ preventScroll: true });
     previewHeld.current = false;
-    if (previewVisible.current && !document.hidden) void preview.current?.play().catch(() => undefined);
+    if (previewVisible.current && !document.hidden && preview.current) {
+      preview.current.muted = true;
+      void preview.current.play().catch(() => undefined);
+    }
   }
 
   if (stopped) return null;
@@ -192,7 +217,13 @@ export function BrandProductVideoOverlay({ video, productName }: Readonly<{
         <Image loader={pdpProductImageLoader} src={video.poster} alt="" fill sizes="120px" className="object-cover" />
         {showPreview ? (
           <video
-            ref={preview}
+            ref={(node) => {
+              preview.current = node;
+              if (node) {
+                node.muted = true;
+                node.defaultMuted = true;
+              }
+            }}
             src={video.src}
             muted
             loop
