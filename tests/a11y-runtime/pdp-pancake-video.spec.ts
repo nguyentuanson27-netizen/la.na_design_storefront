@@ -747,17 +747,6 @@ test("collector enforces server origin, strict schema and actual byte bounds ove
   await expect.poll(() => collectedPlayback().attempts).toBe(1);
 });
 
-test("flag OFF suppresses even READY source in rendered response and collector events", async ({ page, request }) => {
-  await stop();
-  await start(false);
-  const collected = await request.post(`${BASE}/api/product-video/events`, { headers: { origin: BASE }, data: { kind: "attempt" } });
-  expect(collected.status()).toBe(204);
-  expect(collectedPlayback().attempts).toBe(0);
-  const response = await page.goto(`${BASE}/shop/${slug}`);
-  expect(await response!.text()).not.toContain("a.mp4");
-  await expect(page.getByRole("button", { name: "Xem video", exact: true })).toHaveCount(0);
-});
-
 for (const width of [390, 1280]) {
   test(`a real client-side product link replaces the video and autoplays the muted preview at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
@@ -830,4 +819,15 @@ test.describe("touch recovery after SPA autoplay refusal", () => {
     await expect(preview).toHaveAttribute("data-playing", "true");
     await expect.poll(() => preview.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.3);
   });
+});
+
+test("flag OFF suppresses even READY source in rendered response and collector events", async ({ page, request }) => {
+  await stop();
+  await start(false);
+  const collected = await request.post(`${BASE}/api/product-video/events`, { headers: { origin: BASE }, data: { kind: "attempt" } });
+  expect(collected.status()).toBe(204);
+  expect(collectedPlayback().attempts).toBe(0);
+  const response = await page.goto(`${BASE}/shop/${slug}`);
+  expect(await response!.text()).not.toContain("a.mp4");
+  await expect(page.getByRole("button", { name: "Xem video", exact: true })).toHaveCount(0);
 });
