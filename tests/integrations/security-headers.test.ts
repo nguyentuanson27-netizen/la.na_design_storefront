@@ -60,15 +60,13 @@ test("Next.js applies the storefront security-header baseline to every route", a
   assert.doesNotMatch(csp, /'unsafe-eval'/);
 });
 
-test("the Pancake chat widget gets exactly its own origins, no wildcard and no eval", async () => {
-  const csp = await readCsp("?pancake-chat");
-  const directive = (name: string) => csp.match(new RegExp(`${name} ([^;]*)`))?.[1] ?? "";
+test("the storefront chat is a Zalo link, so no chat-widget origin is allowed", async () => {
+  const csp = await readCsp("?zalo-chat");
 
-  assert.match(directive("script-src"), /https:\/\/chat-plugin\.pancake\.vn/);
-  assert.match(directive("style-src"), /https:\/\/fonts\.googleapis\.com/);
-  assert.match(directive("font-src"), /https:\/\/fonts\.gstatic\.com/);
-  assert.match(directive("media-src"), /https:\/\/chat-plugin\.pancake\.vn/);
-  assert.match(directive("connect-src"), /https:\/\/pages\.fm wss:\/\/pages\.fm/);
+  // The Pancake chat plugin is gone: nothing may still allow its script, socket or Google Fonts import.
+  assert.doesNotMatch(csp, /chat-plugin\.pancake\.vn/);
+  assert.doesNotMatch(csp, /pages\.fm/);
+  assert.doesNotMatch(csp, /fonts\.googleapis\.com|fonts\.gstatic\.com/);
   assert.doesNotMatch(csp, /\*/);
   assert.doesNotMatch(csp, /'unsafe-eval'/);
 });

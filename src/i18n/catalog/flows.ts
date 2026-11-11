@@ -33,7 +33,7 @@ export const FLOWS_EN: Readonly<Record<string, string>> = {
   "Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây.": "Current prices and stock will be checked again before the order is created. Shipping isn't included here.",
   "Hãy xử lý các dòng chưa khả dụng trước khi thanh toán.": "Please deal with the unavailable lines before checking out.",
   "Đã tự động bỏ {autoRemovedGiftCount} quà tặng vì giỏ không còn đủ điều kiện.": "{autoRemovedGiftCount} gifts were removed automatically because the cart no longer qualifies.",
-  "Nhắn tin với {brandName} qua Messenger": "Message {brandName} on Messenger",
+  "Nhắn tin với {brandName} qua Zalo": "Message {brandName} on Zalo",
   "Chat với {brandName}": "Chat with {brandName}",
   "Thu gọn": "Collapse",
   "Kiểu xem ảnh": "Photo size",

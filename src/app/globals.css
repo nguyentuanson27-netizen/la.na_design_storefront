@@ -1894,133 +1894,48 @@ body:has(.admin-shell) .site-masthead {
   position: static;
 }
 
-/* Floating Messenger chat button, bottom right on every storefront page. It sits under the
-   dialogs, drawers and sheets (z-index 50), so an open overlay covers it rather than the reverse. */
-.messenger-fab {
+/* Floating Zalo chat button, bottom right on every storefront page: a plain link to the shop's Zalo.
+   It sits under the dialogs, drawers and sheets (z-index 50), so an open overlay covers it rather
+   than the reverse. */
+.zalo-fab {
   position: fixed;
   z-index: 45;
   right: max(1rem, env(safe-area-inset-right));
   bottom: max(1.25rem, env(safe-area-inset-bottom));
   display: grid;
   place-items: center;
-  width: 3.5rem;
-  height: 3.5rem;
+  width: 3rem;
+  height: 3rem;
   border-radius: 50%;
-  background: var(--white);
+  background: #0068ff;
+  color: #fff;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1;
   box-shadow: 0 4px 16px rgb(0 0 0 / 18%);
   transition: transform 160ms ease;
 }
 
-.messenger-fab:hover {
+.zalo-fab:hover {
   transform: scale(1.06);
 }
 
-.messenger-fab:focus-visible {
+.zalo-fab:focus-visible {
   outline: 2px solid var(--focus-ring-color, var(--ink));
   outline-offset: 3px;
 }
 
-/* Below `lg` the PDP pins its purchase bar to the bottom edge, and cart/checkout their bottom CTA bar
-   (mobile-sticky-cta.tsx) while it shows; the button rides above either. */
+/* Below `lg` cart/checkout pin a bottom CTA bar (mobile-sticky-cta.tsx) while it shows, and the PDP its
+   purchase bar; the button rides above either. On the PDP it rides higher still, clear of the
+   photograph's "1/10" counter, which sits in the same corner when the first screen is on view. */
 @media (max-width: 1023.98px) {
-  body:has([data-mobile-purchase-bar]) .messenger-fab,
-  body:has([data-mobile-sticky-cta]) .messenger-fab {
+  body:has([data-mobile-sticky-cta]) .zalo-fab {
     bottom: calc(6rem + env(safe-area-inset-bottom));
   }
-}
 
-/* The bubble that stands in for Pancake's widget until it is tapped (pancake-chat.tsx). It sits
-   where Pancake's own 48px bubble will appear, so the swap is not a jump. */
-.pancake-chat-facade {
-  position: fixed;
-  z-index: 45;
-  right: max(20px, env(safe-area-inset-right));
-  bottom: max(20px, env(safe-area-inset-bottom));
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: var(--chocolate);
-  color: var(--cream);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 18%);
-  cursor: pointer;
-  transition: transform 160ms ease;
-}
-
-.pancake-chat-facade:hover {
-  transform: scale(1.06);
-}
-
-.pancake-chat-facade:focus-visible {
-  outline: 2px solid var(--focus-ring-color, var(--ink));
-  outline-offset: 3px;
-}
-
-.pancake-chat-facade[data-loading] {
-  cursor: progress;
-  animation: pancake-chat-facade-pulse 900ms ease-in-out infinite alternate;
-}
-
-@keyframes pancake-chat-facade-pulse {
-  to {
-    opacity: 0.55;
-  }
-}
-
-@media (max-width: 1023.98px) {
-  body:has([data-mobile-purchase-bar]) .pancake-chat-facade,
-  body:has([data-mobile-sticky-cta]) .pancake-chat-facade {
-    bottom: calc(5.5rem + env(safe-area-inset-bottom));
-  }
-}
-
-body:has(.admin-shell) .pancake-chat-facade {
-  display: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pancake-chat-facade {
-    transition: none;
-  }
-
-  .pancake-chat-facade[data-loading] {
-    animation: none;
-  }
-}
-
-/* Pancake's chat widget (see pancake-chat.tsx) pins its root with an inline z-index of 2^31-1,
-   which would float it over the menu, cart drawer and dialogs. `!important` is the only way past an
-   inline style: it takes the Messenger button's layer instead, under every overlay. */
-#pancake-chat-plugin-root {
-  z-index: 45 !important;
-}
-
-/* Once the chat box is open it is the overlay -- full screen on a phone -- and gets Pancake's own
-   top layer back. Left at 45, the sticky masthead (50) covered the box's header and its close
-   button, so an open chat could not be dismissed. */
-#pancake-chat-plugin-root:has(.pkcp-popup-open) {
-  z-index: 2147483647 !important;
-}
-
-/* The bubble at 48px rather than Pancake's 60px, so it sits lighter over the page. */
-#pancake-chat-plugin-root .pkcp-button-circle,
-#pancake-chat-plugin-root .pkcp-button-icon {
-  width: 48px !important;
-  height: 48px !important;
-}
-
-#pancake-chat-plugin-root .pkcp-button-icon svg {
-  width: 28px !important;
-  height: 28px !important;
-}
-
-@media (max-width: 1023.98px) {
-  body:has([data-mobile-purchase-bar]) #pancake-chat-plugin-root,
-  body:has([data-mobile-sticky-cta]) #pancake-chat-plugin-root {
-    bottom: calc(5.5rem + env(safe-area-inset-bottom)) !important;
+  body:has([data-mobile-purchase-bar]) .zalo-fab {
+    bottom: calc(8.5rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -2033,12 +1948,8 @@ body:has(.admin-shell) .pancake-chat-facade {
      single task on one form, so the bubble is left out of it below `lg`; on a wide screen there is
      room beside the form and it stays. */
 @media (max-width: 1023.98px) {
-  body:has([data-mobile-purchase-bar][data-hidden="true"]) .messenger-fab,
-  body:has([data-mobile-purchase-bar][data-hidden="true"]) .pancake-chat-facade,
-  body:has([data-mobile-purchase-bar][data-hidden="true"]) #pancake-chat-plugin-root:not(:has(.pkcp-popup-open)),
-  body:has([data-checkout-form]) .messenger-fab,
-  body:has([data-checkout-form]) .pancake-chat-facade,
-  body:has([data-checkout-form]) #pancake-chat-plugin-root:not(:has(.pkcp-popup-open)) {
+  body:has([data-mobile-purchase-bar][data-hidden="true"]) .zalo-fab,
+  body:has([data-checkout-form]) .zalo-fab {
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
@@ -2055,15 +1966,14 @@ body:has([data-checkout-form]) .site-header .utility-nav > :not(button.relative)
   visibility: hidden;
 }
 
-/* Nothing to chat about while managing the catalog. `SiteChatSlot` renders no chat in admin and
-   reloads a document Pancake has run in; this only covers the frame before that reload lands. */
-body:has(.admin-shell) .messenger-fab,
-body:has(.admin-shell) #pancake-chat-plugin-root {
+/* Nothing to chat about while managing the catalog. `SiteChatSlot` renders no chat in admin; this only
+   covers the frame before a client-side navigation into admin lands. */
+body:has(.admin-shell) .zalo-fab {
   display: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .messenger-fab {
+  .zalo-fab {
     transition: none;
   }
 }
@@ -3449,7 +3359,7 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
 .pdp-video-slot__close svg { width: 16px; height: 16px; }
 .pdp-video-slot__close:focus-visible { outline: 3px solid var(--paper); outline-offset: 2px; box-shadow: 0 0 0 6px var(--chocolate); }
 /* Below `lg` the frame is pinned: it rests in the upper right quadrant of the hero photo
-   (4rem clear of the masthead, 1rem from the right edge, matching the approved red-box position)
+   (4rem clear of the masthead, flush with the right edge)
    and stays pinned across the entire product section as the shopper scrolls down. It leaves when
    reaching the customer feedback section ("Khách hàng & La.na") at the bottom of the product scope.
    Pure CSS sticky, so there is no scroll listener and no layout jump. */
@@ -3473,10 +3383,18 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     aspect-ratio: 9 / 16;
     margin-top: calc(var(--masthead-height) + 4rem);
     margin-left: auto;
-    margin-right: 1rem;
+    /* Flush with the photograph's right edge: only the left corners are rounded and there is no right border. */
+    margin-right: 0;
     /* Release before feedback even at fractional viewport heights. */
     margin-bottom: 3rem;
     pointer-events: auto;
+  }
+  .pdp-video-slot .pdp-video-tile {
+    border-right-width: 0;
+    border-radius: 6px 0 0 6px;
+  }
+  .pdp-video-slot .pdp-video-slot__close {
+    right: 6px;
   }
 }
 @media (min-width: 1024px) {

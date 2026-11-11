@@ -71,17 +71,6 @@ export type SiteChromeModel = Readonly<{
 }>;
 
 import { readConfiguredCategoryMegaMedia } from "@/commerce/storefront-catalog-runtime";
-import {
-  LEGACY_TEMPORARY_STOREFRONT_HOST,
-  OFFICIAL_PRODUCTION_STOREFRONT_HOST,
-} from "@/commerce/storefront-origin";
-
-/**
- * The hosts on the Pancake Chat Plugin's domain list (owner-facts §3, verified 2026-09-26): the
- * permanent production host and the temporary one the storefront currently runs on. Pancake refuses
- * any other host, so everywhere else the Messenger button stands in.
- */
-const PANCAKE_CHAT_HOSTS = [OFFICIAL_PRODUCTION_STOREFRONT_HOST, LEGACY_TEMPORARY_STOREFRONT_HOST] as const;
 
 /**
  * The chrome's loader. `connection()` keeps the deployment's origin a request-time read rather than
@@ -142,7 +131,7 @@ export function SiteChrome({
         <SiteFooter model={model.content.footer} />
         <BrandTryOnDock />
       </TryOnSessionProvider>
-      <SiteChat pancakeHosts={PANCAKE_CHAT_HOSTS} />
+      <SiteChat />
       <TrackingPageView />
       <FacebookPixel nonce={model.scriptNonce} />
       <ZaloAdsPixel />

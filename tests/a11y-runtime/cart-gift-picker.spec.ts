@@ -721,7 +721,7 @@ test("UX-02/AC-18: the cart's mobile bottom bar shows only while the checkout bu
   await expect(bar.getByRole("link", { name: "Thanh toán", exact: true })).toHaveAttribute("href", "/checkout");
   await expect(bar).toContainText("₫");
   // The floating chat button rides above the bar instead of covering its action.
-  const chat = page.locator(".messenger-fab, .pancake-chat-facade").first();
+  const chat = page.locator(".zalo-fab");
   await expect(chat).toBeVisible();
   const [chatBox, barBox] = [await chat.boundingBox(), await bar.boundingBox()];
   expect(chatBox!.y + chatBox!.height).toBeLessThanOrEqual(barBox!.y);

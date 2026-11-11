@@ -75,12 +75,6 @@ const zaloAdsScriptSrc = hasZaloAdsPixel ? " https://s.zzcdn.me" : "";
 const zaloAdsImgSrc = hasZaloAdsPixel ? " https://log.adtimaserver.vn" : "";
 const zaloAdsConnectSrc = hasZaloAdsPixel ? " https://log.adtimaserver.vn" : "";
 
-// Pancake's website Chat Plugin (src/components/brand/pancake-chat.tsx), origins read off its
-// installation script and a browser run of it: the script and its sounds from chat-plugin.pancake.vn,
-// its API and websocket on pages.fm, avatars on content.pancake.vn (already allowed for catalog
-// media), and the Roboto face it imports from Google Fonts. The widget only loads on the permanent
-// production host, but Next bakes this policy into the build, so the allowance is unconditional.
-
 // Google Tag Manager (GTM)
 // An empty build arg is "unset", not a value: the Dockerfile always defines the public variable
 // (default ""), so `??` alone would let it mask the server-side fallback. Both sources are trimmed,
@@ -138,12 +132,6 @@ const gtmConnectSrc = hasGtm
   : "";
 const gtmFrameSrc = hasGtm ? " https://www.googletagmanager.com" : "";
 
-const pancakeChatScriptSrc = " https://chat-plugin.pancake.vn";
-const pancakeChatStyleSrc = " https://fonts.googleapis.com";
-const pancakeChatFontSrc = " https://fonts.gstatic.com";
-const pancakeChatMediaSrc = " https://chat-plugin.pancake.vn";
-const pancakeChatConnectSrc = " https://pages.fm wss://pages.fm";
-
 const pancakeImageHostnames = [
   "content.pancake.vn",
   "statics.pancake.vn",
@@ -166,12 +154,12 @@ const pancakeImageRemotePatterns = pancakeImageHostnames.flatMap((hostname) =>
 
 const contentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc}${zaloAdsScriptSrc}${gtmScriptSrc};
-  style-src 'self' 'unsafe-inline'${pancakeChatStyleSrc};
+  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${facebookScriptSrc}${openAiAdsScriptSrc}${zaloAdsScriptSrc}${gtmScriptSrc};
+  style-src 'self' 'unsafe-inline';
   img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc}${zaloAdsImgSrc}${gtmImgSrc};
-  media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};
-  font-src 'self'${pancakeChatFontSrc};
-  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc}${zaloAdsConnectSrc}${gtmConnectSrc};
+  media-src 'self' https://content.pancake.vn;
+  font-src 'self';
+  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${facebookConnectSrc}${openAiAdsConnectSrc}${zaloAdsConnectSrc}${gtmConnectSrc};
   object-src 'none';
   base-uri 'self';
   form-action 'self';
