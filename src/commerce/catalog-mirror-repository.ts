@@ -17,7 +17,10 @@ import { acquireCatalogSyncLock, CATALOG_SYNC_TRANSACTION_TIMEOUT_MS } from "./c
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { deriveCompositeCapacitySnapshot } from "./composite-capacity.ts";
 import { handOffMirroredCapacity } from "./capacity-handoff.ts";
-import { splitTrailingProductCode } from "./product-display-name.ts";
+import {
+  normalizeCategoryProductDisplayName,
+  splitTrailingProductCode,
+} from "./product-display-name.ts";
 import {
   createBootstrapProductSlug,
   isLegacyOpaqueProductSlug,
@@ -725,12 +728,20 @@ export function createCatalogMirrorRepository(
           };
           const existing = await tx.productMirror.findUnique({
             where: { pancakeProductId: product.pancakeProductId },
-            select: { id: true, slug: true, pancakeShopId: true },
+            select: {
+              id: true,
+              slug: true,
+              pancakeShopId: true,
+              categoryMemberships: { select: { categoryKey: true } },
+            },
           });
 
           if (existing && existing.pancakeShopId !== safeShopId) {
             throw new Error("Catalog product identity belongs to another shop");
           }
+
+          const categoryKeys = existing?.categoryMemberships.map((m) => m.categoryKey) ?? [];
+          const resolvedName = normalizeCategoryProductDisplayName(product.name, categoryKeys);
 
           const mirrored = existing
             ? await (async () => {
@@ -739,7 +750,7 @@ export function createCatalogMirrorRepository(
                     where: { id: existing.id },
                     data: {
                       pancakeShopId: safeShopId,
-                      name: product.name,
+                      name: resolvedName,
                       productCode: product.productCode,
                       sourceDescription: product.sourceDescription,
                       primaryImageUrl: product.primaryImageUrl,
@@ -792,7 +803,7 @@ export function createCatalogMirrorRepository(
                   data: {
                     pancakeShopId: safeShopId,
                     slug: readableSlug,
-                    name: product.name,
+                    name: resolvedName,
                     productCode: product.productCode,
                     sourceDescription: product.sourceDescription,
                     primaryImageUrl: product.primaryImageUrl,

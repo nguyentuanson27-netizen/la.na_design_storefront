@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  normalizeCategoryProductDisplayName,
   splitTrailingProductCode,
   stripTrailingProductCode,
 } from "../../src/commerce/product-display-name.ts";
@@ -90,3 +91,77 @@ test("product display name keeps the split-off product code for search", () => {
   });
   assert.deepEqual(splitTrailingProductCode("SV605"), { name: "SV605", productCode: null });
 });
+
+test("normalizes product display name for 4-panel (aoDai4Ta) category", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Bạch Hoa Vi", ["aoDai4Ta"]),
+    "Áo dài 4 tà Bạch Hoa Vi",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo Dài Liên Châu", ["aoDai4Ta"]),
+    "Áo dài 4 tà Liên Châu",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài 4 tà Bạch Hoa Vi", ["aoDai4Ta"]),
+    "Áo dài 4 tà Bạch Hoa Vi",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo Dài 4 tà Liên Châu", ["aoDai4Ta"]),
+    "Áo dài 4 tà Liên Châu",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Kim Tuyết Mai SD5002", ["aoDai4Ta"]),
+    "Áo dài 4 tà Kim Tuyết Mai",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Set Áo dài Khuynh Sắc", ["aoDai4Ta"]),
+    "Áo dài 4 tà Khuynh Sắc",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Bạch Hoa Vi", ["aoDaiTet", "aoDai4Ta"]),
+    "Áo dài 4 tà Bạch Hoa Vi",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài", ["aoDai4Ta"]),
+    "Áo dài 4 tà",
+  );
+});
+
+test("normalizes product display name for 6-panel (aoDai6Ta) category", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Dao Phụng", ["aoDai6Ta"]),
+    "Áo dài 6 tà Dao Phụng",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo Dài Phượng Nghi", ["aoDai6Ta"]),
+    "Áo dài 6 tà Phượng Nghi",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài 6 tà Dao Phụng", ["aoDai6Ta"]),
+    "Áo dài 6 tà Dao Phụng",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Ngọc Thanh Liên SD1711", ["aoDai6Ta"]),
+    "Áo dài 6 tà Ngọc Thanh Liên",
+  );
+});
+
+test("leaves products in other categories unmodified", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Váy hoa sen SV100", ["vayDam"]),
+    "Váy hoa sen",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Tết 2026", ["aoDaiTet"]),
+    "Áo dài Tết 2026",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Set váy Diệu Liên Hoa SV605", ["setVay"]),
+    "Set váy Diệu Liên Hoa",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Bạch Hoa Vi", []),
+    "Áo dài Bạch Hoa Vi",
+  );
+});
+

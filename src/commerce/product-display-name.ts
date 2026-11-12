@@ -91,3 +91,42 @@ export function splitTrailingProductCode(sourceName: string): ProductDisplayName
 export function stripTrailingProductCode(sourceName: string): string {
   return splitTrailingProductCode(sourceName).name;
 }
+
+/**
+ * Prefix regular expression matching variations of "Áo dài", "áo dài", "Áo Dài",
+ * optionally preceded by "Set" / "set", and optionally containing "4 tà" or "6 tà".
+ */
+const AO_DAI_FLAP_PREFIX_REGEX = /^(?:(?:set\s+)?[áÁ]o\s+[dD]ài(?:\s+[46]\s*tà)?|[46]\s*tà)\s*/ui;
+
+/**
+ * Normalizes a product name according to its category memberships:
+ * - When in `aoDai4Ta` ("Áo dài 4 tà"), ensures the name is prefixed with "Áo dài 4 tà <Name>".
+ * - When in `aoDai6Ta` ("Áo dài 6 tà"), ensures the name is prefixed with "Áo dài 6 tà <Name>".
+ * - Automatically strips trailing merchant SKU codes (e.g. SD5002) if present.
+ * - Idempotent: already normalized names are cleanly preserved.
+ * - Products in other categories return their stripped base name unmodified.
+ */
+export function normalizeCategoryProductDisplayName(
+  sourceName: string,
+  categoryKeys: Iterable<string>,
+): string {
+  const baseName = stripTrailingProductCode(sourceName);
+  const keys = new Set(categoryKeys);
+
+  const is4Ta = keys.has("aoDai4Ta");
+  const is6Ta = keys.has("aoDai6Ta");
+
+  if (!is4Ta && !is6Ta) {
+    return baseName;
+  }
+
+  const flapPrefix = is4Ta ? "Áo dài 4 tà" : "Áo dài 6 tà";
+  const stripped = baseName.replace(AO_DAI_FLAP_PREFIX_REGEX, "").trim();
+
+  if (stripped.length === 0) {
+    return flapPrefix;
+  }
+
+  return `${flapPrefix} ${stripped}`;
+}
+

@@ -1,4 +1,5 @@
 import { acquireCatalogSyncLock } from "./catalog-sync-lock.ts";
+import { normalizeCategoryProductDisplayName } from "./product-display-name.ts";
 /**
  * Persistence for the five website-owned merchandising models (ADR 0013).
  *
@@ -239,6 +240,21 @@ export function createMerchandisingRepository(client: PrismaClient) {
           data: membership.categoryKeys.map((categoryKey) => ({ productId, categoryKey })),
         });
       }
+
+      const product = await tx.productMirror.findUnique({
+        where: { id: productId },
+        select: { name: true },
+      });
+      if (product) {
+        const nextName = normalizeCategoryProductDisplayName(product.name, membership.categoryKeys);
+        if (nextName !== product.name) {
+          await tx.productMirror.update({
+            where: { id: productId },
+            data: { name: nextName },
+          });
+        }
+      }
+
       return membership.categoryKeys;
     });
   }
