@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { categoryByKey } from "../../src/commerce/category-taxonomy.ts";
 import {
+  normalizeCategoryProductDisplayName,
   splitTrailingProductCode,
   stripTrailingProductCode,
 } from "../../src/commerce/product-display-name.ts";
@@ -89,4 +91,124 @@ test("product display name keeps the split-off product code for search", () => {
     productCode: null,
   });
   assert.deepEqual(splitTrailingProductCode("SV605"), { name: "SV605", productCode: null });
+});
+
+test("normalizes product display name for 4-panel (aoDai4Ta) category", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Bạch Hoa Vi", ["aoDai4Ta"]),
+    "Áo dài 4 tà Bạch Hoa Vi",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo Dài Liên Châu", ["aoDai4Ta"]),
+    "Áo dài 4 tà Liên Châu",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài 4 tà Bạch Hoa Vi", ["aoDai4Ta"]),
+    "Áo dài 4 tà Bạch Hoa Vi",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo Dài 4 tà Liên Châu", ["aoDai4Ta"]),
+    "Áo dài 4 tà Liên Châu",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Kim Tuyết Mai SD5002", ["aoDai4Ta"]),
+    "Áo dài 4 tà Kim Tuyết Mai",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Set Áo dài Khuynh Sắc", ["aoDai4Ta"]),
+    "Áo dài 4 tà Khuynh Sắc",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Bạch Hoa Vi", ["aoDaiTet", "aoDai4Ta"]),
+    "Áo dài 4 tà Bạch Hoa Vi",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài", ["aoDai4Ta"]),
+    "Áo dài 4 tà",
+  );
+});
+
+test("normalizes product display name for 6-panel (aoDai6Ta) category", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Dao Phụng", ["aoDai6Ta"]),
+    "Áo dài 6 tà Dao Phụng",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo Dài Phượng Nghi", ["aoDai6Ta"]),
+    "Áo dài 6 tà Phượng Nghi",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài 6 tà Dao Phụng", ["aoDai6Ta"]),
+    "Áo dài 6 tà Dao Phụng",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Ngọc Thanh Liên SD1711", ["aoDai6Ta"]),
+    "Áo dài 6 tà Ngọc Thanh Liên",
+  );
+});
+
+test("leaves products in other categories unmodified", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Váy hoa sen SV100", ["vayDam"]),
+    "Váy hoa sen",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Tết 2026", ["aoDaiTet"]),
+    "Áo dài Tết 2026",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Set váy Diệu Liên Hoa SV605", ["setVay"]),
+    "Set váy Diệu Liên Hoa",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Bạch Hoa Vi", []),
+    "Áo dài Bạch Hoa Vi",
+  );
+});
+
+test("a product in both flap categories takes the 4-panel label, whatever the key order", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Hai Nhóm", ["aoDai6Ta", "aoDai4Ta"]),
+    "Áo dài 4 tà Hai Nhóm",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài 6 tà Hai Nhóm", ["aoDai4Ta", "aoDai6Ta"]),
+    "Áo dài 4 tà Hai Nhóm",
+  );
+});
+
+test("moving a product between flap categories swaps the label instead of stacking it", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài 4 tà Dao Phụng", ["aoDai6Ta"]),
+    "Áo dài 6 tà Dao Phụng",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("4 tà Dao Phụng", ["aoDai6Ta"]),
+    "Áo dài 6 tà Dao Phụng",
+  );
+});
+
+test("the garment prefix only matches whole words", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dàinhẹ", ["aoDai4Ta"]),
+    "Áo dài 4 tà Áo dàinhẹ",
+  );
+});
+
+test("the flap label is read from the category config", () => {
+  const label = categoryByKey("aoDai4Ta")?.label;
+  assert.ok(label);
+  assert.ok(normalizeCategoryProductDisplayName("Bạch Hoa Vi", ["aoDai4Ta"]).startsWith(`${label} `));
+});
+
+test("normalization is idempotent for every flap shape", () => {
+  for (const [name, keys] of [
+    ["Áo dài Kim Tuyết Mai SD5002", ["aoDai4Ta"]],
+    ["Set Áo dài Khuynh Sắc", ["aoDai6Ta"]],
+    ["Áo dài", ["aoDai4Ta"]],
+    ["Váy hoa sen SV100", ["vayDam"]],
+  ] as const) {
+    const once = normalizeCategoryProductDisplayName(name, keys);
+    assert.equal(normalizeCategoryProductDisplayName(once, keys), once);
+  }
 });

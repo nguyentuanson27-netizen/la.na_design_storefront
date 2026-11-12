@@ -11,6 +11,7 @@ import {
   readRankedCategoryBucket,
   readUnrankedCategoryBucket,
 } from "../../src/commerce/merchandising-repository.ts";
+import { normalizeCategoryProductDisplayName } from "../../src/commerce/product-display-name.ts";
 import { listRelatedStorefrontProducts } from "../../src/commerce/storefront-related-products.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
@@ -195,6 +196,69 @@ test("G4 membership is replaced transactionally and refuses a cross-tree selecti
     categoryKeys: [],
   });
   assert.deepEqual(await repository.readCategoryMembership(product), []);
+});
+
+test("assigning a flap category rewrites the display name, swaps the label on a move, and keeps the slug", async () => {
+  const product = await seed("flap-name", { name: "Áo dài Bạch Hoa Vi" });
+
+  await repository.replaceCategoryMembership({
+    shopId: testShopId,
+    productId: product,
+    categoryKeys: ["aoDai4Ta"],
+  });
+  let row = await prisma.productMirror.findUniqueOrThrow({ where: { id: product } });
+  assert.equal(row.name, "Áo dài 4 tà Bạch Hoa Vi");
+  assert.equal(row.slug, `${externalPrefix}flap-name`);
+
+  await repository.replaceCategoryMembership({
+    shopId: testShopId,
+    productId: product,
+    categoryKeys: ["aoDai6Ta"],
+  });
+  row = await prisma.productMirror.findUniqueOrThrow({ where: { id: product } });
+  assert.equal(row.name, "Áo dài 6 tà Bạch Hoa Vi");
+
+  // A product outside the flap categories is not renamed.
+  const tet = await seed("flap-tet", { name: "Áo dài Tết 2026" });
+  await repository.replaceCategoryMembership({
+    shopId: testShopId,
+    productId: tet,
+    categoryKeys: ["aoDaiTet"],
+  });
+  assert.equal(
+    (await prisma.productMirror.findUniqueOrThrow({ where: { id: tet } })).name,
+    "Áo dài Tết 2026",
+  );
+});
+
+test("leaving a flap category restores the source name exactly as the next catalog sync would", async () => {
+  const product = await seed("flap-leave", { name: "Áo dài Bạch Hoa Vi" });
+  const slugBefore = `${externalPrefix}flap-leave`;
+
+  for (const leaveTo of [["aoDaiTet"], []] as const) {
+    await repository.replaceCategoryMembership({
+      shopId: testShopId,
+      productId: product,
+      categoryKeys: ["aoDai4Ta"],
+    });
+    const inFlap = await prisma.productMirror.findUniqueOrThrow({ where: { id: product } });
+    assert.equal(inFlap.name, "Áo dài 4 tà Bạch Hoa Vi");
+    assert.equal(inFlap.sourceName, "Áo dài Bạch Hoa Vi");
+
+    await repository.replaceCategoryMembership({
+      shopId: testShopId,
+      productId: product,
+      categoryKeys: leaveTo,
+    });
+    const left = await prisma.productMirror.findUniqueOrThrow({ where: { id: product } });
+    // What a sync of the unchanged Pancake name would now compute for these memberships.
+    assert.equal(
+      left.name,
+      normalizeCategoryProductDisplayName("Áo dài Bạch Hoa Vi", leaveTo),
+    );
+    assert.equal(left.name, "Áo dài Bạch Hoa Vi");
+    assert.equal(left.slug, slugBefore);
+  }
 });
 
 test("M3b a parent PLP lists and ranks the union of its subcategories", async () => {

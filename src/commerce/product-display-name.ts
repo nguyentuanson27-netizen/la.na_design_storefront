@@ -1,3 +1,5 @@
+import { categoryByKey } from "./category-taxonomy.ts";
+
 // Pancake POS product names are often keyed as "<name> <product code>", e.g.
 // "Set váy Diệu Liên Hoa SV605". The code is an internal merchant SKU, so the
 // website shows only the name part and keeps the code apart for search. A code
@@ -90,4 +92,43 @@ export function splitTrailingProductCode(sourceName: string): ProductDisplayName
 
 export function stripTrailingProductCode(sourceName: string): string {
   return splitTrailingProductCode(sourceName).name;
+}
+
+/**
+ * Generic garment prefix a merchant may have typed in front of the model name: "áo dài",
+ * "Áo Dài", "Set áo dài", optionally followed by "4 tà" / "6 tà", or a bare "4 tà" / "6 tà".
+ * It must end at a word boundary so a longer word that merely starts the same way is not eaten.
+ * The vocabulary is spelled as a pattern, not a literal, because the display label itself comes
+ * from the category config (`src/brand/category.config.ts`) — see `FLAP_CATEGORY_KEYS`.
+ */
+const GARMENT_PREFIX_REGEX = /^(?:(?:set\s+)?[áÁ]o\s+[dD]ài(?:\s+[46]\s*tà)?|[46]\s*tà)(?=\s|$)\s*/iu;
+
+/**
+ * Categories whose products are displayed as "<category label> <model name>". The label is read
+ * from the category taxonomy so the brand wording stays single-sourced. Order is the precedence
+ * when a product belongs to several of them (the 4-panel label wins), and every write path —
+ * catalog sync, admin membership edit, the migration and the CLI script — must agree on it.
+ */
+const FLAP_CATEGORY_KEYS = ["aoDai4Ta", "aoDai6Ta"] as const;
+
+/**
+ * Normalizes a product's display name for its category memberships:
+ * - in a flap category the name becomes "<category label> <model name>" (e.g. "Áo dài 4 tà Bạch Hoa Vi");
+ * - a trailing merchant SKU (e.g. SD5002) is stripped, as everywhere else;
+ * - idempotent: an already normalized name is returned unchanged;
+ * - products outside the flap categories keep their (SKU-stripped) name.
+ */
+export function normalizeCategoryProductDisplayName(
+  sourceName: string,
+  categoryKeys: Iterable<string>,
+): string {
+  const baseName = stripTrailingProductCode(sourceName);
+  const keys = new Set(categoryKeys);
+
+  const flapKey = FLAP_CATEGORY_KEYS.find((key) => keys.has(key));
+  const flapLabel = flapKey ? categoryByKey(flapKey)?.label : undefined;
+  if (!flapLabel) return baseName;
+
+  const modelName = baseName.replace(GARMENT_PREFIX_REGEX, "").trim();
+  return modelName.length === 0 ? flapLabel : `${flapLabel} ${modelName}`;
 }

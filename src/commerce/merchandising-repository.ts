@@ -21,6 +21,7 @@ import {
   parseCategoryMembership,
   type CategoryKey,
 } from "./category-taxonomy.ts";
+import { normalizeCategoryProductDisplayName } from "./product-display-name.ts";
 import { compareCategoryRankedProducts } from "./storefront-related-products.ts";
 import {
   MerchandisingError,
@@ -239,6 +240,25 @@ export function createMerchandisingRepository(client: PrismaClient) {
           data: membership.categoryKeys.map((categoryKey) => ({ productId, categoryKey })),
         });
       }
+
+      // The display name is a pure function of the Pancake-derived source name and the categories
+      // (the same rule catalog sync applies), so moving a product out of a flap category restores
+      // its plain name instead of waiting for the next sync to do it.
+      const product = await tx.productMirror.findUnique({
+        where: { id: productId },
+        select: { name: true, sourceName: true },
+      });
+      if (product) {
+        const sourceName = product.sourceName ?? product.name;
+        const nextName = normalizeCategoryProductDisplayName(sourceName, membership.categoryKeys);
+        if (nextName !== product.name || product.sourceName === null) {
+          await tx.productMirror.update({
+            where: { id: productId },
+            data: { name: nextName, sourceName },
+          });
+        }
+      }
+
       return membership.categoryKeys;
     });
   }
