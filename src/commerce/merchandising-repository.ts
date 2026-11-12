@@ -1,5 +1,4 @@
 import { acquireCatalogSyncLock } from "./catalog-sync-lock.ts";
-import { normalizeCategoryProductDisplayName } from "./product-display-name.ts";
 /**
  * Persistence for the five website-owned merchandising models (ADR 0013).
  *
@@ -22,6 +21,7 @@ import {
   parseCategoryMembership,
   type CategoryKey,
 } from "./category-taxonomy.ts";
+import { normalizeCategoryProductDisplayName } from "./product-display-name.ts";
 import { compareCategoryRankedProducts } from "./storefront-related-products.ts";
 import {
   MerchandisingError,

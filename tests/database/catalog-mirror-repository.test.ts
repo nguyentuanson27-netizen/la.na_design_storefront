@@ -272,6 +272,50 @@ test("catalog mirror sync persists sourceDescription and primaryImageUrl idempot
   assert.equal(productInDb.primaryImageUrl, "https://content.pancake.vn/images/1/2/3/shirt.jpg");
 });
 
+test("catalog sync keeps the normalized flap name instead of restoring the Pancake name", async () => {
+  const syncedAt = new Date("2026-08-20T03:00:00.000Z");
+  const snapshot = [
+    variation({
+      id: "mirror-variation-flap-1",
+      productName: "Áo dài Bạch Hoa Vi SD5002",
+      displayId: "DISPLAY-FLAP-1",
+      barcode: "BAR-FLAP-1",
+      stocks: [{ warehouseId: "warehouse-a", remainQuantity: 5 }],
+    }),
+  ];
+
+  await repository.syncSnapshot({ shopId, variations: snapshot, syncedAt });
+  const product = await prisma.productMirror.findFirstOrThrow({
+    where: { pancakeShopId: shopId, pancakeProductId: "mirror-product-1" },
+  });
+  assert.equal(product.name, "Áo dài Bạch Hoa Vi");
+
+  await prisma.productCategoryMembership.create({
+    data: { productId: product.id, categoryKey: "aoDai4Ta" },
+  });
+  await repository.syncSnapshot({
+    shopId,
+    variations: snapshot,
+    syncedAt: new Date("2026-08-20T04:00:00.000Z"),
+  });
+
+  const synced = await prisma.productMirror.findUniqueOrThrow({ where: { id: product.id } });
+  assert.equal(synced.name, "Áo dài 4 tà Bạch Hoa Vi");
+  assert.equal(synced.slug, product.slug);
+  assert.equal(synced.productCode, "SD5002");
+
+  // A third sync is a no-op for the name.
+  await repository.syncSnapshot({
+    shopId,
+    variations: snapshot,
+    syncedAt: new Date("2026-08-20T05:00:00.000Z"),
+  });
+  assert.equal(
+    (await prisma.productMirror.findUniqueOrThrow({ where: { id: product.id } })).name,
+    "Áo dài 4 tà Bạch Hoa Vi",
+  );
+});
+
 test("Pancake source changes update ProductMirror source fields without overwriting website-owned ProductContent", async () => {
   const firstSyncAt = new Date("2026-08-20T03:00:00.000Z");
   const secondSyncAt = new Date("2026-08-20T04:00:00.000Z");

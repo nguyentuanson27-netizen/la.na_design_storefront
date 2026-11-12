@@ -197,6 +197,39 @@ test("G4 membership is replaced transactionally and refuses a cross-tree selecti
   assert.deepEqual(await repository.readCategoryMembership(product), []);
 });
 
+test("assigning a flap category rewrites the display name, swaps the label on a move, and keeps the slug", async () => {
+  const product = await seed("flap-name", { name: "Áo dài Bạch Hoa Vi" });
+
+  await repository.replaceCategoryMembership({
+    shopId: testShopId,
+    productId: product,
+    categoryKeys: ["aoDai4Ta"],
+  });
+  let row = await prisma.productMirror.findUniqueOrThrow({ where: { id: product } });
+  assert.equal(row.name, "Áo dài 4 tà Bạch Hoa Vi");
+  assert.equal(row.slug, `${externalPrefix}flap-name`);
+
+  await repository.replaceCategoryMembership({
+    shopId: testShopId,
+    productId: product,
+    categoryKeys: ["aoDai6Ta"],
+  });
+  row = await prisma.productMirror.findUniqueOrThrow({ where: { id: product } });
+  assert.equal(row.name, "Áo dài 6 tà Bạch Hoa Vi");
+
+  // A product outside the flap categories is not renamed.
+  const tet = await seed("flap-tet", { name: "Áo dài Tết 2026" });
+  await repository.replaceCategoryMembership({
+    shopId: testShopId,
+    productId: tet,
+    categoryKeys: ["aoDaiTet"],
+  });
+  assert.equal(
+    (await prisma.productMirror.findUniqueOrThrow({ where: { id: tet } })).name,
+    "Áo dài Tết 2026",
+  );
+});
+
 test("M3b a parent PLP lists and ranks the union of its subcategories", async () => {
   const tet = await seed("plp-tet", { name: "ZZZ Tet" });
   const cuoi = await seed("plp-cuoi", { name: "AAA Cuoi" });

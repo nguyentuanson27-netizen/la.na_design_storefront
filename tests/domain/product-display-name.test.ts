@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { categoryByKey } from "../../src/commerce/category-taxonomy.ts";
 import {
   normalizeCategoryProductDisplayName,
   splitTrailingProductCode,
@@ -165,3 +166,49 @@ test("leaves products in other categories unmodified", () => {
   );
 });
 
+test("a product in both flap categories takes the 4-panel label, whatever the key order", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài Hai Nhóm", ["aoDai6Ta", "aoDai4Ta"]),
+    "Áo dài 4 tà Hai Nhóm",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài 6 tà Hai Nhóm", ["aoDai4Ta", "aoDai6Ta"]),
+    "Áo dài 4 tà Hai Nhóm",
+  );
+});
+
+test("moving a product between flap categories swaps the label instead of stacking it", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dài 4 tà Dao Phụng", ["aoDai6Ta"]),
+    "Áo dài 6 tà Dao Phụng",
+  );
+  assert.equal(
+    normalizeCategoryProductDisplayName("4 tà Dao Phụng", ["aoDai6Ta"]),
+    "Áo dài 6 tà Dao Phụng",
+  );
+});
+
+test("the garment prefix only matches whole words", () => {
+  assert.equal(
+    normalizeCategoryProductDisplayName("Áo dàinhẹ", ["aoDai4Ta"]),
+    "Áo dài 4 tà Áo dàinhẹ",
+  );
+});
+
+test("the flap label is read from the category config", () => {
+  const label = categoryByKey("aoDai4Ta")?.label;
+  assert.ok(label);
+  assert.ok(normalizeCategoryProductDisplayName("Bạch Hoa Vi", ["aoDai4Ta"]).startsWith(`${label} `));
+});
+
+test("normalization is idempotent for every flap shape", () => {
+  for (const [name, keys] of [
+    ["Áo dài Kim Tuyết Mai SD5002", ["aoDai4Ta"]],
+    ["Set Áo dài Khuynh Sắc", ["aoDai6Ta"]],
+    ["Áo dài", ["aoDai4Ta"]],
+    ["Váy hoa sen SV100", ["vayDam"]],
+  ] as const) {
+    const once = normalizeCategoryProductDisplayName(name, keys);
+    assert.equal(normalizeCategoryProductDisplayName(once, keys), once);
+  }
+});

@@ -1,13 +1,24 @@
--- Standardize product names for aoDai4Ta (4-panel) and aoDai6Ta (6-panel) categories:
--- - Strips existing "Áo dài" / "Áo Dài" / "set Áo dài" and any existing "4 tà" / "6 tà" prefixes.
--- - Strips any trailing merchant SKU codes (e.g. SD5002) if duplicated in name.
--- - Formats as "Áo dài 4 tà <Name>" or "Áo dài 6 tà <Name>".
--- - Idempotent and safe: preserves existing product slugs and product codes.
+-- Standardize product names for the aoDai4Ta (4-panel) and aoDai6Ta (6-panel) categories to
+-- "Áo dài 4 tà <Name>" / "Áo dài 6 tà <Name>", mirroring normalizeCategoryProductDisplayName().
+--
+-- - Strips a leading "Áo dài" / "Áo Dài" / "Set áo dài" (optionally already followed by "4 tà"/"6 tà"),
+--   or a bare "4 tà"/"6 tà", then prepends the category label.
+-- - Strips the product's own trailing productCode when the name still carries it.
+-- - A product in both categories gets the 4-panel label, the same precedence as the application code.
+-- - Idempotent, and never touches slug or productCode (URLs / SEO stay unchanged).
+--
+-- Regex backslashes are single because standard_conforming_strings is on: '\s' reaches the regex engine as-is.
 
 UPDATE "ProductMirror" p
 SET name = 'Áo dài 4 tà ' || TRIM(regexp_replace(
-    regexp_replace(p.name, '\s+[A-Za-z]+\d+[A-Za-z0-9]*$', ''),
-    '^(?:(?:set\s+)?[áÁ]o\s+[dD]ài(?:\s+4\s*tà)?|4\s*tà)\s*', '', 'i'
+    CASE
+      WHEN p."productCode" IS NOT NULL
+        AND length(p.name) > length(p."productCode") + 1
+        AND right(p.name, length(p."productCode") + 1) = ' ' || p."productCode"
+        THEN left(p.name, length(p.name) - length(p."productCode") - 1)
+      ELSE p.name
+    END,
+    '^(?:(?:set\s+)?[áÁ]o\s+dài(?:\s+[46]\s*tà)?|[46]\s*tà)(?=\s|$)\s*', '', 'i'
 ))
 FROM "ProductCategoryMembership" m
 WHERE p.id = m."productId"
@@ -16,10 +27,20 @@ WHERE p.id = m."productId"
 
 UPDATE "ProductMirror" p
 SET name = 'Áo dài 6 tà ' || TRIM(regexp_replace(
-    regexp_replace(p.name, '\s+[A-Za-z]+\d+[A-Za-z0-9]*$', ''),
-    '^(?:(?:set\s+)?[áÁ]o\s+[dD]ài(?:\s+6\s*tà)?|6\s*tà)\s*', '', 'i'
+    CASE
+      WHEN p."productCode" IS NOT NULL
+        AND length(p.name) > length(p."productCode") + 1
+        AND right(p.name, length(p."productCode") + 1) = ' ' || p."productCode"
+        THEN left(p.name, length(p.name) - length(p."productCode") - 1)
+      ELSE p.name
+    END,
+    '^(?:(?:set\s+)?[áÁ]o\s+dài(?:\s+[46]\s*tà)?|[46]\s*tà)(?=\s|$)\s*', '', 'i'
 ))
 FROM "ProductCategoryMembership" m
 WHERE p.id = m."productId"
   AND m."categoryKey" = 'aoDai6Ta'
-  AND p.name NOT LIKE 'Áo dài 6 tà %';
+  AND p.name NOT LIKE 'Áo dài 6 tà %'
+  AND NOT EXISTS (
+    SELECT 1 FROM "ProductCategoryMembership" m4
+    WHERE m4."productId" = p.id AND m4."categoryKey" = 'aoDai4Ta'
+  );

@@ -35,27 +35,34 @@ async function main(): Promise<void> {
 
   console.log(`Found ${memberships.length} category memberships in aoDai4Ta / aoDai6Ta.`);
 
-  let changedCount = 0;
-  const updates: Array<{ id: string; oldName: string; newName: string; categoryKey: string; productCode: string | null }> = [];
-
+  // A product can sit in both categories; normalize it once, with every key, so the result matches
+  // what catalog sync and the admin membership edit produce.
+  const productsById = new Map<
+    string,
+    { id: string; name: string; productCode: string | null; categoryKeys: string[] }
+  >();
   for (const { categoryKey, product } of memberships) {
-    const newName = normalizeCategoryProductDisplayName(product.name, [categoryKey]);
-    if (newName !== product.name) {
-      changedCount++;
-      updates.push({
-        id: product.id,
-        oldName: product.name,
-        newName,
-        categoryKey,
-        productCode: product.productCode,
-      });
-      console.log(`[UPDATE] [${categoryKey}] [${product.productCode ?? product.id}] "${product.name}" -> "${newName}"`);
-    } else {
-      console.log(`[SKIP - Already standardized] [${categoryKey}] [${product.productCode ?? product.id}] "${product.name}"`);
-    }
+    const entry = productsById.get(product.id) ?? { ...product, categoryKeys: [] };
+    entry.categoryKeys.push(categoryKey);
+    productsById.set(product.id, entry);
   }
 
-  console.log(`\nSummary: ${changedCount} products require update (out of ${memberships.length} total).`);
+  const updates: Array<{ id: string; oldName: string; newName: string }> = [];
+
+  for (const product of productsById.values()) {
+    const label = `[${product.categoryKeys.join(",")}] [${product.productCode ?? product.id}]`;
+    const newName = normalizeCategoryProductDisplayName(product.name, product.categoryKeys);
+    if (newName !== product.name) {
+      updates.push({ id: product.id, oldName: product.name, newName });
+      console.log(`[UPDATE] ${label} "${product.name}" -> "${newName}"`);
+    } else {
+      console.log(`[SKIP - Already standardized] ${label} "${product.name}"`);
+    }
+  }
+  const changedCount = updates.length;
+  const totalProducts = productsById.size;
+
+  console.log(`\nSummary: ${changedCount} products require update (out of ${totalProducts} products).`);
 
   if (!apply) {
     console.log(`Dry-run complete. Run with --apply to commit these updates to the database.`);
