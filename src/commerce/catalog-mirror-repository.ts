@@ -751,6 +751,7 @@ export function createCatalogMirrorRepository(
                     data: {
                       pancakeShopId: safeShopId,
                       name: resolvedName,
+                      sourceName: product.name,
                       productCode: product.productCode,
                       sourceDescription: product.sourceDescription,
                       primaryImageUrl: product.primaryImageUrl,
@@ -804,6 +805,7 @@ export function createCatalogMirrorRepository(
                     pancakeShopId: safeShopId,
                     slug: readableSlug,
                     name: resolvedName,
+                    sourceName: product.name,
                     productCode: product.productCode,
                     sourceDescription: product.sourceDescription,
                     primaryImageUrl: product.primaryImageUrl,
@@ -837,6 +839,7 @@ export function createCatalogMirrorRepository(
                     pancakeProductId: product.pancakeProductId,
                     slug,
                     name: product.name,
+                    sourceName: product.name,
                     productCode: product.productCode,
                     sourceDescription: product.sourceDescription,
                     primaryImageUrl: product.primaryImageUrl,

@@ -303,8 +303,12 @@ model ProductMirror {
   pancakeShopId     Int                  @default(0)
   pancakeProductId  String               @unique
   slug              String               @unique
-  /// Pancake product name without its trailing product code ("Set váy Diệu Liên Hoa").
+  /// Display name: the Pancake name without its trailing product code ("Set váy Diệu Liên Hoa"),
+  /// prefixed with the category label for the 4-panel / 6-panel ao dai categories.
   name              String
+  /// The Pancake-derived name `name` is computed from (null until the next sync or flap assignment).
+  /// Keeps `name` a pure function of source name + categories, so leaving a category restores it.
+  sourceName        String?
   /// The trailing product code split off the Pancake name ("SV605"), kept for search.
   productCode       String?
   sourceDescription String?

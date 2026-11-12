@@ -22,6 +22,7 @@ async function main(): Promise<void> {
         select: {
           id: true,
           name: true,
+          sourceName: true,
           productCode: true,
           slug: true,
         },
@@ -39,7 +40,13 @@ async function main(): Promise<void> {
   // what catalog sync and the admin membership edit produce.
   const productsById = new Map<
     string,
-    { id: string; name: string; productCode: string | null; categoryKeys: string[] }
+    {
+      id: string;
+      name: string;
+      sourceName: string | null;
+      productCode: string | null;
+      categoryKeys: string[];
+    }
   >();
   for (const { categoryKey, product } of memberships) {
     const entry = productsById.get(product.id) ?? { ...product, categoryKeys: [] };
@@ -47,13 +54,15 @@ async function main(): Promise<void> {
     productsById.set(product.id, entry);
   }
 
-  const updates: Array<{ id: string; oldName: string; newName: string }> = [];
+  const updates: Array<{ id: string; oldName: string; newName: string; sourceName: string }> = [];
 
   for (const product of productsById.values()) {
     const label = `[${product.categoryKeys.join(",")}] [${product.productCode ?? product.id}]`;
-    const newName = normalizeCategoryProductDisplayName(product.name, product.categoryKeys);
-    if (newName !== product.name) {
-      updates.push({ id: product.id, oldName: product.name, newName });
+    // Same rule as catalog sync and the admin membership edit: derive from the source name.
+    const sourceName = product.sourceName ?? product.name;
+    const newName = normalizeCategoryProductDisplayName(sourceName, product.categoryKeys);
+    if (newName !== product.name || product.sourceName === null) {
+      updates.push({ id: product.id, oldName: product.name, newName, sourceName });
       console.log(`[UPDATE] ${label} "${product.name}" -> "${newName}"`);
     } else {
       console.log(`[SKIP - Already standardized] ${label} "${product.name}"`);
@@ -75,7 +84,7 @@ async function main(): Promise<void> {
       updates.map((item) =>
         prisma.productMirror.update({
           where: { id: item.id },
-          data: { name: item.newName },
+          data: { name: item.newName, sourceName: item.sourceName },
         }),
       ),
     );

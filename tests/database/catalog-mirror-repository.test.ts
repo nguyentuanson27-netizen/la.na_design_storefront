@@ -304,6 +304,22 @@ test("catalog sync keeps the normalized flap name instead of restoring the Panca
   assert.equal(synced.slug, product.slug);
   assert.equal(synced.productCode, "SD5002");
 
+  assert.equal(synced.sourceName, "Áo dài Bạch Hoa Vi");
+
+  // Leaving the category and re-syncing lands on the plain source name, with the slug unchanged.
+  await prisma.productCategoryMembership.deleteMany({ where: { productId: product.id } });
+  await repository.syncSnapshot({
+    shopId,
+    variations: snapshot,
+    syncedAt: new Date("2026-08-20T04:30:00.000Z"),
+  });
+  const left = await prisma.productMirror.findUniqueOrThrow({ where: { id: product.id } });
+  assert.equal(left.name, "Áo dài Bạch Hoa Vi");
+  assert.equal(left.slug, product.slug);
+  await prisma.productCategoryMembership.create({
+    data: { productId: product.id, categoryKey: "aoDai4Ta" },
+  });
+
   // A third sync is a no-op for the name.
   await repository.syncSnapshot({
     shopId,
