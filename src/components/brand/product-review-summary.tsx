@@ -57,7 +57,7 @@ export function ProductRatingLink({ section }: Readonly<{ section: ProductReview
     <a
       href={`#${PRODUCT_REVIEWS_ANCHOR}`}
       data-pdp-rating=""
-      className="mt-3 inline-flex min-h-11 flex-wrap items-center gap-x-2 text-sm text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219] lg:mt-1"
+      className="mt-1 inline-flex min-h-9 flex-wrap items-center gap-x-2 text-sm text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219] lg:mt-0"
     >
       {summary === null ? null : (
         <>
