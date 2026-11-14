@@ -243,7 +243,7 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
       const result = await previewDraft(next);
       if (result.ok) {
         setModel(result.picker);
-        setMessage(`Tổng thanh toán dự kiến ${result.picker.summary.totalText}`);
+        setMessage(t("Tổng thanh toán dự kiến {totalText}", { totalText: result.picker.summary.totalText }));
       } else setError(GENERIC_ERROR);
     });
   };

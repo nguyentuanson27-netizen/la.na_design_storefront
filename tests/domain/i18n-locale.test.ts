@@ -102,9 +102,10 @@ test("a catalog key with placeholders also translates text that was filled in by
   });
   assert.equal(en("Còn 3"), "3 left");
   assert.equal(en("Còn 2 ngày 5 giờ"), "2d 5h left");
-  assert.equal(en("Từ 1.200.000₫"), "From 1.200.000₫");
+  // Dong in English output is shown as dollars (`money.ts`).
+  assert.equal(en("Từ 1.200.000₫"), "From $46.15");
   // The most specific template wins over a shorter one that also matches.
-  assert.equal(en("Sale từ 900.000₫"), "Sale from 900.000₫");
+  assert.equal(en("Sale từ 900.000₫"), "Sale from $34.62");
   assert.equal(en("Áo dài, 3 sản phẩm"), "Áo dài, 3 items");
   // Nothing matches a bare placeholder template, and unknown text stays as written.
   assert.equal(en("Không có trong danh mục"), "Không có trong danh mục");

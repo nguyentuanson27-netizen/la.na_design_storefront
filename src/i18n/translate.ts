@@ -1,4 +1,5 @@
 import { DEFAULT_LOCALE, type Locale } from "./locale.ts";
+import { vndTextToUsd } from "./money.ts";
 
 /**
  * A gettext-style translator keyed by the Vietnamese source text.
@@ -12,7 +13,7 @@ import { DEFAULT_LOCALE, type Locale } from "./locale.ts";
  * - Coverage is auditable: `scripts/i18n-audit.ts` lists every `t("...")` source with no entry.
  *
  * Values are interpolated with `{name}` placeholders, in the source and in the translation alike.
- * Numbers and money are formatted by the caller, in the locale's own convention.
+ * Numbers are formatted by the caller. Dong amounts in English output are shown as dollars (`money.ts`).
  */
 
 export type Messages = Readonly<Record<string, string>>;
@@ -115,7 +116,8 @@ export function createTranslator(locale: Locale, messages: Messages): Translator
       memo.set(source, found);
     }
     // A hit from a pattern is already filled in; an exact hit still has its own `{name}`s to fill.
-    return interpolate(found ?? source, values);
+    // Dong amounts in what comes out are shown as dollars; the shopper still pays in dong.
+    return vndTextToUsd(interpolate(found ?? source, values));
   };
 }
 

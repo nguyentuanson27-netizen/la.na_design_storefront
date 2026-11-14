@@ -20,7 +20,7 @@ export function LinePrice({
     <span className={`inline-flex flex-wrap items-baseline gap-x-1.5 ${className}`} data-line-discount>
       <s className="font-normal text-[#70584B]">
         <span className="sr-only">{t("Giá gốc")}</span>
-        {originalPriceText}
+        {t(originalPriceText)}
       </s>
       <span>
         <span className="sr-only">{t(isListReference ? "Giá giảm" : "Giá khuyến mãi") + " "}</span>

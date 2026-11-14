@@ -46,6 +46,7 @@ pnpm i18n:audit --literals src/routes  # Vietnamese string literals under a path
 ```
 
 Product names and editorial copy are translated per product in the admin (`/admin/products/<id>/translations`).
+English pages show prices in US dollars at a fixed display rate (`src/brand/currency.config.ts`); orders stay in dong.
 
 ## Current project identity
 

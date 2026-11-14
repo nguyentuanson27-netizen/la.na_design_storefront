@@ -935,7 +935,7 @@ export function PurchasePanelView({
                 </span>
                 <span className="sr-only">{(flashClock === null ? t(priceDisplay.isListReference ? "Giá giảm" : "Giá khuyến mãi") : t("Giá Flash Sale")) + " "}</span>
                 {/* Red only for a Flash price, the one sale the page shouts about. */}
-                <span className={flashClock === null ? undefined : "text-[#9A3324]"}>{priceDisplay.displayText}</span>
+                <span className={flashClock === null ? undefined : "text-[#9A3324]"}>{t(priceDisplay.displayText)}</span>
                 {/* Solid, in the price's own colour: Flash red, otherwise the ink the price is set in. */}
                 <span
                   className={`inline-flex items-center self-center px-2 py-0.5 text-xs font-bold tracking-[0.08em] text-white ${flashClock === null ? "bg-[#3B2219]" : "bg-[#9A3324]"}`}
@@ -944,7 +944,7 @@ export function PurchasePanelView({
                 </span>
               </>
             ) : (
-              priceDisplay.displayText
+              t(priceDisplay.displayText)
             )}
           </p>
           {view.preorderLabel === null ? null : (

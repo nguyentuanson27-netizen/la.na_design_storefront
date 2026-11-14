@@ -100,11 +100,11 @@ function render(data: CartRouteViewModel, { t }: RequestI18n) {
             <dl className="mb-6 ml-auto w-full max-w-sm space-y-1.5 text-[0.95rem]" data-cart-savings>
               <div className="flex items-baseline justify-between gap-4 px-3">
                 <dt className="text-black/70">{data.savings.originalTotalLabel}</dt>
-                <dd className="shrink-0 text-black/60 line-through">{data.savings.originalTotalText}</dd>
+                <dd className="shrink-0 text-black/60 line-through">{t(data.savings.originalTotalText)}</dd>
               </div>
               <div className="flex items-baseline justify-between gap-4 rounded-lg border border-[#1f7a5c] px-3 py-1 font-semibold text-[#1f6b51]">
                 <dt>{data.savings.savingLabel}</dt>
-                <dd className="shrink-0">{data.savings.savingText}</dd>
+                <dd className="shrink-0">{t(data.savings.savingText)}</dd>
               </div>
             </dl>
           ) : null}
@@ -207,7 +207,7 @@ function render(data: CartRouteViewModel, { t }: RequestI18n) {
                   </dl>
                   <p className="flex items-baseline justify-between gap-5">
                     <span className="font-semibold">{t("Dự kiến sau ưu đãi")}</span>
-                    <strong className="text-xl font-semibold tracking-[-0.02em]">{voucherPreview.totalText}</strong>
+                    <strong className="text-xl font-semibold tracking-[-0.02em]">{t(voucherPreview.totalText)}</strong>
                   </p>
                   <p className="mt-1 text-xs leading-5 text-black/65">{t("Ưu đãi chưa được giữ: nàng xác nhận ở bước thanh toán.")}</p>
                 </div>
@@ -225,7 +225,7 @@ function render(data: CartRouteViewModel, { t }: RequestI18n) {
             {data.shippingBaseFeeText ? (
               <div className="mt-4 flex items-baseline justify-between gap-6 text-sm" data-cart-shipping-estimate>
                 <span className="text-black/75">{t("Phí vận chuyển (tạm tính)")}</span>
-                <span>{data.shippingBaseFeeText}</span>
+                <span>{t(data.shippingBaseFeeText)}</span>
               </div>
             ) : null}
             </>

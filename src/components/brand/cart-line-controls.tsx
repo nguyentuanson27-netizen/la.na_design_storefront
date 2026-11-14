@@ -70,7 +70,7 @@ export function BrandCartLineControls({
       <p className={`mt-1.5 text-sm empty:hidden ${line.messageIsWarning ? "font-medium text-amber-800" : "text-black/60"}`} role="status" aria-live="polite">
         {t(line.message)}
       </p>
-      {totalText ? <p className="mt-3 font-semibold" data-line-total>{totalText}</p> : null}
+      {totalText ? <p className="mt-3 font-semibold" data-line-total>{t(totalText)}</p> : null}
       <button
         aria-label={t("Xóa {productName} khỏi giỏ hàng", { productName })}
         className="absolute right-0 top-0 inline-flex h-10 w-10 items-center justify-center text-black/70 transition hover:text-black disabled:cursor-not-allowed disabled:opacity-40"

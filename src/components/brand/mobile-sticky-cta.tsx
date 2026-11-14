@@ -2,6 +2,8 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
+import { useT } from "@/i18n/client";
+
 /**
  * UX-02 / AC-18 — the bottom bar that keeps the page's one primary action in reach on a phone.
  *
@@ -108,6 +110,7 @@ export function MobileStickyCta({ targetId, totalText, totalLabel = "Tổng than
   footnote?: string;
   children: ReactNode;
 }>) {
+  const t = useT();
   const visible = useStickyCtaVisible(targetId, suppressed);
   if (!visible) return null;
   return (
@@ -118,8 +121,8 @@ export function MobileStickyCta({ targetId, totalText, totalLabel = "Tổng than
     >
       <div className="mx-auto flex w-full max-w-[42rem] min-w-0 items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-xs text-black/70">{totalLabel}</p>
-          <p className="truncate text-base font-semibold">{totalText}</p>
+          <p className="text-xs text-black/70">{t(totalLabel)}</p>
+          <p className="truncate text-base font-semibold">{t(totalText)}</p>
           {note ? <p className="truncate text-xs text-black/70">{note}</p> : null}
         </div>
         <div className="shrink-0">{children}</div>

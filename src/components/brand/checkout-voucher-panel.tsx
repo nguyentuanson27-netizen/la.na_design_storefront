@@ -21,6 +21,7 @@ import { useT } from "@/i18n/client";
 
 /** One voucher line: a colour square (its type's colour, neutral when unknown), its name, what it takes off. */
 function VoucherLine({ line, emphasis }: Readonly<{ line: CheckoutVoucherLine; emphasis: boolean }>) {
+  const t = useT();
   return (
     <li className={`voucher-tone ${line.tone ? `voucher-tone--${line.tone}` : ""} flex items-center justify-between gap-4`} data-checkout-voucher-line>
       <span className="flex min-w-0 items-center gap-2.5">
@@ -30,7 +31,7 @@ function VoucherLine({ line, emphasis }: Readonly<{ line: CheckoutVoucherLine; e
           {line.group ? <small className="text-xs text-black/60">{line.group}</small> : null}
         </span>
       </span>
-      <span className={`shrink-0 font-semibold ${emphasis ? "text-[#9a3324]" : "text-black/75"}`}>{line.amountText}</span>
+      <span className={`shrink-0 font-semibold ${emphasis ? "text-[#9a3324]" : "text-black/75"}`}>{t(line.amountText)}</span>
     </li>
   );
 }
@@ -131,7 +132,7 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
           {view.lines.map((line) => <VoucherLine emphasis key={line.id} line={line} />)}
         </ul>
         <div className="px-3.5 pb-3">
-          {view.savingText ? <p className="mb-1" data-checkout-voucher-saving>Tổng giảm <strong className="text-[#9a3324]">{view.savingText}</strong></p> : null}
+          {view.savingText ? <p className="mb-1" data-checkout-voucher-saving>Tổng giảm <strong className="text-[#9a3324]">{t(view.savingText)}</strong></p> : null}
           <p className="text-black/75" data-checkout-voucher-held-until>
             {left === null ? "Ưu đãi được giữ tối đa 10 phút." : left > 0 ? `Ưu đãi được giữ thêm khoảng ${left} phút.` : "Ưu đãi đã hết hạn, đang cập nhật giá…"}
           </p>
@@ -181,11 +182,11 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
         {view.lines.map((line) => <VoucherLine emphasis={false} key={line.id} line={line} />)}
       </ul>
       <div className="px-3.5 pb-3.5">
-        <p data-checkout-voucher-total>Tổng sau ưu đãi (dự kiến): <strong>{view.totalText}</strong></p>
+        <p data-checkout-voucher-total>Tổng sau ưu đãi (dự kiến): <strong>{t(view.totalText)}</strong></p>
         {needsConsent ? (
           <div className="mt-3 border-t border-black/15 pt-3">
-            {view.giftLossText ? <p data-checkout-voucher-gift-loss>{view.giftLossText}</p> : null}
-            {view.totalIncreaseText ? <p className="mt-1" data-checkout-voucher-increase>{view.totalIncreaseText}</p> : null}
+            {view.giftLossText ? <p data-checkout-voucher-gift-loss>{t(view.giftLossText)}</p> : null}
+            {view.totalIncreaseText ? <p className="mt-1" data-checkout-voucher-increase>{t(view.totalIncreaseText)}</p> : null}
             <label className="mt-2 flex min-h-11 items-start gap-3" htmlFor={consentId}>
               <input checked={accepted} className="mt-1 h-5 w-5" id={consentId} onChange={(event) => setAccepted(event.currentTarget.checked)} type="checkbox" />
               <span>{t("Tôi đồng ý với thay đổi trên và muốn dùng ưu đãi.")}</span>

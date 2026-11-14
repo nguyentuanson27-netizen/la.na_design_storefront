@@ -197,7 +197,7 @@ export function PromotionSavings({
       {rows.map((row) => (
         <li className="flex items-baseline justify-between gap-4 text-xs font-medium text-[#24472D]" key={row.id}>
           <span className="min-w-0">{t(row.label)}</span>
-          <span className="shrink-0">−{row.amountText}</span>
+          <span className="shrink-0">−{t(row.amountText)}</span>
         </li>
       ))}
     </ul>

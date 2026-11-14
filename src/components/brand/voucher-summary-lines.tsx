@@ -23,7 +23,7 @@ export function VoucherDiscountRows({ summary, part }: Readonly<{ summary: Vouch
       {summary.discountLines.map((line) => (
         <div className={`voucher-rows__neg voucher-tone voucher-tone--${line.tone}`} key={line.id}>
           <dt className="voucher-rows__label"><i aria-hidden="true" className="voucher-swatch" />{t(line.label)}</dt>
-          <dd>{line.amountText}</dd>
+          <dd>{t(line.amountText)}</dd>
         </div>
       ))}
     </>
