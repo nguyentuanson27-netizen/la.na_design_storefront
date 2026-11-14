@@ -15,6 +15,14 @@ import { BRAND } from "../brand/index.ts";
  */
 export const PRODUCT_SOCIAL_FALLBACK_PATH = SOCIAL_FALLBACK_PATH;
 
+/**
+ * Cap the total number of images emitted in Open Graph tags.
+ * The primary hero image is always first (index 0), followed by up to 7 gallery images (total 8),
+ * avoiding metadata bloat while giving social scrapers (e.g. Meta Ads creative highlighting)
+ * a rich multi-angle album of the product.
+ */
+export const MAX_OPEN_GRAPH_IMAGES = 8;
+
 type ProductMetadataInput = Readonly<{
   origin: string;
   indexingEnabled: boolean;
@@ -30,6 +38,10 @@ type ProductMetadataInput = Readonly<{
         url: string;
         alt: string;
       }> | null;
+      gallery?: readonly Readonly<{
+        url: string;
+        alt: string;
+      }>[];
     }>;
   }>;
 }>;
@@ -81,15 +93,25 @@ export function buildStorefrontProductMetadata({
   const title = buildProductTitle(product);
   const description = buildProductDescription(product);
   const productUrl = new URL(`/shop/${product.slug}`, origin).href;
-  const image = product.media.primary
-    ? {
-        url: product.media.primary.url,
-        alt: product.media.primary.alt,
-      }
-    : {
-        url: new URL(PRODUCT_SOCIAL_FALLBACK_PATH, origin).href,
-        alt: SOCIAL_FALLBACK_ALT,
-      };
+
+  // Primary first, then the rest of the gallery: scrapers read the first image as the card.
+  const candidates = [product.media.primary, ...(product.media.gallery ?? [])];
+  const seen = new Set<string>();
+  const images: Array<{ url: string; alt: string }> = [];
+  for (const item of candidates) {
+    if (images.length >= MAX_OPEN_GRAPH_IMAGES) break;
+    if (!item || seen.has(item.url)) continue;
+    seen.add(item.url);
+    images.push({ url: item.url, alt: item.alt });
+  }
+
+  const fallbackImage = {
+    url: new URL(PRODUCT_SOCIAL_FALLBACK_PATH, origin).href,
+    alt: SOCIAL_FALLBACK_ALT,
+  };
+  // Twitter's summary_large_image carries exactly one image: the lead image, else the brand card.
+  const leadImage = images[0] ?? fallbackImage;
+  const openGraphImages = images.length > 0 ? images : [fallbackImage];
 
   return {
     title,
@@ -102,13 +124,13 @@ export function buildStorefrontProductMetadata({
       title,
       description,
       url: productUrl,
-      images: [image],
+      images: openGraphImages,
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [image],
+      images: [leadImage],
     },
   };
 }
