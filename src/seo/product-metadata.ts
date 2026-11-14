@@ -15,6 +15,14 @@ import { BRAND } from "../brand/index.ts";
  */
 export const PRODUCT_SOCIAL_FALLBACK_PATH = SOCIAL_FALLBACK_PATH;
 
+/**
+ * Cap the total number of images emitted in Open Graph tags.
+ * The primary hero image is always first (index 0), followed by up to 7 gallery images (total 8),
+ * avoiding metadata bloat while giving social scrapers (e.g. Meta Ads creative highlighting)
+ * a rich multi-angle album of the product.
+ */
+export const MAX_OPEN_GRAPH_IMAGES = 8;
+
 type ProductMetadataInput = Readonly<{
   origin: string;
   indexingEnabled: boolean;
@@ -30,6 +38,10 @@ type ProductMetadataInput = Readonly<{
         url: string;
         alt: string;
       }> | null;
+      gallery?: readonly Readonly<{
+        url: string;
+        alt: string;
+      }>[];
     }>;
   }>;
 }>;
@@ -81,15 +93,34 @@ export function buildStorefrontProductMetadata({
   const title = buildProductTitle(product);
   const description = buildProductDescription(product);
   const productUrl = new URL(`/shop/${product.slug}`, origin).href;
-  const image = product.media.primary
-    ? {
-        url: product.media.primary.url,
-        alt: product.media.primary.alt,
+
+  const images: Array<{ url: string; alt: string }> = [];
+  if (product.media.primary) {
+    images.push({
+      url: product.media.primary.url,
+      alt: product.media.primary.alt,
+    });
+  }
+
+  if (product.media.gallery) {
+    for (const item of product.media.gallery) {
+      if (images.length >= MAX_OPEN_GRAPH_IMAGES) break;
+      if (!images.some((existing) => existing.url === item.url)) {
+        images.push({
+          url: item.url,
+          alt: item.alt,
+        });
       }
-    : {
-        url: new URL(PRODUCT_SOCIAL_FALLBACK_PATH, origin).href,
-        alt: SOCIAL_FALLBACK_ALT,
-      };
+    }
+  }
+
+  const primaryOrFallbackImage =
+    images[0] ?? {
+      url: new URL(PRODUCT_SOCIAL_FALLBACK_PATH, origin).href,
+      alt: SOCIAL_FALLBACK_ALT,
+    };
+
+  const openGraphImages = images.length > 0 ? images : [primaryOrFallbackImage];
 
   return {
     title,
@@ -102,13 +133,13 @@ export function buildStorefrontProductMetadata({
       title,
       description,
       url: productUrl,
-      images: [image],
+      images: openGraphImages,
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [image],
+      images: [primaryOrFallbackImage],
     },
   };
 }
