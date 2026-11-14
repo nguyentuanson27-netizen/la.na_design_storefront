@@ -30,7 +30,7 @@ export function VoucherCard({ item, onToggle, disabled, nowMs }: Readonly<{
         type="button"
         className="voucher-ticket"
         aria-pressed={item.selected}
-        aria-label={`${item.title}. ${item.name}`}
+        aria-label={`${t(item.title)}. ${t(item.name)}`}
         aria-describedby={descriptionId}
         disabled={unavailable || disabled}
         onClick={onToggle}
@@ -42,7 +42,7 @@ export function VoucherCard({ item, onToggle, disabled, nowMs }: Readonly<{
         </span>
         <span className="voucher-ticket__body">
           <span className="voucher-ticket__main">
-            <span aria-hidden="true" className="voucher-ticket__name">{item.name}</span>
+            <span aria-hidden="true" className="voucher-ticket__name">{t(item.name)}</span>
             <span id={descriptionId} className="grid gap-px">
               {item.condition ? <span className="voucher-ticket__cond">{t(item.condition)}</span> : null}
               <span className="voucher-ticket__line">

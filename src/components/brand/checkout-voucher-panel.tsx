@@ -27,8 +27,8 @@ function VoucherLine({ line, emphasis }: Readonly<{ line: CheckoutVoucherLine; e
       <span className="flex min-w-0 items-center gap-2.5">
         <span aria-hidden="true" className="voucher-held__mi"><VoucherIcon name={line.kind === "SHIPPING_FREE" ? "truck" : "tag"} className="h-4 w-4" /></span>
         <span className="grid min-w-0 leading-snug">
-          {line.title}
-          {line.group ? <small className="text-xs text-black/60">{line.group}</small> : null}
+          {t(line.title)}
+          {line.group ? <small className="text-xs text-black/60">{t(line.group)}</small> : null}
         </span>
       </span>
       <span className={`shrink-0 font-semibold ${emphasis ? "text-[#9a3324]" : "text-black/75"}`}>{t(line.amountText)}</span>
@@ -132,9 +132,9 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
           {view.lines.map((line) => <VoucherLine emphasis key={line.id} line={line} />)}
         </ul>
         <div className="px-3.5 pb-3">
-          {view.savingText ? <p className="mb-1" data-checkout-voucher-saving>Tổng giảm <strong className="text-[#9a3324]">{t(view.savingText)}</strong></p> : null}
+          {view.savingText ? <p className="mb-1" data-checkout-voucher-saving>{t("Tổng giảm")} <strong className="text-[#9a3324]">{t(view.savingText)}</strong></p> : null}
           <p className="text-black/75" data-checkout-voucher-held-until>
-            {left === null ? "Ưu đãi được giữ tối đa 10 phút." : left > 0 ? `Ưu đãi được giữ thêm khoảng ${left} phút.` : "Ưu đãi đã hết hạn, đang cập nhật giá…"}
+            {left === null ? t("Ưu đãi được giữ tối đa 10 phút.") : left > 0 ? t("Ưu đãi được giữ thêm khoảng {left} phút.", { left }) : t("Ưu đãi đã hết hạn, đang cập nhật giá…")}
           </p>
           {change ?? <Link className="mt-1 inline-block min-h-11 content-center underline" href="/cart">{t("Đổi ưu đãi ở giỏ hàng")}</Link>}
         </div>
@@ -175,14 +175,14 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
     <section aria-label={t("Ưu đãi")} className="voucher-held text-sm" data-checkout-vouchers="offered">
       <div className="voucher-held__head">
         <span className="voucher-held__ok voucher-held__ok--offer"><VoucherIcon name="tag" /></span>
-        <p className="font-semibold outline-none" data-voucher-focus tabIndex={-1}>{view.afterStale ? "Nàng xác nhận lại ưu đãi" : "Nàng có ưu đãi cho đơn này"}</p>
+        <p className="font-semibold outline-none" data-voucher-focus tabIndex={-1}>{view.afterStale ? t("Nàng xác nhận lại ưu đãi") : t("Nàng có ưu đãi cho đơn này")}</p>
       </div>
       {view.afterStale ? <p className="px-3.5 pt-3 text-black/75">{t("Ưu đãi giữ trước đó không còn khớp với lựa chọn hoặc giỏ hàng hiện tại.")}</p> : null}
       <ul className="grid gap-2.5 px-3.5 py-3">
         {view.lines.map((line) => <VoucherLine emphasis={false} key={line.id} line={line} />)}
       </ul>
       <div className="px-3.5 pb-3.5">
-        <p data-checkout-voucher-total>Tổng sau ưu đãi (dự kiến): <strong>{t(view.totalText)}</strong></p>
+        <p data-checkout-voucher-total>{t("Tổng sau ưu đãi (dự kiến):")} <strong>{t(view.totalText)}</strong></p>
         {needsConsent ? (
           <div className="mt-3 border-t border-black/15 pt-3">
             {view.giftLossText ? <p data-checkout-voucher-gift-loss>{t(view.giftLossText)}</p> : null}
@@ -196,7 +196,7 @@ export function CheckoutVoucherPanel({ view, change = null }: Readonly<{
         <p className="mt-2 text-black/75">{t("Ưu đãi được giữ 10 phút kể từ lúc nàng xác nhận.")}</p>
         <div className="mt-3 flex flex-wrap items-center gap-x-4">
           <button className="btn btn--primary px-5" data-checkout-voucher-confirm disabled={pending || (needsConsent && !accepted)} onClick={confirm} type="button">
-            {pending ? "Đang giữ ưu đãi…" : "Áp dụng và giữ ưu đãi"}
+            {pending ? t("Đang giữ ưu đãi…") : t("Áp dụng và giữ ưu đãi")}
           </button>
           {change ?? <Link className="min-h-11 content-center underline" href="/cart">{t("Đổi hoặc bỏ ưu đãi")}</Link>}
         </div>

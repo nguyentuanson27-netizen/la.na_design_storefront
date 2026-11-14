@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { EN_CLIENT_MESSAGES, EN_MESSAGES } from "./catalog/en.ts";
 import { DEFAULT_LOCALE, LOCALE_REQUEST_HEADER, localizeHref, parseLocale, type Locale } from "./locale.ts";
 import { renderRich } from "./rich.tsx";
+import { richValues } from "./rich-values.ts";
 import { createTranslator, type Messages, type Translator } from "./translate.ts";
 
 /**
@@ -47,7 +48,7 @@ export async function getI18n(): Promise<RequestI18n> {
     locale,
     t,
     href: (path) => localizeHref(path, locale),
-    rich: (source, values) => renderRich(t(source), values),
+    rich: (source, values) => renderRich(t(source), richValues(t, values)),
   };
 }
 

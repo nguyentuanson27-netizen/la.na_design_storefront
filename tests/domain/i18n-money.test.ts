@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ENGLISH_DISPLAY_CURRENCY } from "../../src/brand/currency.config.ts";
+import { compactVoucherVnd, spokenVoucherVnd } from "../../src/commerce/voucher-format.ts";
 import { formatUsdFromVnd, vndTextToUsd } from "../../src/i18n/money.ts";
+import { richValues } from "../../src/i18n/rich-values.ts";
+import { formatVoucherVnd } from "../../src/routes/voucher-picker-model.ts";
 import { createTranslator } from "../../src/i18n/translate.ts";
 
 const NBSP = " ";
@@ -57,4 +60,40 @@ test("the English translator shows dollars, the Vietnamese one still shows dong"
   // A template made of a slot: a price the view model already filled in.
   const patterned = createTranslator("en", { "Từ {price}": "From {price}" });
   assert.equal(patterned("Từ 1.200.000₫"), "From $46.15");
+});
+
+test("the voucher formatters' own spellings are converted: `đ`, `K`, `TR`, `triệu`", () => {
+  // The picker's amounts (`formatVoucherVnd`) end in a lowercase đ, not the dong sign.
+  assert.equal(formatVoucherVnd(260_000), "260.000đ");
+  assert.equal(vndTextToUsd(formatVoucherVnd(260_000)), "$10.00");
+  assert.equal(vndTextToUsd(formatVoucherVnd(130_000)), "$5.00");
+
+  // The colour block of a ticket and a threshold read in a sentence.
+  assert.equal(compactVoucherVnd(80_000), "80K");
+  assert.equal(vndTextToUsd(compactVoucherVnd(80_000)), "$3.08");
+  assert.equal(vndTextToUsd(compactVoucherVnd(260_000)), "$10.00");
+  assert.equal(compactVoucherVnd(1_500_000), "1,5TR");
+  assert.equal(vndTextToUsd(compactVoucherVnd(1_500_000)), "$57.69");
+  assert.equal(vndTextToUsd(compactVoucherVnd(999_999)), "$38.46");
+  assert.equal(spokenVoucherVnd(1_500_000), "1,5 triệu");
+  assert.equal(vndTextToUsd(`Đơn từ ${spokenVoucherVnd(1_500_000)}`), "Đơn từ $57.69");
+  assert.equal(vndTextToUsd("Giảm 30.000đ cho đơn từ 600.000đ"), "Giảm $1.15 cho đơn từ $23.08");
+});
+
+test("a word that merely starts with đ, a K inside a word, or a bare figure is not an amount", () => {
+  assert.equal(vndTextToUsd("3 đơn hàng"), "3 đơn hàng");
+  assert.equal(vndTextToUsd("Đã thêm 3/5 quà"), "Đã thêm 3/5 quà");
+  assert.equal(vndTextToUsd("Kích cỡ 5K2"), "Kích cỡ 5K2");
+  assert.equal(vndTextToUsd("TRACK 12"), "TRACK 12");
+});
+
+test("a dong amount handed in as a slot of a rich sentence is converted too", () => {
+  const en = createTranslator("en", { "Mua thêm <b>{amount}</b> để dùng voucher": "Add <b>{amount}</b> more to use the voucher" });
+  const vi = createTranslator("vi", {});
+  assert.deepEqual(richValues(en, { amount: formatVoucherVnd(260_000), name: "KOL" }), { amount: "$10.00", name: "KOL" });
+  assert.deepEqual(richValues(vi, { amount: formatVoucherVnd(260_000) }), { amount: "260.000đ" });
+  // Nodes are left alone.
+  const node = { type: "a" } as never;
+  assert.equal(richValues(en, { link: node })?.link, node);
+  assert.equal(richValues(en, undefined), undefined);
 });
