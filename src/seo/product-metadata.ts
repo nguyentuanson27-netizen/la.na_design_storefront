@@ -94,33 +94,24 @@ export function buildStorefrontProductMetadata({
   const description = buildProductDescription(product);
   const productUrl = new URL(`/shop/${product.slug}`, origin).href;
 
+  // Primary first, then the rest of the gallery: scrapers read the first image as the card.
+  const candidates = [product.media.primary, ...(product.media.gallery ?? [])];
+  const seen = new Set<string>();
   const images: Array<{ url: string; alt: string }> = [];
-  if (product.media.primary) {
-    images.push({
-      url: product.media.primary.url,
-      alt: product.media.primary.alt,
-    });
+  for (const item of candidates) {
+    if (images.length >= MAX_OPEN_GRAPH_IMAGES) break;
+    if (!item || seen.has(item.url)) continue;
+    seen.add(item.url);
+    images.push({ url: item.url, alt: item.alt });
   }
 
-  if (product.media.gallery) {
-    for (const item of product.media.gallery) {
-      if (images.length >= MAX_OPEN_GRAPH_IMAGES) break;
-      if (!images.some((existing) => existing.url === item.url)) {
-        images.push({
-          url: item.url,
-          alt: item.alt,
-        });
-      }
-    }
-  }
-
-  const primaryOrFallbackImage =
-    images[0] ?? {
-      url: new URL(PRODUCT_SOCIAL_FALLBACK_PATH, origin).href,
-      alt: SOCIAL_FALLBACK_ALT,
-    };
-
-  const openGraphImages = images.length > 0 ? images : [primaryOrFallbackImage];
+  const fallbackImage = {
+    url: new URL(PRODUCT_SOCIAL_FALLBACK_PATH, origin).href,
+    alt: SOCIAL_FALLBACK_ALT,
+  };
+  // Twitter's summary_large_image carries exactly one image: the lead image, else the brand card.
+  const leadImage = images[0] ?? fallbackImage;
+  const openGraphImages = images.length > 0 ? images : [fallbackImage];
 
   return {
     title,
@@ -139,7 +130,7 @@ export function buildStorefrontProductMetadata({
       card: "summary_large_image",
       title,
       description,
-      images: [primaryOrFallbackImage],
+      images: [leadImage],
     },
   };
 }

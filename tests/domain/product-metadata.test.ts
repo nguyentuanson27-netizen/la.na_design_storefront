@@ -360,3 +360,16 @@ test("openGraph.images falls back to SOCIAL_FALLBACK_IMAGE when primary is null 
   assert.deepEqual(metadata.twitter?.images, [SOCIAL_FALLBACK_IMAGE]);
 });
 
+test("openGraph.images leads with the first gallery image when there is no primary", () => {
+  const first = { url: "https://content.pancake.vn/1/2/3/4/g-first.jpg", alt: "Ảnh 1" };
+  const second = { url: "https://content.pancake.vn/1/2/3/4/g-second.jpg", alt: "Ảnh 2" };
+
+  const metadata = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: { ...baseProduct, media: { primary: null, gallery: [first, second, first] } },
+  });
+
+  assert.deepEqual(metadata.openGraph?.images, [first, second]);
+  assert.deepEqual(metadata.twitter?.images, [first]);
+});
