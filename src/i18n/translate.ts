@@ -1,4 +1,5 @@
 import { DEFAULT_LOCALE, type Locale } from "./locale.ts";
+import { vndTextToUsd } from "./money.ts";
 
 /**
  * A gettext-style translator keyed by the Vietnamese source text.
@@ -12,7 +13,7 @@ import { DEFAULT_LOCALE, type Locale } from "./locale.ts";
  * - Coverage is auditable: `scripts/i18n-audit.ts` lists every `t("...")` source with no entry.
  *
  * Values are interpolated with `{name}` placeholders, in the source and in the translation alike.
- * Numbers and money are formatted by the caller, in the locale's own convention.
+ * Numbers are formatted by the caller. Dong amounts in English output are shown as dollars (`money.ts`).
  */
 
 export type Messages = Readonly<Record<string, string>>;
@@ -100,7 +101,31 @@ function lookup(messages: Messages, source: string, depth = 0): string | undefin
       return translated.map((part, index) => part ?? parts[index]!).join(separator);
     }
   }
-  return undefined;
+  return sentences(messages, source, depth);
+}
+
+/**
+ * Several sentences joined into one string ("Chưa tạo được ảnh. La.na đã hoàn lại lượt thử.") are
+ * translated sentence by sentence, when the whole has no entry of its own. Only a split where every
+ * part is known is taken first; a half-known text is better than none, so a split where one side is
+ * known is the fallback.
+ */
+function sentences(messages: Messages, source: string, depth: number): string | undefined {
+  if (depth > 3) return undefined;
+  let partial: string | undefined;
+  for (const boundary of source.matchAll(/(?<=[.!?…])\s+(?=\S)/g)) {
+    const left = source.slice(0, boundary.index);
+    const right = source.slice(boundary.index! + boundary[0].length);
+    const translatedLeft = lookup(messages, left, depth + 1);
+    const translatedRight = lookup(messages, right, depth + 1);
+    if (translatedLeft !== undefined && translatedRight !== undefined) {
+      return `${translatedLeft} ${translatedRight}`;
+    }
+    if (partial === undefined && (translatedLeft !== undefined || translatedRight !== undefined)) {
+      partial = `${translatedLeft ?? left} ${translatedRight ?? right}`;
+    }
+  }
+  return partial;
 }
 
 export function createTranslator(locale: Locale, messages: Messages): Translator {
@@ -115,7 +140,8 @@ export function createTranslator(locale: Locale, messages: Messages): Translator
       memo.set(source, found);
     }
     // A hit from a pattern is already filled in; an exact hit still has its own `{name}`s to fill.
-    return interpolate(found ?? source, values);
+    // Dong amounts in what comes out are shown as dollars; the shopper still pays in dong.
+    return vndTextToUsd(interpolate(found ?? source, values));
   };
 }
 

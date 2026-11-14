@@ -230,7 +230,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
                     </span>
                     {product.priceText ? (
                       <span className="font-sans text-xs font-semibold text-[#2A1810]">
-                        {product.priceText}
+                        {t(product.priceText)}
                       </span>
                     ) : null}
                   </Link>

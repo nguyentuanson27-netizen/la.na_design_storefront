@@ -178,6 +178,27 @@ test("page_view reports the URL that was seen: /shop and /en/shop apart, once ea
   expect(await pageViews(page)).toEqual(["/en/shop"]);
 });
 
+test("English pages show dollars at the fixed rate; Vietnamese pages and structured data stay in dong", async ({ page }) => {
+  // 500.000 dong at 26,000 dong to the dollar.
+  await page.goto(`${BASE_URL}/shop/${product.slug}`, { waitUntil: "networkidle" });
+  const vietnamese = page.locator("#main-content");
+  await expect(vietnamese).toContainText("500.000");
+  await expect(vietnamese).not.toContainText("$");
+
+  for (const path of [`/en/shop/${product.slug}`, "/en/shop"]) {
+    await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
+    const main = page.locator("#main-content");
+    await expect(main, path).toContainText("$19.23");
+    await expect(main, path).not.toContainText("₫");
+  }
+
+  // The offer that search engines read is the real price, in the real currency, on both languages.
+  await page.goto(`${BASE_URL}/en/shop/${product.slug}`, { waitUntil: "networkidle" });
+  const structured = (await page.locator('script[type="application/ld+json"]').allTextContents()).join("\n");
+  expect(structured).toContain('"priceCurrency":"VND"');
+  expect(structured).not.toContain("USD");
+});
+
 test("the language switch keeps the filters, and in-site links stay in the language", async ({ page }) => {
   await page.goto(`${BASE_URL}/en/shop?sort=price-asc`, { waitUntil: "networkidle" });
   const toVietnamese = page.locator(".language-switcher--footer a");

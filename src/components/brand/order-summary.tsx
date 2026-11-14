@@ -25,13 +25,13 @@ export function OrderSummary({
       {summary.discounts.map((discount) => (
         <div className={`${row} font-medium text-[#24472D]`} data-promotion-savings key={discount.id}>
           <dt className="min-w-0">{t(discount.label)}</dt>
-          <dd className="shrink-0">{discount.amountText}</dd>
+          <dd className="shrink-0">{t(discount.amountText)}</dd>
         </div>
       ))}
       {summary.giftQuantity > 0 ? (
         <div className={row}>
           <dt className={compact ? "text-[#70584B]" : "text-black/75"}>{t("Quà tặng ({count})", { count: summary.giftQuantity })}</dt>
-          <dd className="shrink-0">0 ₫</dd>
+          <dd className="shrink-0">{t("0 ₫")}</dd>
         </div>
       ) : null}
       <div className={row}>
@@ -41,12 +41,12 @@ export function OrderSummary({
       {summary.shippingVoucher ? (
         <div className={`${row} font-medium text-[#24472D]`} data-shipping-voucher>
           <dt className="min-w-0">{t(summary.shippingVoucher.label)}</dt>
-          <dd className="shrink-0">{summary.shippingVoucher.amountText}</dd>
+          <dd className="shrink-0">{t(summary.shippingVoucher.amountText)}</dd>
         </div>
       ) : null}
       <div className={`flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1 border-t ${compact ? "border-[#3B2219]/15 pt-3" : "border-black pt-4"}`}>
         <dt className={compact ? "text-xs font-semibold uppercase tracking-wider text-[#3B2219]" : "font-semibold uppercase tracking-[0.08em]"}>{t(totalLabel)}</dt>
-        <dd className={`ml-auto max-w-full text-right ${compact ? "text-base font-semibold text-[#2A1810]" : "text-xl font-semibold tracking-[-0.02em]"}`}>{summary.totalText}</dd>
+        <dd className={`ml-auto max-w-full text-right ${compact ? "text-base font-semibold text-[#2A1810]" : "text-xl font-semibold tracking-[-0.02em]"}`}>{t(summary.totalText)}</dd>
       </div>
     </dl>
   );

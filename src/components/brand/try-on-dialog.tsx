@@ -364,7 +364,7 @@ export function BrandTryOnDialog({
                   <span aria-hidden="true" className="text-[#3B2219]">
                     ✓
                   </span>
-                  <span>{tip}</span>
+                  <span>{t(tip)}</span>
                 </li>
               ))}
             </ul>
@@ -377,7 +377,7 @@ export function BrandTryOnDialog({
                   <span aria-hidden="true" className={ERROR_TEXT}>
                     ✕
                   </span>
-                  <span>{tip}</span>
+                  <span>{t(tip)}</span>
                 </li>
               ))}
             </ul>
@@ -472,7 +472,7 @@ export function BrandTryOnDialog({
             className="mt-0.5 h-5 w-5 shrink-0 accent-[#3B2219]"
             onChange={(event) => tryOn.setAcknowledged(event.target.checked)}
           />
-          <span>{TRY_ON_LIKENESS_ACKNOWLEDGEMENT}</span>
+          <span>{t(TRY_ON_LIKENESS_ACKNOWLEDGEMENT)}</span>
         </label>
 
         <p className="mt-2 text-xs leading-5 text-black/60">{privacyDisclosure.summary}</p>
@@ -502,7 +502,7 @@ export function BrandTryOnDialog({
           {phase === "loading" ? (
             <>
               <p>{t("Đang tạo ảnh thử đồ cho nàng…")}</p>
-              <p className="mt-1 text-black/70">{TRY_ON_WAIT_NOTE}</p>
+              <p className="mt-1 text-black/70">{t(TRY_ON_WAIT_NOTE)}</p>
             </>
           ) : null}
           {phase === "success" ? t("Đã tạo xong ảnh thử đồ.") : null}
@@ -664,7 +664,7 @@ export function BrandTryOnDialog({
               {t("Thử đồ")}
             </h2>
             <span className="border border-[#3B2219]/50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#3B2219]">
-              {TRY_ON_BETA_BADGE}
+              {t(TRY_ON_BETA_BADGE)}
             </span>
           </div>
           <button

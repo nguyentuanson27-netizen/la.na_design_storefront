@@ -6,6 +6,7 @@ import { CheckoutVoucherFocus, CheckoutVoucherPanel } from "@/components/brand/c
 import { VoucherPicker } from "@/components/brand/voucher-picker";
 import { voucherPickerKey } from "@/routes/voucher-picker-model";
 import { PageHeader, PageShell } from "@/components/brand/page-chrome";
+import { DongNote } from "@/components/brand/dong-note";
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { PromotionBanner } from "@/components/brand/promotion-banner";
@@ -63,7 +64,7 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
             <p className="text-sm font-semibold uppercase tracking-[0.05em]">{line.productName}</p>
             <p className="mt-1 text-xs leading-5 text-black/75">
               {t(line.optionLabel)} · {t("SL {count}", { count: line.quantity })}
-              {line.unitPriceText === null || line.originalPriceText ? null : ` × ${line.unitPriceText}`}
+              {line.unitPriceText === null || line.originalPriceText ? null : ` × ${t(line.unitPriceText)}`}
             </p>
             {line.originalPriceText ? (
               <p className="mt-1 text-xs leading-5 text-black/75">
@@ -89,7 +90,7 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
               </p>
             )}
           </div>
-          <p className="shrink-0 text-sm font-medium">{line.lineTotalText}</p>
+          <p className="shrink-0 text-sm font-medium">{t(line.lineTotalText)}</p>
         </div>
       ))}
       {(benefit?.giftLines ?? data.giftPicker?.selections.map((row) => ({ lineKey: `${row.campaignId}/${row.variantId}`, label: row.label, quantity: row.quantity, priceText: "Cần kiểm tra", imageUrl: row.imageUrl ?? null })) ?? []).map((gift) => (
@@ -110,7 +111,7 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
             <p className="text-sm font-semibold uppercase tracking-[0.05em]">{gift.label}</p>
             <p className="mt-1 text-xs leading-5 text-black/75">{t("Quà tặng · SL {count}", { count: gift.quantity })}</p>
           </div>
-          <p className="shrink-0 text-sm font-medium">{gift.priceText}</p>
+          <p className="shrink-0 text-sm font-medium">{t(gift.priceText)}</p>
         </div>
       ))}
     </div>
@@ -128,7 +129,7 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
       {benefit && benefit.giftQuantity > 0 ? (
         <div className="flex justify-between gap-5">
           <dt className="text-black/75">{t("Quà tặng ({count})", { count: benefit.giftQuantity })}</dt>
-          <dd>0 ₫</dd>
+          <dd>{t("0 ₫")}</dd>
         </div>
       ) : null}
       <div className="flex justify-between gap-5">
@@ -146,6 +147,7 @@ function render(data: CheckoutViewModel, { t }: RequestI18n) {
   const totalsBlock = (
     <>
       {data.summary ? <OrderSummary summary={data.summary} /> : fallbackTotals}
+      <DongNote amountVnd={data.totals?.totalVnd} />
     </>
   );
 

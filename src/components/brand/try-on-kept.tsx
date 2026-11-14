@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import type { TryOnKeptResult } from "@/components/headless/try-on-session";
+import { useT } from "@/i18n/client";
 
 import { BrandTryOnSaveActions, useCanShareTryOnFiles } from "./try-on-result";
 import { BrandTryOnZoom } from "./try-on-zoom";
@@ -20,20 +21,21 @@ export function BrandTryOnKept({
   items,
   onRemove,
 }: Readonly<{ items: readonly TryOnKeptResult[]; onRemove: (id: number) => void }>) {
+  const t = useT();
   const [openId, setOpenId] = useState<number | null>(null);
   const canShare = useCanShareTryOnFiles();
   if (items.length === 0) return null;
   const opened = items.find((item) => item.id === openId) ?? null;
 
   return (
-    <section aria-label="Ảnh đã thử trước đó" className="mt-4 border-t border-black/10 pt-3">
-      <h4 className="text-[13px] font-semibold">Ảnh nàng đã thử</h4>
+    <section aria-label={t("Ảnh đã thử trước đó")} className="mt-4 border-t border-black/10 pt-3">
+      <h4 className="text-[13px] font-semibold">{t("Ảnh nàng đã thử")}</h4>
       <ul className="mt-2 flex gap-2.5 overflow-x-auto pb-1">
         {items.map((item) => (
           <li key={item.id} className="relative shrink-0">
             <button
               type="button"
-              aria-label={`Xem lại ảnh thử ${item.productName}`}
+              aria-label={t("Xem lại ảnh thử {productName}", { productName: item.productName })}
               className={`block ${FOCUS_RING}`}
               onClick={() => setOpenId(item.id)}
             >
@@ -49,7 +51,7 @@ export function BrandTryOnKept({
             </button>
             <button
               type="button"
-              aria-label={`Bỏ ảnh thử ${item.productName}`}
+              aria-label={t("Bỏ ảnh thử {productName}", { productName: item.productName })}
               className={`absolute right-0 top-0 flex h-6 w-6 items-center justify-center bg-[#FAF7F2]/90 text-sm leading-none text-[#3B2219] ${FOCUS_RING}`}
               onClick={() => onRemove(item.id)}
             >
@@ -59,7 +61,7 @@ export function BrandTryOnKept({
         ))}
       </ul>
       <p className="mt-1 text-[11px] leading-4 text-black/55">
-        Chỉ lưu tạm trên trình duyệt này, tải lại trang là mất.
+        {t("Chỉ lưu tạm trên trình duyệt này, tải lại trang là mất.")}
       </p>
       {opened ? (
         <BrandTryOnZoom
@@ -67,7 +69,7 @@ export function BrandTryOnKept({
           onClose={() => setOpenId(null)}
           afterUrl={opened.result.url}
           beforeUrl={null}
-          alt={`Ảnh thử đồ do AI tạo cho ${opened.productName}, chỉ mang tính tham khảo`}
+          alt={t("Ảnh thử đồ do AI tạo cho {productName}, chỉ mang tính tham khảo", { productName: opened.productName })}
           actions={
             <div className={`grid gap-2 ${canShare ? "grid-cols-2" : "grid-cols-1"}`}>
               <BrandTryOnSaveActions

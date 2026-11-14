@@ -1486,6 +1486,34 @@ test("the picture opens full screen, switches to the shopper's own photo, and Es
   await expect(result).toBeVisible();
 });
 
+test("the English try-on speaks English from the first step to the full-screen picture", async ({ page }) => {
+  await asNewGuest(page);
+  await page.goto(`${ENABLED_URL}/en/shop/${slugs.eligible}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /^AI try-on/ }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Try on" });
+  await expect(dialog).toBeVisible();
+
+  // Nothing of the dialog is left in Vietnamese: the steps, the tips, the age chips, the consent.
+  const vietnamese = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i;
+  await dialog.locator('input[type="file"]').setInputFiles(jpegPhoto());
+  await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+  await dialog.getByRole("radio", { name: "18 or older" }).check({ force: true });
+  await dialog.getByRole("checkbox", { name: /I confirm this is my photo/ }).check();
+  expect(await dialog.innerText()).not.toMatch(vietnamese);
+
+  await dialog.getByRole("button", { name: "Create try-on photo", exact: true }).click();
+  const result = dialog.getByRole("img", { name: /AI-generated try-on photo/ });
+  await expect(result).toBeVisible();
+  expect(await dialog.innerText()).not.toMatch(vietnamese);
+
+  await dialog.getByRole("button", { name: "Enlarge the try-on picture" }).click();
+  const zoom = page.getByRole("dialog", { name: "Enlarged picture" });
+  await expect(zoom).toBeVisible();
+  await expect(zoom.getByRole("button", { name: "Original photo" })).toBeVisible();
+  await expect(zoom.getByRole("link", { name: "Download photo" })).toBeVisible();
+  expect(await zoom.innerText()).not.toMatch(vietnamese);
+});
+
 test("a thumb under the picture is counted once per choice and changes nothing else", async ({ page }) => {
   const dialog = await openTryOn(page);
   const { generate, result } = parts(dialog);

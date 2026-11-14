@@ -2,6 +2,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
+import { useT } from "@/i18n/client";
+
 /**
  * A try-on picture full screen, zoomable (amendment 2026-11-09). The picture in the dialog is capped
  * so the buttons stay on screen; this is for looking at the fabric and the fit.
@@ -39,6 +41,7 @@ export function BrandTryOnZoom({
   /** Download and share, so the picture can be saved from where it is being looked at. */
   actions?: ReactNode;
 }>) {
+  const t = useT();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
 
   useEffect(() => {
@@ -56,7 +59,7 @@ export function BrandTryOnZoom({
   return (
     <dialog
       ref={dialogRef}
-      aria-label="Xem ảnh phóng to"
+      aria-label={t("Xem ảnh phóng to")}
       className="m-0 h-dvh max-h-none w-screen max-w-none overflow-hidden border-0 bg-black/95 p-0 text-white backdrop:bg-black/95"
       // React passes `cancel` and `close` up its component tree even though the browser does not, so
       // without these the try-on dialog this one sits inside would close itself with it.
@@ -88,6 +91,7 @@ function ZoomBody({
   actions?: ReactNode;
   onClose: () => void;
 }>) {
+  const t = useT();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const pendingCenterRef = useRef<{ x: number; y: number } | null>(null);
   const [zoomed, setZoomed] = useState(false);
@@ -132,14 +136,14 @@ function ZoomBody({
     <div className="relative flex h-dvh w-screen flex-col">
       <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
         {beforeUrl ? (
-          <div role="group" aria-label="Chọn ảnh xem" className="flex border border-white/50 text-[13px]">
+          <div role="group" aria-label={t("Chọn ảnh xem")} className="flex border border-white/50 text-[13px]">
             <button
               type="button"
               aria-pressed={!showBefore}
               className={`min-h-11 px-3.5 ${FOCUS_RING} ${showBefore ? "" : "bg-white text-black"}`}
               onClick={() => setShowBefore(false)}
             >
-              Đã thử đồ
+              {t("Đã thử đồ")}
             </button>
             <button
               type="button"
@@ -147,7 +151,7 @@ function ZoomBody({
               className={`min-h-11 px-3.5 ${FOCUS_RING} ${showBefore ? "bg-white text-black" : ""}`}
               onClick={() => setShowBefore(true)}
             >
-              Ảnh gốc
+              {t("Ảnh gốc")}
             </button>
           </div>
         ) : (
@@ -159,11 +163,11 @@ function ZoomBody({
             className={`inline-flex min-h-11 items-center border border-white/50 bg-black/30 px-3.5 text-[13px] ${FOCUS_RING}`}
             onClick={toggleZoomFromButton}
           >
-            {zoomed ? "Thu nhỏ" : "Phóng to"}
+            {zoomed ? t("Thu nhỏ") : t("Phóng to")}
           </button>
           <button
             type="button"
-            aria-label="Đóng ảnh phóng to"
+            aria-label={t("Đóng ảnh phóng to")}
             className={`inline-flex h-11 w-11 items-center justify-center border border-white/50 bg-black/30 text-2xl ${FOCUS_RING}`}
             onClick={onClose}
           >
@@ -177,7 +181,7 @@ function ZoomBody({
         className="min-h-0 flex-1 overflow-auto overscroll-contain"
         // A zoomed picture is panned by touch, and a keyboard can scroll the box.
         tabIndex={zoomed ? 0 : -1}
-        aria-label={zoomed ? "Ảnh đang phóng to, cuộn để xem" : undefined}
+        aria-label={zoomed ? t("Ảnh đang phóng to, cuộn để xem") : undefined}
       >
         <div className={zoomed ? "" : "flex h-full w-full items-center justify-center"}>
           {/* eslint-disable-next-line @next/next/no-img-element -- a local blob; next/image cannot optimise it. */}
@@ -193,7 +197,7 @@ function ZoomBody({
       </div>
 
       <p className="shrink-0 px-4 pt-2 text-center text-xs text-white/70">
-        {zoomed ? "Cuộn hoặc dùng phím mũi tên để xem; chạm lần nữa để thu nhỏ" : "Chạm vào ảnh hoặc bấm Phóng to"}
+        {zoomed ? t("Cuộn hoặc dùng phím mũi tên để xem; chạm lần nữa để thu nhỏ") : t("Chạm vào ảnh hoặc bấm Phóng to")}
       </p>
       {actions ? (
         <div className="shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">{actions}</div>

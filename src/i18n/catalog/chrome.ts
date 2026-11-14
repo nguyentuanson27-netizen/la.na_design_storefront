@@ -3,7 +3,7 @@ export const CHROME_EN: Readonly<Record<string, string>> = {
   // Promotion bar
   "Chương trình khuyến mại": "Promotions",
   "Mua 3 tặng 1 · Mua 4 tặng 1 Set · Mua 5 giảm 10% (tối đa 200k)":
-    "Buy 3 get 1 free · Buy 4 get 1 free set · Buy 5 get 10% off (up to 200k VND)",
+    "Buy 3 get 1 free · Buy 4 get 1 free set · Buy 5 get 10% off (up to 200.000 ₫)",
 
   // Header
   "Bỏ qua đến nội dung chính": "Skip to main content",

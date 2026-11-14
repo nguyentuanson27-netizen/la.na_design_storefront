@@ -55,12 +55,21 @@ name. Admins edit it at `/admin/products/[id]/translations`.
 login, track-order, eligible offers). A const cannot know the request's language, so they now use the page-level
 `generateMetadata` like the content pages, and the route manifest says so.
 
+**Prices in dollars.** The English pages *display* US dollars at one fixed rate, 26,000 ₫ to the dollar
+(`src/brand/currency.config.ts`; change the number there when it drifts). It is a display rate only: the cart, the
+order, the bank transfer, structured data (`priceCurrency: VND`), analytics and every server-side figure stay in
+dong. The view models keep formatting dong, so the conversion is done on the text, in the English translator
+(`src/i18n/money.ts`): any amount written with `₫` that passes through `t()` becomes `$49.62`. Components that print a
+price must therefore pass it through `t()`. Text that has to stay in dong writes `VND` instead (the price-range
+limits, the "charged in VND" line under the checkout and order-tracking totals, `DongNote`).
+
 ## Not done, on purpose
 
 - No customer-facing email exists in the codebase (the contact form mails the shop), so there was nothing to translate.
 - Checkout line names stay as the cart's Vietnamese; the checkout model carries no slug to translate by and its
   lines feed the quote proof.
 - Searching by an English product name is not supported; suggestions show the English name for a Vietnamese match.
-- Money and dates keep the Vietnamese format (`1.290.000 ₫`).
+- Dates keep the Vietnamese format. The shop-by-price filter is entered in dong (its label says so), and the
+  bank-transfer amount on the order page stays in dong.
 - Colour and size values are POS data; common colour names are translated, the rest show as entered.
 - The legal policies are a courtesy translation; the page says the Vietnamese prevails.

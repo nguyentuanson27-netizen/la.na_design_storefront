@@ -1,4 +1,7 @@
+"use client";
+
 import type { VoucherTeaserItem } from "@/commerce/voucher-teaser";
+import { useT } from "@/i18n/client";
 import { VoucherIcon } from "./voucher-icons";
 
 /**
@@ -10,17 +13,18 @@ import { VoucherIcon } from "./voucher-icons";
  * Each chip wears its voucher type's colour (`item.tone`, the picker's rule), free shipping teal.
  */
 export function VoucherTeaserChips({ items }: Readonly<{ items: readonly VoucherTeaserItem[] }>) {
+  const t = useT();
   if (items.length === 0) return null;
   return (
-    <ul aria-label="Voucher" className="voucher-chips">
+    <ul aria-label={t("Voucher")} className="voucher-chips">
       {items.map((item) => (
         <li className={`voucher-chip voucher-tone voucher-tone--${item.tone}`} key={item.id}>
           <span aria-hidden="true" className="voucher-chip__icon"><VoucherIcon name={item.kind === "SHIPPING_FREE" ? "truck" : "tag"} /></span>
           <span aria-hidden="true" className="voucher-chip__text voucher-chip__text--stack">
-            <b>{item.title}</b>
-            {item.sub ? <small>{item.sub}</small> : null}
+            <b>{t(item.title)}</b>
+            {item.sub ? <small>{t(item.sub)}</small> : null}
           </span>
-          <span className="sr-only">{item.text}</span>
+          <span className="sr-only">{t(item.text)}</span>
         </li>
       ))}
     </ul>

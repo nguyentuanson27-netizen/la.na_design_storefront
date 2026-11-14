@@ -58,6 +58,7 @@ export default defineConfig({
     "pdp-pancake-video.spec.ts",
     "list-price-display.spec.ts",
     "locale.spec.ts",
+    "locale-voucher.spec.ts",
     "listing-action-bar.spec.ts",
     "pdp-promotion-offers.spec.ts",
     "pdp-reviews.spec.ts",

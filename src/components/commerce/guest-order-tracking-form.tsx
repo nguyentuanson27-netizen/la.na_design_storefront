@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 
 import { lookupGuestOrderAction } from "@/commerce/guest-order-tracking-actions";
+import { DongNote } from "@/components/brand/dong-note";
 import { BrandHistoricalPreorderNotice } from "@/components/brand/historical-preorder-notice";
 import type {
   GuestOrderPublicStatus,
@@ -113,9 +114,10 @@ export function GuestOrderTrackingForm({
             </div>
             <div>
               <dt className="text-black/75">{t("Tổng tiền")}</dt>
-              <dd className="mt-1 font-semibold">{formatVnd(state.order.totalVnd)}</dd>
+              <dd className="mt-1 font-semibold">{t(formatVnd(state.order.totalVnd))}</dd>
             </div>
           </dl>
+          <DongNote amountVnd={Number(state.order.totalVnd)} />
           {state.order.pricingHistory ? (
             <div className="mt-6 space-y-4">
               <h3 className="font-semibold">{t("Chi tiết sản phẩm")}</h3>
@@ -125,8 +127,8 @@ export function GuestOrderTrackingForm({
                     <p>{line.productName}{line.role === "GIFT" ? t(" — Quà tặng") : ""}</p>
                     <p className="text-sm">{[line.color, line.size].filter(Boolean).join(" / ")} · {t("Số lượng: {count}", { count: line.quantity })}</p>
                     <p className="flex flex-wrap items-baseline gap-2">
-                      {line.listUnitPriceVnd ? <s><span className="sr-only">{t("Giá niêm yết")}</span>{formatVnd(line.listUnitPriceVnd)}</s> : null}
-                      <span><span className="sr-only">{t("Giá bán")}</span>{formatVnd(line.unitPriceVnd)}</span>
+                      {line.listUnitPriceVnd ? <s><span className="sr-only">{t("Giá niêm yết")}</span>{t(formatVnd(line.listUnitPriceVnd))}</s> : null}
+                      <span><span className="sr-only">{t("Giá bán")}</span>{t(formatVnd(line.unitPriceVnd))}</span>
                       <span>· {t("Thành tiền: {amount}", { amount: formatVnd(line.lineTotalVnd) })}</span>
                     </p>
                   </li>

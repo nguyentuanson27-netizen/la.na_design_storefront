@@ -283,7 +283,7 @@ export const FLOWS_EN: Readonly<Record<string, string>> = {
   "Đã tải thêm {length} sản phẩm. Tổng cộng {totalLoaded} trên {totalCount} sản phẩm.": "Loaded {length} more products. {totalLoaded} of {totalCount} products shown.",
   "Miễn phí vận chuyển từ {minimumQuantity} sản phẩm áp dụng": "Free shipping from {minimumQuantity} eligible items",
   "Giá {label} chỉ gồm chữ số, ví dụ 500000.": "The {label} price must be digits only, for example 500000.",
-  "Giá {label} không được vượt quá {VN} ₫.": "The {label} price cannot exceed {VN} ₫.",
+  "Giá {label} không được vượt quá {VN} ₫.": "The {label} price cannot exceed {VN} VND.",
   "tối thiểu": "minimum",
   "tối đa": "maximum",
 

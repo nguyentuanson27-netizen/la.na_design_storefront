@@ -102,9 +102,10 @@ test("a catalog key with placeholders also translates text that was filled in by
   });
   assert.equal(en("Còn 3"), "3 left");
   assert.equal(en("Còn 2 ngày 5 giờ"), "2d 5h left");
-  assert.equal(en("Từ 1.200.000₫"), "From 1.200.000₫");
+  // Dong in English output is shown as dollars (`money.ts`).
+  assert.equal(en("Từ 1.200.000₫"), "From $46.15");
   // The most specific template wins over a shorter one that also matches.
-  assert.equal(en("Sale từ 900.000₫"), "Sale from 900.000₫");
+  assert.equal(en("Sale từ 900.000₫"), "Sale from $34.62");
   assert.equal(en("Áo dài, 3 sản phẩm"), "Áo dài, 3 items");
   // Nothing matches a bare placeholder template, and unknown text stays as written.
   assert.equal(en("Không có trong danh mục"), "Không có trong danh mục");
@@ -140,4 +141,23 @@ test("the page-view reporters read the address-bar path, not the route path", as
     assert.doesNotMatch(source, /@\/i18n\/navigation/, `${file} must not strip the language prefix`);
     assert.match(source, /usePathname[^;]*from "next\/navigation"/, `${file} reads the real path`);
   }
+});
+
+test("sentences joined into one string are translated sentence by sentence", () => {
+  const en = createTranslator("en", {
+    "Chưa lấy được ảnh. Nàng thử lại sau nhé.": "The photo could not be fetched. Please try again later.",
+    "Đã hoàn lại lượt thử.": "Your try-on was refunded.",
+    "Một câu khác.": "Another sentence.",
+  });
+  // Both halves have their own entries.
+  assert.equal(
+    en("Chưa lấy được ảnh. Nàng thử lại sau nhé. Đã hoàn lại lượt thử."),
+    "The photo could not be fetched. Please try again later. Your try-on was refunded.",
+  );
+  // An entry that holds two sentences still wins over splitting it.
+  assert.equal(en("Chưa lấy được ảnh. Nàng thử lại sau nhé."), "The photo could not be fetched. Please try again later.");
+  // A half-known text is translated as far as it goes.
+  assert.equal(en("Một câu khác. Câu lạ."), "Another sentence. Câu lạ.");
+  // Nothing known: unchanged.
+  assert.equal(en("Câu lạ. Câu lạ nữa."), "Câu lạ. Câu lạ nữa.");
 });
