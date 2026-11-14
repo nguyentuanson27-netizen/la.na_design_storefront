@@ -68,6 +68,7 @@ export function BrandTryOnSaveActions({
               mimeType: result.mimeType,
               productSlug,
               productName,
+              message: (link) => t("Mình thử {productName} bằng AI, bạn xem giúp mình nhé: {link}", { productName, link }),
             });
             setSharing(false);
             if (outcome === "shared") trackTryOn({ event: "share", productSlug });

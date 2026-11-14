@@ -7,6 +7,7 @@ import {
   tryOnWaitProgress,
   tryOnWaitStageIndex,
 } from "@/components/headless/try-on-model";
+import { useT } from "@/i18n/client";
 
 /**
  * Seconds since `startedAt`, ticking once a second. Before the first tick after a new start the clock
@@ -41,6 +42,7 @@ export function BrandTryOnWaiting({
   photoUrl,
   startedAt,
 }: Readonly<{ photoUrl: string | null; startedAt: number | null }>) {
+  const t = useT();
   const elapsed = useTryOnElapsedSeconds(startedAt);
   const stage = tryOnWaitStageIndex(elapsed);
 
@@ -57,7 +59,7 @@ export function BrandTryOnWaiting({
           <span style={{ transform: `scaleX(${tryOnWaitProgress(elapsed)})` }} />
         </span>
         <span key={stage} className="tryon-wait__label">
-          {TRY_ON_WAIT_STAGES[stage]!.label}
+          {t(TRY_ON_WAIT_STAGES[stage]!.label)}
         </span>
         <span className="tryon-wait__dots">
           <span />

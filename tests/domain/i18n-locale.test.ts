@@ -142,3 +142,22 @@ test("the page-view reporters read the address-bar path, not the route path", as
     assert.match(source, /usePathname[^;]*from "next\/navigation"/, `${file} reads the real path`);
   }
 });
+
+test("sentences joined into one string are translated sentence by sentence", () => {
+  const en = createTranslator("en", {
+    "Chưa lấy được ảnh. Nàng thử lại sau nhé.": "The photo could not be fetched. Please try again later.",
+    "Đã hoàn lại lượt thử.": "Your try-on was refunded.",
+    "Một câu khác.": "Another sentence.",
+  });
+  // Both halves have their own entries.
+  assert.equal(
+    en("Chưa lấy được ảnh. Nàng thử lại sau nhé. Đã hoàn lại lượt thử."),
+    "The photo could not be fetched. Please try again later. Your try-on was refunded.",
+  );
+  // An entry that holds two sentences still wins over splitting it.
+  assert.equal(en("Chưa lấy được ảnh. Nàng thử lại sau nhé."), "The photo could not be fetched. Please try again later.");
+  // A half-known text is translated as far as it goes.
+  assert.equal(en("Một câu khác. Câu lạ."), "Another sentence. Câu lạ.");
+  // Nothing known: unchanged.
+  assert.equal(en("Câu lạ. Câu lạ nữa."), "Câu lạ. Câu lạ nữa.");
+});
