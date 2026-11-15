@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { headers } from "next/headers";
 
+import { readCampaignNameMessages } from "../commerce/campaign-name-translation-runtime.ts";
 import { EN_CLIENT_MESSAGES, EN_MESSAGES } from "./catalog/en.ts";
 import { DEFAULT_LOCALE, LOCALE_REQUEST_HEADER, localizeHref, parseLocale, type Locale } from "./locale.ts";
 import { renderRich } from "./rich.tsx";
@@ -28,6 +29,36 @@ export function clientMessagesFor(locale: Locale): Messages {
   return locale === "en" ? EN_CLIENT_MESSAGES : {};
 }
 
+/** One merged object per (catalog, names) pair, so the translator compiles its patterns once. */
+const mergedCache = new WeakMap<Messages, WeakMap<Messages, Messages>>();
+
+function withCampaignNames(base: Messages, names: Messages): Messages {
+  if (Object.keys(names).length === 0) return base;
+  const byNames = mergedCache.get(base) ?? new WeakMap<Messages, Messages>();
+  mergedCache.set(base, byNames);
+  const found = byNames.get(names);
+  if (found !== undefined) return found;
+  // An admin's English for a name is deliberate, so it wins over a catalog entry of the same text.
+  const merged = Object.freeze({ ...base, ...names });
+  byNames.set(names, merged);
+  return merged;
+}
+
+/**
+ * What the request's translator knows: the catalog, plus the English campaign names an admin
+ * entered. Vietnamese needs neither, and reads nothing.
+ */
+export async function requestMessagesFor(locale: Locale): Promise<Messages> {
+  if (locale !== "en") return {};
+  return withCampaignNames(EN_MESSAGES, await readCampaignNameMessages());
+}
+
+/** The same for the browser: the short catalog plus the campaign names, which are short. */
+export async function requestClientMessagesFor(locale: Locale): Promise<Messages> {
+  if (locale !== "en") return {};
+  return withCampaignNames(EN_CLIENT_MESSAGES, await readCampaignNameMessages());
+}
+
 export type RequestI18n = Readonly<{
   locale: Locale;
   t: Translator;
@@ -43,7 +74,7 @@ export type RequestI18n = Readonly<{
 /** Everything a server component or loader needs to speak the request's language. */
 export async function getI18n(): Promise<RequestI18n> {
   const locale = await getLocale();
-  const t = createTranslator(locale, messagesFor(locale));
+  const t = createTranslator(locale, await requestMessagesFor(locale));
   return {
     locale,
     t,

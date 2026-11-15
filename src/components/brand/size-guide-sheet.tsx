@@ -134,7 +134,7 @@ export function SizeGuideSheet({
         <div aria-hidden="true" className="mx-auto h-1 w-10 rounded-full bg-[#3B2219]/20" />
 
         <div className="mt-4 flex items-start justify-between gap-3">
-          <h2 className="font-display text-xl leading-tight tracking-[-0.02em]">{title}</h2>
+          <h2 className="font-display text-xl leading-tight tracking-[-0.02em]">{t(title)}</h2>
           <button
             ref={closeButtonRef}
             type="button"
@@ -165,7 +165,7 @@ export function SizeGuideSheet({
               </th>
               {table.columns.map((column) => (
                 <th key={column.label} scope="col" className="px-0.5 py-2 font-semibold">
-                  {column.label}
+                  {t(column.label)}
                   {column.unit ? (
                     <span className="block text-[10px] font-normal text-[#3B2219]/60">
                       ({column.unit})
@@ -213,21 +213,21 @@ export function SizeGuideSheet({
         </table>
 
         <div className="mt-3 space-y-1.5 text-xs leading-5 text-[#3B2219]/65">
-          <p>{guide.circumferenceSemanticsNote}</p>
+          <p>{t(guide.circumferenceSemanticsNote)}</p>
           {guide.tolerance ? (
             <p>
               <strong>{t("Dung sai:")}</strong> {t(guide.tolerance.note)}
             </p>
           ) : null}
           {/* The approved "tham khảo" note stays for assistive technology; sighted shoppers get the table. */}
-          <p className="sr-only">{guide.guidanceNote}</p>
+          <p className="sr-only">{t(guide.guidanceNote)}</p>
         </div>
         </div>
 
         <div className="shrink-0 border-t border-[#3B2219]/10 bg-[#FAF7F2] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
           {action.note === null ? null : (
             <p role="status" className="mb-2 text-center text-xs leading-5 text-[#3B2219]/70">
-              {action.note}
+              {t(action.note)}
             </p>
           )}
           <div className="flex gap-3">
@@ -238,7 +238,7 @@ export function SizeGuideSheet({
                 rel="noreferrer"
                 className="inline-flex min-h-12 flex-[1.2] items-center justify-center whitespace-nowrap rounded-full bg-[#3B2219]/8 px-2 text-center text-[13px] font-semibold leading-tight text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
               >
-                Nhắn Zalo nhờ chọn<span className="sr-only">{t("(mở trong tab mới)")}</span>
+                {t("Nhắn Zalo nhờ chọn")}<span className="sr-only">{t("(mở trong tab mới)")}</span>
               </a>
             )}
             <button
@@ -247,7 +247,7 @@ export function SizeGuideSheet({
               className="inline-flex min-h-12 flex-1 items-center justify-center whitespace-nowrap rounded-full bg-[#3B2219] px-2 text-center text-[13px] font-semibold leading-tight text-[#FAF7F2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:bg-[#3B2219]/25 disabled:text-[#3B2219]/60"
               onClick={chooseSize}
             >
-              {action.label}
+              {t(action.label)}
             </button>
           </div>
         </div>

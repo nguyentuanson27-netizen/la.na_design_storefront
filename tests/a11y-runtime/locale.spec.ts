@@ -93,7 +93,7 @@ test.beforeAll(async () => {
       isPresent: true,
       isActive: true,
       syncedAt,
-      content: { create: { editorialDescription: "Locale regression product." } },
+      content: { create: { status: "PUBLISHED", editorialDescription: "Locale regression product.", sizeGuide: "ao-dai" } },
       translations: { create: { locale: "en", name: product.englishName } },
     },
   });
@@ -197,6 +197,40 @@ test("English pages show dollars at the fixed rate; Vietnamese pages and structu
   const structured = (await page.locator('script[type="application/ld+json"]').allTextContents()).join("\n");
   expect(structured).toContain('"priceCurrency":"VND"');
   expect(structured).not.toContain("USD");
+});
+
+test("the size guide is English: its page, and the sheet the product page opens on a phone", async ({ page }) => {
+  const vietnamese = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i;
+
+  await page.goto(`${BASE_URL}/en/size-guide`, { waitUntil: "networkidle" });
+  const guide = page.locator("#main-content");
+  expect(await guide.innerText()).not.toMatch(vietnamese);
+  await expect(guide.getByRole("heading", { level: 2, name: "Sets / dresses — regular fit" })).toBeVisible();
+  await expect(guide.getByRole("rowheader", { name: "Bust (cm)" }).first()).toBeVisible();
+
+  // The sheet is a phone's: a bottom sheet under the `sm` breakpoint.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/en/shop/${product.slug}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /size guide/i }).first().click();
+  const sheet = page.locator("dialog[data-size-guide-sheet][open]");
+  await expect(sheet).toBeVisible();
+  const text = await sheet.innerText();
+  expect(text).not.toMatch(vietnamese);
+  expect(text).toContain("Bust");
+  expect(text).toContain("Weight");
+  // On a desktop it is a dialog, with the same words.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${BASE_URL}/en/shop/${product.slug}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /size guide/i }).first().click();
+  const dialog = page.locator("dialog[open]").filter({ hasText: "Bust" });
+  await expect(dialog).toBeVisible();
+  expect(await dialog.innerText()).not.toMatch(vietnamese);
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 390, height: 844 });
+  // The same sheet in Vietnamese keeps the shop's own words.
+  await page.goto(`${BASE_URL}/shop/${product.slug}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /hướng dẫn chọn size/i }).first().click();
+  expect(await page.locator("dialog[data-size-guide-sheet][open]").innerText()).toContain("Ngực");
 });
 
 test("the language switch keeps the filters, and in-site links stay in the language", async ({ page }) => {

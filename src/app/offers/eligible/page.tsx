@@ -21,7 +21,7 @@ function render({ campaignId, offerName, listing, limited, retryHref, precedingP
       <ListingHeader eyebrow={t("Ưu đãi")} title={t("Sản phẩm áp dụng ưu đãi")}>
         {offerName ? (
           <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
-            {offerName}. {t("Những sản phẩm dưới đây thuộc phạm vi ưu đãi. Giá, tồn kho và quyền nhận ưu đãi sẽ được tính lại khi nàng thêm vào giỏ.")}
+            {t(offerName)}. {t("Những sản phẩm dưới đây thuộc phạm vi ưu đãi. Giá, tồn kho và quyền nhận ưu đãi sẽ được tính lại khi nàng thêm vào giỏ.")}
           </p>
         ) : null}
       </ListingHeader>

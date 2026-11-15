@@ -26,9 +26,9 @@ import {
   parseListingView,
   type ListingView,
 } from "@/components/headless/listing-view-model";
-import { clientMessagesFor, getLocale } from "@/i18n/server";
+import { requestClientMessagesFor, getLocale } from "@/i18n/server";
 import { type Locale } from "@/i18n/locale";
-import { createTranslator } from "@/i18n/translate";
+import type { Messages } from "@/i18n/translate";
 import { readRequestScriptNonce } from "@/security/script-nonce-policy";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildSiteStructuredData, serializeJsonLd } from "@/seo/structured-data";
@@ -68,6 +68,8 @@ export type SiteChromeModel = Readonly<{
   listingView: ListingView;
   /** The language this request is rendered in, from the proxy's header. */
   locale: Locale;
+  /** The part of the translations the browser needs for it (catalog and campaign names). */
+  messages: Messages;
 }>;
 
 import { readConfiguredCategoryMegaMedia } from "@/commerce/storefront-catalog-runtime";
@@ -91,6 +93,7 @@ export async function loadSiteChrome(): Promise<SiteChromeModel> {
     scriptNonce: readRequestScriptNonce(requestHeaders),
     listingView: parseListingView(requestHeaders.get(LISTING_VIEW_REQUEST_HEADER)) ?? DEFAULT_LISTING_VIEW,
     locale,
+    messages: await requestClientMessagesFor(locale),
   };
 }
 
@@ -110,7 +113,7 @@ export function SiteChrome({
   children,
 }: Readonly<{ model: SiteChromeModel; children: ReactNode }>) {
   return (
-    <SiteDocument locale={model.locale} messages={clientMessagesFor(model.locale)}>
+    <SiteDocument locale={model.locale} messages={model.messages}>
       <TrackingBootstrap nonce={model.scriptNonce} />
       <GoogleTagManager nonce={model.scriptNonce} />
       <ChatGptAdsPixel nonce={model.scriptNonce} />

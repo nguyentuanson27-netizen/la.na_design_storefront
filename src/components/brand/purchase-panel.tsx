@@ -177,13 +177,13 @@ function SizeGuideFacts({ guide }: { guide: ProductMappedSizeGuide }) {
   const t = useT();
   return (
     <>
-      <p>{guide.circumferenceSemanticsNote}</p>
+      <p>{t(guide.circumferenceSemanticsNote)}</p>
       {guide.tolerance ? (
         <p>
           <strong>{t("Dung sai:")}</strong> {t(guide.tolerance.note)}
         </p>
       ) : null}
-      <p>{guide.guidanceNote}</p>
+      <p>{t(guide.guidanceNote)}</p>
 
       <table className="mt-2 w-full border-collapse text-left text-sm text-black">
         <caption className="sr-only">{t("Dữ liệu bảng size {title}", { title: t(guide.chart.title) })}</caption>
@@ -203,7 +203,7 @@ function SizeGuideFacts({ guide }: { guide: ProductMappedSizeGuide }) {
           {guide.chart.rows.map((row) => (
             <tr key={row.parameter} className="border-b border-black/10">
               <th scope="row" className="py-3 pl-3 pr-4 font-normal">
-                {row.parameter}
+                {t(row.parameter)}
               </th>
               {guide.chart.sizes.map((size) => (
                 <td key={size} className="px-3 py-3 text-right tabular-nums">
@@ -326,7 +326,7 @@ function MappedSizeGuideDialog({
         ) : (
           // No artwork set in admin: draw the same guide from its configured data.
           <div className="max-h-[calc(100dvh-1rem)] w-full overflow-y-auto bg-[#FAF7F2] px-5 pb-6 pt-14 sm:max-h-[calc(100dvh-2rem)] sm:px-8">
-            <h2 className="font-display text-2xl tracking-[-0.02em]">{guide.chart.title}</h2>
+            <h2 className="font-display text-2xl tracking-[-0.02em]">{t(guide.chart.title)}</h2>
             <div className="mt-4 space-y-2 text-sm leading-6 text-black/70">
               <SizeGuideFacts guide={guide} />
             </div>
