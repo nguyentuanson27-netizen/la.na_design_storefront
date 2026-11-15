@@ -17,6 +17,7 @@ const ROOT = resolve(import.meta.dirname, "../..");
 const PORT = 3363;
 const BASE = `http://127.0.0.1:${PORT}`;
 const SHOP = 940_022;
+const OTHER_SHOP = 940_023;
 const P = "name-en-";
 
 let server: ChildProcess;
@@ -35,6 +36,10 @@ const TRANSLATED = {
   "Bí mật nội bộ": "Internal secret",
   "Chiến dịch đã tắt": "Switched off campaign",
   "Chiến dịch mồ côi": "Orphan campaign",
+  // Not yet running (starts tomorrow), and running on another shop: neither is this shop's to show.
+  "Chiến dịch chưa bắt đầu": "Starts tomorrow",
+  "Chiến dịch của shop khác": "Other shop campaign",
+  "Freeship của shop khác": "Other shop free shipping",
 } as const;
 
 async function cleanup() {
@@ -42,9 +47,9 @@ async function cleanup() {
   await prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica");
     await tx.voucherHold.deleteMany({ where: { campaign: { pancakeShopId: SHOP } } });
-    await tx.voucherCampaign.deleteMany({ where: { pancakeShopId: SHOP } });
+    await tx.voucherCampaign.deleteMany({ where: { pancakeShopId: { in: [SHOP, OTHER_SHOP] } } });
   });
-  await prisma.shippingPromotionCampaign.deleteMany({ where: { pancakeShopId: SHOP } });
+  await prisma.shippingPromotionCampaign.deleteMany({ where: { pancakeShopId: { in: [SHOP, OTHER_SHOP] } } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP } });
   await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "voucher-code-" } } });
 }
@@ -117,6 +122,10 @@ test.beforeEach(async ({ context }) => {
   await prisma.voucherCampaign.create({ data: { ...base, name: "Ưu đãi", fixedAmountVnd: BigInt(30_000), minEligibleSubtotalVnd: BigInt(600_000) } });
   await prisma.voucherCampaign.create({ data: { ...base, name: "Bí mật nội bộ", issuance: "CODE", visibility: "PRIVATE", code: "SECRET1", fixedAmountVnd: BigInt(40_000), minEligibleSubtotalVnd: BigInt(600_000) } });
   await prisma.voucherCampaign.create({ data: { ...base, name: "Chiến dịch đã tắt", isEnabled: false, fixedAmountVnd: BigInt(60_000), minEligibleSubtotalVnd: BigInt(600_000) } });
+  const tomorrow = new Date(Date.now() + 86_400_000);
+  await prisma.voucherCampaign.create({ data: { ...base, name: "Chiến dịch chưa bắt đầu", startsAt: tomorrow, fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) } });
+  await prisma.voucherCampaign.create({ data: { ...base, pancakeShopId: OTHER_SHOP, name: "Chiến dịch của shop khác", fixedAmountVnd: BigInt(80_000), minEligibleSubtotalVnd: BigInt(600_000) } });
+  await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: OTHER_SHOP, name: "Freeship của shop khác", isEnabled: true, enabledAt: now, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] } });
   await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: SHOP, name: "Miễn phí vận chuyển mùa thu", isEnabled: true, enabledAt: now, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] } });
   ids = { m50: m50.id, far: far.id, ship: ship.id, priv: priv.id };
   await context.addCookies([{ name: "la_cart", value: cartId, url: BASE, httpOnly: true, sameSite: "Lax" }]);
@@ -171,11 +180,14 @@ test("a campaign called like an interface label shows its own English and leaves
   await expect(page.locator("[data-voucher-picker] > button")).not.toContainText("Autumn promotion");
 });
 
-test("the browser is given only the names of public, running campaigns", async ({ page, request }) => {
+test("the browser is given only the names of public, running campaigns of this shop", async ({ page, request }) => {
   for (const path of ["/en", "/en/cart", `/en/shop/${productSlug}`]) {
     const html = await (await request.get(`${BASE}${path}`)).text();
     // A private voucher, a switched-off campaign and a translation left behind by a deleted one stay on the server.
-    for (const secret of ["Internal secret", "Switched off campaign", "Orphan campaign", "Bí mật nội bộ", "Chiến dịch đã tắt", "Chiến dịch mồ côi"]) {
+    for (const secret of [
+      "Internal secret", "Switched off campaign", "Orphan campaign", "Bí mật nội bộ", "Chiến dịch đã tắt", "Chiến dịch mồ côi",
+      "Starts tomorrow", "Chiến dịch chưa bắt đầu", "Other shop campaign", "Chiến dịch của shop khác", "Other shop free shipping", "Freeship của shop khác",
+    ]) {
       expect(html.includes(secret), `${path} leaks "${secret}"`).toBe(false);
     }
   }

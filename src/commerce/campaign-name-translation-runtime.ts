@@ -1,11 +1,12 @@
 import { prisma } from "../db/prisma.ts";
+import { readPancakeShopId } from "../integrations/pancake/config.ts";
 import { createCampaignNameTranslationRepository } from "./campaign-name-translation-repository.ts";
 import { campaignNameMap, type CampaignNameMap } from "./campaign-name-translation.ts";
 
 /**
  * The English names of the campaigns the storefront shows to anyone.
  *
- * Only names of campaigns that are public, switched on and not over are returned (see
+ * Only names of campaigns that are public, switched on, started, not over and on this shop are returned (see
  * `readPublic`), because this is what goes to every English visitor's browser: a private voucher's
  * name, a switched-off campaign's and a translation left behind by a renamed one are not. Read on the
  * English storefront only and held in memory for a short while, so an admin's edit shows within the
@@ -26,7 +27,7 @@ export async function readPublicCampaignNames(now: number = Date.now()): Promise
   if (cached !== null && cached.until > now) return cached.messages;
   inflight ??= (async () => {
     try {
-      const rows = await repository.readPublic("en");
+      const rows = await repository.readPublic("en", readPancakeShopId());
       const messages = campaignNameMap(rows);
       const signature = JSON.stringify(Object.entries(messages).sort());
       // The same object while nothing changed, so a client provider's value stays stable.

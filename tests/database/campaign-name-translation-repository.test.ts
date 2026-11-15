@@ -14,14 +14,15 @@ if (!connectionString) {
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 const repository = createCampaignNameTranslationRepository(prisma);
 const shopId = 910_071;
+const otherShopId = 910_072;
 const PAST = new Date("2026-11-01T00:00:00.000Z");
 const NAMES = ["CNT mùa thu", "CNT chung", "CNT freeship"];
-const EXTRA = ["CNT riêng tư", "CNT đã tắt", "CNT đã hết hạn", "CNT mồ côi", "CNT đã đổi tên"];
+const EXTRA = ["CNT riêng tư", "CNT đã tắt", "CNT đã hết hạn", "CNT mồ côi", "CNT đã đổi tên", "CNT chưa bắt đầu", "CNT shop khác", "CNT freeship shop khác"];
 
 async function cleanup() {
   await prisma.campaignNameTranslation.deleteMany({ where: { source: { in: [...NAMES, ...EXTRA] } } });
-  await prisma.voucherCampaign.deleteMany({ where: { pancakeShopId: shopId } });
-  await prisma.shippingPromotionCampaign.deleteMany({ where: { pancakeShopId: shopId } });
+  await prisma.voucherCampaign.deleteMany({ where: { pancakeShopId: { in: [shopId, otherShopId] } } });
+  await prisma.shippingPromotionCampaign.deleteMany({ where: { pancakeShopId: { in: [shopId, otherShopId] } } });
 }
 
 async function seed() {
@@ -54,7 +55,7 @@ test("every campaign name in use is listed once, with its kinds and its English"
   await seed();
   await repository.save({ source: NAMES[0]!, text: "Autumn offer" }, "en");
 
-  const rows = (await repository.listNames("en")).filter((row) => NAMES.includes(row.source));
+  const rows = (await repository.listNames("en", shopId)).filter((row) => NAMES.includes(row.source));
   assert.deepEqual(
     rows.map((row) => ({ source: row.source, kinds: row.kinds, text: row.text })).sort((a, b) => a.source.localeCompare(b.source)),
     [
@@ -71,14 +72,14 @@ test("saving replaces and an empty text removes", async () => {
   await repository.save({ source: NAMES[0]!, text: "Autumn deal" }, "en");
   await repository.save({ source: NAMES[1]!, text: "Everything" }, "en");
 
-  const stored = (await repository.listNames("en")).filter((row) => NAMES.includes(row.source) && row.text !== "");
+  const stored = (await repository.listNames("en", shopId)).filter((row) => NAMES.includes(row.source) && row.text !== "");
   assert.deepEqual(stored.map((row) => [row.source, row.text]).sort(), [
     ["CNT chung", "Everything"],
     ["CNT mùa thu", "Autumn deal"],
   ]);
 
   await repository.save({ source: NAMES[1]!, text: "" }, "en");
-  assert.equal((await repository.listNames("en")).find((row) => row.source === NAMES[1])?.text, "");
+  assert.equal((await repository.listNames("en", shopId)).find((row) => row.source === NAMES[1])?.text, "");
 });
 
 test("only names of public, switched-on, running campaigns are published; private, off, ended and orphan are not", async () => {
@@ -94,11 +95,11 @@ test("only names of public, switched-on, running campaigns are published; privat
     await repository.save({ source, text: `EN ${source}` }, "en");
   }
 
-  const published = (await repository.readPublic("en", new Date("2026-11-15T00:00:00.000Z"))).map((row) => row.source);
+  const published = (await repository.readPublic("en", shopId, new Date("2026-11-15T00:00:00.000Z"))).map((row) => row.source);
   assert.deepEqual(published.filter((source) => source.startsWith("CNT")).sort(), [NAMES[0]!]);
 
   // The admin still sees every name in use, and a name only a private voucher carries cannot be translated.
-  const listed = new Map((await repository.listNames("en")).map((row) => [row.source, row]));
+  const listed = new Map((await repository.listNames("en", shopId)).map((row) => [row.source, row]));
   assert.equal(listed.get("CNT riêng tư")?.translatable, false);
   assert.deepEqual(listed.get("CNT riêng tư")?.kinds, ["PRIVATE_VOUCHER"]);
   assert.equal(listed.get(NAMES[0]!)?.translatable, true);
@@ -107,10 +108,59 @@ test("only names of public, switched-on, running campaigns are published; privat
   await prisma.voucherCampaign.deleteMany({ where: { pancakeShopId: shopId } });
 });
 
+test("a campaign that starts tomorrow is not published until it starts", async () => {
+  await seed();
+  const startsAt = new Date("2026-11-16T00:00:00.000Z");
+  await prisma.voucherCampaign.create({
+    data: {
+      pancakeShopId: shopId, kind: "MERCHANDISE", issuance: "AUTO", visibility: "PUBLIC", discountType: "FIXED_AMOUNT_VND",
+      scopeMode: "ALL_SHOP", enabledAt: PAST, isEnabled: true, startsAt, name: "CNT chưa bắt đầu",
+      fixedAmountVnd: BigInt(10_000), minEligibleSubtotalVnd: BigInt(600_000),
+    },
+  });
+  await prisma.shippingPromotionCampaign.create({
+    data: { pancakeShopId: shopId, name: "CNT chưa bắt đầu", isEnabled: true, enabledAt: PAST, startsAt, minimumQuantity: 3, priority: 3, stackingEnabled: false, categoryKeys: ["vayDam"] },
+  });
+  await repository.save({ source: "CNT chưa bắt đầu", text: "Not yet" }, "en");
+
+  const before = await repository.readPublic("en", shopId, new Date("2026-11-15T12:00:00.000Z"));
+  assert.equal(before.some((row) => row.source === "CNT chưa bắt đầu"), false);
+  const after = await repository.readPublic("en", shopId, new Date("2026-11-16T00:00:01.000Z"));
+  assert.equal(after.some((row) => row.source === "CNT chưa bắt đầu"), true);
+});
+
+test("only this shop's vouchers and freeship campaigns publish a name", async () => {
+  await seed();
+  await prisma.voucherCampaign.create({
+    data: {
+      pancakeShopId: otherShopId, kind: "MERCHANDISE", issuance: "AUTO", visibility: "PUBLIC", discountType: "FIXED_AMOUNT_VND",
+      scopeMode: "ALL_SHOP", enabledAt: PAST, isEnabled: true, name: "CNT shop khác",
+      fixedAmountVnd: BigInt(10_000), minEligibleSubtotalVnd: BigInt(600_000),
+    },
+  });
+  await prisma.shippingPromotionCampaign.create({
+    data: { pancakeShopId: otherShopId, name: "CNT freeship shop khác", isEnabled: true, enabledAt: PAST, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] },
+  });
+  for (const source of [NAMES[0]!, "CNT shop khác", "CNT freeship shop khác"]) {
+    await repository.save({ source, text: `EN ${source}` }, "en");
+  }
+  const now = new Date("2026-11-15T00:00:00.000Z");
+
+  const here = (await repository.readPublic("en", shopId, now)).map((row) => row.source).filter((source) => source.startsWith("CNT"));
+  assert.deepEqual(here, [NAMES[0]!]);
+  const there = (await repository.readPublic("en", otherShopId, now)).map((row) => row.source).filter((source) => source.startsWith("CNT")).sort();
+  assert.deepEqual(there, ["CNT freeship shop khác", "CNT shop khác"]);
+
+  // The admin list is the shop's own as well.
+  const listed = (await repository.listNames("en", shopId)).map((row) => row.source);
+  assert.equal(listed.includes("CNT shop khác"), false);
+  assert.equal(listed.includes(NAMES[0]!), true);
+});
+
 test("a translation whose campaign was renamed is no longer listed, and the database refuses another language", async () => {
   await seed();
   await repository.save({ source: "CNT đã đổi tên", text: "Renamed" }, "en");
-  assert.equal((await repository.listNames("en")).some((row) => row.source === "CNT đã đổi tên"), false);
+  assert.equal((await repository.listNames("en", shopId)).some((row) => row.source === "CNT đã đổi tên"), false);
 
   await assert.rejects(
     prisma.campaignNameTranslation.create({ data: { source: NAMES[0]!, locale: "vi", text: "x" } }),

@@ -14,6 +14,7 @@ import {
   type CampaignNameKind,
 } from "@/commerce/campaign-name-translation-repository";
 import { prisma } from "@/db/prisma";
+import { readPancakeShopId } from "@/integrations/pancake/config";
 
 export const metadata: Metadata = { title: "Bản dịch tên chương trình khuyến mãi" };
 
@@ -69,7 +70,7 @@ export default async function AdminCampaignNameTranslationsPage({ searchParams }
 
     // Only a name that a campaign still carries can be translated: the list is the authority, not
     // whatever the form posted.
-    const known = new Set((await repository.listNames("en")).filter((row) => row.translatable).map((row) => row.source));
+    const known = new Set((await repository.listNames("en", readPancakeShopId())).filter((row) => row.translatable).map((row) => row.source));
     for (const entry of entries) {
       if (known.has(entry.source)) await repository.save(entry, "en");
     }
@@ -78,7 +79,7 @@ export default async function AdminCampaignNameTranslationsPage({ searchParams }
     redirect("/admin/promotions/name-translations?saved=1");
   }
 
-  const [rows, query] = await Promise.all([repository.listNames("en"), searchParams]);
+  const [rows, query] = await Promise.all([repository.listNames("en", readPancakeShopId()), searchParams]);
   const saved = queryValue(query.saved) === "1";
   const error = queryValue(query.error);
   const errorMessage =
@@ -96,7 +97,7 @@ export default async function AdminCampaignNameTranslationsPage({ searchParams }
       <h2 className="mt-4 font-display text-3xl tracking-[-0.02em]">Bản dịch tên chương trình</h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-black/65">
         Tên tiếng Anh hiện trên trang <code>/en</code> ở mọi nơi tên chương trình xuất hiện. Để trống thì trang tiếng Anh dùng
-        tên tiếng Việt. Báo giá, đơn hàng và voucher không đổi. Chỉ chương trình đang bật, chưa kết thúc và công khai mới được
+        tên tiếng Việt. Báo giá, đơn hàng và voucher không đổi. Chỉ chương trình đang bật, đã bắt đầu, chưa kết thúc và công khai mới được
         hiện bản dịch; tên chỉ dùng cho voucher riêng tư không được dịch.
       </p>
 

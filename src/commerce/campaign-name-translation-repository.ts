@@ -35,17 +35,32 @@ const KIND_ORDER: readonly CampaignNameKind[] = ["PROMOTION", "GIFT", "SHIPPING"
 export function createCampaignNameTranslationRepository(db: Db) {
   return {
     /**
-     * The English for the names the storefront may show to anyone: those of campaigns that are
-     * switched on, not over, and public. A translation whose campaign is private, switched off, ended,
-     * renamed or deleted is not returned, so it can never reach a browser it was not meant for.
+     * The English for the names the storefront may show to anyone: those of campaigns that are public,
+     * switched on, started and not over, on this shop. A translation whose campaign is private, switched
+     * off, not yet started, ended, on another shop, renamed or deleted is not returned, so it can never
+     * reach a browser it was not meant for. Promotion and gift campaigns carry no shop of their own (their
+     * scope is their targets), so they are read as the rest of the storefront reads them.
      */
-    async readPublic(locale: CampaignNameLocale, now: Date = new Date()): Promise<readonly CampaignNameEntry[]> {
-      const live = { isEnabled: true, OR: [{ endsAt: null }, { endsAt: { gt: now } }] };
+    async readPublic(
+      locale: CampaignNameLocale,
+      shopId: number,
+      now: Date = new Date(),
+    ): Promise<readonly CampaignNameEntry[]> {
+      const running = {
+        isEnabled: true,
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ endsAt: null }, { endsAt: { gt: now } }] },
+        ],
+      };
       const [promotion, gift, shipping, voucher, translations] = await Promise.all([
-        db.promotionCampaign.findMany({ where: live, select: { name: true } }),
-        db.giftQuantityCampaign.findMany({ where: live, select: { name: true } }),
-        db.shippingPromotionCampaign.findMany({ where: live, select: { name: true } }),
-        db.voucherCampaign.findMany({ where: { ...live, visibility: "PUBLIC" }, select: { name: true } }),
+        db.promotionCampaign.findMany({ where: running, select: { name: true } }),
+        db.giftQuantityCampaign.findMany({ where: running, select: { name: true } }),
+        db.shippingPromotionCampaign.findMany({ where: { ...running, pancakeShopId: shopId }, select: { name: true } }),
+        db.voucherCampaign.findMany({
+          where: { ...running, pancakeShopId: shopId, visibility: "PUBLIC" },
+          select: { name: true },
+        }),
         db.campaignNameTranslation.findMany({ where: { locale }, select: { source: true, text: true } }),
       ]);
       const shown = new Set<string>();
@@ -54,15 +69,15 @@ export function createCampaignNameTranslationRepository(db: Db) {
     },
 
     /**
-     * Every distinct campaign name in use, with the English given to it. A translation whose campaign
+     * Every distinct campaign name in use on this shop, with the English given to it. A translation whose campaign
      * has since been renamed or deleted is not listed: it would be a row nobody can see or reach.
      */
-    async listNames(locale: CampaignNameLocale): Promise<readonly CampaignNameRow[]> {
+    async listNames(locale: CampaignNameLocale, shopId: number): Promise<readonly CampaignNameRow[]> {
       const [promotion, gift, shipping, voucher, translations] = await Promise.all([
         db.promotionCampaign.findMany({ select: { name: true } }),
         db.giftQuantityCampaign.findMany({ select: { name: true } }),
-        db.shippingPromotionCampaign.findMany({ select: { name: true } }),
-        db.voucherCampaign.findMany({ select: { name: true, visibility: true } }),
+        db.shippingPromotionCampaign.findMany({ where: { pancakeShopId: shopId }, select: { name: true } }),
+        db.voucherCampaign.findMany({ where: { pancakeShopId: shopId }, select: { name: true, visibility: true } }),
         db.campaignNameTranslation.findMany({ where: { locale }, select: { source: true, text: true } }),
       ]);
       const kinds = new Map<string, Set<CampaignNameKind>>();

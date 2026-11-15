@@ -72,7 +72,8 @@ in the browser -- and is never merged into the catalog: a campaign called "Æ¯u Ä
 still shows its dollar figure).
 
 What reaches the browser is limited to names the storefront shows to anyone: `readPublic` returns a translation only if
-a campaign of that name is public, switched on and not over. A private voucher's name, a switched-off or ended campaign's,
+a campaign of that name is public, switched on, started, not over and on this shop (`PANCAKE_SHOP_ID`; promotion and gift
+campaigns carry no shop of their own). A private voucher's name, a switched-off, not-yet-started or ended campaign's, another shop's,
 and a translation left behind by a renamed or deleted campaign stay on the server; the admin marks names only private
 vouchers carry as not translatable. The rows are read for English requests only and held 30 s. Display only: quotes, orders
 and the checkout's proofs keep the campaign's own name.
