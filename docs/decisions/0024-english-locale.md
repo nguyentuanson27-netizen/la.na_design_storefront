@@ -72,8 +72,10 @@ in the browser -- and is never merged into the catalog: a campaign called "Æ¯u Ä
 still shows its dollar figure).
 
 What reaches the browser is limited to names the storefront shows to anyone: `readPublic` returns a translation only if
-a campaign of that name is public, switched on, started, not over and on this shop (`PANCAKE_SHOP_ID`; promotion and gift
-campaigns carry no shop of their own). A private voucher's name, a switched-off, not-yet-started or ended campaign's, another shop's,
+a campaign of that name is public, switched on, started, not over and on this shop (`PANCAKE_SHOP_ID`). Vouchers and freeship
+campaigns carry the shop; promotion and gift campaigns do not, so they are placed by what they apply to: a promotion by its
+product or variant targets, a gift or tier campaign over a fixed product set by its frozen products, and one over every paid
+line or a category (which apply to whatever the storefront sells) to every shop. A private voucher's name, a switched-off, not-yet-started or ended campaign's, another shop's,
 and a translation left behind by a renamed or deleted campaign stay on the server; the admin marks names only private
 vouchers carry as not translatable. The rows are read for English requests only and held 30 s. Display only: quotes, orders
 and the checkout's proofs keep the campaign's own name.

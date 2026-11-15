@@ -40,6 +40,10 @@ const TRANSLATED = {
   "Chiến dịch chưa bắt đầu": "Starts tomorrow",
   "Chiến dịch của shop khác": "Other shop campaign",
   "Freeship của shop khác": "Other shop free shipping",
+  // A promotion that applies only to another shop's product (no shop column of its own: placed by its targets).
+  "Khuyến mãi chỉ cho shop khác": "Promotion for the other shop only",
+  // A promotion on this shop's own product: shown.
+  "Khuyến mãi mùa thu": "Autumn promotion sale",
 } as const;
 
 async function cleanup() {
@@ -50,7 +54,8 @@ async function cleanup() {
     await tx.voucherCampaign.deleteMany({ where: { pancakeShopId: { in: [SHOP, OTHER_SHOP] } } });
   });
   await prisma.shippingPromotionCampaign.deleteMany({ where: { pancakeShopId: { in: [SHOP, OTHER_SHOP] } } });
-  await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP } });
+  await prisma.promotionCampaign.deleteMany({ where: { name: { in: ["Khuyến mãi chỉ cho shop khác", "Khuyến mãi mùa thu"] } } });
+  await prisma.productMirror.deleteMany({ where: { pancakeShopId: { in: [SHOP, OTHER_SHOP] } } });
   await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "voucher-code-" } } });
 }
 
@@ -125,6 +130,15 @@ test.beforeEach(async ({ context }) => {
   const tomorrow = new Date(Date.now() + 86_400_000);
   await prisma.voucherCampaign.create({ data: { ...base, name: "Chiến dịch chưa bắt đầu", startsAt: tomorrow, fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) } });
   await prisma.voucherCampaign.create({ data: { ...base, pancakeShopId: OTHER_SHOP, name: "Chiến dịch của shop khác", fixedAmountVnd: BigInt(80_000), minEligibleSubtotalVnd: BigInt(600_000) } });
+  const otherProduct = await prisma.productMirror.create({
+    data: { pancakeShopId: OTHER_SHOP, pancakeProductId: `${P}other`, slug: `${P}other`, name: "Sản phẩm shop khác", isActive: true, isPresent: true, syncedAt: now },
+  });
+  await prisma.promotionCampaign.create({
+    data: { kind: "PROMOTION", name: "Khuyến mãi chỉ cho shop khác", discountType: "PERCENTAGE", percentageValue: 10, isEnabled: true, enabledAt: now, targets: { create: { productId: otherProduct.id } } },
+  });
+  await prisma.promotionCampaign.create({
+    data: { kind: "PROMOTION", name: "Khuyến mãi mùa thu", discountType: "PERCENTAGE", percentageValue: 10, isEnabled: true, enabledAt: now, targets: { create: { productId: created.id } } },
+  });
   await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: OTHER_SHOP, name: "Freeship của shop khác", isEnabled: true, enabledAt: now, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] } });
   await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: SHOP, name: "Miễn phí vận chuyển mùa thu", isEnabled: true, enabledAt: now, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] } });
   ids = { m50: m50.id, far: far.id, ship: ship.id, priv: priv.id };
@@ -187,6 +201,7 @@ test("the browser is given only the names of public, running campaigns of this s
     for (const secret of [
       "Internal secret", "Switched off campaign", "Orphan campaign", "Bí mật nội bộ", "Chiến dịch đã tắt", "Chiến dịch mồ côi",
       "Starts tomorrow", "Chiến dịch chưa bắt đầu", "Other shop campaign", "Chiến dịch của shop khác", "Other shop free shipping", "Freeship của shop khác",
+      "Promotion for the other shop only", "Khuyến mãi chỉ cho shop khác",
     ]) {
       expect(html.includes(secret), `${path} leaks "${secret}"`).toBe(false);
     }
@@ -194,6 +209,8 @@ test("the browser is given only the names of public, running campaigns of this s
   // The public ones are there: that is how the browser draws them in English.
   const cart = await (await request.get(`${BASE}/en/cart`)).text();
   expect(cart).toContain("Autumn offer");
+  // A promotion on this shop's own product is published, one on another shop's product only is not.
+  expect(cart).toContain("Autumn promotion sale");
   // Vietnamese is given none of it.
   const vi = await (await request.get(`${BASE}/cart`)).text();
   expect(vi).not.toContain("Autumn offer");

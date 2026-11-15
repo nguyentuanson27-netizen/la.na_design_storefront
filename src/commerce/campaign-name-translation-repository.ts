@@ -30,6 +30,34 @@ export type CampaignNameRow = Readonly<{
   translatable: boolean;
 }>;
 
+/**
+ * Promotion and gift campaigns carry no shop of their own; what ties them to one is what they apply to.
+ *
+ * - A promotion applies to its targets, products or variants: it belongs to the shop whose products
+ *   those are.
+ * - A gift or quantity-tier campaign over "every paid line" or a product category applies to whatever
+ *   the storefront sells, so it belongs to every shop; one over a fixed product set belongs to the
+ *   shop whose products were frozen into it.
+ *
+ * A campaign that applies to another shop's products only is not this shop's to show.
+ */
+function promotionOfShop(shopId: number) {
+  return {
+    targets: {
+      some: { OR: [{ product: { pancakeShopId: shopId } }, { variant: { product: { pancakeShopId: shopId } } }] },
+    },
+  };
+}
+
+function giftOfShop(shopId: number) {
+  return {
+    OR: [
+      { scopeMode: { in: ["GLOBAL_ALL_PAID_LINES" as const, "DYNAMIC_CATEGORY" as const] } },
+      { scopeMode: "FIXED_PRODUCT_SET" as const, frozen: { some: { product: { pancakeShopId: shopId } } } },
+    ],
+  };
+}
+
 const KIND_ORDER: readonly CampaignNameKind[] = ["PROMOTION", "GIFT", "SHIPPING", "VOUCHER", "PRIVATE_VOUCHER"];
 
 export function createCampaignNameTranslationRepository(db: Db) {
@@ -39,7 +67,7 @@ export function createCampaignNameTranslationRepository(db: Db) {
      * switched on, started and not over, on this shop. A translation whose campaign is private, switched
      * off, not yet started, ended, on another shop, renamed or deleted is not returned, so it can never
      * reach a browser it was not meant for. Promotion and gift campaigns carry no shop of their own (their
-     * scope is their targets), so they are read as the rest of the storefront reads them.
+     * scope is their targets), so they are placed by what they apply to; see `promotionOfShop`.
      */
     async readPublic(
       locale: CampaignNameLocale,
@@ -54,8 +82,8 @@ export function createCampaignNameTranslationRepository(db: Db) {
         ],
       };
       const [promotion, gift, shipping, voucher, translations] = await Promise.all([
-        db.promotionCampaign.findMany({ where: running, select: { name: true } }),
-        db.giftQuantityCampaign.findMany({ where: running, select: { name: true } }),
+        db.promotionCampaign.findMany({ where: { ...running, ...promotionOfShop(shopId) }, select: { name: true } }),
+        db.giftQuantityCampaign.findMany({ where: { AND: [running, giftOfShop(shopId)] }, select: { name: true } }),
         db.shippingPromotionCampaign.findMany({ where: { ...running, pancakeShopId: shopId }, select: { name: true } }),
         db.voucherCampaign.findMany({
           where: { ...running, pancakeShopId: shopId, visibility: "PUBLIC" },
@@ -74,8 +102,8 @@ export function createCampaignNameTranslationRepository(db: Db) {
      */
     async listNames(locale: CampaignNameLocale, shopId: number): Promise<readonly CampaignNameRow[]> {
       const [promotion, gift, shipping, voucher, translations] = await Promise.all([
-        db.promotionCampaign.findMany({ select: { name: true } }),
-        db.giftQuantityCampaign.findMany({ select: { name: true } }),
+        db.promotionCampaign.findMany({ where: promotionOfShop(shopId), select: { name: true } }),
+        db.giftQuantityCampaign.findMany({ where: giftOfShop(shopId), select: { name: true } }),
         db.shippingPromotionCampaign.findMany({ where: { pancakeShopId: shopId }, select: { name: true } }),
         db.voucherCampaign.findMany({ where: { pancakeShopId: shopId }, select: { name: true, visibility: true } }),
         db.campaignNameTranslation.findMany({ where: { locale }, select: { source: true, text: true } }),

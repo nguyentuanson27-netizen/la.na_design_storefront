@@ -17,12 +17,15 @@ const shopId = 910_071;
 const otherShopId = 910_072;
 const PAST = new Date("2026-11-01T00:00:00.000Z");
 const NAMES = ["CNT mùa thu", "CNT chung", "CNT freeship"];
-const EXTRA = ["CNT riêng tư", "CNT đã tắt", "CNT đã hết hạn", "CNT mồ côi", "CNT đã đổi tên", "CNT chưa bắt đầu", "CNT shop khác", "CNT freeship shop khác"];
+const EXTRA = ["CNT riêng tư", "CNT đã tắt", "CNT đã hết hạn", "CNT mồ côi", "CNT đã đổi tên", "CNT chưa bắt đầu", "CNT shop khác", "CNT freeship shop khác", "CNT khuyến mãi A", "CNT khuyến mãi B", "CNT khuyến mãi B theo biến thể", "CNT quà cố định A", "CNT quà cố định B", "CNT quà theo danh mục"];
 
 async function cleanup() {
   await prisma.campaignNameTranslation.deleteMany({ where: { source: { in: [...NAMES, ...EXTRA] } } });
   await prisma.voucherCampaign.deleteMany({ where: { pancakeShopId: { in: [shopId, otherShopId] } } });
   await prisma.shippingPromotionCampaign.deleteMany({ where: { pancakeShopId: { in: [shopId, otherShopId] } } });
+  await prisma.promotionCampaign.deleteMany({ where: { name: { in: EXTRA } } });
+  await prisma.giftQuantityCampaign.deleteMany({ where: { name: { in: EXTRA } } });
+  await prisma.productMirror.deleteMany({ where: { pancakeShopId: { in: [shopId, otherShopId] } } });
 }
 
 async function seed() {
@@ -155,6 +158,62 @@ test("only this shop's vouchers and freeship campaigns publish a name", async ()
   const listed = (await repository.listNames("en", shopId)).map((row) => row.source);
   assert.equal(listed.includes("CNT shop khác"), false);
   assert.equal(listed.includes(NAMES[0]!), true);
+});
+
+test("a promotion or gift campaign is placed by what it applies to, not published to every shop", async () => {
+  await seed();
+  const syncedAt = new Date("2026-11-01T00:00:00.000Z");
+  const productOf = (slug: string, pancakeShopId: number) =>
+    prisma.productMirror.create({
+      data: {
+        pancakeShopId, pancakeProductId: `${slug}-ext`, slug, name: slug, syncedAt,
+        variants: { create: { pancakeVariationId: `${slug}-var`, color: "Đen", size: "M", syncedAt } },
+      },
+      include: { variants: true },
+    });
+  const here = await productOf("cnt-here", shopId);
+  const there = await productOf("cnt-there", otherShopId);
+  const promotion = (name: string, targets: object) =>
+    prisma.promotionCampaign.create({
+      data: { kind: "PROMOTION", name, discountType: "PERCENTAGE", percentageValue: 10, isEnabled: true, enabledAt: PAST, targets: { create: targets } },
+    });
+  await promotion("CNT khuyến mãi A", { productId: here.id });
+  await promotion("CNT khuyến mãi B", { productId: there.id });
+  await promotion("CNT khuyến mãi B theo biến thể", { variantId: there.variants[0]!.id });
+
+  const gift = (name: string, scope: object, frozenProductId?: string) =>
+    prisma.giftQuantityCampaign.create({
+      data: {
+        kind: "QUANTITY_TIER", name, isEnabled: true, enabledAt: PAST, tierUnit: "PERCENTAGE",
+        tierDiscountedUnits: "ALL_ELIGIBLE_UNITS", tierSelectionPriority: null,
+        tiers: { create: [{ minQuantity: 2, discountValue: 5 }] },
+        ...scope,
+        ...(frozenProductId === undefined
+          ? {}
+          : { frozenAt: PAST, frozenCampaignRevision: 1, frozen: { create: { productId: frozenProductId } } }),
+      },
+    });
+  await gift("CNT quà cố định A", { scopeMode: "FIXED_PRODUCT_SET", categoryKeys: [] }, here.id);
+  await gift("CNT quà cố định B", { scopeMode: "FIXED_PRODUCT_SET", categoryKeys: [] }, there.id);
+  await gift("CNT quà theo danh mục", { scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["setVay"] });
+  for (const name of ["CNT khuyến mãi A", "CNT khuyến mãi B", "CNT khuyến mãi B theo biến thể", "CNT quà cố định A", "CNT quà cố định B", "CNT quà theo danh mục"]) {
+    await repository.save({ source: name, text: `EN ${name}` }, "en");
+  }
+  const now = new Date("2026-11-15T00:00:00.000Z");
+  const names = async (shop: number) =>
+    (await repository.readPublic("en", shop, now)).map((row) => row.source).filter((source) => source.startsWith("CNT")).sort();
+
+  // Shop A: its own promotion and fixed gift, plus the one over a category (which applies wherever it is read).
+  assert.deepEqual((await names(shopId)).filter((n) => /khuyến mãi|quà/.test(n)), ["CNT khuyến mãi A", "CNT quà cố định A", "CNT quà theo danh mục"]);
+  // Shop B: the promotions on its products (product and variant targets) and its fixed gift.
+  assert.deepEqual((await names(otherShopId)).filter((n) => /khuyến mãi|quà/.test(n)), [
+    "CNT khuyến mãi B", "CNT khuyến mãi B theo biến thể", "CNT quà cố định B", "CNT quà theo danh mục",
+  ]);
+
+  // The admin's list is the shop's own as well.
+  const listed = (await repository.listNames("en", shopId)).map((row) => row.source);
+  for (const gone of ["CNT khuyến mãi B", "CNT khuyến mãi B theo biến thể", "CNT quà cố định B"]) assert.equal(listed.includes(gone), false, gone);
+  for (const kept of ["CNT khuyến mãi A", "CNT quà cố định A", "CNT quà theo danh mục"]) assert.equal(listed.includes(kept), true, kept);
 });
 
 test("a translation whose campaign was renamed is no longer listed, and the database refuses another language", async () => {
