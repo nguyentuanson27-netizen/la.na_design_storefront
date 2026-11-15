@@ -4,6 +4,7 @@ import { Josefin_Sans, Mulish } from "next/font/google";
 import { StorefrontAnchorScroll } from "@/components/brand/storefront-anchor-scroll";
 import { I18nProvider } from "@/i18n/client";
 import { LOCALE_LANGUAGE_TAG, type Locale } from "@/i18n/locale";
+import type { CampaignNameMap } from "@/commerce/campaign-name-translation";
 import type { Messages } from "@/i18n/translate";
 
 // The stylesheet stays at the App Router's conventional location and is imported from here, because
@@ -39,15 +40,16 @@ const fontVariables = `${josefin.variable} ${mulish.variable}`;
 export function SiteDocument({
   locale,
   messages,
+  campaignNames,
   children,
-}: Readonly<{ locale: Locale; messages: Messages; children: ReactNode }>) {
+}: Readonly<{ locale: Locale; messages: Messages; campaignNames?: CampaignNameMap; children: ReactNode }>) {
   // `globals.css` makes in-page scrolling smooth. Since Next 16 that also animates the jump to the
   // top of a newly opened page unless this attribute is present, which is what lets the router
   // switch to an instant scroll for the navigation itself.
   return (
     <html lang={LOCALE_LANGUAGE_TAG[locale]} className={fontVariables} data-scroll-behavior="smooth">
       <body className={fontVariables}>
-        <I18nProvider locale={locale} messages={messages}>
+        <I18nProvider locale={locale} messages={messages} campaignNames={campaignNames}>
           <StorefrontAnchorScroll />
           {children}
         </I18nProvider>

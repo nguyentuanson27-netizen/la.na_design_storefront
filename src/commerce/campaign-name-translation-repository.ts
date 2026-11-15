@@ -15,7 +15,7 @@ type Db = Pick<
 >;
 
 /** Where a campaign name comes from, for the admin list. */
-export type CampaignNameKind = "PROMOTION" | "GIFT" | "SHIPPING" | "VOUCHER";
+export type CampaignNameKind = "PROMOTION" | "GIFT" | "SHIPPING" | "VOUCHER" | "PRIVATE_VOUCHER";
 
 export type CampaignNameRow = Readonly<{
   source: string;
@@ -23,19 +23,34 @@ export type CampaignNameRow = Readonly<{
   kinds: readonly CampaignNameKind[];
   /** The English entered for it, or an empty string. */
   text: string;
+  /**
+   * Whether the storefront can show it in English. A name only a private voucher carries is never
+   * published to the browser, so there is nothing to translate it for.
+   */
+  translatable: boolean;
 }>;
 
-const KIND_ORDER: readonly CampaignNameKind[] = ["PROMOTION", "GIFT", "SHIPPING", "VOUCHER"];
+const KIND_ORDER: readonly CampaignNameKind[] = ["PROMOTION", "GIFT", "SHIPPING", "VOUCHER", "PRIVATE_VOUCHER"];
 
 export function createCampaignNameTranslationRepository(db: Db) {
   return {
-    /** Every stored translation, for the translator. */
-    async readAll(locale: CampaignNameLocale): Promise<readonly CampaignNameEntry[]> {
-      const rows = await db.campaignNameTranslation.findMany({
-        where: { locale },
-        select: { source: true, text: true },
-      });
-      return rows;
+    /**
+     * The English for the names the storefront may show to anyone: those of campaigns that are
+     * switched on, not over, and public. A translation whose campaign is private, switched off, ended,
+     * renamed or deleted is not returned, so it can never reach a browser it was not meant for.
+     */
+    async readPublic(locale: CampaignNameLocale, now: Date = new Date()): Promise<readonly CampaignNameEntry[]> {
+      const live = { isEnabled: true, OR: [{ endsAt: null }, { endsAt: { gt: now } }] };
+      const [promotion, gift, shipping, voucher, translations] = await Promise.all([
+        db.promotionCampaign.findMany({ where: live, select: { name: true } }),
+        db.giftQuantityCampaign.findMany({ where: live, select: { name: true } }),
+        db.shippingPromotionCampaign.findMany({ where: live, select: { name: true } }),
+        db.voucherCampaign.findMany({ where: { ...live, visibility: "PUBLIC" }, select: { name: true } }),
+        db.campaignNameTranslation.findMany({ where: { locale }, select: { source: true, text: true } }),
+      ]);
+      const shown = new Set<string>();
+      for (const { name } of [...promotion, ...gift, ...shipping, ...voucher]) shown.add(normalizeCampaignName(name));
+      return translations.filter((row) => shown.has(normalizeCampaignName(row.source)));
     },
 
     /**
@@ -47,7 +62,7 @@ export function createCampaignNameTranslationRepository(db: Db) {
         db.promotionCampaign.findMany({ select: { name: true } }),
         db.giftQuantityCampaign.findMany({ select: { name: true } }),
         db.shippingPromotionCampaign.findMany({ select: { name: true } }),
-        db.voucherCampaign.findMany({ select: { name: true } }),
+        db.voucherCampaign.findMany({ select: { name: true, visibility: true } }),
         db.campaignNameTranslation.findMany({ where: { locale }, select: { source: true, text: true } }),
       ]);
       const kinds = new Map<string, Set<CampaignNameKind>>();
@@ -63,13 +78,16 @@ export function createCampaignNameTranslationRepository(db: Db) {
       add(promotion, "PROMOTION");
       add(gift, "GIFT");
       add(shipping, "SHIPPING");
-      add(voucher, "VOUCHER");
+      add(voucher.filter((row) => row.visibility === "PUBLIC"), "VOUCHER");
+      add(voucher.filter((row) => row.visibility !== "PUBLIC"), "PRIVATE_VOUCHER");
       const text = new Map(translations.map((row) => [normalizeCampaignName(row.source), row.text]));
       return [...kinds.entries()]
         .map(([source, set]) => ({
           source,
           kinds: KIND_ORDER.filter((kind) => set.has(kind)),
           text: text.get(source) ?? "",
+          // A name carried only by private vouchers is never published, so translating it does nothing.
+          translatable: set.size > 1 || !set.has("PRIVATE_VOUCHER"),
         }))
         .sort((a, b) => a.source.localeCompare(b.source, "vi"));
     },

@@ -3,30 +3,50 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 
+import { localizeCampaignName, type CampaignNameMap } from "../commerce/campaign-name-translation.ts";
 import { DEFAULT_LOCALE, localizeHref, splitLocalePath, type Locale } from "./locale.ts";
 import { renderRich } from "./rich.tsx";
 import { richValues } from "./rich-values.ts";
 import { createTranslator, type Messages, type Translator } from "./translate.ts";
 
-type I18nContextValue = Readonly<{ locale: Locale; messages: Messages }>;
+type I18nContextValue = Readonly<{ locale: Locale; messages: Messages; campaignNames: CampaignNameMap }>;
 
-const I18nContext = createContext<I18nContextValue>({ locale: DEFAULT_LOCALE, messages: {} });
+const I18nContext = createContext<I18nContextValue>({ locale: DEFAULT_LOCALE, messages: {}, campaignNames: {} });
 
 /**
  * Carries the request's locale, and for English the messages, into client components. The server
- * passes `messages` only when the locale needs them, so a Vietnamese page ships no catalog.
+ * passes `messages` only when the locale needs them, so a Vietnamese page ships no catalog. The
+ * campaign names are the English of the public campaigns only (see `readPublicCampaignNames`).
  */
 export function I18nProvider({
   locale,
   messages,
+  campaignNames = {},
   children,
-}: Readonly<{ locale: Locale; messages: Messages; children: ReactNode }>) {
-  const value = useMemo(() => ({ locale, messages }), [locale, messages]);
+}: Readonly<{ locale: Locale; messages: Messages; campaignNames?: CampaignNameMap; children: ReactNode }>) {
+  const value = useMemo(() => ({ locale, messages, campaignNames }), [locale, messages, campaignNames]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
 export function useLocale(): Locale {
   return useContext(I18nContext).locale;
+}
+
+/**
+ * A campaign's name in the page's language: the English an admin entered, otherwise the name read
+ * through the catalog as written (so "Giảm 50K" still shows its dollar figure). Its own lookup, never
+ * `t`: an admin's entry for a campaign called "Ưu đãi" must not change the interface's own "Ưu đãi".
+ */
+export function useCampaignName(): (name: string) => string {
+  const { campaignNames } = useContext(I18nContext);
+  const t = useT();
+  return useMemo(
+    () => (name: string) => {
+      const found = localizeCampaignName(campaignNames, name);
+      return found !== name ? found : t(name);
+    },
+    [campaignNames, t],
+  );
 }
 
 export function useT(): Translator {

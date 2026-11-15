@@ -3,7 +3,7 @@
 import Link from "@/i18n/link";
 
 import type { PromotionBannerItem, PromotionBannerView, PromotionSavingRow } from "@/routes/cart-promotion-model";
-import { useT } from "@/i18n/client";
+import { useCampaignName, useT } from "@/i18n/client";
 
 /**
  * The promotion lines shared by the cart drawer, the cart page and checkout.
@@ -191,12 +191,13 @@ export function PromotionSavings({
   className = "",
 }: Readonly<{ rows: readonly PromotionSavingRow[] | undefined; className?: string }>) {
   const t = useT();
+  const campaignName = useCampaignName();
   if (!rows || rows.length === 0) return null;
   return (
     <ul aria-label={t("Ưu đãi đã áp dụng")} className={`space-y-1.5 ${className}`} data-promotion-savings>
       {rows.map((row) => (
         <li className="flex items-baseline justify-between gap-4 text-xs font-medium text-[#24472D]" key={row.id}>
-          <span className="min-w-0">{t(row.label)}</span>
+          <span className="min-w-0">{campaignName(row.label)}</span>
           <span className="shrink-0">−{t(row.amountText)}</span>
         </li>
       ))}

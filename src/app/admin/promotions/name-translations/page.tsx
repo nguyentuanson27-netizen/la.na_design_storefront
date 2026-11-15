@@ -8,7 +8,7 @@ import {
   CAMPAIGN_NAME_LIMITS,
   parseCampaignNameInput,
 } from "@/commerce/campaign-name-translation";
-import { forgetCampaignNameMessages } from "@/commerce/campaign-name-translation-runtime";
+import { forgetPublicCampaignNames } from "@/commerce/campaign-name-translation-runtime";
 import {
   createCampaignNameTranslationRepository,
   type CampaignNameKind,
@@ -24,6 +24,7 @@ const KIND_LABELS: Record<CampaignNameKind, string> = {
   GIFT: "Quà tặng",
   SHIPPING: "Freeship",
   VOUCHER: "Voucher",
+  PRIVATE_VOUCHER: "Voucher riêng tư",
 };
 
 const inputClassName =
@@ -68,11 +69,11 @@ export default async function AdminCampaignNameTranslationsPage({ searchParams }
 
     // Only a name that a campaign still carries can be translated: the list is the authority, not
     // whatever the form posted.
-    const known = new Set((await repository.listNames("en")).map((row) => row.source));
+    const known = new Set((await repository.listNames("en")).filter((row) => row.translatable).map((row) => row.source));
     for (const entry of entries) {
       if (known.has(entry.source)) await repository.save(entry, "en");
     }
-    forgetCampaignNameMessages();
+    forgetPublicCampaignNames();
     revalidatePath("/admin/promotions/name-translations");
     redirect("/admin/promotions/name-translations?saved=1");
   }
@@ -95,7 +96,8 @@ export default async function AdminCampaignNameTranslationsPage({ searchParams }
       <h2 className="mt-4 font-display text-3xl tracking-[-0.02em]">Bản dịch tên chương trình</h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-black/65">
         Tên tiếng Anh hiện trên trang <code>/en</code> ở mọi nơi tên chương trình xuất hiện. Để trống thì trang tiếng Anh dùng
-        tên tiếng Việt. Báo giá, đơn hàng và voucher không đổi.
+        tên tiếng Việt. Báo giá, đơn hàng và voucher không đổi. Chỉ chương trình đang bật, chưa kết thúc và công khai mới được
+        hiện bản dịch; tên chỉ dùng cho voucher riêng tư không được dịch.
       </p>
 
       {saved ? (
@@ -127,7 +129,7 @@ export default async function AdminCampaignNameTranslationsPage({ searchParams }
                 <tr key={row.source}>
                   <th scope="row" className="py-3 pr-4 align-top font-medium">
                     {row.source}
-                    <input type="hidden" name="source" value={row.source} />
+                    {row.translatable ? <input type="hidden" name="source" value={row.source} /> : null}
                   </th>
                   <td className="px-4 py-3 align-top text-black/65">
                     {row.kinds.map((kind) => KIND_LABELS[kind]).join(", ")}
@@ -136,15 +138,19 @@ export default async function AdminCampaignNameTranslationsPage({ searchParams }
                     <label className="sr-only" htmlFor={`name-en-${index}`}>
                       Tên tiếng Anh của {row.source}
                     </label>
-                    <input
-                      id={`name-en-${index}`}
-                      name="text"
-                      type="text"
-                      lang="en"
-                      defaultValue={row.text}
-                      maxLength={CAMPAIGN_NAME_LIMITS.text}
-                      className={inputClassName}
-                    />
+                    {row.translatable ? (
+                      <input
+                        id={`name-en-${index}`}
+                        name="text"
+                        type="text"
+                        lang="en"
+                        defaultValue={row.text}
+                        maxLength={CAMPAIGN_NAME_LIMITS.text}
+                        className={inputClassName}
+                      />
+                    ) : (
+                      <span id={`name-en-${index}`} className="text-black/55">Không dịch (voucher riêng tư)</span>
+                    )}
                   </td>
                 </tr>
               ))}

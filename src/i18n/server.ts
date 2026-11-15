@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { headers } from "next/headers";
 
-import { readCampaignNameMessages } from "../commerce/campaign-name-translation-runtime.ts";
+import { localizeCampaignName, type CampaignNameMap } from "../commerce/campaign-name-translation.ts";
+import { readPublicCampaignNames } from "../commerce/campaign-name-translation-runtime.ts";
 import { EN_CLIENT_MESSAGES, EN_MESSAGES } from "./catalog/en.ts";
 import { DEFAULT_LOCALE, LOCALE_REQUEST_HEADER, localizeHref, parseLocale, type Locale } from "./locale.ts";
 import { renderRich } from "./rich.tsx";
@@ -29,34 +30,12 @@ export function clientMessagesFor(locale: Locale): Messages {
   return locale === "en" ? EN_CLIENT_MESSAGES : {};
 }
 
-/** One merged object per (catalog, names) pair, so the translator compiles its patterns once. */
-const mergedCache = new WeakMap<Messages, WeakMap<Messages, Messages>>();
-
-function withCampaignNames(base: Messages, names: Messages): Messages {
-  if (Object.keys(names).length === 0) return base;
-  const byNames = mergedCache.get(base) ?? new WeakMap<Messages, Messages>();
-  mergedCache.set(base, byNames);
-  const found = byNames.get(names);
-  if (found !== undefined) return found;
-  // An admin's English for a name is deliberate, so it wins over a catalog entry of the same text.
-  const merged = Object.freeze({ ...base, ...names });
-  byNames.set(names, merged);
-  return merged;
-}
-
 /**
- * What the request's translator knows: the catalog, plus the English campaign names an admin
- * entered. Vietnamese needs neither, and reads nothing.
+ * The English campaign names the browser may be given on this request: the public ones. Vietnamese
+ * has nothing to translate and reads nothing.
  */
-export async function requestMessagesFor(locale: Locale): Promise<Messages> {
-  if (locale !== "en") return {};
-  return withCampaignNames(EN_MESSAGES, await readCampaignNameMessages());
-}
-
-/** The same for the browser: the short catalog plus the campaign names, which are short. */
-export async function requestClientMessagesFor(locale: Locale): Promise<Messages> {
-  if (locale !== "en") return {};
-  return withCampaignNames(EN_CLIENT_MESSAGES, await readCampaignNameMessages());
+export async function requestCampaignNames(locale: Locale): Promise<CampaignNameMap> {
+  return locale === "en" ? await readPublicCampaignNames() : {};
 }
 
 export type RequestI18n = Readonly<{
@@ -69,17 +48,31 @@ export type RequestI18n = Readonly<{
    * nodes. For prose where a word is bold or a name is a link.
    */
   rich: (source: string, values?: Readonly<Record<string, ReactNode>>) => ReactNode;
+  /**
+   * A campaign's name in the request's language: the English an admin entered, or the name as
+   * written. Its own lookup, never the interface's `t`: a campaign called "Ưu đãi" must not change
+   * the page's own "Ưu đãi".
+   */
+  campaignName: (name: string) => string;
 }>;
 
 /** Everything a server component or loader needs to speak the request's language. */
+/** The admin's English for a campaign name when there is one; otherwise the catalog's reading of the name as written. */
+function localizedOr(names: CampaignNameMap, name: string, t: Translator): string {
+  const found = localizeCampaignName(names, name);
+  return found !== name ? found : t(name);
+}
+
 export async function getI18n(): Promise<RequestI18n> {
   const locale = await getLocale();
-  const t = createTranslator(locale, await requestMessagesFor(locale));
+  const t = createTranslator(locale, messagesFor(locale));
+  const names = await requestCampaignNames(locale);
   return {
     locale,
     t,
     href: (path) => localizeHref(path, locale),
     rich: (source, values) => renderRich(t(source), richValues(t, values)),
+    campaignName: (name) => localizedOr(names, name, t),
   };
 }
 

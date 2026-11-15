@@ -3,8 +3,9 @@ import test from "node:test";
 
 import {
   CAMPAIGN_NAME_LIMITS,
-  campaignNameMessages,
+  campaignNameMap,
   isTranslatableCampaignName,
+  localizeCampaignName,
   normalizeCampaignName,
   parseCampaignNameInput,
 } from "../../src/commerce/campaign-name-translation.ts";
@@ -18,10 +19,10 @@ test("a name is normalised the way the campaigns store it", () => {
   assert.equal(normalizeCampaignName("Ưu đãi".normalize("NFD")), "Ưu đãi");
 });
 
-test("a name with braces, an empty one or an oversized one is not a key", () => {
+test("an empty or oversized name is not a key", () => {
   assert.equal(isTranslatableCampaignName("Mua 3 tặng 1"), true);
-  // The translator reads {slot} in a key as a pattern, which would match other text.
-  assert.equal(isTranslatableCampaignName("Giảm {amount}"), false);
+  // It is a lookup of its own, not a translator pattern, so braces are an ordinary character.
+  assert.equal(isTranslatableCampaignName("Giảm {amount}"), true);
   assert.equal(isTranslatableCampaignName(""), false);
   assert.equal(isTranslatableCampaignName("x".repeat(CAMPAIGN_NAME_LIMITS.source + 1)), false);
 });
@@ -33,7 +34,7 @@ test("a form row parses; an empty English removes the translation", () => {
   });
   assert.deepEqual(parseCampaignNameInput("Mua 3 tặng 1", ""), { ok: true, value: { source: "Mua 3 tặng 1", text: "" } });
   assert.deepEqual(parseCampaignNameInput("Mua 3 tặng 1", null), { ok: true, value: { source: "Mua 3 tặng 1", text: "" } });
-  assert.deepEqual(parseCampaignNameInput("{x}", "a"), { ok: false, reason: "SOURCE" });
+  assert.deepEqual(parseCampaignNameInput("   ", "a"), { ok: false, reason: "SOURCE" });
   assert.deepEqual(parseCampaignNameInput(42, "a"), { ok: false, reason: "SOURCE" });
   assert.deepEqual(parseCampaignNameInput("Mua 3 tặng 1", "y".repeat(CAMPAIGN_NAME_LIMITS.text + 1)), {
     ok: false,
@@ -41,40 +42,48 @@ test("a form row parses; an empty English removes the translation", () => {
   });
 });
 
-test("only filled, usable rows become translator messages", () => {
-  const messages = campaignNameMessages([
+test("only filled, usable rows become lookups", () => {
+  const names = campaignNameMap([
     { source: "Mua 3 tặng 1", text: "Buy 3 get 1" },
     { source: "Chưa dịch", text: "   " },
-    { source: "Có {ngoặc}", text: "Braces" },
+    { source: "", text: "Empty" },
     { source: "Cũ".normalize("NFD"), text: "Old" },
   ]);
-  assert.deepEqual(messages, { "Mua 3 tặng 1": "Buy 3 get 1", "Cũ": "Old" });
+  assert.deepEqual(names, { "Mua 3 tặng 1": "Buy 3 get 1", "Cũ": "Old" });
 });
 
-test("the translator shows an admin's English name, and the Vietnamese when there is none", () => {
-  const names = campaignNameMessages([{ source: "Ưu đãi mùa thu", text: "Autumn offer" }]);
-  const en = createTranslator("en", { ...EN_MESSAGES, ...names });
-  assert.equal(en("Ưu đãi mùa thu"), "Autumn offer");
-  assert.equal(en("Quà tri ân khách hàng"), "Quà tri ân khách hàng");
-  // Vietnamese reads nothing.
-  assert.equal(createTranslator("vi", {})("Ưu đãi mùa thu"), "Ưu đãi mùa thu");
-  // An admin's entry wins over a catalog entry of the same text.
-  const override = createTranslator("en", { ...EN_MESSAGES, ...campaignNameMessages([{ source: "Freeship", text: "Free delivery" }]) });
-  assert.equal(override("Freeship"), "Free delivery");
+test("a campaign name is its English when an admin gave one, and as written otherwise", () => {
+  const names = campaignNameMap([{ source: "Ưu đãi mùa thu", text: "Autumn offer" }]);
+  assert.equal(localizeCampaignName(names, "Ưu đãi mùa thu"), "Autumn offer");
+  assert.equal(localizeCampaignName(names, " Ưu đãi mùa thu "), "Autumn offer");
+  assert.equal(localizeCampaignName(names, "Quà tri ân khách hàng"), "Quà tri ân khách hàng");
+  assert.equal(localizeCampaignName(undefined, "Ưu đãi mùa thu"), "Ưu đãi mùa thu");
 });
 
-test("a name inside a sentence is translated sentence by sentence, whatever the loose patterns say", () => {
+test("a campaign called like an interface label never changes the interface's own label", () => {
+  // "Ưu đãi" is the eyebrow of the eligible-offers page and also a name a shop might give a campaign.
+  const names = campaignNameMap([{ source: "Ưu đãi", text: "Autumn promotion" }]);
+  const en = createTranslator("en", EN_MESSAGES);
+  assert.equal(en("Ưu đãi"), "Offers");
+  // The campaign's name is the admin's, through its own lookup.
+  assert.equal(localizeCampaignName(names, "Ưu đãi"), "Autumn promotion");
+  // Nothing about the names is in the translator: its output for the label is the catalog's, always.
+  assert.equal(createTranslator("en", { ...EN_MESSAGES })("Ưu đãi"), "Offers");
+});
+
+test("sentences are translated one by one, whatever the loose patterns say, and a name is looked up on its own", () => {
   const detail =
     "Miễn phí vận chuyển mùa thu. Chỉ tính sản phẩm mua trong phạm vi chiến dịch, không tính quà tặng. Không cộng dồn với giảm giá và quà tặng. Giỏ hàng và thanh toán kiểm tra điều kiện hiện tại.";
-  const withName = createTranslator("en", { ...EN_CLIENT_MESSAGES, "Miễn phí vận chuyển mùa thu": "Autumn free shipping" });
+  const rule = detail.slice("Miễn phí vận chuyển mùa thu. ".length);
+  const en = createTranslator("en", EN_CLIENT_MESSAGES);
   assert.equal(
-    withName(detail),
-    "Autumn free shipping. Only products bought within the campaign count, not gifts. Does not stack with discounts and gifts. The cart and checkout check the conditions as they stand.",
+    en(rule),
+    "Only products bought within the campaign count, not gifts. Does not stack with discounts and gifts. The cart and checkout check the conditions as they stand.",
   );
-  // No translation for the name: it stays as the shop wrote it, the rest is English, and nothing is garbled.
-  const without = createTranslator("en", EN_CLIENT_MESSAGES)(detail);
-  assert.ok(without.startsWith("Miễn phí vận chuyển mùa thu. Only products bought"), without);
-  assert.ok(without.endsWith("Does not stack with discounts and gifts. The cart and checkout check the conditions as they stand."), without);
+  // Joined whole, with a name the catalog does not know: the name stays, the rest is English, nothing is garbled.
+  const whole = en(detail);
+  assert.ok(whole.startsWith("Miễn phí vận chuyển mùa thu. Only products bought"), whole);
+  assert.ok(whole.endsWith("Does not stack with discounts and gifts. The cart and checkout check the conditions as they stand."), whole);
 });
 
 test("the voucher teaser's sentences read in English with dollar figures", () => {

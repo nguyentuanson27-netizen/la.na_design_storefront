@@ -2,8 +2,9 @@
  * The English for a campaign's name.
  *
  * Campaigns (promotion, gift, shipping, voucher) are named by hand in the admin, in Vietnamese. The
- * name is the key: an admin translates the *text*, so a name several campaigns share is entered once,
- * and the storefront's translator treats it as one more catalog entry. A campaign without a
+ * name is the key: an admin translates the *text*, so a name several campaigns share is entered once.
+ * It is a lookup of its own, never merged into the storefront's catalog: a campaign called "Ưu đãi"
+ * must not turn the interface's own "Ưu đãi" into the campaign's English. A campaign without a
  * translation keeps its Vietnamese name; nothing breaks.
  *
  * Pure -- no database -- so the admin form, the repository and the runtime share one definition of
@@ -26,18 +27,9 @@ export function normalizeCampaignName(value: string): string {
   return value.normalize("NFC").trim();
 }
 
-/**
- * A name the translator can use as a key. The translator reads `{slot}` in a key as a pattern, so a
- * name carrying braces is left alone (it would match other text), and an empty or oversized one is
- * not a name.
- */
+/** A usable name: not empty, not oversized. */
 export function isTranslatableCampaignName(source: string): boolean {
-  return (
-    source.length > 0 &&
-    source.length <= CAMPAIGN_NAME_LIMITS.source &&
-    !source.includes("{") &&
-    !source.includes("}")
-  );
+  return source.length > 0 && source.length <= CAMPAIGN_NAME_LIMITS.source;
 }
 
 export type ParsedCampaignNameInput =
@@ -54,15 +46,23 @@ export function parseCampaignNameInput(source: unknown, text: unknown): ParsedCa
   return { ok: true, value: { source: normalizedSource, text: normalizedText } };
 }
 
-/** The translator's messages for a set of rows: source text to English, unusable rows skipped. */
-export function campaignNameMessages(
-  rows: readonly CampaignNameEntry[],
-): Readonly<Record<string, string>> {
-  const messages: Record<string, string> = {};
+/** English campaign names by their Vietnamese text. */
+export type CampaignNameMap = Readonly<Record<string, string>>;
+
+/** The lookup for a set of rows: source text to English, unusable rows skipped. */
+export function campaignNameMap(rows: readonly CampaignNameEntry[]): CampaignNameMap {
+  const names: Record<string, string> = {};
   for (const row of rows) {
     const source = normalizeCampaignName(row.source);
     const text = row.text.trim();
-    if (text.length > 0 && isTranslatableCampaignName(source)) messages[source] = text;
+    if (text.length > 0 && isTranslatableCampaignName(source)) names[source] = text;
   }
-  return Object.freeze(messages);
+  return Object.freeze(names);
+}
+
+/** A campaign's name for the page: its English when an admin gave one, otherwise the name as written. */
+export function localizeCampaignName(names: CampaignNameMap | undefined, name: string): string {
+  if (names === undefined) return name;
+  const found = names[normalizeCampaignName(name)];
+  return found === undefined ? name : found;
 }

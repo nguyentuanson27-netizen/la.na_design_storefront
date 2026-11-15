@@ -4,6 +4,8 @@ import { validateShippingCampaign, MAX_SHIPPING_CAMPAIGNS, type ShippingCampaign
 /** Public copy only: no internal product ids, campaign ids or mutable pricing authority reaches the browser. */
 export type ShippingPromotionNotice = Readonly<{
   headline: string;
+  /** The campaign's own name, which `detail` begins with; the English storefront shows its English. */
+  campaignName: string;
   detail: string;
   observedAtMs: number;
   expiresAtMs: number | null;
@@ -17,6 +19,7 @@ export function buildShippingPromotionNotice(campaigns: readonly ShippingCampaig
   if (!validateShippingCampaign(campaign).ok) throw new RangeError("Invalid shipping presentation campaign");
   return Object.freeze({
     headline: `Miễn phí vận chuyển từ ${campaign.minimumQuantity} sản phẩm áp dụng`,
+    campaignName: campaign.name,
     detail: `${campaign.name}. Chỉ tính sản phẩm mua trong phạm vi chiến dịch, không tính quà tặng. ${campaign.stackingEnabled ? "Được cộng dồn với giảm giá và quà tặng." : "Không cộng dồn với giảm giá và quà tặng."} Giỏ hàng và thanh toán kiểm tra điều kiện hiện tại.`,
     observedAtMs: now.getTime(), expiresAtMs: campaign.endsAt?.getTime() ?? null,
   });

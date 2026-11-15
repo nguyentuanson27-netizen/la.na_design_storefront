@@ -8,7 +8,7 @@ import { formatVoucherVnd, voucherEntryCopy, type VoucherPickerGroup, type Vouch
 import { VoucherCard } from "./voucher-card";
 import { VoucherIcon } from "./voucher-icons";
 import { VoucherDiscountRows } from "./voucher-summary-lines";
-import { useRich, useT } from "@/i18n/client";
+import { useCampaignName, useRich, useT } from "@/i18n/client";
 
 /**
  * Voucher v1 (V16): the Grab-inspired picker (spec §7). Mobile is a full-screen sheet with a sticky footer, desktop a
@@ -75,6 +75,7 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
   triggerLabel?: string;
 }>) {
   const t = useT();
+  const campaignName = useCampaignName();
   const rich = useRich();
   const { previewDraft, commitDraft, applyCode, applyLinkedCode, dismissLinkedOffer } = useVoucherPickerActions();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -465,7 +466,7 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
       )}
       {trigger === "entry" && nudge ? (
         <div className={`voucher-tone voucher-tone--${nudge.tone} voucher-nudge`} data-voucher-nudge>
-          <span>{rich("Mua thêm <b>{amount}</b> để dùng voucher <b>{name}</b>", { amount: formatVoucherVnd(nudge.item.shortfallVnd!), name: nudge.item.name })}</span>
+          <span>{rich("Mua thêm <b>{amount}</b> để dùng voucher <b>{name}</b>", { amount: formatVoucherVnd(nudge.item.shortfallVnd!), name: campaignName(nudge.item.name) })}</span>
           <span className="voucher-nudge__bar" role="progressbar" aria-label={t("Tiến độ đạt điều kiện")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={nudge.item.progressPercent!}><i style={{ width: `${nudge.item.progressPercent!}%` }} /></span>
         </div>
       ) : null}

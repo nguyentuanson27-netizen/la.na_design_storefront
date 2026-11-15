@@ -66,11 +66,16 @@ limits, the "charged in VND" line under the checkout and order-tracking totals, 
 **Campaign names.** Promotion, gift, shipping and voucher campaigns are named by hand in Vietnamese in the admin, so
 their English cannot live in the catalog. `CampaignNameTranslation` maps a Vietnamese name *text* to its English
 (one row serves every campaign that carries the name), entered in `/admin/promotions/name-translations`, which lists
-each distinct name in use once. The storefront reads the rows (`campaign-name-translation-runtime.ts`, held for 30 s,
-English requests only) and merges them into the translator's messages -- the server's and the browser's -- so any place
-that shows a name through `t()` shows the English; a name with no row shows the Vietnamese. Display only: quotes,
-orders and the checkout's proofs keep the campaign's own name. A name containing `{` or `}` cannot be a key and is
-skipped. Sentences that embed a name (the shipping notice) are translated sentence by sentence by the translator.
+each distinct name in use once. It is a lookup of its own -- `RequestI18n.campaignName` on the server, `useCampaignName`
+in the browser -- and is never merged into the catalog: a campaign called "Ưu đãi" must not turn the interface's own
+"Ưu đãi" label into the campaign's English. A name with no row is read through the catalog as written (so "Giảm 50K"
+still shows its dollar figure).
+
+What reaches the browser is limited to names the storefront shows to anyone: `readPublic` returns a translation only if
+a campaign of that name is public, switched on and not over. A private voucher's name, a switched-off or ended campaign's,
+and a translation left behind by a renamed or deleted campaign stay on the server; the admin marks names only private
+vouchers carry as not translatable. The rows are read for English requests only and held 30 s. Display only: quotes, orders
+and the checkout's proofs keep the campaign's own name.
 
 **Size guide.** The chart's titles, row labels and notes are in the brand catalog, in the client part of it, because the
 product page's size sheet and dialog are client components. An artwork uploaded for a guide in the admin is a picture and

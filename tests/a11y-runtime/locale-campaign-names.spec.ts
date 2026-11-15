@@ -29,6 +29,12 @@ const TRANSLATED = {
   "Ưu đãi mùa thu": "Autumn offer",
   "Freeship toàn quốc": "Nationwide free shipping",
   "Miễn phí vận chuyển mùa thu": "Autumn free shipping",
+  // The same words as the interface's own "Ưu đãi" label, which must keep saying "Offers".
+  "Ưu đãi": "Autumn promotion",
+  // Never published: a private voucher, a switched-off campaign, and a translation no campaign carries.
+  "Bí mật nội bộ": "Internal secret",
+  "Chiến dịch đã tắt": "Switched off campaign",
+  "Chiến dịch mồ côi": "Orphan campaign",
 } as const;
 
 async function cleanup() {
@@ -108,6 +114,9 @@ test.beforeEach(async ({ context }) => {
   const far = await prisma.voucherCampaign.create({ data: { ...base, name: "Quà tri ân khách hàng", fixedAmountVnd: BigInt(200_000), minEligibleSubtotalVnd: BigInt(2_000_000) } });
   const ship = await prisma.voucherCampaign.create({ data: { ...base, name: "Freeship toàn quốc", kind: "SHIPPING_FREE", discountType: null, minEligibleSubtotalVnd: BigInt(600_000) } });
   const priv = await prisma.voucherCampaign.create({ data: { ...base, name: "KOL 70K", issuance: "CODE", visibility: "PRIVATE", code: "KOL70", fixedAmountVnd: BigInt(70_000), minEligibleSubtotalVnd: BigInt(600_000) } });
+  await prisma.voucherCampaign.create({ data: { ...base, name: "Ưu đãi", fixedAmountVnd: BigInt(30_000), minEligibleSubtotalVnd: BigInt(600_000) } });
+  await prisma.voucherCampaign.create({ data: { ...base, name: "Bí mật nội bộ", issuance: "CODE", visibility: "PRIVATE", code: "SECRET1", fixedAmountVnd: BigInt(40_000), minEligibleSubtotalVnd: BigInt(600_000) } });
+  await prisma.voucherCampaign.create({ data: { ...base, name: "Chiến dịch đã tắt", isEnabled: false, fixedAmountVnd: BigInt(60_000), minEligibleSubtotalVnd: BigInt(600_000) } });
   await prisma.shippingPromotionCampaign.create({ data: { pancakeShopId: SHOP, name: "Miễn phí vận chuyển mùa thu", isEnabled: true, enabledAt: now, minimumQuantity: 1, priority: 1, stackingEnabled: false, categoryKeys: ["vayDam"] } });
   ids = { m50: m50.id, far: far.id, ship: ship.id, priv: priv.id };
   await context.addCookies([{ name: "la_cart", value: cartId, url: BASE, httpOnly: true, sameSite: "Lax" }]);
@@ -145,6 +154,38 @@ test("campaign names are English on /en where an admin gave them, and Vietnamese
   // The accessible name of a ticket follows.
   const names = await dialog.locator("button[aria-pressed]").evaluateAll((tickets) => tickets.map((t) => t.getAttribute("aria-label") ?? ""));
   expect(names.join(" | ")).toContain("Autumn offer");
+});
+
+test("a campaign called like an interface label shows its own English and leaves the interface's label alone", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${BASE}/en/cart`, { waitUntil: "networkidle" });
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.getByRole("dialog");
+  // The campaign "Ưu đãi" reads as the admin's English...
+  await expect(dialog.locator(".voucher-ticket__name", { hasText: "Autumn promotion" })).toBeVisible();
+  // ...while the interface's own "Ưu đãi" (the picker's name and back link) still says "Offers".
+  await expect(page.getByRole("dialog", { name: "Offers" })).toBeVisible();
+  expect((await dialog.innerText()).replace(/\s+/g, " ")).toContain("Offers");
+  // And the same label on the page behind it: the vouchers entry in the cart.
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-voucher-picker] > button")).not.toContainText("Autumn promotion");
+});
+
+test("the browser is given only the names of public, running campaigns", async ({ page, request }) => {
+  for (const path of ["/en", "/en/cart", `/en/shop/${productSlug}`]) {
+    const html = await (await request.get(`${BASE}${path}`)).text();
+    // A private voucher, a switched-off campaign and a translation left behind by a deleted one stay on the server.
+    for (const secret of ["Internal secret", "Switched off campaign", "Orphan campaign", "Bí mật nội bộ", "Chiến dịch đã tắt", "Chiến dịch mồ côi"]) {
+      expect(html.includes(secret), `${path} leaks "${secret}"`).toBe(false);
+    }
+  }
+  // The public ones are there: that is how the browser draws them in English.
+  const cart = await (await request.get(`${BASE}/en/cart`)).text();
+  expect(cart).toContain("Autumn offer");
+  // Vietnamese is given none of it.
+  const vi = await (await request.get(`${BASE}/cart`)).text();
+  expect(vi).not.toContain("Autumn offer");
+  void page;
 });
 
 test("the checkout's voucher lines and the shipping page's notice use the English name", async ({ page }) => {

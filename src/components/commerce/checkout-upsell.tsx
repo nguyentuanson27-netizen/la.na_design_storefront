@@ -2,7 +2,7 @@
 
 import Link from "@/i18n/link";
 import { useEffect, useRef, useState } from "react";
-import { useT } from "@/i18n/client";
+import { useCampaignName, useT } from "@/i18n/client";
 import type { CheckoutUpsellBanner } from "@/routes/checkout-model";
 
 /**
@@ -33,6 +33,7 @@ function saveAttempt(value: Attempt) {
  */
 export function CheckoutUpsell({ model, locked = false }: Readonly<{ model: CheckoutUpsellBanner; locked?: boolean }>) {
   const t = useT();
+  const campaignName = useCampaignName();
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const initialized = useRef(false);
   const mounted = useRef(false);
@@ -86,7 +87,7 @@ export function CheckoutUpsell({ model, locked = false }: Readonly<{ model: Chec
       <div className="min-w-0 flex-1">
         <h2 className="text-sm font-semibold leading-6">{t("Thêm 1 món để nhận ưu đãi")}</h2>
         <div className="mt-1 flex min-w-0 flex-col items-start gap-2 text-xs leading-5 text-black/70">
-          <span className="min-w-0 break-words">{t(model.offerName)}</span>
+          <span className="min-w-0 break-words">{campaignName(model.offerName)}</span>
           {locked ? (
             <span aria-disabled="true" className="inline-flex min-h-11 cursor-not-allowed items-center text-sm font-semibold text-black/45" data-upsell-link-locked>
               {t("Chọn thêm món")}
