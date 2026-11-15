@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildStorefrontProductMetadata } from "../../src/seo/product-metadata.ts";
+import {
+  buildStorefrontProductMetadata,
+  MAX_OPEN_GRAPH_IMAGES,
+} from "../../src/seo/product-metadata.ts";
 import { SOCIAL_FALLBACK_ALT, SOCIAL_FALLBACK_PATH } from "../../src/seo/social-identity.ts";
 
 // Derived from the brand's own social identity: the fallback card is renamed per fork by
@@ -263,4 +266,110 @@ test("a blank code behaves as no code, keeping the slug discriminator", () => {
   });
   assert.equal(metadata.title, "Set Váy — set-vay-sv605-01dd0809c343402da7d6");
   assert.equal(metadata.description, "Mô tả. — /shop/set-vay-sv605-01dd0809c343402da7d6.");
+});
+
+test("openGraph.images includes primary image first followed by gallery images", () => {
+  const galleryImage1 = {
+    url: "https://content.pancake.vn/1/2/3/4/ao-oxford-g1.jpg",
+    alt: "Áo Oxford Relaxed - Ảnh 2",
+  };
+  const galleryImage2 = {
+    url: "https://content.pancake.vn/1/2/3/4/ao-oxford-g2.jpg",
+    alt: "Áo Oxford Relaxed - Ảnh 3",
+  };
+
+  const metadata = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: {
+      ...baseProduct,
+      media: {
+        primary: trustedPrimary,
+        gallery: [galleryImage1, galleryImage2],
+      },
+    },
+  });
+
+  assert.deepEqual(metadata.openGraph?.images, [
+    trustedPrimary,
+    galleryImage1,
+    galleryImage2,
+  ]);
+  // Twitter Card summary_large_image should keep strictly one image
+  assert.deepEqual(metadata.twitter?.images, [trustedPrimary]);
+});
+
+test("openGraph.images deduplicates primary image if present in gallery", () => {
+  const metadata = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: {
+      ...baseProduct,
+      media: {
+        primary: trustedPrimary,
+        gallery: [
+          trustedPrimary, // duplicate of primary
+          { url: "https://content.pancake.vn/1/2/3/4/ao-oxford-g1.jpg", alt: "Ảnh 2" },
+        ],
+      },
+    },
+  });
+
+  const ogImages = Array.isArray(metadata.openGraph?.images) ? metadata.openGraph.images : [];
+  assert.equal(ogImages.length, 2);
+  assert.deepEqual(ogImages[0], trustedPrimary);
+});
+
+test("openGraph.images is bounded by MAX_OPEN_GRAPH_IMAGES", () => {
+  const extraImages = Array.from({ length: 15 }, (_, i) => ({
+    url: `https://content.pancake.vn/1/2/3/4/gallery-${i}.jpg`,
+    alt: `Ảnh ${i}`,
+  }));
+
+  const metadata = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: {
+      ...baseProduct,
+      media: {
+        primary: trustedPrimary,
+        gallery: extraImages,
+      },
+    },
+  });
+
+  const ogImages = Array.isArray(metadata.openGraph?.images) ? metadata.openGraph.images : [];
+  assert.equal(ogImages.length, MAX_OPEN_GRAPH_IMAGES);
+  assert.deepEqual(ogImages[0], trustedPrimary);
+});
+
+test("openGraph.images falls back to SOCIAL_FALLBACK_IMAGE when primary is null and gallery is empty", () => {
+  const metadata = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: {
+      ...baseProduct,
+      media: {
+        primary: null,
+        gallery: [],
+      },
+    },
+  });
+
+  assert.deepEqual(metadata.openGraph?.images, [SOCIAL_FALLBACK_IMAGE]);
+  assert.deepEqual(metadata.twitter?.images, [SOCIAL_FALLBACK_IMAGE]);
+});
+
+test("openGraph.images leads with the first gallery image when there is no primary", () => {
+  const first = { url: "https://content.pancake.vn/1/2/3/4/g-first.jpg", alt: "Ảnh 1" };
+  const second = { url: "https://content.pancake.vn/1/2/3/4/g-second.jpg", alt: "Ảnh 2" };
+
+  const metadata = buildStorefrontProductMetadata({
+    origin: "https://shop.example.com",
+    indexingEnabled: true,
+    product: { ...baseProduct, media: { primary: null, gallery: [first, second, first] } },
+  });
+
+  assert.deepEqual(metadata.openGraph?.images, [first, second]);
+  assert.deepEqual(metadata.twitter?.images, [first]);
 });
