@@ -87,6 +87,23 @@ test("a word that merely starts with đ, a K inside a word, or a bare figure is 
   assert.equal(vndTextToUsd("TRACK 12"), "TRACK 12");
 });
 
+test("K, TR and triệu are money only where the text says so, so Video 4K stays Video 4K", () => {
+  // Ordinary text that happens to end in a K or TR.
+  for (const text of ["Video 4K", "Size 2K", "Màn hình 4K", "Ảnh 8K", "Model 5TR", "KOL 70K", "Hạng 2 triệu fan", "Phòng 2K"]) {
+    assert.equal(vndTextToUsd(text), text, text);
+  }
+  // The whole text is the figure: a ticket's colour block.
+  assert.equal(vndTextToUsd("80K"), "$3.08");
+  assert.equal(vndTextToUsd(" 1,5TR "), "$57.69");
+  // An amount word right before it.
+  assert.equal(vndTextToUsd("Giảm 200K"), "Giảm $7.69");
+  assert.equal(vndTextToUsd("Đơn từ 1,5 triệu"), "Đơn từ $57.69");
+  assert.equal(vndTextToUsd("Đơn từ 1,5 triệu · tối đa 200K"), "Đơn từ $57.69 · tối đa $7.69");
+  assert.equal(vndTextToUsd("Đặt thêm 500K để được hưởng ưu đãi"), "Đặt thêm $19.23 để được hưởng ưu đãi");
+  // The word must be a word of its own.
+  assert.equal(vndTextToUsd("Giảmgiá 200K"), "Giảmgiá 200K");
+});
+
 test("a dong amount handed in as a slot of a rich sentence is converted too", () => {
   const en = createTranslator("en", { "Mua thêm <b>{amount}</b> để dùng voucher": "Add <b>{amount}</b> more to use the voucher" });
   const vi = createTranslator("vi", {});

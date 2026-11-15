@@ -92,7 +92,9 @@ function lookup(messages: Messages, source: string, depth = 0): string | undefin
     template.names.forEach((name, index) => {
       // A captured piece can itself be catalog text ("1 quà", "2 giờ 5 phút"): translate it too.
       const piece = match[index + 1]!;
-      captured[name] = lookup(messages, piece, depth + 1) ?? piece;
+      // A captured amount ("200K", "1,5 triệu") is read here, where the Vietnamese around it still says it is
+      // money; once the sentence is English that context is gone, and a bare "200K" is not recognisable.
+      captured[name] = lookup(messages, piece, depth + 1) ?? vndTextToUsd(piece);
     });
     return interpolate(template.target, captured);
   }
@@ -102,7 +104,7 @@ function lookup(messages: Messages, source: string, depth = 0): string | undefin
     const parts = source.split(separator);
     const translated = parts.map((part) => lookup(messages, part, depth + 1));
     if (translated.some((part) => part !== undefined)) {
-      return translated.map((part, index) => part ?? parts[index]!).join(separator);
+      return translated.map((part, index) => part ?? vndTextToUsd(parts[index]!)).join(separator);
     }
   }
   return sentences(messages, source, depth, false);
