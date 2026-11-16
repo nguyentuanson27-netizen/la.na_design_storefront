@@ -74,14 +74,26 @@ export function createStorefrontSearchSuggestionFinder(
               isActive: true,
             },
             orderBy: [{ pancakeVariationId: "asc" }],
-            select: { id: true, productId: true, color: true, size: true },
+            select: {
+              id: true,
+              productId: true,
+              color: true,
+              size: true,
+              pancakeRetailPrice: true,
+              pancakeRetailPriceAfterDiscount: true,
+            },
           });
-    const variantOrder = orderedProducts.flatMap((record) =>
-      orderProductVariants(
+    // The variant that leads is the one whose photo the suggestion shows, so it also supplies the
+    // price: a suggestion never pairs one color's photo with another color's price.
+    const leadVariantByProductId = new Map<string, (typeof orderedVariants)[number]>();
+    const variantOrder = orderedProducts.flatMap((record) => {
+      const ordered = orderProductVariants(
         orderedVariants.filter((variant) => variant.productId === record.id),
         record.variantColorOrder?.colors,
-      ).map((variant) => variant.id),
-    );
+      );
+      if (ordered[0]) leadVariantByProductId.set(record.id, ordered[0]);
+      return ordered.map((variant) => variant.id);
+    });
 
     const mediaCandidates =
       records.length === 0
@@ -100,7 +112,8 @@ export function createStorefrontSearchSuggestionFinder(
     }
 
     return records.map((record) => {
-      const variant = record.variants[0];
+      // No stored order: the first variant in Pancake order, as before.
+      const variant = leadVariantByProductId.get(record.id) ?? record.variants[0];
       const price =
         variant?.pancakeRetailPriceAfterDiscount ?? variant?.pancakeRetailPrice ?? null;
       const media = resolveStorefrontProductMedia({

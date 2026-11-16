@@ -30,8 +30,9 @@ async function createProduct(key: string) {
     pancakeVariationId: `${key}-${color}-${size}`,
     color,
     size,
-    pancakeRetailPrice: 850_000,
-    pancakeRetailPriceAfterDiscount: 850_000,
+    // The colors differ in price so a suggestion that mixed one color's photo with another's price shows.
+    pancakeRetailPrice: color === "Hồng" ? 950_000 : 850_000,
+    pancakeRetailPriceAfterDiscount: color === "Hồng" ? 950_000 : 850_000,
     pancakeImageUrls: [image],
     syncedAt: now,
   });
@@ -243,10 +244,14 @@ test("search suggestions show the first ordered color's photo; a product without
     await repository.save(ordered.id, [{ color: "Hồng", position: "1" }]);
 
     const suggestions = await find("variant order search-");
-    const primaryOf = (id: string) => suggestions.find((item) => item.id === id)?.primaryImageUrl;
-    // Pancake order puts Be's variation ids first, so only the stored order can bring pink forward.
-    assert.equal(primaryOf(ordered.id), PINK);
-    assert.equal(primaryOf(plain.id), BEIGE);
+    const suggestionOf = (id: string) => suggestions.find((item) => item.id === id);
+    // Pancake order puts Be's variation ids first, so only the stored order can bring pink forward,
+    // and the price must be the pink variant's (950.000), not Be's (850.000).
+    assert.equal(suggestionOf(ordered.id)?.primaryImageUrl, PINK);
+    assert.match(suggestionOf(ordered.id)?.priceText ?? "", /950\.000/);
+    // Without a stored order the photo and the price both stay on the first Pancake variant (Be).
+    assert.equal(suggestionOf(plain.id)?.primaryImageUrl, BEIGE);
+    assert.match(suggestionOf(plain.id)?.priceText ?? "", /850\.000/);
   } finally {
     if (previousShopId === undefined) delete process.env.PANCAKE_SHOP_ID;
     else process.env.PANCAKE_SHOP_ID = previousShopId;
