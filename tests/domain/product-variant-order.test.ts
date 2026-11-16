@@ -204,7 +204,7 @@ function rawProduct(variantColorOrder: { colors: string[] } | null) {
   };
 }
 
-test("toStorefrontProduct follows the stored color order: pink photo is primary, first in the gallery and picked by default", () => {
+test("toStorefrontProduct follows the stored color order: pink photo is primary, first in the gallery and listed first in the color options", () => {
   const { product: raw, pinkImg, beigeImg } = rawProduct({ colors: ["Hồng", "Be"] });
   const product = toStorefrontProduct(raw as unknown as Parameters<typeof toStorefrontProduct>[0]);
 

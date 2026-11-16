@@ -81,7 +81,7 @@ export async function ProductVariantOrderEditor({
       </h2>
       <p className="mt-4 max-w-3xl text-xs leading-5 text-black/55">
         Màu có số nhỏ nhất hiện đầu tiên: ảnh của màu đó đứng đầu bộ ảnh sản phẩm, làm ảnh đại diện
-        ở các trang danh sách, đứng đầu bộ chọn màu và được chọn sẵn. Màu để trống đi sau các màu
+        ở các trang danh sách, đứng đầu bộ chọn màu (khách vẫn tự chọn màu). Màu để trống đi sau các màu
         đã đánh số, giữ thứ tự cũ. Trong mỗi màu, size luôn xếp S, M, L, XL. Đồng bộ Pancake không
         ghi đè thứ tự này. Nếu sản phẩm đã có ảnh đại diện riêng ở Pancake, ảnh đó vẫn đứng trước.
       </p>

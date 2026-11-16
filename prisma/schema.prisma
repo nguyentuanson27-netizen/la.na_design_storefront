@@ -439,7 +439,7 @@ model CampaignNameTranslation {
 }
 
 /// The order a product's colors (and so their photos) appear in: the gallery, the color picker, the
-/// default-selected color and every listing thumbnail follow it. Website-owned: Pancake sync never
+/// first color option and every listing thumbnail follow it. Website-owned: Pancake sync never
 /// writes it. Absence means "keep the order the catalog gave" -- the common case. A color a row does
 /// not name keeps its place after the named ones.
 model ProductVariantColorOrder {
