@@ -23,6 +23,7 @@ import {
 import { ProductEditorialForm } from "@/components/admin/product-editorial-form";
 import { ProductMerchantFactsEditor } from "@/components/admin/product-merchant-facts-editor";
 import { ProductSellingPolicyEditor } from "@/components/admin/product-selling-policy-editor";
+import { ProductVariantOrderEditor } from "@/components/admin/product-variant-order-editor";
 import {
   ProductPancakeSource,
   type ProductPancakeCompositeParent,
@@ -99,6 +100,8 @@ type ProductEditorPageProps = {
     merchantError?: string | string[];
     policySaved?: string | string[];
     policyError?: string | string[];
+    variantOrderSaved?: string | string[];
+    variantOrderError?: string | string[];
   }>;
 };
 
@@ -393,6 +396,8 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
   // The boundary's reasons are a closed set and carry no operator input, so echoing one is safe.
   const policySaved = queryValue(query.policySaved) === "1";
   const policyError = queryValue(query.policyError);
+  const variantOrderSaved = queryValue(query.variantOrderSaved) === "1";
+  const variantOrderError = queryValue(query.variantOrderError);
   const variantErrorMessage =
     variantError === "unavailable"
       ? "Không thể cập nhật. Một hoặc nhiều biến thể không còn khả dụng cho sản phẩm này."
@@ -545,6 +550,13 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         error={policyError}
         productId={persistedProductId}
         saved={policySaved}
+      />
+
+      <ProductVariantOrderEditor
+        editorPath={editorPath}
+        error={variantOrderError}
+        productId={persistedProductId}
+        saved={variantOrderSaved}
       />
 
       <ProductSlugEditor

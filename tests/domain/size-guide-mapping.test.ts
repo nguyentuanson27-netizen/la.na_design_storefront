@@ -70,6 +70,7 @@ function rawProductPayload(
     // No stored policy, which is the common case: `resolveSellingPolicy()` applies the approved
     // STANDARD default rather than the fixture asserting one.
     sellingPolicy: null,
+    variantColorOrder: null,
     variants: [
       {
         id: `var-${id}-1`,
