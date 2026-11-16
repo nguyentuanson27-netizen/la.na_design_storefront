@@ -9,6 +9,7 @@ import {
 import { toStorefrontProduct } from "../../src/commerce/storefront-catalog.ts";
 
 test("resolveProductColorPreference identifies SV612 by productCode, slug, or name", () => {
+  assert.deepEqual(PRODUCT_COLOR_PREFERENCE.SV612, ["Hồng", "Be"]);
   assert.deepEqual(resolveProductColorPreference({ productCode: "SV612" }), ["Hồng", "Be"]);
   assert.deepEqual(resolveProductColorPreference({ productCode: "sv612" }), ["Hồng", "Be"]);
   assert.deepEqual(
@@ -100,7 +101,9 @@ test("toStorefrontProduct orders SV612 variants with Pink first, setting Pink im
     ],
   };
 
-  const product = toStorefrontProduct(rawProduct as any);
+  const product = toStorefrontProduct(
+    rawProduct as unknown as Parameters<typeof toStorefrontProduct>[0],
+  );
 
   // 1. Primary image is Pink
   assert.equal(product.media.primary?.url, pinkImg);
