@@ -5,6 +5,7 @@ import {
 } from "./promotion-pricing.ts";
 import { buildVariantStockCte } from "./storefront-catalog.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
+import { orderProductVariants } from "./product-variant-order.ts";
 import { withAdvisorySellableStock } from "./capacity-advisory.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { compositeComponentsAreShared, LAST_SIZES_TOTAL_STOCK_LIMIT } from "./storefront-product.ts";
@@ -134,12 +135,13 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
 }
 
 function toFlashProduct(product: SelectedFlashProduct, componentMedia?: ComponentMediaByProduct) {
+  const orderedVariants = orderProductVariants(product, product.variants);
   const componentImageUrlsById = componentMedia?.get(product.id);
-  const parentVariantImageUrls = product.variants.map((variant) =>
+  const parentVariantImageUrls = orderedVariants.map((variant) =>
     parseJsonStringArray(variant.pancakeImageUrls),
   );
   const componentVariantImageUrls = extractCompositeComponentImageUrls(
-    product.variants,
+    orderedVariants,
     remainingComponentCandidateBudget({
       primaryImageUrl: product.primaryImageUrl,
       variantImageUrls: parentVariantImageUrls,
@@ -159,7 +161,7 @@ function toFlashProduct(product: SelectedFlashProduct, componentMedia?: Componen
     slug: product.slug,
     name: product.name,
     media,
-    variants: product.variants.map((variant) => ({
+    variants: orderedVariants.map((variant) => ({
       id: variant.id,
       pancakeVariationId: variant.pancakeVariationId,
       color: variant.color,
@@ -172,8 +174,8 @@ function toFlashProduct(product: SelectedFlashProduct, componentMedia?: Componen
     // (availability, "Còn x") by the product's real policy rather than the STANDARD default.
     productCapacity: {
       ...resolveSellingPolicy(product.sellingPolicy),
-      isComposite: product.variants.some((variant) => variant.compositeComponents.length > 0),
-      sharesComponents: compositeComponentsAreShared(product.variants),
+      isComposite: orderedVariants.some((variant) => variant.compositeComponents.length > 0),
+      sharesComponents: compositeComponentsAreShared(orderedVariants),
     },
   };
 }
