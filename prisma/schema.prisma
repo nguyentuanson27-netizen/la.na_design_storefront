@@ -336,6 +336,7 @@ model ProductMirror {
   relatedOverrides     RelatedProductOverride[]    @relation("RelatedSource")
   relatedOverrideOf    RelatedProductOverride[]    @relation("RelatedTarget")
   sellingPolicy        ProductSellingPolicy?
+  variantColorOrder    ProductVariantColorOrder?
   reviews              ProductReview[]
 
   @@index([pancakeShopId, isPresent])
@@ -435,6 +436,18 @@ model CampaignNameTranslation {
   updatedAt DateTime @updatedAt
 
   @@unique([source, locale])
+}
+
+/// The order a product's colors (and so their photos) appear in: the gallery, the color picker, the
+/// default-selected color and every listing thumbnail follow it. Website-owned: Pancake sync never
+/// writes it. Absence means "keep the order the catalog gave" -- the common case. A color a row does
+/// not name keeps its place after the named ones.
+model ProductVariantColorOrder {
+  productId String        @id
+  /// Color names, first = shown first. Matched to VariantMirror.color ignoring case and spacing.
+  colors    String[]      @default([])
+  updatedAt DateTime      @updatedAt
+  product   ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model ProductContent {

@@ -29,6 +29,7 @@ import {
 } from "./storefront-component-media.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 import { FLATTENED_CATEGORIES, type CategoryDefaultOrder } from "../brand/category.config.ts";
+import { orderProductVariants } from "./product-variant-order.ts";
 
 const MAX_STOREFRONT_PRODUCTS = 48;
 const MAX_STOREFRONT_OFFSET = 50_000;
@@ -113,6 +114,7 @@ const productSelection = {
   // availability under the owner's real rule instead of `STANDARD`'s floor. Absence is the common
   // case and is the approved default, which `resolveSellingPolicy()` supplies.
   sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } },
+  variantColorOrder: { select: { colors: true } },
   variants: {
     where: { isPresent: true, isActive: true },
     orderBy: [{ pancakeVariationId: "asc" }],
@@ -186,12 +188,13 @@ export function toStorefrontProduct(
   collectionMap?: ReadonlyMap<string, StorefrontProductCollection>,
   componentMedia?: ComponentMediaByProduct,
 ) {
+  const orderedVariants = orderProductVariants(product.variants, product.variantColorOrder?.colors);
   const componentImageUrlsById = componentMedia?.get(product.id);
-  const parentVariantImageUrls = product.variants.map((variant) =>
+  const parentVariantImageUrls = orderedVariants.map((variant) =>
     parseJsonStringArray(variant.pancakeImageUrls),
   );
   const componentVariantImageUrls = extractCompositeComponentImageUrls(
-    product.variants,
+    orderedVariants,
     remainingComponentCandidateBudget({
       primaryImageUrl: product.primaryImageUrl,
       variantImageUrls: parentVariantImageUrls,
@@ -213,7 +216,7 @@ export function toStorefrontProduct(
         .map((slug) => collectionMap.get(slug))
         .filter((col): col is StorefrontProductCollection => Boolean(col))
     : [];
-  const variants: StorefrontVariantFacts[] = product.variants.map((variant) => ({
+  const variants: StorefrontVariantFacts[] = orderedVariants.map((variant) => ({
     id: variant.id,
     pancakeVariationId: variant.pancakeVariationId,
     color: variant.color,
@@ -251,15 +254,15 @@ export function toStorefrontProduct(
     // reservation transaction use.
     productCapacity: {
       ...resolveSellingPolicy(product.sellingPolicy),
-      isComposite: product.variants.some((variant) => variant.compositeComponents.length > 0),
-      sharesComponents: compositeComponentsAreShared(product.variants),
+      isComposite: orderedVariants.some((variant) => variant.compositeComponents.length > 0),
+      sharesComponents: compositeComponentsAreShared(orderedVariants),
     },
     // Server-only, and kept off the variant facts for the same reason `galleryIndexByVariantId` is:
     // the purchase panel has no use for it, and widening the client option contract would ship a
     // publication concern to the browser. Resolved here because this is the last place that still
     // holds the raw warehouse rows — one pass over rows already in memory, no extra query.
     variantAvailabilityResolvedById: Object.fromEntries(
-      product.variants.map((variant) => [
+      orderedVariants.map((variant) => [
         variant.id,
         resolveVariantAvailabilityFromWarehouseStocks(variant.warehouseStocks),
       ]),
@@ -270,7 +273,7 @@ export function toStorefrontProduct(
     galleryIndexByVariantId: Object.fromEntries(
       resolveVariantGalleryIndexes({
         gallery: media.gallery,
-        variants: buildCompositeVariantGalleryTargets(product.variants, componentImageUrlsById),
+        variants: buildCompositeVariantGalleryTargets(orderedVariants, componentImageUrlsById),
       }),
     ),
   };

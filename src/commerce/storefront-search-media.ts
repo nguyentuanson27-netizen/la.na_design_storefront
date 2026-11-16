@@ -19,6 +19,12 @@ export type StorefrontSearchMediaCandidateRow = Readonly<{
  */
 export function storefrontSearchMediaCandidatesSql(
   productIds: readonly string[],
+  /**
+   * Variant ids in the order the storefront shows them (`orderProductVariants`), for products with a
+   * stored color order. A variant named here is read before the rest, in this order; variants not
+   * named keep the Pancake variation id order. Omitted, every product keeps that order.
+   */
+  variantOrder: readonly string[] = [],
 ): Prisma.Sql {
   return Prisma.sql`
     SELECT
@@ -29,12 +35,14 @@ export function storefrontSearchMediaCandidatesSql(
       SELECT
         candidate."url",
         candidate."sourceRank",
+        candidate."colorRank",
         candidate."variantRank",
         candidate."variantIdRank",
         candidate."imageRank"
       FROM (
         SELECT
           0 AS "sourceRank",
+          0::bigint AS "colorRank",
           ''::text AS "variantRank",
           ''::text AS "variantIdRank",
           0::bigint AS "imageRank",
@@ -46,6 +54,7 @@ export function storefrontSearchMediaCandidatesSql(
 
         SELECT
           1 AS "sourceRank",
+          COALESCE(ARRAY_POSITION(${[...variantOrder]}::text[], v."id"), 2147483647)::bigint AS "colorRank",
           v."pancakeVariationId" AS "variantRank",
           v."id" AS "variantIdRank",
           image."imageRank",
@@ -66,6 +75,7 @@ export function storefrontSearchMediaCandidatesSql(
 
         SELECT
           2 AS "sourceRank",
+          0::bigint AS "colorRank",
           component."variantRank",
           component."variantIdRank",
           image."imageRank",
@@ -96,6 +106,7 @@ export function storefrontSearchMediaCandidatesSql(
       ) candidate
       ORDER BY
         candidate."sourceRank" ASC,
+        candidate."colorRank" ASC,
         candidate."variantRank" ASC,
         candidate."variantIdRank" ASC,
         candidate."imageRank" ASC
@@ -105,6 +116,7 @@ export function storefrontSearchMediaCandidatesSql(
     ORDER BY
       p."id" ASC,
       bounded."sourceRank" ASC,
+      bounded."colorRank" ASC,
       bounded."variantRank" ASC,
       bounded."variantIdRank" ASC,
       bounded."imageRank" ASC

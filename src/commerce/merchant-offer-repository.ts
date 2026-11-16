@@ -24,6 +24,7 @@ import type {
 } from "./storefront-product.ts";
 import { toMerchantApparelWireValues } from "./merchant-apparel-facts.ts";
 import { INHERITED_APPAREL_OVERRIDES } from "./product-merchant-facts-repository.ts";
+import { orderProductVariants } from "./product-variant-order.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 export const MAX_MERCHANT_CANDIDATE_PRODUCTS = 5_000;
@@ -47,6 +48,7 @@ const productSelection = {
   // ADR 0011's backorder row can never appear however good the date is. Read through
   // `resolveSellingPolicy` below so a missing row means the approved default, not "unknown".
   sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } },
+  variantColorOrder: { select: { colors: true } },
 } satisfies Prisma.ProductMirrorSelect;
 
 const variantSelection = {
@@ -236,7 +238,8 @@ function toCandidateProduct(
   now: Date,
   availabilityDates: StorefrontAvailabilityDates,
 ): MerchantCandidateProduct {
-  const variantImageUrls = product.variants.map((variant) =>
+  const orderedVariants = orderProductVariants(product.variants, product.variantColorOrder?.colors);
+  const variantImageUrls = orderedVariants.map((variant) =>
     parseJsonStringArray(variant.pancakeImageUrls),
   );
   const media = resolveStorefrontProductMedia({
@@ -246,19 +249,19 @@ function toCandidateProduct(
   });
   const galleryIndexByVariantId = resolveVariantGalleryIndexes({
     gallery: media.gallery,
-    variants: product.variants.map((variant, index) => ({
+    variants: orderedVariants.map((variant, index) => ({
       id: variant.id,
       imageUrls: variantImageUrls[index] ?? [],
     })),
   });
   const stockByVariantId = new Map(
-    product.variants.map((variant) => [
+    orderedVariants.map((variant) => [
       variant.id,
       aggregateWarehouseStock(variant.warehouseStocks.map((stock) => stock.quantity)),
     ]),
   );
   const resolvedSellingPolicy = resolveSellingPolicy(product.sellingPolicy);
-  const parentVariants: StorefrontVariantFacts[] = product.variants.map((variant) => {
+  const parentVariants: StorefrontVariantFacts[] = orderedVariants.map((variant) => {
     const compositeCapacity = variant.compositeComponents.length === 0
       ? undefined
       : deriveCompositeCapacitySnapshot({

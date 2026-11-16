@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import { resolveStorefrontProductMedia } from "./product-media.ts";
+import { orderProductVariants } from "./product-variant-order.ts";
 import type { SearchStorefrontFinder } from "./storefront-search-actions.ts";
 import {
   storefrontSearchMediaCandidatesSql,
@@ -47,6 +48,7 @@ export function createStorefrontSearchSuggestionFinder(
         id: true,
         slug: true,
         name: true,
+        variantColorOrder: { select: { colors: true } },
         variants: {
           where: { isPresent: true, isActive: true },
           orderBy: [{ pancakeVariationId: "asc" }],
@@ -59,11 +61,36 @@ export function createStorefrontSearchSuggestionFinder(
       },
     });
 
+    // A product with a stored color order shows that order's photos first, here as everywhere else.
+    // Only those products need their variants read again, and only to learn the order.
+    const orderedProducts = records.filter((record) => record.variantColorOrder !== null);
+    const orderedVariants =
+      orderedProducts.length === 0
+        ? []
+        : await client.variantMirror.findMany({
+            where: {
+              productId: { in: orderedProducts.map((record) => record.id) },
+              isPresent: true,
+              isActive: true,
+            },
+            orderBy: [{ pancakeVariationId: "asc" }],
+            select: { id: true, productId: true, color: true, size: true },
+          });
+    const variantOrder = orderedProducts.flatMap((record) =>
+      orderProductVariants(
+        orderedVariants.filter((variant) => variant.productId === record.id),
+        record.variantColorOrder?.colors,
+      ).map((variant) => variant.id),
+    );
+
     const mediaCandidates =
       records.length === 0
         ? []
         : await client.$queryRaw<StorefrontSearchMediaCandidateRow[]>(
-            storefrontSearchMediaCandidatesSql(records.map((record) => record.id)),
+            storefrontSearchMediaCandidatesSql(
+              records.map((record) => record.id),
+              variantOrder,
+            ),
           );
     const mediaCandidatesByProductId = new Map<string, string[]>();
     for (const candidate of mediaCandidates) {
