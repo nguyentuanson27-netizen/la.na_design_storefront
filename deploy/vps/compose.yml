@@ -120,8 +120,8 @@ services:
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set BETTER_AUTH_URL}
       # catalog-sync never calls Flow; do not inherit the app->worker bearer token.
       LA_TRY_ON_FLOW_TOKEN: ""
-    # A sync is one database transaction of up to 60s; give an in-flight one time to commit on stop.
-    stop_grace_period: 90s
+    # A sync is one database transaction of up to 120s; give an in-flight one time to commit on stop.
+    stop_grace_period: 150s
     # Healthy only while a sync has recently succeeded, not merely while the loop is running: the loop
     # survives failures by design, so without this a bad Pancake config would look fine forever.
     # start_period covers the first sync, which starts immediately.
