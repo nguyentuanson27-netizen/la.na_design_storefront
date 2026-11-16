@@ -115,9 +115,9 @@ export function ProductCard({
           </h2>
           {flashSale ? (
             <p className="product-price font-display flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1 text-[15px] md:text-base">
-                <span className="sr-only">{t("Giá gốc")}</span>
-                <del className="font-normal text-[#70584B] line-through">{price.compareAtText ? t(price.compareAtText) : null}</del>
-                <span className="sr-only">{t("Giá Flash Sale")}</span>
+              <span className="sr-only">{t("Giá gốc")}</span>
+              <del className="font-normal text-[#70584B] line-through">{price.compareAtText ? t(price.compareAtText) : null}</del>
+              <span className="sr-only">{t("Giá Flash Sale")}</span>
               <strong className="font-semibold text-[#9A3324]">{t(price.displayText)}</strong>
             </p>
           ) : price.compareAtText ? (
