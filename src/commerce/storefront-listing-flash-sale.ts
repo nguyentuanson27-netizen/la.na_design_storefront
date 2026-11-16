@@ -1,6 +1,7 @@
 /**
  * The Flash Sale facts a card on an ordinary listing (collection, category, `/shop`) needs, so it
- * carries the same FLASH SALE tag, countdown and price as the card on `/sale/flash-sale`.
+ * carries the same FLASH SALE tag and price as the card on `/sale/flash-sale`. Remaining time
+ * stays in the projection, but listing cards intentionally do not render a countdown (PDP only).
  *
  * Nothing is priced here: the listing's own promotional rule resolves every variant, and this only
  * reads back which campaign won. The membership test mirrors the Flash listing's SQL

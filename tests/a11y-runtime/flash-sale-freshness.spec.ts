@@ -217,7 +217,9 @@ test("U17 renders the Sale representative and self-rearms/resumes without browse
   await expect(page.getByText("FLASH SALE", { exact: true })).toBeVisible();
   await expect(page.getByText(/500\.000/)).toBeVisible();
   await expect(page.getByText(/Sale từ .*400\.000/)).toBeVisible();
-  await expect(page.getByText(/Còn .*giờ/)).toBeVisible();
+  // Listing cards keep the Flash label and price, but only the PDP displays a countdown.
+  await expect(page.locator(".product-countdown")).toHaveCount(0);
+  await expect(page.getByText(/Còn .*giờ/)).toHaveCount(0);
   await expect(page.getByText(/300\.000/)).toHaveCount(0);
 
   await waitForPromotionRefresherHydration(page);

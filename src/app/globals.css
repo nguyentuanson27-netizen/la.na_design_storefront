@@ -1602,23 +1602,6 @@ main nav[aria-label="Breadcrumb"] a {
   text-transform: uppercase;
 }
 
-.product-countdown {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: #9a3324;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  font-variant-numeric: tabular-nums;
-}
-
-.product-countdown svg {
-  width: 0.8rem;
-  height: 0.8rem;
-  flex: none;
-}
-
 @media (min-width: 768px) {
   .product-tags {
     top: 0.75rem;

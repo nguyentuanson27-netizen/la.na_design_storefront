@@ -114,24 +114,12 @@ export function ProductCard({
             {model.name}
           </h2>
           {flashSale ? (
-            <>
-              {/* The FLASH SALE tag rides on the photograph; only the time left stays here. */}
-              {flashSale.countdownText ? (
-                <p className="product-countdown">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                    <circle cx="12" cy="13" r="8" />
-                    <path d="M12 9v4l2.5 2.5M9 2h6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  {t(flashSale.countdownText)}
-                </p>
-              ) : null}
-              <p className="product-price font-display flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1 text-[15px] md:text-base">
-                <span className="sr-only">{t("Giá gốc")}</span>
-                <del className="font-normal text-[#70584B] line-through">{price.compareAtText ? t(price.compareAtText) : null}</del>
-                <span className="sr-only">{t("Giá Flash Sale")}</span>
-                <strong className="font-semibold text-[#9A3324]">{t(price.displayText)}</strong>
-              </p>
-            </>
+            <p className="product-price font-display flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1 text-[15px] md:text-base">
+              <span className="sr-only">{t("Giá gốc")}</span>
+              <del className="font-normal text-[#70584B] line-through">{price.compareAtText ? t(price.compareAtText) : null}</del>
+              <span className="sr-only">{t("Giá Flash Sale")}</span>
+              <strong className="font-semibold text-[#9A3324]">{t(price.displayText)}</strong>
+            </p>
           ) : price.compareAtText ? (
             <p className="product-price font-display flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1 text-[15px] md:text-base">
               <span className="sr-only">{t("Giá gốc")}</span>
