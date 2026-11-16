@@ -109,8 +109,10 @@ export async function ProductVariantOrderEditor({
               : `Trạng thái: ${colors.join(" → ")}.`}
           </p>
           <form action={saveVariantColorOrder} className="mt-6 grid gap-4">
-            {productColors.map((color) => {
-              const inputId = `variant-order-${normalizeVariantColor(color).replace(/[^a-z0-9]+/gi, "-")}`;
+            {productColors.map((color, index) => {
+              // By position, not by name: names that differ only in their accents ("Hồng", "Hằng")
+              // would otherwise share an id.
+              const inputId = `variant-order-${index}`;
               return (
                 <div className="flex items-center gap-4" key={color}>
                   <input name="color" type="hidden" value={color} />

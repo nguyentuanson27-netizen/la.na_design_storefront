@@ -4,6 +4,8 @@ import { MAX_MEDIA_CANDIDATES_SCANNED } from "./product-media.ts";
 export type StorefrontSearchMediaCandidateRow = Readonly<{
   productId: string;
   url: string;
+  /** The variant the photo belongs to; null for the product's own photo and for component photos. */
+  variantId?: string | null;
 }>;
 
 /**
@@ -29,11 +31,13 @@ export function storefrontSearchMediaCandidatesSql(
   return Prisma.sql`
     SELECT
       p."id" AS "productId",
-      bounded."url"
+      bounded."url",
+      bounded."variantId"
     FROM "ProductMirror" p
     CROSS JOIN LATERAL (
       SELECT
         candidate."url",
+        candidate."variantId",
         candidate."sourceRank",
         candidate."colorRank",
         candidate."variantRank",
@@ -46,7 +50,8 @@ export function storefrontSearchMediaCandidatesSql(
           ''::text AS "variantRank",
           ''::text AS "variantIdRank",
           0::bigint AS "imageRank",
-          p."primaryImageUrl" AS "url"
+          p."primaryImageUrl" AS "url",
+          NULL::text AS "variantId"
         WHERE p."primaryImageUrl" IS NOT NULL
           AND p."primaryImageUrl" <> ''
 
@@ -58,7 +63,8 @@ export function storefrontSearchMediaCandidatesSql(
           v."pancakeVariationId" AS "variantRank",
           v."id" AS "variantIdRank",
           image."imageRank",
-          image."value" #>> '{}' AS "url"
+          image."value" #>> '{}' AS "url",
+          v."id" AS "variantId"
         FROM "VariantMirror" v
         CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS(
           CASE
@@ -79,7 +85,8 @@ export function storefrontSearchMediaCandidatesSql(
           component."variantRank",
           component."variantIdRank",
           image."imageRank",
-          image."value" #>> '{}' AS "url"
+          image."value" #>> '{}' AS "url",
+          NULL::text AS "variantId"
         FROM (
           SELECT DISTINCT ON (cv."id")
             v."pancakeVariationId" AS "variantRank",

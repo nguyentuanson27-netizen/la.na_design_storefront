@@ -1,5 +1,5 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
-import { resolveStorefrontProductMedia } from "./product-media.ts";
+import { parseTrustedProductImageUrl, resolveStorefrontProductMedia } from "./product-media.ts";
 import { orderProductVariants } from "./product-variant-order.ts";
 import type { SearchStorefrontFinder } from "./storefront-search-actions.ts";
 import {
@@ -83,17 +83,14 @@ export function createStorefrontSearchSuggestionFinder(
               pancakeRetailPriceAfterDiscount: true,
             },
           });
-    // The variant that leads is the one whose photo the suggestion shows, so it also supplies the
-    // price: a suggestion never pairs one color's photo with another color's price.
-    const leadVariantByProductId = new Map<string, (typeof orderedVariants)[number]>();
-    const variantOrder = orderedProducts.flatMap((record) => {
-      const ordered = orderProductVariants(
+    const orderedVariantById = new Map(orderedVariants.map((variant) => [variant.id, variant]));
+    const orderedProductIds = new Set(orderedProducts.map((record) => record.id));
+    const variantOrder = orderedProducts.flatMap((record) =>
+      orderProductVariants(
         orderedVariants.filter((variant) => variant.productId === record.id),
         record.variantColorOrder?.colors,
-      );
-      if (ordered[0]) leadVariantByProductId.set(record.id, ordered[0]);
-      return ordered.map((variant) => variant.id);
-    });
+      ).map((variant) => variant.id),
+    );
 
     const mediaCandidates =
       records.length === 0
@@ -104,23 +101,35 @@ export function createStorefrontSearchSuggestionFinder(
               variantOrder,
             ),
           );
-    const mediaCandidatesByProductId = new Map<string, string[]>();
+    const mediaCandidatesByProductId = new Map<string, StorefrontSearchMediaCandidateRow[]>();
     for (const candidate of mediaCandidates) {
       const candidates = mediaCandidatesByProductId.get(candidate.productId) ?? [];
-      candidates.push(candidate.url);
+      candidates.push(candidate);
       mediaCandidatesByProductId.set(candidate.productId, candidates);
     }
 
     return records.map((record) => {
-      // No stored order: the first variant in Pancake order, as before.
-      const variant = leadVariantByProductId.get(record.id) ?? record.variants[0];
-      const price =
-        variant?.pancakeRetailPriceAfterDiscount ?? variant?.pancakeRetailPrice ?? null;
+      const candidates = mediaCandidatesByProductId.get(record.id) ?? [];
       const media = resolveStorefrontProductMedia({
         productName: record.name,
         primaryImageUrl: null,
-        variantImageUrls: [mediaCandidatesByProductId.get(record.id) ?? []],
+        variantImageUrls: [candidates.map((candidate) => candidate.url)],
       });
+      // The price is the first Pancake variant's, as before -- except for a product with a stored
+      // color order, where it is the price of the variant whose photo is actually shown, so a
+      // suggestion never pairs one color's photo with another color's price. The shown photo is the
+      // first candidate the resolver accepts. If it belongs to no variant (the product's own photo)
+      // or nothing is shown, the first Pancake variant prices it, as it does for a product with no order.
+      let variant = record.variants[0];
+      if (orderedProductIds.has(record.id)) {
+        const shown = candidates.find(
+          (candidate) => parseTrustedProductImageUrl(candidate.url) !== null,
+        );
+        variant =
+          (shown?.variantId ? orderedVariantById.get(shown.variantId) : undefined) ?? variant;
+      }
+      const price =
+        variant?.pancakeRetailPriceAfterDiscount ?? variant?.pancakeRetailPrice ?? null;
       return {
         id: record.id,
         slug: record.slug,

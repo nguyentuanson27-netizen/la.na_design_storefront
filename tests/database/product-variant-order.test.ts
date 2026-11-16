@@ -24,7 +24,10 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: shopId } });
 }
 
-async function createProduct(key: string) {
+async function createProduct(
+  key: string,
+  { primaryImageUrl = null, pinkImage = PINK }: { primaryImageUrl?: string | null; pinkImage?: string } = {},
+) {
   const now = new Date();
   const variant = (color: string, size: string, image: string) => ({
     pancakeVariationId: `${key}-${color}-${size}`,
@@ -43,13 +46,14 @@ async function createProduct(key: string) {
       slug: `vo-${key}`,
       name: `Variant order ${key}`,
       productCode: key.toUpperCase(),
+      primaryImageUrl,
       syncedAt: now,
       variants: {
         create: [
           variant("Be", "L", BEIGE),
-          variant("Hồng", "S", PINK),
+          variant("Hồng", "S", pinkImage),
           variant("Be", "S", BEIGE),
-          variant("Hồng", "M", PINK),
+          variant("Hồng", "M", pinkImage),
         ],
       },
     },
@@ -252,6 +256,40 @@ test("search suggestions show the first ordered color's photo; a product without
     // Without a stored order the photo and the price both stay on the first Pancake variant (Be).
     assert.equal(suggestionOf(plain.id)?.primaryImageUrl, BEIGE);
     assert.match(suggestionOf(plain.id)?.priceText ?? "", /850\.000/);
+  } finally {
+    if (previousShopId === undefined) delete process.env.PANCAKE_SHOP_ID;
+    else process.env.PANCAKE_SHOP_ID = previousShopId;
+    await cleanup();
+  }
+});
+
+test("search suggestion prices the photo that is shown: the product's own photo, or a fallback past a color with no usable photo", async () => {
+  const previousShopId = process.env.PANCAKE_SHOP_ID;
+  process.env.PANCAKE_SHOP_ID = String(shopId);
+  await cleanup();
+  try {
+    const { createStorefrontSearchSuggestionFinder } = await import(
+      "../../src/commerce/storefront-search-repository.ts"
+    );
+    const find = createStorefrontSearchSuggestionFinder(prisma, shopId);
+    // Order Hồng -> Be, Hồng 950.000, Be 850.000 (see createProduct).
+    // (a) The product's own photo is a beige one and comes first; it belongs to no variant, so the
+    //     first Pancake variant (Be) prices it, not the lead color.
+    const ownPhoto = await createProduct("srch-own", { primaryImageUrl: BEIGE });
+    // (b) Every pink photo is unusable, so the suggestion falls back to beige and must price beige.
+    const noPinkPhoto = await createProduct("srch-nopink", {
+      pinkImage: "https://evil.example.com/not-trusted.jpg",
+    });
+    for (const { id } of [ownPhoto, noPinkPhoto]) {
+      await repository.save(id, [{ color: "Hồng", position: "1" }]);
+    }
+
+    const suggestions = await find("variant order srch-");
+    const suggestionOf = (id: string) => suggestions.find((item) => item.id === id);
+    assert.equal(suggestionOf(ownPhoto.id)?.primaryImageUrl, BEIGE);
+    assert.match(suggestionOf(ownPhoto.id)?.priceText ?? "", /850\.000/);
+    assert.equal(suggestionOf(noPinkPhoto.id)?.primaryImageUrl, BEIGE);
+    assert.match(suggestionOf(noPinkPhoto.id)?.priceText ?? "", /850\.000/);
   } finally {
     if (previousShopId === undefined) delete process.env.PANCAKE_SHOP_ID;
     else process.env.PANCAKE_SHOP_ID = previousShopId;
