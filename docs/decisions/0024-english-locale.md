@@ -63,6 +63,27 @@ dong. The view models keep formatting dong, so the conversion is done on the tex
 price must therefore pass it through `t()`. Text that has to stay in dong writes `VND` instead (the price-range
 limits, the "charged in VND" line under the checkout and order-tracking totals, `DongNote`).
 
+**Campaign names.** Promotion, gift, shipping and voucher campaigns are named by hand in Vietnamese in the admin, so
+their English cannot live in the catalog. `CampaignNameTranslation` maps a Vietnamese name *text* to its English
+(one row serves every campaign that carries the name), entered in `/admin/promotions/name-translations`, which lists
+each distinct name in use once. It is a lookup of its own -- `RequestI18n.campaignName` on the server, `useCampaignName`
+in the browser -- and is never merged into the catalog: a campaign called "Ưu đãi" must not turn the interface's own
+"Ưu đãi" label into the campaign's English. A name with no row is read through the catalog as written (so "Giảm 50K"
+still shows its dollar figure).
+
+What reaches the browser is limited to names the storefront shows to anyone: `readPublic` returns a translation only if
+a campaign of that name is public, switched on, started, not over and on this shop (`PANCAKE_SHOP_ID`). Vouchers and freeship
+campaigns carry the shop; promotion and gift campaigns do not, so they are placed by what they apply to: a promotion by its
+product or variant targets, a gift or tier campaign over a fixed product set by its frozen products, and one over every paid
+line or a category (which apply to whatever the storefront sells) to every shop. A private voucher's name, a switched-off, not-yet-started or ended campaign's, another shop's,
+and a translation left behind by a renamed or deleted campaign stay on the server; the admin marks names only private
+vouchers carry as not translatable. The rows are read for English requests only and held 30 s. Display only: quotes, orders
+and the checkout's proofs keep the campaign's own name.
+
+**Size guide.** The chart's titles, row labels and notes are in the brand catalog, in the client part of it, because the
+product page's size sheet and dialog are client components. An artwork uploaded for a guide in the admin is a picture and
+stays as drawn.
+
 ## Not done, on purpose
 
 - No customer-facing email exists in the codebase (the contact form mails the shop), so there was nothing to translate.

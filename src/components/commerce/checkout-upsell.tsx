@@ -2,6 +2,7 @@
 
 import Link from "@/i18n/link";
 import { useEffect, useRef, useState } from "react";
+import { useCampaignName, useT } from "@/i18n/client";
 import type { CheckoutUpsellBanner } from "@/routes/checkout-model";
 
 /**
@@ -31,6 +32,8 @@ function saveAttempt(value: Attempt) {
  * Before submitting, leaving for the eligible listing is free (owner decision: no leave warning).
  */
 export function CheckoutUpsell({ model, locked = false }: Readonly<{ model: CheckoutUpsellBanner; locked?: boolean }>) {
+  const t = useT();
+  const campaignName = useCampaignName();
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const initialized = useRef(false);
   const mounted = useRef(false);
@@ -80,18 +83,18 @@ export function CheckoutUpsell({ model, locked = false }: Readonly<{ model: Chec
   // "1 món" and "ưu đãi" promise only what the server proved: one more qualifying piece reaches the
   // named programme. The cart and checkout quote decide again whatever the buyer brings back.
   return (
-    <section className="flex items-start gap-3 border border-[#e7ded7] bg-[#fbf8f5] px-4 py-3" aria-label="Gợi ý mua thêm">
+    <section className="flex items-start gap-3 border border-[#e7ded7] bg-[#fbf8f5] px-4 py-3" aria-label={t("Gợi ý mua thêm")}>
       <div className="min-w-0 flex-1">
-        <h2 className="text-sm font-semibold leading-6">Thêm 1 món để nhận ưu đãi</h2>
+        <h2 className="text-sm font-semibold leading-6">{t("Thêm 1 món để nhận ưu đãi")}</h2>
         <div className="mt-1 flex min-w-0 flex-col items-start gap-2 text-xs leading-5 text-black/70">
-          <span className="min-w-0 break-words">{model.offerName}</span>
+          <span className="min-w-0 break-words">{campaignName(model.offerName)}</span>
           {locked ? (
             <span aria-disabled="true" className="inline-flex min-h-11 cursor-not-allowed items-center text-sm font-semibold text-black/45" data-upsell-link-locked>
-              Chọn thêm món
+              {t("Chọn thêm món")}
             </span>
           ) : (
             <Link href={`/offers/eligible?campaign=${encodeURIComponent(model.campaignId ?? "")}`} prefetch={false} className="inline-flex min-h-11 items-center text-sm font-semibold text-black underline underline-offset-4">
-              Chọn thêm món
+              {t("Chọn thêm món")}
             </Link>
           )}
         </div>
@@ -99,7 +102,7 @@ export function CheckoutUpsell({ model, locked = false }: Readonly<{ model: Chec
       <button
         type="button"
         className="-mr-2 -mt-1 min-h-11 min-w-11 text-lg leading-none text-black/60 transition-colors hover:text-black"
-        aria-label="Đóng gợi ý ưu đãi"
+        aria-label={t("Đóng gợi ý ưu đãi")}
         onClick={dismiss}
       >
         ×

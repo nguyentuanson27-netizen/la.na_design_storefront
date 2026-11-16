@@ -132,6 +132,9 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
           <Link className={`${buttonClassName} inline-flex items-center`} href="/admin/promotions/gift-quantity">
             Quà tặng &amp; giảm theo số lượng
           </Link>
+          <Link className={`${buttonClassName} inline-flex items-center`} href="/admin/promotions/name-translations">
+            Dịch tên chương trình
+          </Link>
           {isNew || editId ? (
             <Link className={buttonClassName} href="/admin/promotions">
               ← Quay lại danh sách

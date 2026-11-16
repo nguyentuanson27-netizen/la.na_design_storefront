@@ -7,7 +7,7 @@ import Link from "@/i18n/link";
 import { useVoucherHold } from "@/components/headless/use-voucher-hold";
 import type { CheckoutVoucherLine, CheckoutVoucherView } from "@/routes/checkout-model";
 import { VoucherIcon } from "./voucher-icons";
-import { useT } from "@/i18n/client";
+import { useCampaignName, useT } from "@/i18n/client";
 
 /**
  * Voucher v1 (V18): the vouchers' part of the checkout. It decides and prices nothing: a held voucher is already in the
@@ -22,12 +22,13 @@ import { useT } from "@/i18n/client";
 /** One voucher line: a colour square (its type's colour, neutral when unknown), its name, what it takes off. */
 function VoucherLine({ line, emphasis }: Readonly<{ line: CheckoutVoucherLine; emphasis: boolean }>) {
   const t = useT();
+  const campaignName = useCampaignName();
   return (
     <li className={`voucher-tone ${line.tone ? `voucher-tone--${line.tone}` : ""} flex items-center justify-between gap-4`} data-checkout-voucher-line>
       <span className="flex min-w-0 items-center gap-2.5">
         <span aria-hidden="true" className="voucher-held__mi"><VoucherIcon name={line.kind === "SHIPPING_FREE" ? "truck" : "tag"} className="h-4 w-4" /></span>
         <span className="grid min-w-0 leading-snug">
-          {t(line.title)}
+          {campaignName(line.title)}
           {line.group ? <small className="text-xs text-black/60">{t(line.group)}</small> : null}
         </span>
       </span>

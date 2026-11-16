@@ -59,6 +59,7 @@ export default defineConfig({
     "list-price-display.spec.ts",
     "locale.spec.ts",
     "locale-voucher.spec.ts",
+    "locale-campaign-names.spec.ts",
     "listing-action-bar.spec.ts",
     "pdp-promotion-offers.spec.ts",
     "pdp-reviews.spec.ts",

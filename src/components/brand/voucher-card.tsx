@@ -4,7 +4,7 @@ import { useId } from "react";
 
 import { voucherExpiryWarning, type VoucherPickerItem } from "@/routes/voucher-picker-model";
 import { VoucherIcon } from "./voucher-icons";
-import { useT } from "@/i18n/client";
+import { useCampaignName, useT } from "@/i18n/client";
 
 /**
  * One voucher of the picker (spec §7.3), drawn as a ticket. It is a toggle button: pressing a chosen voucher again un-chooses it, which is
@@ -21,6 +21,7 @@ export function VoucherCard({ item, onToggle, disabled, nowMs }: Readonly<{
   nowMs: number | null;
 }>) {
   const t = useT();
+  const campaignName = useCampaignName();
   const descriptionId = useId();
   const unavailable = !item.selectable;
   const expiry = nowMs === null ? null : voucherExpiryWarning(item.endsAtIso, nowMs);
@@ -30,7 +31,7 @@ export function VoucherCard({ item, onToggle, disabled, nowMs }: Readonly<{
         type="button"
         className="voucher-ticket"
         aria-pressed={item.selected}
-        aria-label={`${t(item.title)}. ${t(item.name)}`}
+        aria-label={`${t(item.title)}. ${campaignName(item.name)}`}
         aria-describedby={descriptionId}
         disabled={unavailable || disabled}
         onClick={onToggle}
@@ -42,7 +43,7 @@ export function VoucherCard({ item, onToggle, disabled, nowMs }: Readonly<{
         </span>
         <span className="voucher-ticket__body">
           <span className="voucher-ticket__main">
-            <span aria-hidden="true" className="voucher-ticket__name">{t(item.name)}</span>
+            <span aria-hidden="true" className="voucher-ticket__name">{campaignName(item.name)}</span>
             <span id={descriptionId} className="grid gap-px">
               {item.condition ? <span className="voucher-ticket__cond">{t(item.condition)}</span> : null}
               <span className="voucher-ticket__line">

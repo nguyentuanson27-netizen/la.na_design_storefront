@@ -66,7 +66,7 @@ function AssuranceIcon({ kind }: Readonly<{ kind: PurchaseAssuranceItem["key"] |
   );
 }
 
-function render(data: ProductRouteData, { t }: RequestI18n) {
+function render(data: ProductRouteData, { t, campaignName }: RequestI18n) {
   const { editorial } = data;
 
   // A product with its own review photographs shows those, not the shared brand gallery as well:
@@ -229,7 +229,7 @@ function render(data: ProductRouteData, { t }: RequestI18n) {
               className={`voucher-chip voucher-tone ${offer.kind === "GIFT" ? "voucher-tone--mocha" : "voucher-tone--ink"}`}
             >
               <span className="voucher-chip__icon"><VoucherIcon name={offer.kind === "GIFT" ? "gift" : "tag"} /></span>
-              <span className="voucher-chip__text">{t(offer.label)}</span>
+              <span className="voucher-chip__text">{campaignName(offer.label)}</span>
             </li>
           ))}
         </ul>

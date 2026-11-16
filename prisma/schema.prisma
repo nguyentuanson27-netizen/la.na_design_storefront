@@ -419,6 +419,24 @@ model ProductTranslation {
   @@unique([productId, locale])
 }
 
+/// The English for a campaign's name. Promotion, gift, shipping and voucher campaigns are named by
+/// hand in the admin, in Vietnamese, so their names cannot be in the code's catalog. A row maps the
+/// Vietnamese name *text* to its English: the same name used by several campaigns is translated once,
+/// and the storefront's translator picks it up like any catalog entry. A campaign with no row shows
+/// its Vietnamese name. Display only: quotes, orders and proofs keep the campaign's own name.
+model CampaignNameTranslation {
+  id        String   @id @default(cuid())
+  /// The campaign name exactly as stored (NFC, trimmed).
+  source    String
+  /// "en" only; a CHECK in the migration refuses the default language.
+  locale    String
+  text      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([source, locale])
+}
+
 model ProductContent {
   id                   String               @id @default(cuid())
   productId            String               @unique

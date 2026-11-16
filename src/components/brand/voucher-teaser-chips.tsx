@@ -1,7 +1,7 @@
 "use client";
 
 import type { VoucherTeaserItem } from "@/commerce/voucher-teaser";
-import { useT } from "@/i18n/client";
+import { useCampaignName, useT } from "@/i18n/client";
 import { VoucherIcon } from "./voucher-icons";
 
 /**
@@ -14,6 +14,7 @@ import { VoucherIcon } from "./voucher-icons";
  */
 export function VoucherTeaserChips({ items }: Readonly<{ items: readonly VoucherTeaserItem[] }>) {
   const t = useT();
+  const campaignName = useCampaignName();
   if (items.length === 0) return null;
   return (
     <ul aria-label={t("Voucher")} className="voucher-chips">
@@ -21,7 +22,7 @@ export function VoucherTeaserChips({ items }: Readonly<{ items: readonly Voucher
         <li className={`voucher-chip voucher-tone voucher-tone--${item.tone}`} key={item.id}>
           <span aria-hidden="true" className="voucher-chip__icon"><VoucherIcon name={item.kind === "SHIPPING_FREE" ? "truck" : "tag"} /></span>
           <span aria-hidden="true" className="voucher-chip__text voucher-chip__text--stack">
-            <b>{t(item.title)}</b>
+            <b>{campaignName(item.title)}</b>
             {item.sub ? <small>{t(item.sub)}</small> : null}
           </span>
           <span className="sr-only">{t(item.text)}</span>

@@ -81,6 +81,10 @@ function escapeRegExp(text: string): string {
 function lookup(messages: Messages, source: string, depth = 0): string | undefined {
   if (Object.hasOwn(messages, source)) return messages[source];
   if (depth > 3) return undefined;
+  // Several sentences, each of which has its own entry, are translated one by one. This comes before the
+  // patterns: a loose one ("{a} và {b}") would otherwise take the whole text and garble it.
+  const whole = sentences(messages, source, depth, true);
+  if (whole !== undefined) return whole;
   for (const template of compileTemplates(messages)) {
     const match = template.pattern.exec(source);
     if (match === null) continue;
@@ -88,7 +92,9 @@ function lookup(messages: Messages, source: string, depth = 0): string | undefin
     template.names.forEach((name, index) => {
       // A captured piece can itself be catalog text ("1 quà", "2 giờ 5 phút"): translate it too.
       const piece = match[index + 1]!;
-      captured[name] = lookup(messages, piece, depth + 1) ?? piece;
+      // A captured amount ("200K", "1,5 triệu") is read here, where the Vietnamese around it still says it is
+      // money; once the sentence is English that context is gone, and a bare "200K" is not recognisable.
+      captured[name] = lookup(messages, piece, depth + 1) ?? vndTextToUsd(piece);
     });
     return interpolate(template.target, captured);
   }
@@ -98,30 +104,44 @@ function lookup(messages: Messages, source: string, depth = 0): string | undefin
     const parts = source.split(separator);
     const translated = parts.map((part) => lookup(messages, part, depth + 1));
     if (translated.some((part) => part !== undefined)) {
-      return translated.map((part, index) => part ?? parts[index]!).join(separator);
+      return translated.map((part, index) => part ?? vndTextToUsd(parts[index]!)).join(separator);
     }
   }
-  return sentences(messages, source, depth);
+  return sentences(messages, source, depth, false);
+}
+
+const SENTENCE_END = /[.!?…]$/;
+/** More sentences than this is prose, which has its own entry or none; splitting it is not worth the work. */
+const MAX_SENTENCE_BOUNDARIES = 6;
+
+/** One sentence: by itself, or without its closing full stop (a campaign name is entered without one). */
+function lookupSentence(messages: Messages, piece: string, depth: number): string | undefined {
+  const found = lookup(messages, piece, depth);
+  if (found !== undefined || !SENTENCE_END.test(piece)) return found;
+  const bare = lookup(messages, piece.slice(0, -1), depth);
+  return bare === undefined ? undefined : `${bare}${piece.slice(-1)}`;
 }
 
 /**
  * Several sentences joined into one string ("Chưa tạo được ảnh. La.na đã hoàn lại lượt thử.") are
- * translated sentence by sentence, when the whole has no entry of its own. Only a split where every
- * part is known is taken first; a half-known text is better than none, so a split where one side is
- * known is the fallback.
+ * translated sentence by sentence, when the whole has no entry of its own. `strict` takes a split only
+ * when both sides are known; otherwise the first split with one side known is the fallback, since a
+ * half-translated text is better than none.
  */
-function sentences(messages: Messages, source: string, depth: number): string | undefined {
+function sentences(messages: Messages, source: string, depth: number, strict: boolean): string | undefined {
   if (depth > 3) return undefined;
+  const boundaries = [...source.matchAll(/(?<=[.!?…])\s+(?=\S)/g)];
+  if (boundaries.length === 0 || boundaries.length > MAX_SENTENCE_BOUNDARIES) return undefined;
   let partial: string | undefined;
-  for (const boundary of source.matchAll(/(?<=[.!?…])\s+(?=\S)/g)) {
+  for (const boundary of boundaries) {
     const left = source.slice(0, boundary.index);
     const right = source.slice(boundary.index! + boundary[0].length);
-    const translatedLeft = lookup(messages, left, depth + 1);
-    const translatedRight = lookup(messages, right, depth + 1);
+    const translatedLeft = lookupSentence(messages, left, depth + 1);
+    const translatedRight = lookupSentence(messages, right, depth + 1);
     if (translatedLeft !== undefined && translatedRight !== undefined) {
       return `${translatedLeft} ${translatedRight}`;
     }
-    if (partial === undefined && (translatedLeft !== undefined || translatedRight !== undefined)) {
+    if (!strict && partial === undefined && (translatedLeft !== undefined || translatedRight !== undefined)) {
       partial = `${translatedLeft ?? left} ${translatedRight ?? right}`;
     }
   }
