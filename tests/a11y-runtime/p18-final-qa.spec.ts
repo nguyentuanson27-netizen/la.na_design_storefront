@@ -466,6 +466,20 @@ test("P18 inspects staging-safe metadata, robots, sitemap, and parent Product sc
   }
 });
 
+/**
+ * A WebP is complete when its own RIFF header says so: bytes 0-3 "RIFF", 8-11 "WEBP", and the
+ * little-endian size at bytes 4-7 is the file's length minus the 8 bytes of RIFF header. This does
+ * not depend on any HTTP header, and it catches a body that was ended early, which a chunked
+ * response can do cleanly (fetch resolves with the shorter body rather than rejecting).
+ */
+function expectCompleteWebp(bytes: Buffer, label: string) {
+  expect(bytes.subarray(0, 4).toString("latin1"), `${label}: RIFF signature`).toBe("RIFF");
+  expect(bytes.subarray(8, 12).toString("latin1"), `${label}: WEBP signature`).toBe("WEBP");
+  expect(bytes.readUInt32LE(4) + 8, `${label}: the size the file declares equals the bytes received`).toBe(
+    bytes.byteLength,
+  );
+}
+
 test("P18 production server streams /api/product-image completely and survives a mid-stream cancel", async () => {
   // No page.route here: this goes through the real Next production server, the streamed
   // Response, and the HTTP adapter, with only the Pancake upstream replaced by a fixture.
@@ -476,11 +490,15 @@ test("P18 production server streams /api/product-image completely and survives a
   //
   // Since Next 16.4.5 the production server drops Content-Length (and Transfer-Encoding and
   // Content-Encoding) from the Response a route handler returns, because a body that was decoded on
-  // the way would make them wrong, and frames the body itself, chunked. So completeness is checked
-  // against an independent reference rather than a declared length: the same URL read at full speed.
-  // The encoder is deterministic for a fixed input, and a body cut short makes fetch reject rather
-  // than end early.
+  // the way would make them wrong, and frames the body itself, chunked. So completeness is no longer
+  // read from a transport header. It is checked two ways that do not use one:
+  //   - the size the WebP declares in its own RIFF header must equal the bytes received, which is
+  //     what catches a body that ends cleanly but early (a chunked response can, and fetch then
+  //     resolves with the shorter body; only a dropped connection makes it reject);
+  //   - the slow reader's bytes must equal the same URL read at full speed, so the slow path and the
+  //     cancel path cannot diverge from it. The encoder is deterministic for a fixed input.
   const reference = Buffer.from(await (await fetch(imageUrl(1080))).arrayBuffer());
+  expectCompleteWebp(reference, "1080 reference");
   expect(reference.byteLength).toBeGreaterThan(64 * 1024);
   expect(reference.byteLength).toBeLessThan(3_000_000);
   const complete = await fetch(imageUrl(1080));
@@ -498,11 +516,11 @@ test("P18 production server streams /api/product-image completely and survives a
   expect(received.length).toBeGreaterThan(1);
   expect(body.byteLength).toBe(reference.byteLength);
   expect(body.equals(reference)).toBe(true);
-  expect(body.subarray(0, 4).toString("latin1")).toBe("RIFF");
-  expect(body.subarray(8, 12).toString("latin1")).toBe("WEBP");
+  expectCompleteWebp(body, "1080 slow reader");
 
   // 2. A client that goes away mid-stream does not wedge or crash the server.
   const reference828 = Buffer.from(await (await fetch(imageUrl(828))).arrayBuffer());
+  expectCompleteWebp(reference828, "828 reference");
   const abandoned = await fetch(imageUrl(828));
   expect(abandoned.status).toBe(200);
   const abandonedReader = abandoned.body!.getReader();
@@ -512,7 +530,9 @@ test("P18 production server streams /api/product-image completely and survives a
 
   const afterCancel = await fetch(imageUrl(828));
   expect(afterCancel.status).toBe(200);
-  expect(Buffer.from(await afterCancel.arrayBuffer()).equals(reference828)).toBe(true);
+  const afterCancelBody = Buffer.from(await afterCancel.arrayBuffer());
+  expect(afterCancelBody.equals(reference828)).toBe(true);
+  expectCompleteWebp(afterCancelBody, "828 after a cancel");
 
   /*
    * 2b. A content-hashed source at the current version: AVIF for a browser that accepts it, kept by
