@@ -148,7 +148,13 @@ test.describe("reviewed container, tracking mode preview", () => {
     expect(csp).toMatch(/script-src[^;]*https:\/\/www\.googletagmanager\.com/);
     expect(csp).toMatch(/frame-src[^;]*https:\/\/www\.googletagmanager\.com/);
 
-    expect(vendorRequests).toEqual([`https://www.googletagmanager.com/gtm.js?id=${REVIEWED_CONTAINER}`]);
+    // The container waits for the shopper's first interaction (or a fallback delay) so it does not
+    // compete with the first paint: nothing has been requested yet, then one keypress releases it.
+    expect(vendorRequests).toEqual([]);
+    await page.keyboard.press("Tab");
+    await expect
+      .poll(() => vendorRequests)
+      .toEqual([`https://www.googletagmanager.com/gtm.js?id=${REVIEWED_CONTAINER}`]);
     // The container snippet inserts its own loader element (the request itself is aborted above).
     await expect(page.locator('script[src*="googletagmanager.com"]')).toHaveCount(1);
     await expect(page.locator('script[src*="googletagmanager.com"]')).toHaveAttribute(
@@ -192,6 +198,8 @@ test.describe("reviewed container, tracking mode preview", () => {
     );
 
     await page.goto(`${server!.baseUrl}/about`, { waitUntil: "networkidle" });
+    // The loader releases the container on the first interaction.
+    await page.keyboard.press("Tab");
 
     await expect.poll(() => page.evaluate(() => window.__ttqEventsJs ?? 0)).toBe(1);
     const violations = await page.evaluate(() => window.__cspViolations ?? []);

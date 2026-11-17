@@ -222,6 +222,9 @@ async function loadUnderEnforcedPolicy(page: Page, path: string): Promise<string
   await page.waitForFunction(() => Object.keys(document.body).some((key) => key.startsWith("__reactFiber")), null, {
     timeout: 30_000,
   });
+  // The GTM loader waits for the first interaction; one keypress releases it so the container's own
+  // requests are exercised under the policy too, and any violation they cause is collected below.
+  await page.keyboard.press("Tab");
   await page.waitForTimeout(300);
   return page.evaluate(() => (window as unknown as { __cspViolations: string[] }).__cspViolations);
 }

@@ -39,10 +39,16 @@ test("T8 GTM container is delivered strictly through GoogleTagManager; no other 
   const files = await collectSourceFiles(SOURCE_ROOT);
   assert.ok(files.length > 0, "expected application sources to scan");
 
+  // The delivery lives in the component and in the module that only builds its inline script (kept
+  // as plain TypeScript so a test can run it). The second is allowed to hold the markers only while
+  // nothing but the component imports it, so there is still exactly one way the container arrives.
+  const SNIPPET_BUILDER = "loader-snippet.ts";
   const offenders: string[] = [];
   for (const file of files) {
     if (file.endsWith("google-tag-manager.tsx")) continue;
     const contents = await readFile(file, "utf8");
+    if (file.endsWith(SNIPPET_BUILDER)) continue;
+    if (contents.includes("gtm/loader-snippet")) offenders.push(`${file}: imports the GTM snippet builder`);
     for (const marker of VENDOR_DELIVERY_MARKERS) {
       if (contents.includes(marker)) offenders.push(`${file}: ${marker}`);
     }

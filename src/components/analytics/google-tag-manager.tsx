@@ -1,16 +1,27 @@
 import Script from "next/script";
 
 import { resolveGtmLoad } from "@/integrations/gtm/config";
+import { buildGtmLoaderSnippet } from "@/integrations/gtm/loader-snippet";
 
 /**
  * Google Tag Manager container snippet.
  *
  * Runs only when `resolveGtmLoad()` allows it: a valid id, tracking mode not `disabled`, and the
  * container recorded as reviewed in `src/tracking/reviewed-gtm-version.json`. Pushes gtm.start to the shared
- * dataLayer, loads gtm.js after interactive, and provides the noscript iframe fallback.
+ * dataLayer, loads gtm.js once the shopper first interacts (or a fallback delay after `load`), and
+ * provides the noscript iframe fallback.
+ *
+ * Why it waits: gtm.js pulls in GA4, Google Ads and the TikTok base tag, together well over a
+ * megabyte of script that, loaded straight after hydration, competes with the hero photograph for
+ * bandwidth and holds the main thread (Total Blocking Time, LCP on a slow phone). Nothing is lost
+ * by waiting: `gtm.start` is pushed immediately, and the dataLayer is an array the container
+ * replays in order when it arrives, so events published meanwhile are processed, not dropped. The
+ * consent defaults live in `TrackingBootstrap` and are unaffected. The cost is a visit that ends
+ * before any interaction and before the fallback delay: it is not measured by the container.
  *
  * The snippet is Google's nonce-aware variant: it copies the page's script nonce onto gtm.js, which
- * is how the container's Custom HTML tags get one under a nonce-based policy.
+ * is how the container's Custom HTML tags get one under a nonce-based policy. The nonce is read
+ * when the snippet runs, while the element that carries it is certainly present.
  */
 export function GoogleTagManager({ nonce }: Readonly<{ nonce?: string }>) {
   const decision = resolveGtmLoad();
@@ -19,12 +30,7 @@ export function GoogleTagManager({ nonce }: Readonly<{ nonce?: string }>) {
   return (
     <>
       <Script id="google-tag-manager" strategy="afterInteractive" nonce={nonce}>
-        {`(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-'https://www.googletagmanager.com/gtm.js?id='+i+dl;var n=d.querySelector('[nonce]');
-n&&j.setAttribute('nonce',n.nonce||n.getAttribute('nonce'));f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer',${JSON.stringify(decision.containerId)});`}
+        {buildGtmLoaderSnippet(decision.containerId)}
       </Script>
       <noscript>
         <iframe
