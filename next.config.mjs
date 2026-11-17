@@ -125,10 +125,33 @@ const hasTikTok =
   Array.isArray(reviewedGtmVersion.approvedDestinations.tiktokPixelIds) &&
   reviewedGtmVersion.approvedDestinations.tiktokPixelIds.length > 0;
 const tiktokOrigin = hasTikTok ? " https://analytics.tiktok.com" : "";
+// Observed, not guessed (a real mobile browser run of the production homepage, 2026-11-17, with the
+// enforced policy reporting what it blocked): once the reviewed container's TikTok Base tag runs,
+// it also posts to its IPv6 enrichment endpoint. It is a `connect-src` request only -- it loads no
+// script and no image -- so nothing is added to `script-src` or `img-src`.
+const tiktokConnectOrigin = hasTikTok ? " https://analytics-ipv6.tiktokw.us" : "";
+// The same run showed Google's measurement requests (`/ccm/collect`, sent by gtm.js and by the
+// Google Ads and GA4 tags the reviewed container loads) refused: a fetch to www.google.com and to
+// ad.doubleclick.net, each falling back to a 1x1 image from the same origin. Opened only when the
+// reviewed record approves a Google destination, and only for `connect-src` and `img-src`: neither
+// origin is added to `script-src`, so no script can be loaded from them.
+const hasGoogleDestination =
+  hasGtm &&
+  (
+    (Array.isArray(reviewedGtmVersion.approvedDestinations.ga4MeasurementIds) &&
+      reviewedGtmVersion.approvedDestinations.ga4MeasurementIds.length > 0) ||
+    (Array.isArray(reviewedGtmVersion.approvedDestinations.googleAdsConversions) &&
+      reviewedGtmVersion.approvedDestinations.googleAdsConversions.length > 0)
+  );
+const googleMeasurementOrigins = hasGoogleDestination
+  ? " https://www.google.com https://ad.doubleclick.net"
+  : "";
 const gtmScriptSrc = hasGtm ? ` https://www.googletagmanager.com${tiktokOrigin}` : "";
-const gtmImgSrc = hasGtm ? " https://www.googletagmanager.com https://www.google-analytics.com" : "";
+const gtmImgSrc = hasGtm
+  ? ` https://www.googletagmanager.com https://www.google-analytics.com${googleMeasurementOrigins}`
+  : "";
 const gtmConnectSrc = hasGtm
-  ? ` https://www.googletagmanager.com https://www.google-analytics.com https://analytics.google.com https://stats.g.doubleclick.net https://region1.google-analytics.com${tiktokOrigin}`
+  ? ` https://www.googletagmanager.com https://www.google-analytics.com https://analytics.google.com https://stats.g.doubleclick.net https://region1.google-analytics.com${googleMeasurementOrigins}${tiktokOrigin}${tiktokConnectOrigin}`
   : "";
 const gtmFrameSrc = hasGtm ? " https://www.googletagmanager.com" : "";
 

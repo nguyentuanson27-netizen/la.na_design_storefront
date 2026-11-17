@@ -73,6 +73,21 @@ rebuild.
 
 Rollback: set `off` (or back to `report-only`) and restart the app.
 
+## Origins opened for the reviewed GTM container
+
+Third-party origins are opened by name, from what a real browser reported, never by wildcard and
+never on a guess (`next.config.mjs`). Each follows the approval in `src/tracking/reviewed-gtm-version.json`.
+
+| Origin | Directives | Opened when | Why |
+|---|---|---|---|
+| `https://www.google.com`, `https://ad.doubleclick.net` | `connect-src`, `img-src` | the record approves a GA4 id or a Google Ads conversion | Google's measurement request (`/ccm/collect`, sent by gtm.js and the Google tags) is a fetch, with a 1x1 image fallback on the same origin. Observed refused on the production homepage, 2026-11-17. |
+| `https://analytics-ipv6.tiktokw.us` | `connect-src` | the record approves a TikTok pixel | The TikTok Base tag's IPv6 enrichment call. Observed refused on the same run. |
+
+None of these is a `script-src` or `frame-src` source, so they cannot load script or be framed.
+Requests that only start later (for example a conversion on the order success page) were not part
+of that run: when one is refused, take the origin from the `csp.violation` log and add it here, in
+the config and in `tests/integrations/tracking-gtm-interlock.test.ts` together.
+
 ## Limits
 
 - The prerendered `/_global-error` page (shown only when the root layout itself fails) has no

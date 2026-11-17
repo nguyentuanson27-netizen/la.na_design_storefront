@@ -119,6 +119,7 @@ test("the production Content-Security-Policy opens no Google or TikTok origin wh
       "google-analytics",
       "googleadservices",
       "googlesyndication",
+      "doubleclick",
       "tiktok",
     ]) {
       assert.equal(
@@ -146,6 +147,9 @@ test("a configured AND reviewed GTM container opens Google Tag Manager and Analy
     assert.match(csp, /connect-src[^;]*https:\/\/www\.googletagmanager\.com/);
     assert.match(csp, /frame-src[^;]*https:\/\/www\.googletagmanager\.com/);
     assert.match(csp, /connect-src[^;]*https:\/\/www\.google-analytics\.com/);
+    // No Google destination is approved in this record, so Google's measurement origins stay closed.
+    assert.equal(csp.includes("https://www.google.com"), false);
+    assert.equal(csp.includes("ad.doubleclick.net"), false);
     assert.doesNotMatch(csp, /'unsafe-eval'/, "production must not carry unsafe-eval");
     assert.doesNotMatch(csp, /\*/, "production must not carry wildcards");
   } finally {
@@ -234,8 +238,50 @@ test("the repository's own reviewed record opens the CSP for GTM-PRZT92JR and no
     // The reviewed TikTok Base loads events.js, which `connect-src` alone would not allow.
     assert.match(csp, /script-src[^;]*https:\/\/analytics\.tiktok\.com/);
     assert.match(csp, /connect-src[^;]*https:\/\/analytics\.tiktok\.com/);
+    // Observed blocked in a real browser run: Google measurement (/ccm/collect) and TikTok's IPv6
+    // enrichment call. Fetches and image beacons only; neither is ever a script or frame source.
+    for (const origin of ["https://www.google.com", "https://ad.doubleclick.net"]) {
+      assert.match(csp, new RegExp(`connect-src[^;]*${origin.replaceAll(".", "\\.")}`), `${origin} in connect-src`);
+      assert.match(csp, new RegExp(`img-src[^;]*${origin.replaceAll(".", "\\.")}`), `${origin} in img-src`);
+      assert.doesNotMatch(csp, new RegExp(`script-src[^;]*${origin.replaceAll(".", "\\.")}`), `${origin} must not load scripts`);
+      assert.doesNotMatch(csp, new RegExp(`frame-src[^;]*${origin.replaceAll(".", "\\.")}`), `${origin} must not be framed`);
+    }
+    assert.match(csp, /connect-src[^;]*https:\/\/analytics-ipv6\.tiktokw\.us/);
+    assert.doesNotMatch(csp, /script-src[^;]*tiktokw/, "the IPv6 endpoint is not a script source");
+    assert.doesNotMatch(csp, /img-src[^;]*tiktokw/, "the IPv6 endpoint is not an image source");
     assert.doesNotMatch(csp, /\*/, "no wildcard origin");
     assert.doesNotMatch(csp, /'unsafe-eval'/, "production must not carry unsafe-eval");
+  } finally {
+    if (originalGtm !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalGtm;
+    else delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  }
+});
+
+test("Google's measurement origins follow the reviewed record's Google approval, for fetch and image only", async () => {
+  const originalGtm = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = "GTM-PRZT92JR";
+
+  try {
+    const approvals = [
+      { ga4MeasurementIds: ["G-TEST123456"], googleAdsConversions: [], tiktokPixelIds: [] },
+      {
+        ga4MeasurementIds: [],
+        googleAdsConversions: [{ conversionId: "1", conversionLabel: "x" }],
+        tiktokPixelIds: [],
+      },
+    ];
+    for (const [index, approvedDestinations] of approvals.entries()) {
+      const csp = await readCsp(`?reviewed-google-${index}-${Date.now()}`, {
+        ...REVIEWED_RECORD,
+        approvedDestinations,
+      });
+      for (const origin of ["https://www.google.com", "https://ad.doubleclick.net"]) {
+        assert.ok(csp.includes(`connect-src`) && new RegExp(`connect-src[^;]*${origin.replaceAll(".", "\\.")}`).test(csp), `${origin} in connect-src`);
+        assert.match(csp, new RegExp(`img-src[^;]*${origin.replaceAll(".", "\\.")}`));
+        assert.doesNotMatch(csp, new RegExp(`script-src[^;]*${origin.replaceAll(".", "\\.")}`));
+      }
+      assert.equal(csp.includes("tiktok"), false, "a Google approval never opens TikTok");
+    }
   } finally {
     if (originalGtm !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalGtm;
     else delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
@@ -251,6 +297,7 @@ test("TikTok's origin follows the reviewed record's TikTok approval, not just th
     const withoutTikTok = await readCsp(`?reviewed-no-tiktok-${Date.now()}`, REVIEWED_RECORD);
     assert.match(withoutTikTok, /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
     assert.equal(withoutTikTok.includes("tiktok"), false);
+    assert.equal(withoutTikTok.includes("tiktokw"), false);
 
     const withTikTok = await readCsp(`?reviewed-tiktok-${Date.now()}`, {
       ...REVIEWED_RECORD,
@@ -258,6 +305,7 @@ test("TikTok's origin follows the reviewed record's TikTok approval, not just th
     });
     assert.match(withTikTok, /script-src[^;]*https:\/\/analytics\.tiktok\.com/);
     assert.match(withTikTok, /connect-src[^;]*https:\/\/analytics\.tiktok\.com/);
+    assert.match(withTikTok, /connect-src[^;]*https:\/\/analytics-ipv6\.tiktokw\.us/);
     // Only what is justified is opened: no TikTok image origin, and nothing for an unreviewed id.
     assert.doesNotMatch(withTikTok, /img-src[^;]*tiktok/);
   } finally {
