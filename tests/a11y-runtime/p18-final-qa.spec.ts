@@ -472,13 +472,20 @@ test("P18 production server streams /api/product-image completely and survives a
   const imageUrl = (width: number) =>
     `${BASE_URL}/api/product-image?src=${encodeURIComponent(trustedImages[0])}&w=${width}`;
 
-  // 1. A slow reader still receives the whole body, consistent with Content-Length.
+  // 1. A slow reader still receives the whole body.
+  //
+  // Since Next 16.4.5 the production server drops Content-Length (and Transfer-Encoding and
+  // Content-Encoding) from the Response a route handler returns, because a body that was decoded on
+  // the way would make them wrong, and frames the body itself, chunked. So completeness is checked
+  // against an independent reference rather than a declared length: the same URL read at full speed.
+  // The encoder is deterministic for a fixed input, and a body cut short makes fetch reject rather
+  // than end early.
+  const reference = Buffer.from(await (await fetch(imageUrl(1080))).arrayBuffer());
+  expect(reference.byteLength).toBeGreaterThan(64 * 1024);
+  expect(reference.byteLength).toBeLessThan(3_000_000);
   const complete = await fetch(imageUrl(1080));
   expect(complete.status).toBe(200);
   expect(complete.headers.get("content-type")).toBe("image/webp");
-  const declared = Number(complete.headers.get("content-length"));
-  expect(declared).toBeGreaterThan(64 * 1024);
-  expect(declared).toBeLessThan(3_000_000);
   const reader = complete.body!.getReader();
   const received: Buffer[] = [];
   for (;;) {
@@ -489,11 +496,13 @@ test("P18 production server streams /api/product-image completely and survives a
   }
   const body = Buffer.concat(received);
   expect(received.length).toBeGreaterThan(1);
-  expect(body.byteLength).toBe(declared);
+  expect(body.byteLength).toBe(reference.byteLength);
+  expect(body.equals(reference)).toBe(true);
   expect(body.subarray(0, 4).toString("latin1")).toBe("RIFF");
   expect(body.subarray(8, 12).toString("latin1")).toBe("WEBP");
 
   // 2. A client that goes away mid-stream does not wedge or crash the server.
+  const reference828 = Buffer.from(await (await fetch(imageUrl(828))).arrayBuffer());
   const abandoned = await fetch(imageUrl(828));
   expect(abandoned.status).toBe(200);
   const abandonedReader = abandoned.body!.getReader();
@@ -503,9 +512,7 @@ test("P18 production server streams /api/product-image completely and survives a
 
   const afterCancel = await fetch(imageUrl(828));
   expect(afterCancel.status).toBe(200);
-  expect((await afterCancel.arrayBuffer()).byteLength).toBe(
-    Number(afterCancel.headers.get("content-length")),
-  );
+  expect(Buffer.from(await afterCancel.arrayBuffer()).equals(reference828)).toBe(true);
 
   /*
    * 2b. A content-hashed source at the current version: AVIF for a browser that accepts it, kept by
