@@ -12,7 +12,7 @@ import {
  * Runs the real inline snippet against a stand-in browser. No network, no real timers: the
  * stand-in records what the snippet registers and lets the test fire it.
  */
-function runSnippet(options: { readyState?: string; nonce?: string } = {}) {
+function runSnippet(options: { readyState?: string; nonce?: string; pathname?: string } = {}) {
   const listeners = new Map<string, Array<{ fn: () => void; capture: boolean }>>();
   const timers: Array<{ fn: () => void; ms: number }> = [];
   const inserted: Array<{ src: string; attrs: Record<string, string> }> = [];
@@ -30,6 +30,7 @@ function runSnippet(options: { readyState?: string; nonce?: string } = {}) {
       );
     },
     dataLayer: undefined as Array<Record<string, unknown>> | undefined,
+    location: { pathname: options.pathname ?? "/" },
   };
   const anchor = { parentNode: { insertBefore: (el: { src: string; attrs: Record<string, string> }) => inserted.push(el) } };
   const document = {
@@ -117,3 +118,31 @@ test("no nonce on the page means none is set", () => {
   page.fire("keydown");
   assert.equal("nonce" in page.inserted[0]!.attrs, false);
 });
+
+test("a scroll event is not an interaction: the storefront scrolls itself for #san-pham deep links", () => {
+  assert.equal((GTM_INTERACTION_EVENTS as readonly string[]).includes("scroll"), false);
+  const page = runSnippet({ readyState: "complete" });
+  assert.equal(page.listenerTypes().includes("scroll"), false, "no scroll listener is registered");
+  page.fire("scroll");
+  assert.equal(page.inserted.length, 0);
+  // ...while a person's own scrolling still starts with one of the listed events.
+  page.fire("touchstart");
+  assert.equal(page.inserted.length, 1);
+});
+
+for (const pathname of ["/cart", "/checkout", "/checkout/success", "/en/cart", "/en/checkout/success"]) {
+  test(`${pathname} loads gtm.js at once, because conversions are measured there`, () => {
+    const page = runSnippet({ pathname });
+    assert.equal(page.inserted.length, 1, "no wait for an interaction or the fallback timer");
+    assert.equal(page.inserted[0]!.src, "https://www.googletagmanager.com/gtm.js?id=GTM-TEST123");
+    assert.equal(page.window.dataLayer?.[0]?.event, "gtm.js", "gtm.start is still pushed first");
+    assert.equal(page.timers.length, 0);
+  });
+}
+
+for (const pathname of ["/", "/ao-dai", "/shop/some-dress", "/checkout-guide", "/cartoon", "/en", "/policies/checkout"]) {
+  test(`${pathname} still waits for an interaction`, () => {
+    const page = runSnippet({ pathname });
+    assert.equal(page.inserted.length, 0);
+  });
+}

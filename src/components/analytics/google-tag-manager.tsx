@@ -17,7 +17,13 @@ import { buildGtmLoaderSnippet } from "@/integrations/gtm/loader-snippet";
  * by waiting: `gtm.start` is pushed immediately, and the dataLayer is an array the container
  * replays in order when it arrives, so events published meanwhile are processed, not dropped. The
  * consent defaults live in `TrackingBootstrap` and are unaffected. The cost is a visit that ends
- * before any interaction and before the fallback delay: it is not measured by the container.
+ * before any interaction and before the fallback delay: it is not measured by the container. A first
+ * tap that leaves at once (a `tel:` link, a Zalo hand-off) starts the download but cannot be
+ * guaranteed to finish it before the page is gone.
+ *
+ * The cart and checkout pages are the exception and load GTM at once (`GTM_EAGER_PATH_SOURCE`):
+ * `purchase` is published on `/checkout/success`, which a shopper often leaves without touching
+ * anything, and a conversion lost there costs more than a few pages' load time.
  *
  * The snippet is Google's nonce-aware variant: it copies the page's script nonce onto gtm.js, which
  * is how the container's Custom HTML tags get one under a nonce-based policy. The nonce is read
