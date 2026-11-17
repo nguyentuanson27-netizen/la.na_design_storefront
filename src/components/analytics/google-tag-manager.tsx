@@ -1,5 +1,6 @@
 import Script from "next/script";
 
+import { GtmRouteWatcher } from "@/components/analytics/gtm-route-watcher";
 import { resolveGtmLoad } from "@/integrations/gtm/config";
 import { buildGtmLoaderSnippet } from "@/integrations/gtm/loader-snippet";
 
@@ -23,7 +24,8 @@ import { buildGtmLoaderSnippet } from "@/integrations/gtm/loader-snippet";
  *
  * The cart and checkout pages are the exception and load GTM at once (`GTM_EAGER_PATH_SOURCE`):
  * `purchase` is published on `/checkout/success`, which a shopper often leaves without touching
- * anything, and a conversion lost there costs more than a few pages' load time.
+ * anything, and a conversion lost there costs more than a few pages' load time. The root layout stays
+ * mounted across client navigation, so `GtmRouteWatcher` re-checks the path on every route change.
  *
  * The snippet is Google's nonce-aware variant: it copies the page's script nonce onto gtm.js, which
  * is how the container's Custom HTML tags get one under a nonce-based policy. The nonce is read
@@ -38,6 +40,7 @@ export function GoogleTagManager({ nonce }: Readonly<{ nonce?: string }>) {
       <Script id="google-tag-manager" strategy="afterInteractive" nonce={nonce}>
         {buildGtmLoaderSnippet(decision.containerId)}
       </Script>
+      <GtmRouteWatcher />
       <noscript>
         <iframe
           src={`https://www.googletagmanager.com/ns.html?id=${encodeURIComponent(decision.containerId)}`}

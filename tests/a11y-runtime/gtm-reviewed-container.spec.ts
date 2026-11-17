@@ -174,6 +174,22 @@ test.describe("reviewed container, tracking mode preview", () => {
     expect(modeIndex).toBeLessThan(startIndex);
   });
 
+  test("a client route change to a conversion page releases the container with no user input", async ({
+    page,
+  }) => {
+    const vendorRequests = await recordVendorRequests(page);
+    await page.goto(`${server!.baseUrl}/about`, { waitUntil: "networkidle" });
+    expect(vendorRequests, "waiting on a page that is not a conversion page").toEqual([]);
+
+    // The root layout, and with it the loader, stays mounted across client navigation. Next syncs
+    // `history.pushState` with `usePathname()`, and the call is script-made, so it is not an
+    // interaction: only the route watcher can release the container here.
+    await page.evaluate(() => window.history.pushState(null, "", "/checkout/success"));
+    await expect
+      .poll(() => vendorRequests)
+      .toEqual([`https://www.googletagmanager.com/gtm.js?id=${REVIEWED_CONTAINER}`]);
+  });
+
   test("the reviewed TikTok Base snippet can load TikTok's SDK under the real CSP", async ({ page }) => {
     await page.addInitScript(() => {
       window.__cspViolations = [];

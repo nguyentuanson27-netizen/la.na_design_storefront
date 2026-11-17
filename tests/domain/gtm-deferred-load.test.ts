@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 import {
   buildGtmLoaderSnippet,
+  GTM_EAGER_CHECK_GLOBAL,
   GTM_INTERACTION_EVENTS,
   GTM_LOAD_FALLBACK_MS,
 } from "../../src/integrations/gtm/loader-snippet.ts";
@@ -31,7 +33,7 @@ function runSnippet(options: { readyState?: string; nonce?: string; pathname?: s
     },
     dataLayer: undefined as Array<Record<string, unknown>> | undefined,
     location: { pathname: options.pathname ?? "/" },
-  };
+  } as Record<string, unknown> & { location: { pathname: string }; dataLayer?: Array<Record<string, unknown>> };
   const anchor = { parentNode: { insertBefore: (el: { src: string; attrs: Record<string, string> }) => inserted.push(el) } };
   const document = {
     readyState: options.readyState ?? "interactive",
@@ -146,3 +148,63 @@ for (const pathname of ["/", "/ao-dai", "/shop/some-dress", "/checkout-guide", "
     assert.equal(page.inserted.length, 0);
   });
 }
+
+// The root layout survives client navigation, so the pathname can change after the snippet ran.
+// GtmRouteWatcher calls the hook below on every route change.
+function routeChangesTo(page: ReturnType<typeof runSnippet>, pathname: string) {
+  page.window.location.pathname = pathname;
+  const check = page.window[GTM_EAGER_CHECK_GLOBAL];
+  assert.equal(typeof check, "function", "the snippet leaves its re-check hook on window");
+  (check as () => void)();
+}
+
+for (const pathname of ["/checkout/success", "/en/checkout/success", "/cart", "/en/cart", "/checkout"]) {
+  test(`a client navigation from / to ${pathname} loads gtm.js at once, with no interaction`, () => {
+    const page = runSnippet({ readyState: "complete", pathname: "/" });
+    assert.equal(page.inserted.length, 0, "waiting on the landing page");
+    routeChangesTo(page, pathname);
+    assert.equal(page.inserted.length, 1);
+    assert.equal(page.inserted[0]!.src, "https://www.googletagmanager.com/gtm.js?id=GTM-TEST123");
+    // Only once, however many more route changes, interactions or timers follow.
+    routeChangesTo(page, "/checkout/success");
+    page.fire("pointerdown");
+    page.timers[0]!.fn();
+    assert.equal(page.inserted.length, 1);
+  });
+}
+
+test("a client navigation to a page that is not a conversion page keeps waiting", () => {
+  const page = runSnippet({ readyState: "complete", pathname: "/" });
+  routeChangesTo(page, "/ao-dai");
+  routeChangesTo(page, "/shop/some-dress");
+  routeChangesTo(page, "/checkout-guide");
+  assert.equal(page.inserted.length, 0);
+  page.fire("keydown");
+  assert.equal(page.inserted.length, 1, "an interaction still releases it");
+});
+
+test("the hook is harmless once the container has loaded, and on a page that loaded eagerly", () => {
+  const eager = runSnippet({ pathname: "/checkout" });
+  assert.equal(eager.inserted.length, 1);
+  routeChangesTo(eager, "/cart");
+  routeChangesTo(eager, "/");
+  assert.equal(eager.inserted.length, 1);
+
+  const released = runSnippet({ readyState: "complete" });
+  released.fire("touchstart");
+  routeChangesTo(released, "/checkout/success");
+  assert.equal(released.inserted.length, 1);
+});
+
+test("GtmRouteWatcher is mounted by the loader and calls the hook on each pathname change", async () => {
+  const root = new URL("../../src/", import.meta.url);
+  const watcher = await readFile(new URL("components/analytics/gtm-route-watcher.tsx", root), "utf8");
+  const loader = await readFile(new URL("components/analytics/google-tag-manager.tsx", root), "utf8");
+  assert.match(watcher, /^"use client";/);
+  assert.match(watcher, /usePathname\(\)/);
+  assert.match(watcher, /GTM_EAGER_CHECK_GLOBAL/);
+  assert.match(watcher, /\[pathname\]\)/, "the effect is keyed on the pathname");
+  assert.match(loader, /<GtmRouteWatcher \/>/);
+  // Client code must not import the snippet builder, which holds the vendor strings.
+  assert.doesNotMatch(watcher, /loader-snippet/);
+});

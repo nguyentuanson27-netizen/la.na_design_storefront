@@ -11,6 +11,10 @@
  * snippet runs, while the element that carries it is certainly present.
  */
 
+import { GTM_EAGER_CHECK_GLOBAL } from "./eager-check.ts";
+
+export { GTM_EAGER_CHECK_GLOBAL };
+
 /** Fallback delay after `load` for a visit with no interaction at all. */
 export const GTM_LOAD_FALLBACK_MS = 5_000;
 
@@ -35,12 +39,16 @@ export const GTM_INTERACTION_EVENTS = ["pointerdown", "keydown", "touchstart", "
  */
 export const GTM_EAGER_PATH_SOURCE = "^/(?:en/)?(?:cart|checkout)(?:/|$)";
 
+// The path is read when the snippet runs and again whenever `GtmRouteWatcher` calls the hook the
+// snippet leaves on `window`: the root layout survives client navigation, so a shopper can reach a
+// conversion page without a reload. The container still loads at most once.
+
 export function buildGtmLoaderSnippet(
   containerId: string,
   fallbackMs: number = GTM_LOAD_FALLBACK_MS,
   eagerPathSource: string = GTM_EAGER_PATH_SOURCE,
 ): string {
-  return `(function(w,d,s,l,i,ms,evs,eager){w[l]=w[l]||[];w[l].push({'gtm.start':
+  return `(function(w,d,s,l,i,ms,evs,eager,hook){w[l]=w[l]||[];w[l].push({'gtm.start':
 new Date().getTime(),event:'gtm.js'});var n=d.querySelector('[nonce]'),
 c=n&&(n.nonce||n.getAttribute('nonce')),started=false;
 function load(){if(started)return;started=true;
@@ -49,9 +57,10 @@ var f=d.getElementsByTagName(s)[0],j=d.createElement(s),
 dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 'https://www.googletagmanager.com/gtm.js?id='+i+dl;
 c&&j.setAttribute('nonce',c);f.parentNode.insertBefore(j,f);}
-if(new RegExp(eager).test(w.location.pathname)){load();return;}
+var re=new RegExp(eager);function check(){if(!started&&re.test(w.location.pathname))load();}
+w[hook]=check;check();if(started)return;
 for(var m=0;m<evs.length;m++)w.addEventListener(evs[m],load,{capture:true,passive:true});
 function arm(){setTimeout(load,ms);}
 if(d.readyState==='complete')arm();else w.addEventListener('load',arm,{once:true});
-})(window,document,'script','dataLayer',${JSON.stringify(containerId)},${Number(fallbackMs)},${JSON.stringify(GTM_INTERACTION_EVENTS)},${JSON.stringify(eagerPathSource)});`;
+})(window,document,'script','dataLayer',${JSON.stringify(containerId)},${Number(fallbackMs)},${JSON.stringify(GTM_INTERACTION_EVENTS)},${JSON.stringify(eagerPathSource)},${JSON.stringify(GTM_EAGER_CHECK_GLOBAL)});`;
 }
