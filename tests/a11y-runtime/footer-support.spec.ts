@@ -108,8 +108,9 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   const brandHome = footer.getByRole("link", { name: BRAND.identity.name, exact: true });
   await expect(brandHome).toBeVisible();
   const masterLogo = brandHome.getByRole("img", { name: BRAND.identity.name, exact: true });
-  await expect(masterLogo).toHaveAttribute("src", /\/_next\/image\?url=%2Fbrand%2Fla-na-design-master-logo\.png/);
-  await expect(masterLogo).toHaveAttribute("sizes", "176px");
+  // The official vector logo (b54e3ba) is served as is: an SVG needs no raster resizing, so the
+  // image is `unoptimized` and `src` is the file itself rather than a `/_next/image` URL.
+  await expect(masterLogo).toHaveAttribute("src", "/brand/la-na-design-logo.svg");
   await masterLogo.scrollIntoViewIfNeeded();
   await expect(masterLogo).toBeVisible();
   await expect.poll(() =>
@@ -124,11 +125,14 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
     };
   });
   expect(renderedLogo.complete).toBe(true);
-  expect(renderedLogo.naturalWidth).toBeLessThan(4185);
-  expect(renderedLogo.currentSrc).toContain("/_next/image?url=%2Fbrand%2Fla-na-design-master-logo.png");
+  expect(renderedLogo.currentSrc).toContain("/brand/la-na-design-logo.svg");
 
-  // The owner-approved source asset remains byte-preserved and directly reachable; presentation
-  // simply stops shipping all 4,185 source pixels to a logo rendered at 11rem.
+  const logoResponse = await page.request.get(`${BASE_URL}/brand/la-na-design-logo.svg`);
+  expect(logoResponse.status()).toBe(200);
+  expect(logoResponse.headers()["content-type"]).toContain("image/svg+xml");
+
+  // The owner-approved PNG source stays byte-preserved and directly reachable, though the footer no
+  // longer renders it.
   const masterLogoResponse = await page.request.get(`${BASE_URL}/brand/la-na-design-master-logo.png`);
   expect(masterLogoResponse.status()).toBe(200);
   expect(masterLogoResponse.headers()["content-type"]).toContain("image/png");
