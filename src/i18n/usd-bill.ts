@@ -61,6 +61,22 @@ function shippingCents(feeVnd: number, waivedVnd: number): { net: number; waived
 }
 
 /**
+ * The "-NN%" badge for a struck-through price and the price shown beside it, measured on the dollar
+ * prices actually displayed. Absent when the pair shows no reduction or it rounds under 1%.
+ */
+function badgePercent(shownCents: number, originalCents: number): number | undefined {
+  if (originalCents <= shownCents) return undefined;
+  const percent = Math.round((1 - shownCents / originalCents) * 100);
+  return percent >= 1 ? percent : undefined;
+}
+
+/** `entry` without its percent, and with the recomputed one when there is one. */
+function withBadge<T extends { discountPercent?: number }>(entry: T, percent: number | undefined): T {
+  const { discountPercent: _old, ...rest } = entry;
+  return (percent === undefined ? rest : { ...rest, discountPercent: percent }) as T;
+}
+
+/**
  * The money block (order value, discounts, shipping, total) over a subtotal that has already been
  * worked out from the lines. `valueCents` is what the lines come to before the cart-level discounts.
  * `pinned` fixes the amount of some discount rows by id (the vouchers, whose amount the picker has
@@ -174,17 +190,24 @@ export function usdCart<T extends CartViewModel>(model: T): T {
       ? line.paidSegmentPrices.map((entry, index) => {
           const segment = segments[index];
           if (segment === undefined) return entry;
-          return {
+          const shown = price(segment.unitVnd);
+          const original = entry.originalPriceText !== undefined && segment.originalUnitVnd !== undefined ? price(segment.originalUnitVnd) : undefined;
+          const next = {
             ...entry,
-            priceText: formatCents(price(segment.unitVnd)),
-            ...(entry.originalPriceText !== undefined && segment.originalUnitVnd !== undefined ? { originalPriceText: formatCents(price(segment.originalUnitVnd)) } : {}),
+            priceText: formatCents(shown),
+            ...(original !== undefined ? { originalPriceText: formatCents(original) } : {}),
           };
+          return original === undefined ? next : withBadge(next, badgePercent(shown, original));
         })
       : undefined;
-    return Object.freeze({
+    const original = line.originalPriceText !== undefined && bill.originalUnitVnd !== undefined ? price(bill.originalUnitVnd) : undefined;
+    const priced = {
       ...line,
       priceText: formatCents(unit),
-      ...(line.originalPriceText !== undefined && bill.originalUnitVnd !== undefined ? { originalPriceText: formatCents(price(bill.originalUnitVnd)) } : {}),
+      ...(original !== undefined ? { originalPriceText: formatCents(original) } : {}),
+    };
+    return Object.freeze({
+      ...(original === undefined ? priced : withBadge(priced, badgePercent(unit, original))),
       ...(paidSegmentPrices ? { paidSegmentPrices } : {}),
       ...(line.paidSegments && segments ? { paidSegments: segments.map((segment) => `${segment.quantity} × ${formatCents(price(segment.unitVnd))}`) } : {}),
       lineTotalText: formatCents(total),
@@ -249,18 +272,28 @@ export function usdCheckout<T extends CheckoutViewModel>(model: T): T {
     value += line.quantity * price(line.listedUnitVnd ?? beforeVoucher);
     listReference += line.quantity * price(line.listReferenceUnitVnd ?? line.listedUnitVnd ?? beforeVoucher);
     voucherVnd += line.quantity * Math.max(0, beforeVoucher - line.unitPriceVnd!);
-    return Object.freeze({
+    const struck = line.originalPriceText !== undefined && line.originalPriceVnd !== undefined ? price(line.originalPriceVnd) : undefined;
+    const promotion = line.promotionPriceText !== undefined && line.promotionPriceVnd !== undefined ? price(line.promotionPriceVnd) : undefined;
+    const priced = {
       ...line,
       unitPriceText: formatCents(unit),
       lineTotalText: formatCents(total),
-      ...(line.originalPriceText !== undefined && line.originalPriceVnd !== undefined ? { originalPriceText: formatCents(price(line.originalPriceVnd)) } : {}),
-      ...(line.promotionPriceText !== undefined && line.promotionPriceVnd !== undefined ? { promotionPriceText: formatCents(price(line.promotionPriceVnd)) } : {}),
-    });
+      ...(struck !== undefined ? { originalPriceText: formatCents(struck) } : {}),
+      ...(promotion !== undefined ? { promotionPriceText: formatCents(promotion) } : {}),
+    };
+    // The badge measures the struck price against the price it sits beside: the promotion price when the line has one,
+    // otherwise the unit price shown (which is the price before any voucher, not the quote's post-voucher price).
+    return Object.freeze(struck === undefined ? priced : withBadge(priced, badgePercent(promotion ?? unit, struck)));
   });
 
   const voucher = voucherVnd > 0 ? Math.min(goods, price(voucherVnd)) : 0;
   const payable = goods - voucher;
-  const voucherRows = (model.summary?.discounts ?? []).filter((row) => row.id.startsWith("voucher:"));
+  // The vouchers' amounts, shared out of the dollar price of what they took off in all (every VOUCHER step of every line):
+  // from the held vouchers when the page lists them, otherwise from the bill's voucher rows.
+  const heldMerchandise = model.vouchers?.state === "HELD" ? model.vouchers.lines.filter((line) => line.kind === "MERCHANDISE") : [];
+  const voucherRows: ReadonlyArray<Readonly<{ id: string; amountVnd: number }>> = heldMerchandise.length > 0 && heldMerchandise.every((line) => line.amountVnd !== undefined)
+    ? heldMerchandise.map((line) => ({ id: `voucher:${line.id}`, amountVnd: line.amountVnd! }))
+    : (model.summary?.discounts ?? []).filter((row) => row.id.startsWith("voucher:"));
   const voucherShares = shareAmount(voucher, voucherRows.map((row) => row.amountVnd));
   const pinned: Record<string, number> = {};
   voucherRows.forEach((row, index) => { pinned[row.id] = voucherShares[index] ?? 0; });

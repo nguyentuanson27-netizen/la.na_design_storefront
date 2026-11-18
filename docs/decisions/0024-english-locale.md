@@ -72,10 +72,13 @@ this; the numbers they need travel beside the Vietnamese texts in the view model
 merchandise voucher is shared out in dong over the units it touched, so the quote's unit prices already carry it; priced one
 by one in dollars those shares would not add up to the amount the picker showed. The English checkout therefore shows the
 lines at their price *before* the voucher and the voucher as a discount row of its own, whose amount is the dollar price of
-what it took off (the picker's figure). And a shipping voucher is printed as the whole fee followed by what it waived, so the
+what it took off (the picker's figure). (Several vouchers can lower one line, one ledger step each: the price before them is the input of the first, and what they
+took off is counted over every step, in dong as well as in dollars. The panel's rows are shared out of that one dollar amount.)
+And a shipping voucher is printed as the whole fee followed by what it waived, so the
 rows add up as printed. The voucher picker measures its summary from the bill's goods total and re-applies that to every
 answer of its server actions (`usdVoucherPicker`, `VoucherPickerModel.usdBasisCents`), so choosing or clearing a voucher
-never moves it. Not recomputed that way, and so converted one by one like any other text: the picker's cards, the "buy N
+never moves it. A "-NN%" badge is measured on the dollar pair the buyer sees (the struck price and the price beside it), not on
+the dong quote, so it can differ by a point or more from the Vietnamese page's. Not recomputed that way, and so converted one by one like any other text: the picker's cards, the "buy N
 more" nudges and promotion banners, and product listings and pages (single prices, nothing to add up). It is a display rate only: the cart, the
 order, the bank transfer, structured data (`priceCurrency: VND`), analytics and every server-side figure stay in
 dong. The view models keep formatting dong, so the conversion is done on the text, in the English translator

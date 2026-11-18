@@ -35,6 +35,7 @@ async function cleanup() {
     await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica");
     await tx.voucherHold.deleteMany({ where: { campaign: { pancakeShopId: SHOP } } });
     await tx.voucherCampaign.deleteMany({ where: { pancakeShopId: SHOP } });
+    await tx.voucherType.deleteMany({ where: { pancakeShopId: SHOP } });
   });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP } });
 }
@@ -269,4 +270,46 @@ test("free shipping: the fee is printed whole and the waived part under it, in t
   expect(waived?.[1][0], "what free shipping waived").toBe(SHIPPING_CENTS);
   // The rows add up as printed: goods - voucher + fee - waived = total.
   expect(first(rows, /^Estimated total/)).toBe(4 * UNIT_CENTS - 249 + SHIPPING_CENTS - SHIPPING_CENTS);
+});
+
+test("two merchandise vouchers of two types on one line: cart picker -> hold -> checkout, every figure from the same dollars", async ({ page }) => {
+  // Replace the default voucher with two of different types (each is its own slot, and both apply to the line).
+  await prisma.voucherCampaign.deleteMany({ where: { pancakeShopId: SHOP } });
+  const typeA = await prisma.voucherType.create({ data: { pancakeShopId: SHOP, name: "Loại A", priority: 1, issuance: "AUTO", visibility: "PUBLIC" } });
+  const typeB = await prisma.voucherType.create({ data: { pancakeShopId: SHOP, name: "Loại B", priority: 2, issuance: "AUTO", visibility: "PUBLIC" } });
+  const base = { pancakeShopId: SHOP, kind: "MERCHANDISE" as const, issuance: "AUTO" as const, visibility: "PUBLIC" as const, discountType: "FIXED_AMOUNT_VND" as const, scopeMode: "ALL_SHOP" as const, isEnabled: true, enabledAt: new Date(), minEligibleSubtotalVnd: BigInt(400_000) };
+  await prisma.voucherCampaign.create({ data: { ...base, name: "Giảm 50K A", typeId: typeA.id, fixedAmountVnd: BigInt(50_000) } });
+  await prisma.voucherCampaign.create({ data: { ...base, name: "Giảm 20K B", typeId: typeB.id, fixedAmountVnd: BigInt(20_000) } });
+  await setQuantity(4);
+  await page.setViewportSize({ width: 1280, height: 800 });
+
+  await page.goto(`${BASE}/en/cart`, { waitUntil: "networkidle" });
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.locator("dialog[open]");
+  await expect(dialog).toBeVisible();
+  const rows = await readPickerRows(page);
+  // 4 x $10.49, less the dollar price of 70.000 dong ($3.49), plus $1.49 shipping.
+  expect(first(rows, /^Merchandise$/)).toBe(4 * UNIT_CENTS);
+  const previewTotal = first(rows, /^Estimated total/);
+  expect(previewTotal).toBe(4 * UNIT_CENTS - 349 + SHIPPING_CENTS);
+  await dialog.getByRole("button", { name: /^Apply/ }).last().click();
+  await expect(dialog).toBeHidden({ timeout: 20_000 });
+
+  await page.goto(`${BASE}/en/checkout`, { waitUntil: "networkidle" });
+  const offered = page.locator('[data-checkout-vouchers="offered"]');
+  await expect(offered).toBeVisible();
+  await offered.getByRole("button", { name: /Apply and hold/ }).click();
+  const held = page.locator('[data-checkout-vouchers="held"]');
+  await expect(held).toBeVisible({ timeout: 30_000 });
+  await page.waitForLoadState("networkidle");
+
+  const line = page.locator('[data-line-role="paid"]').first();
+  const [unit, lineTotal] = amounts((await line.innerText()).replace(/\s+/g, " "));
+  expect(unit, "the price before both vouchers").toBe(UNIT_CENTS);
+  expect(lineTotal).toBe(4 * UNIT_CENTS);
+  const panel = (await held.innerText()).replace(/\s+/g, " ");
+  expect(panel, "each voucher shows its own amount, never $0.00").not.toContain("$0.00");
+  expect(amounts(panel).filter((cents) => cents === 250 || cents === 99).sort()).toEqual([250, 99].sort());
+  const bill = await readRows(page);
+  expect(first(bill, /^Total/), "checkout total = the picker's estimate").toBe(previewTotal);
 });

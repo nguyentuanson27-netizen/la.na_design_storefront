@@ -263,3 +263,107 @@ test("the voucher picker is measured from the bill's subtotal, and answers to ev
   // Applying it twice changes nothing.
   assert.deepEqual(usdVoucherPicker(picked, basis).summary, picked.summary);
 });
+
+/* -------------------------------------------------------------- two merchandise vouchers, and the list-price badge */
+
+import type { BenefitCheckoutRender } from "../../src/commerce/benefit-checkout-render.ts";
+import { benefitQuoteDigest, issueBenefitQuoteProof } from "../../src/commerce/checkout-quote-proof.ts";
+import { buildBenefitCheckoutQuoteFacts } from "../../src/commerce/checkout-quote.ts";
+import { buildBenefitCheckoutViewModel, buildCheckoutVoucherView } from "../../src/routes/checkout-model.ts";
+
+const secret = "test-server-secret-at-least-32-characters-long";
+const cartId = "0f8d3c2a-4b1e-4d7a-9c6b-2e5f1a8d4c30";
+const VOUCHER_A = "voucher-a";
+const VOUCHER_B = "voucher-b";
+
+function step(campaignId: string, input: number, output: number, quantity: number) {
+  return { campaignId, source: "VOUCHER" as const, campaignKind: "VOUCHER_MERCHANDISE", priority: null, inputPriceVnd: input, outputPriceVnd: output, appliedQuantity: quantity };
+}
+
+/** 4 x 205.000, voucher A takes 50.000 (205.000 -> 192.500 each), voucher B takes 20.000 more (-> 187.500). */
+function stackedRender(): Extract<BenefitCheckoutRender, { kind: "BENEFIT" }> {
+  const quote = buildBenefitCheckoutQuoteFacts({
+    paid: [{ groupKey: "g|v0", pancakeVariationId: "p-205000", quantity: 4, unitPriceVnd: 187_500, steps: [step(VOUCHER_A, 205_000, 192_500, 4), step(VOUCHER_B, 192_500, 187_500, 4)], fulfillmentState: "READY" }],
+    gifts: [],
+    entitlements: [],
+  })!;
+  return {
+    kind: "BENEFIT",
+    facts: quote,
+    proof: issueBenefitQuoteProof({ quote, cartId, secret })!,
+    digest: benefitQuoteDigest(quote),
+    needsAcknowledgement: false,
+    giftLabels: new Map(),
+    tierDropped: false,
+    voucher: {
+      shippingWaivedVnd: 0, names: new Map([[VOUCHER_A, "Voucher A"], [VOUCHER_B, "Voucher B"]]),
+      merchandise: [{ campaignId: VOUCHER_A, amountVnd: 50_000 }, { campaignId: VOUCHER_B, amountVnd: 20_000 }],
+      shippingCampaignId: null, merchandiseDiscountVnd: 70_000,
+    },
+  };
+}
+
+function stackedCheckout() {
+  const render = stackedRender();
+  const model = buildBenefitCheckoutViewModel({ lines: [line(4, 205_000)], render });
+  const vouchers = buildCheckoutVoucherView({ render, picker: null, heldUntilMs: null });
+  return { render, model: { ...model, ...(vouchers === null ? {} : { vouchers }) } };
+}
+
+test("two merchandise vouchers on one line: the price before both, both amounts shared out of what they took off in all", () => {
+  const { model } = stackedCheckout();
+  // In dong the bill is shown, with both vouchers as rows, and the line is priced after both.
+  assert.ok(model.summary, "the dong bill closes with every voucher step counted");
+  assert.deepEqual(model.summary.discounts.map((row) => row.amountVnd), [50_000, 20_000]);
+  assert.equal(model.lines[0]!.preVoucherUnitVnd, 205_000);
+  assert.equal(model.lines[0]!.unitPriceVnd, 187_500);
+
+  const shown = usdCheckout(model);
+  assert.equal(shown.lines[0]!.unitPriceText, "$10.49");
+  assert.equal(shown.lines[0]!.lineTotalText, "$41.96");
+  // $41.96 - $3.49 (the dollar price of 70.000 dong) + $1.49 = $39.96, as the picker says.
+  assert.equal(shown.totals!.subtotalText, "$38.47");
+  assert.equal(shown.totals!.totalText, "$39.96");
+  const held = shown.vouchers!;
+  assert.equal(held.state, "HELD");
+  if (held.state === "HELD") {
+    assert.deepEqual(held.lines.map((entry) => entry.amountText), ["−$2.50", "−$0.99"]);
+    assert.equal(shown.summary!.discounts.reduce((sum, row) => sum + cents(row.amountText.replace("−", "")), 0), 349, "the rows add up to $3.49");
+    assert.deepEqual(shown.summary!.discounts.map((row) => row.amountText), held.lines.map((entry) => entry.amountText), "the bill and the panel agree row by row");
+  }
+  assert.equal(cents(shown.summary!.valueText) - 349 + cents(shown.summary!.shippingText), cents(shown.summary!.totalText));
+});
+
+test("the list-price badge is measured on the prices displayed, not on the quote's post-voucher price", () => {
+  process.env.LIST_PRICE_DISPLAY = "true";
+  try {
+    const render = stackedRender();
+    // One voucher of 50.000 over the four units, so the quote's price is 192.500 and the pre-voucher price 205.000.
+    const quote = buildBenefitCheckoutQuoteFacts({
+      paid: [{ groupKey: "g|v0", pancakeVariationId: "p-205000", quantity: 4, unitPriceVnd: 192_500, steps: [step(VOUCHER_A, 205_000, 192_500, 4)], fulfillmentState: "READY" }],
+      gifts: [],
+      entitlements: [],
+    })!;
+    const single = { ...render, facts: quote, proof: issueBenefitQuoteProof({ quote, cartId, secret })!, digest: benefitQuoteDigest(quote), voucher: { ...render.voucher!, merchandise: [{ campaignId: VOUCHER_A, amountVnd: 50_000 }], merchandiseDiscountVnd: 50_000 } };
+    const model = buildBenefitCheckoutViewModel({ lines: [line(4, 205_000)], render: single });
+    // In dong: the list price 249.000 against the quote's 192.500 is -23%.
+    assert.equal(model.lines[0]!.originalPriceVnd, 249_000);
+    assert.equal(model.lines[0]!.discountPercent, 23);
+    // In dollars the buyer sees $12.49 beside $10.49, which is -16%.
+    const shown = usdCheckout(model).lines[0]!;
+    assert.equal(shown.originalPriceText, "$12.49");
+    assert.equal(shown.unitPriceText, "$10.49");
+    assert.equal(shown.discountPercent, 16);
+  } finally {
+    delete process.env.LIST_PRICE_DISPLAY;
+  }
+});
+
+test("the cart's badge follows the displayed pair too, and goes when the pair shows no reduction", () => {
+  const sale = cart([line(1, 600_000, { basePrice: 800_000 } as Partial<StorefrontCartLine>)]).lines[0]!;
+  // $39.99 -> $29.99 is -25%, as 800.000 -> 600.000 is.
+  assert.equal(sale.discountPercent, 25);
+  // 1.000.000 -> 999.999 dong is under 1%: the strike-through stays with no badge, as in dong.
+  const tiny = cart([line(1, 999_999, { basePrice: 1_000_000 } as Partial<StorefrontCartLine>)]).lines[0]!;
+  assert.equal(tiny.discountPercent, undefined);
+});

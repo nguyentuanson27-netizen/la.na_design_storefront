@@ -134,8 +134,8 @@ test("held vouchers are listed from the same render as the quote, with the earli
   assert.deepEqual(view, {
     state: "HELD",
     lines: [
-      { id: MERCH, title: "Giảm 50.000đ", amountText: "−50.000đ", kind: "MERCHANDISE", group: "", tone: "clay" },
-      { id: SHIP, title: "Miễn phí vận chuyển", amountText: "−30.000đ", kind: "SHIPPING_FREE" },
+      { id: MERCH, title: "Giảm 50.000đ", amountText: "−50.000đ", amountVnd: 50_000, kind: "MERCHANDISE", group: "", tone: "clay" },
+      { id: SHIP, title: "Miễn phí vận chuyển", amountText: "−30.000đ", amountVnd: 30_000, kind: "SHIPPING_FREE" },
     ],
     heldUntilMs: 1_700_000_000_000,
     savingText: "50.000đ",
