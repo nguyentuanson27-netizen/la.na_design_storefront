@@ -211,7 +211,14 @@ test("Next.js configures safe serverActions.allowedOrigins for storefront domain
 
   const allowedOrigins = nextConfig.experimental?.serverActions?.allowedOrigins;
   assert.ok(Array.isArray(allowedOrigins));
-  assert.ok(allowedOrigins.includes("lanadesign.vn"));
-  assert.ok(allowedOrigins.includes("www.lanadesign.vn"));
-  assert.ok(allowedOrigins.includes("la.lanadesign.vn"));
+  // Exact list: widening the CSRF allowlist must be a deliberate change to this test.
+  assert.deepEqual([...allowedOrigins].sort(), [
+    "la.lanadesign.vn",
+    "lanadesign.vn",
+    "www.lanadesign.vn",
+  ]);
+  // Hosts only: no wildcards, schemes, paths, or ports.
+  for (const origin of allowedOrigins) {
+    assert.match(origin, /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, origin);
+  }
 });
