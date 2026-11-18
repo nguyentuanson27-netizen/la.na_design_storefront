@@ -142,13 +142,21 @@ test.describe("reviewed container, tracking mode preview", () => {
     page,
   }) => {
     const vendorRequests = await recordVendorRequests(page);
-    const response = await page.goto(`${server!.baseUrl}/about`, { waitUntil: "networkidle" });
+    // `load`, not `networkidle`: the fallback timer starts at the load event, and network idle can
+    // arrive seconds later on a slow runner, after the timer has already released the container.
+    const response = await page.goto(`${server!.baseUrl}/about`, { waitUntil: "load" });
 
     const csp = response?.headers()["content-security-policy"] ?? "";
     expect(csp).toMatch(/script-src[^;]*https:\/\/www\.googletagmanager\.com/);
     expect(csp).toMatch(/frame-src[^;]*https:\/\/www\.googletagmanager\.com/);
 
-    expect(vendorRequests).toEqual([`https://www.googletagmanager.com/gtm.js?id=${REVIEWED_CONTAINER}`]);
+    // The container waits for the shopper's first interaction (or a fallback delay) so it does not
+    // compete with the first paint: nothing has been requested yet, then one keypress releases it.
+    expect(vendorRequests).toEqual([]);
+    await page.keyboard.press("Tab");
+    await expect
+      .poll(() => vendorRequests)
+      .toEqual([`https://www.googletagmanager.com/gtm.js?id=${REVIEWED_CONTAINER}`]);
     // The container snippet inserts its own loader element (the request itself is aborted above).
     await expect(page.locator('script[src*="googletagmanager.com"]')).toHaveCount(1);
     await expect(page.locator('script[src*="googletagmanager.com"]')).toHaveAttribute(
@@ -166,6 +174,23 @@ test.describe("reviewed container, tracking mode preview", () => {
     expect(modeIndex).toBeGreaterThanOrEqual(0);
     expect(startIndex).toBeGreaterThanOrEqual(0);
     expect(modeIndex).toBeLessThan(startIndex);
+  });
+
+  test("a client route change to a conversion page releases the container with no user input", async ({
+    page,
+  }) => {
+    const vendorRequests = await recordVendorRequests(page);
+    // `load`, not `networkidle`, for the same reason as above: the fallback timer starts at `load`.
+    await page.goto(`${server!.baseUrl}/about`, { waitUntil: "load" });
+    expect(vendorRequests, "waiting on a page that is not a conversion page").toEqual([]);
+
+    // The root layout, and with it the loader, stays mounted across client navigation. Next syncs
+    // `history.pushState` with `usePathname()`, and the call is script-made, so it is not an
+    // interaction: only the route watcher can release the container here.
+    await page.evaluate(() => window.history.pushState(null, "", "/checkout/success"));
+    await expect
+      .poll(() => vendorRequests)
+      .toEqual([`https://www.googletagmanager.com/gtm.js?id=${REVIEWED_CONTAINER}`]);
   });
 
   test("the reviewed TikTok Base snippet can load TikTok's SDK under the real CSP", async ({ page }) => {
@@ -192,6 +217,8 @@ test.describe("reviewed container, tracking mode preview", () => {
     );
 
     await page.goto(`${server!.baseUrl}/about`, { waitUntil: "networkidle" });
+    // The loader releases the container on the first interaction.
+    await page.keyboard.press("Tab");
 
     await expect.poll(() => page.evaluate(() => window.__ttqEventsJs ?? 0)).toBe(1);
     const violations = await page.evaluate(() => window.__cspViolations ?? []);
