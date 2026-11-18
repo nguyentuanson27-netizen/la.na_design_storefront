@@ -202,3 +202,13 @@ test("the Zalo quarantine policy is the header's img-src and connect-src minus Z
     delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
   }
 });
+
+test("Server Actions CSRF allowlist is not widened to the non-canonical apex", async () => {
+  // The apex is redirected to APP_DOMAIN at the edge (deploy/vps/Caddyfile, ADR 0010); trusting it as
+  // a Server Actions origin would paper over a missing redirect and contradict "apex is not a storefront host".
+  const configUrl = pathToFileURL(resolve("next.config.mjs")).href + "?server-actions-allowed-origins";
+  const { default: nextConfig } = (await import(configUrl)) as {
+    default: { experimental?: { serverActions?: { allowedOrigins?: string[] } } };
+  };
+  assert.equal(nextConfig.experimental?.serverActions?.allowedOrigins, undefined);
+});
