@@ -107,14 +107,16 @@ test("F1 brand assets: distinct roles for master logo, social card, and favicon"
   const headerContent = readFileSync(path.join(REPO_ROOT, "src/components/brand/site-header.tsx"), "utf8");
   const footerContent = readFileSync(path.join(REPO_ROOT, "src/components/brand/site-footer.tsx"), "utf8");
   const masterLogoPath = path.join(REPO_ROOT, "public/brand/la-na-design-master-logo.png");
+  const vectorLogoPath = path.join(REPO_ROOT, "public/brand/la-na-design-logo.svg");
 
   // F9a now has the approved binary. Header remains a separate F1 surface and is intentionally not
   // rewritten by this footer-scoped PR.
   assert.ok(headerContent.includes('href="/"'), "Header brand mark must link to /");
   assert.ok(existsSync(masterLogoPath), `Approved master logo must exist at ${masterLogoPath}`);
+  assert.ok(existsSync(vectorLogoPath), `Official vector logo must exist at ${vectorLogoPath}`);
   assert.ok(
-    footerContent.includes('src="/brand/la-na-design-master-logo.png"'),
-    "Footer must render the approved master-logo asset",
+    footerContent.includes('src="/brand/la-na-design-logo.svg"'),
+    "Footer must render the official vector logo",
   );
   assert.ok(footerContent.includes('href="/"'), "Footer master logo must link to /");
 
@@ -126,8 +128,8 @@ test("F1 brand assets: distinct roles for master logo, social card, and favicon"
   const faviconPath = path.join(REPO_ROOT, "src/app/icon.svg");
   assert.ok(existsSync(faviconPath), `Favicon asset must exist at ${faviconPath}`);
 
-  assert.notEqual(masterLogoPath, socialCardPath, "Master logo and social card must be separate asset locations");
-  assert.notEqual(masterLogoPath, faviconPath, "Master logo and favicon must be separate asset locations");
+  assert.notEqual(vectorLogoPath, socialCardPath, "Logo and social card must be separate asset locations");
+  assert.notEqual(vectorLogoPath, faviconPath, "Logo and favicon must be separate asset locations");
   assert.notEqual(socialCardPath, faviconPath, "Social card and favicon must be separate asset locations");
 });
 

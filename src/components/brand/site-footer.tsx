@@ -230,7 +230,14 @@ export async function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>
       </div>
 
       <div className="footer-meta-row">
-        <p className="footer-meta">© 2026 {BRAND.identity.name}</p>
+        <p className="footer-meta">
+          © 2026 {BRAND.identity.name}
+          {" · "}
+          {/* The statement IP2Location's LITE licence (section 3) prescribes, verbatim in English and
+              translated for the Vietnamese page: a plain, crawlable link to www.ip2location.com. */}
+          {BRAND.identity.name} {t("sử dụng cơ sở dữ liệu IP2Location LITE cho")}{" "}
+          <a href="https://www.ip2location.com">{t("định vị địa lý theo IP")}</a>.
+        </p>
         <LanguageSwitcher placement="footer" className="language-switcher language-switcher--footer" />
       </div>
     </footer>

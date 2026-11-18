@@ -1,0 +1,80 @@
+# ADR 0025 — First-visit redirect from the Vietnamese home page to `/en` for visitors outside Vietnam
+
+Status: implemented. One runtime dependency (`ip3country`); no flag, no migration, no edge change.
+
+## Why
+
+Customers abroad (mostly arriving from ads) land on `/`, which is Vietnamese. The owner asked that a visitor whose IP
+is not in Vietnam be sent to `/en` when they open the main page.
+
+This refines ADR 0024, which rejected redirecting from `Accept-Language` so that a URL always means one language. That
+still holds for every page except the bare home page, and the redirect below is a one-time, remembered, per-visitor
+choice rather than a rule about the URL.
+
+## Decision
+
+`src/proxy.ts` calls `planGeoRedirect` (`src/i18n/geo-redirect.ts`) after the voucher-link rule and before anything
+renders. It answers `307` with `Location: /en` (query string kept, so `utm_*`/`fbclid` still reach the English page) and
+sets `la_geo_redirected=1` (1 year, `HttpOnly`, `SameSite=Lax`, `Secure` on HTTPS) only when **all** of these hold:
+
+- the path is exactly `/` and the request's language is Vietnamese (so `/en`, `/shop`, and the internal rewrite pass of
+  `/en` are never touched);
+- it is a browser loading a document: `GET`, not a prefetch, `Sec-Fetch-Dest: document` (or `Accept: text/html`), with a
+  User-Agent that is not a crawler, link previewer, ad reviewer or HTTP library (an empty UA counts as a bot);
+- the visitor has no `la_geo_redirected` cookie, and the `Referer` is not a page of this site. The cookie makes the
+  decision once per visitor, so choosing **VI** in the switcher afterwards sticks; the Referer rule covers the same click
+  for visitors who refuse cookies;
+- the country is known and is not `VN`. Unknown never redirects.
+
+Everything else is unchanged: no other page redirects, and a deep link (`/shop/...`, an ad landing on a product) is
+served in Vietnamese as before. Googlebot and Meta/TikTok/Zalo review and preview crawlers always get the Vietnamese
+home page, so indexing, `hreflang` and link previews are unaffected.
+
+**Where the country comes from.** The edge (nginx-proxy-manager -> Caddy, Cloudflare DNS-only) adds no country header.
+The client IP is the proxy-owned `X-LA-Client-IP` header Caddy already overwrites (`BETTER_AUTH_IP_HEADER`), read with
+`readOptionalTrustedClientIp`; `X-Forwarded-For` is never consulted, so a visitor cannot choose their own country. The
+IP is mapped to a country by `src/i18n/geo-country.ts` with the table bundled in the `ip3country` package: no network
+call, no licence key, no file at request time, expanded once per process on the first home-page request. Any error
+leaves the visitor on the Vietnamese page.
+
+## Limits, on purpose
+
+- **IPv4 only.** The table has no IPv6 ranges, so an IPv6 visitor (including an IPv6 visitor abroad) is "unknown" and
+  stays on Vietnamese. IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is understood.
+- **Country accuracy is that of IP2Location LITE.** Expect occasional wrong answers (mobile carriers, VPNs, Vietnamese
+  customers on a foreign VPN go to `/en` and can switch back with VI). The data is a snapshot from the package
+  release; bump `ip3country` now and then.
+- A visitor with cookies blocked who types the bare domain again is redirected again; one who clicks VI is not.
+- If a CDN that supplies a country header is put in front later, replace `lookupCountry` with that header (after the
+  trusted-proxy review ADR 0002 requires) and keep `planGeoRedirect` as it is.
+
+## Attribution
+
+The `ip3country` table is compacted from IP2Location LITE (DB1), and the package's own ISC licence does not remove the
+data licence's attribution duty. Section 3 of the LITE licence agreement
+(<https://www.ip2location.com/lite-terms>, "Version 1.0", no effective date; read 2026-11-18) prescribes, for the LITE
+database used on a website: *"[Product Name] uses the IP2Location LITE database for
+<a href="https://www.ip2location.com">IP geolocation</a>."*, placed in the site footer, an About page, a credits page or
+technical documentation, in a standard body font of at least 10px, not hidden, and as a plain crawlable link (no
+`nofollow`/`sponsored`/`ugc`, no redirect). The footer of every page carries exactly that statement, with the product
+name from Brand Config, in English on `/en/*` and translated on the Vietnamese pages (`src/components/brand/site-footer.tsx`,
+`.footer-meta` is 0.7rem, about 11px). The licence text on the vendor's site is the authority; it is not dated, so whether
+a newer version binds the snapshot bundled in `ip3country@5.0.0` is a question the owner can settle with the vendor.
+If the data source is ever replaced (a paid IP2Location database, a CDN country header) this line goes with it.
+
+## Tests
+
+- `tests/domain/i18n-geo-redirect.test.ts`: the redirect conditions (country, path, locale, cookie, referer, crawlers
+  and link previews including WhatsApp, prefetch, methods, query preservation) and the lookup (IPv4, IPv4-mapped IPv6,
+  IPv6, private and malformed input).
+- `scripts/geo-redirect-http-smoke.ts` (run by `tests/integrations/geo-redirect-http.test.ts`): a Next dev server with
+  `BETTER_AUTH_IP_HEADER=x-la-client-ip`, asserting over HTTP the `307`, the server-owned `/en` Location with the query,
+  the cookie attributes, `Cache-Control: private, no-store`, the `la_utm` ad-attribution cookie on the redirect itself,
+  that `/en` and `/en/shop` answer 200, do not bounce and render `lang="en"` with English interface text, and that none of these are redirected: returning
+  visitors, a click from this site, Vietnamese/IPv6/unknown/malformed IPs, `X-Forwarded-For`/`CF-IPCountry` spoofing,
+  other pages, preview and crawler agents (WhatsApp, Facebook, Telegram, Slack, Viber, Google, Bing), prefetch, script
+  fetches, HEAD and POST.
+
+The redirect response goes through the same `applyResponseHeaders` as every other exit, so it carries the search-exposure
+header and the ad-attribution and Meta first-party cookies of the landing the visitor made; `/en` then finds them
+already set.
