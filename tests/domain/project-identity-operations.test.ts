@@ -197,7 +197,10 @@ test("Caddy trusts only the explicitly supplied edge proxy range", () => {
 test("Caddy redirects the non-canonical apex to the server-owned APP_DOMAIN", () => {
   const caddy = readFileSync(path.join(REPO_ROOT, "deploy", "vps", "Caddyfile"), "utf8");
   assert.match(caddy, /\{http\.request\.host\} == "\{\$APEX_REDIRECT_DOMAIN\}"/);
-  assert.match(caddy, /redir @apex https:\/\/\{\$APP_DOMAIN\}\{uri\} 308/);
+  assert.match(caddy, /redir @apexRead https:\/\/\{\$APP_DOMAIN\}\{uri\} 308/);
+  assert.match(caddy, /respond @apexWrite .* 409/);
+  // X-Forwarded-Host must not drive the redirect: Host=APP_DOMAIN with an apex XFH would loop.
+  assert.equal(/expression[^\n]*X-Forwarded-Host/.test(caddy), false);
 
   const script = () =>
     `source deploy/vps/project-identity.sh; printf "%s" "$APEX_REDIRECT_DOMAIN"`;

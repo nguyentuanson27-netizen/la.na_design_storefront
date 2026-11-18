@@ -18,10 +18,26 @@
 	# ADR 0010: the bare apex is not a storefront host. Send it to the server-owned
 	# APP_DOMAIN before the app sees it, so browsers never submit Server Actions from an
 	# apex Origin against a www X-Forwarded-Host (Next.js rejects that mismatch as
-	# "Invalid Server Actions request"). The X-Forwarded-Host test covers an edge that
-	# rewrites Host; a spoofed value can only cause a redirect to APP_DOMAIN.
-	@apex expression {http.request.host} == "{$APEX_REDIRECT_DOMAIN}" || {http.request.header.X-Forwarded-Host} == "{$APEX_REDIRECT_DOMAIN}"
-	redir @apex https://{$APP_DOMAIN}{uri} 308
+	# "Invalid Server Actions request").
+	#
+	# Matching is on the request Host only (NPM forwards the client Host unchanged; see
+	# docs/operations/vps-bootstrap.md). X-Forwarded-Host is deliberately not consulted: an
+	# inconsistent value could otherwise redirect APP_DOMAIN to itself in a loop.
+	@apexRead {
+		expression {http.request.host} == "{$APEX_REDIRECT_DOMAIN}"
+		method GET HEAD
+	}
+	redir @apexRead https://{$APP_DOMAIN}{uri} 308
+
+	# A 308 keeps the method and body, so it cannot rescue a Server Action POST from a tab that
+	# was opened on the apex before the redirect existed: the browser keeps that tab's apex
+	# Origin and Next.js would reject it anyway. Fail closed with an explicit 409 so the client
+	# surfaces an error and a reload (a GET, which redirects) recovers.
+	@apexWrite {
+		expression {http.request.host} == "{$APEX_REDIRECT_DOMAIN}"
+		not method GET HEAD
+	}
+	respond @apexWrite "This page is out of date. Reload to continue on the official site." 409
 
 	reverse_proxy app:3000 {
 		# Always overwrite the application-owned client-IP header. {client_ip}

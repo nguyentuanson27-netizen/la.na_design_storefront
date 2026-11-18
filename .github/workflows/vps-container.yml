@@ -166,6 +166,13 @@ jobs:
           caddy:2-alpine
           caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
+      - name: Smoke-test apex redirect in Caddy (production values)
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_DOMAIN="$PRODUCTION_DOMAIN" APEX_REDIRECT_DOMAIN="${PRODUCTION_DOMAIN#www.}" \
+            bash deploy/vps/caddy-apex-smoke.sh
+
       - name: Build operations image
         run: docker build --target build --tag "$PROJECT_SLUG:vps-ops-ci" .
 
