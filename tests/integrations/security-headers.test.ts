@@ -202,3 +202,16 @@ test("the Zalo quarantine policy is the header's img-src and connect-src minus Z
     delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
   }
 });
+
+test("Next.js configures safe serverActions.allowedOrigins for storefront domains", async () => {
+  const configUrl = pathToFileURL(resolve("next.config.mjs")).href + "?server-actions-allowed-origins";
+  const { default: nextConfig } = (await import(configUrl)) as {
+    default: { experimental?: { serverActions?: { allowedOrigins?: string[] } } };
+  };
+
+  const allowedOrigins = nextConfig.experimental?.serverActions?.allowedOrigins;
+  assert.ok(Array.isArray(allowedOrigins));
+  assert.ok(allowedOrigins.includes("lanadesign.vn"));
+  assert.ok(allowedOrigins.includes("www.lanadesign.vn"));
+  assert.ok(allowedOrigins.includes("la.lanadesign.vn"));
+});
