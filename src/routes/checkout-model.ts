@@ -72,6 +72,8 @@ export type CheckoutLineView = Readonly<{
   unitPriceVnd?: number;
   originalPriceVnd?: number;
   promotionPriceVnd?: number;
+  /** The unit price before a merchandise voucher took its share of it (equal to `unitPriceVnd` when none did). */
+  preVoucherUnitVnd?: number;
   /** The unit price the line is listed at (what "Tổng giá trị đơn hàng" counts), before tiers and vouchers. */
   listedUnitVnd?: number;
   /** What "Tiết kiệm so với giá niêm yết" measures this line against, per unit. */
@@ -477,6 +479,7 @@ export function buildBenefitCheckoutViewModel(
         ...paidLineDiscount(cartLine, fact),
         lineTotalText: currency.format(fact.lineTotalVnd),
         unitPriceVnd: fact.unitPriceVnd,
+        preVoucherUnitVnd: stripVoucherStep(fact).unitPriceVnd,
         ...(cartLine?.available && cartLine.price != null ? { listedUnitVnd: cartLine.price, listReferenceUnitVnd: computeListPriceVnd(cartLine.basePrice ?? cartLine.price) ?? cartLine.basePrice ?? cartLine.price } : {}),
         preorderLabel: fact.fulfillmentState === "PREORDER" ? PREORDER_LABEL : null,
       }),

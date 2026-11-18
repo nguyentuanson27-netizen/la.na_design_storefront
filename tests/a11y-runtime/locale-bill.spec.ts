@@ -170,3 +170,103 @@ test("the English checkout adds up at 4 items: line, subtotal, shipping and tota
   const total = first(rows, /^Total/);
   expect(total).toBe(4 * UNIT_CENTS + SHIPPING_CENTS);
 });
+
+/* ------------------------------------------------------------------------------------------------ the voucher picker */
+
+/** The picker's own bill: label -> dollar figures, as the dialog prints them. */
+async function readPickerRows(page: Page): Promise<Map<string, number[]>> {
+  const rows = await page.locator("dialog[open] dl.voucher-rows > div").evaluateAll((items) =>
+    items.map((item) => [item.querySelector("dt")?.textContent ?? "", item.querySelector("dd")?.textContent ?? ""] as const));
+  const map = new Map<string, number[]>();
+  for (const [label, value] of rows) map.set(label.replace(/\s+/g, " ").trim(), amounts(value));
+  return map;
+}
+
+test("choosing and clearing a voucher in the English picker never moves the goods total", async ({ page }) => {
+  await setQuantity(4);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${BASE}/en/cart`, { waitUntil: "networkidle" });
+  await page.locator("[data-voucher-picker] > button").click();
+  await expect(page.locator("dialog[open]")).toBeVisible();
+
+  // Opened: the goods total is the cart's $41.96, and the 50K voucher the picker chose is $2.49 off.
+  const opened = await readPickerRows(page);
+  expect(first(opened, /^Merchandise/)).toBe(4 * UNIT_CENTS);
+
+  // Clear the chosen voucher (a server round trip that answers in dong), then choose it again. The goods total
+  // is read after each answer has landed, which is when the voucher row comes or goes.
+  const pickerRows = async () => readPickerRows(page);
+  const hasVoucher = async () => (await pickerRows()).has("Merchandise discount voucher");
+  const goods = async () => first(await pickerRows(), /^Merchandise/);
+  await page.locator('dialog[open] button[aria-pressed="true"]').first().click();
+  await expect.poll(hasVoucher, { timeout: 15_000, message: "the voucher row goes" }).toBe(false);
+  expect(await goods(), "goods total with no voucher").toBe(4 * UNIT_CENTS);
+  expect(first(await pickerRows(), /^Estimated total/)).toBe(4 * UNIT_CENTS + SHIPPING_CENTS);
+  await page.locator('dialog[open] button[aria-pressed="false"]').first().click();
+  await expect.poll(hasVoucher, { timeout: 15_000, message: "the voucher row returns" }).toBe(true);
+  expect(await goods(), "goods total with the voucher again").toBe(4 * UNIT_CENTS);
+  expect(first(await pickerRows(), /^Estimated total/)).toBe(4 * UNIT_CENTS - 249 + SHIPPING_CENTS);
+});
+
+test("a held voucher: the English checkout shows the lines before the voucher and the same $2.49 the picker showed", async ({ page }) => {
+  await setQuantity(4);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${BASE}/en/cart`, { waitUntil: "networkidle" });
+  await page.locator("[data-voucher-picker] > button").click();
+  const dialog = page.locator("dialog[open]");
+  await expect(dialog).toBeVisible();
+  const previewTotal = first(await readPickerRows(page), /^Estimated total/);
+  expect(previewTotal).toBe(4 * UNIT_CENTS - 249 + SHIPPING_CENTS);
+  await dialog.getByRole("button", { name: /^Apply/ }).last().click();
+  await expect(dialog).toBeHidden({ timeout: 20_000 });
+
+  await page.goto(`${BASE}/en/checkout`, { waitUntil: "networkidle" });
+  // The cart only saved the choice: the checkout offers it, with the total it would make, and holds it on confirmation.
+  const offered = page.locator('[data-checkout-vouchers="offered"]');
+  await expect(offered).toBeVisible();
+  expect(amounts((await offered.locator("[data-checkout-voucher-total]").innerText()).replace(/\s+/g, " "))[0], "the offer's total = the picker's").toBe(previewTotal);
+  await offered.getByRole("button", { name: /Apply and hold/ }).click();
+  await expect(page.locator('[data-checkout-vouchers="held"]')).toBeVisible({ timeout: 30_000 });
+  await page.waitForLoadState("networkidle");
+
+  const line = page.locator('[data-line-role="paid"]').first();
+  const [unit, lineTotal] = amounts((await line.innerText()).replace(/\s+/g, " "));
+  expect(unit, "the unit price before the voucher").toBe(UNIT_CENTS);
+  expect(lineTotal).toBe(4 * UNIT_CENTS);
+
+  const rows = await readRows(page);
+  const voucherRow = [...rows.values()].find((values) => values.includes(249));
+  expect(voucherRow, `the voucher is a row of $2.49: ${JSON.stringify([...rows])}`).toBeTruthy();
+  expect(first(rows, /^Total/), "checkout total = picker's estimated total").toBe(previewTotal);
+  const panel = (await page.locator("[data-checkout-vouchers]").innerText()).replace(/\s+/g, " ");
+  expect(panel).toContain("$2.49");
+});
+
+test("free shipping: the fee is printed whole and the waived part under it, in the picker and in the cart's bill", async ({ page }) => {
+  await prisma.voucherCampaign.create({
+    data: {
+      pancakeShopId: SHOP, kind: "SHIPPING_FREE", issuance: "AUTO", visibility: "PUBLIC", scopeMode: "ALL_SHOP", isEnabled: true, enabledAt: new Date(),
+      name: "Freeship", minEligibleSubtotalVnd: BigInt(400_000),
+    },
+  });
+  await setQuantity(4);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${BASE}/en/cart`, { waitUntil: "networkidle" });
+
+  // The cart's voucher preview: goods less the 50K voucher, the shipping fee whole, then what free shipping waived.
+  const preview = page.locator("[data-cart-voucher-total]");
+  await expect(preview).toBeVisible();
+  const figures = amounts((await preview.innerText()).replace(/\s+/g, " "));
+  // [voucher off, shipping voucher off, estimated total]
+  expect(figures).toEqual([249, SHIPPING_CENTS, 4 * UNIT_CENTS - 249]);
+
+  await page.locator("[data-voucher-picker] > button").click();
+  await expect(page.locator("dialog[open]")).toBeVisible();
+  const rows = await readPickerRows(page);
+  expect(first(rows, /^Merchandise$/)).toBe(4 * UNIT_CENTS);
+  expect(first(rows, /^Shipping fee/), "the whole fee").toBe(SHIPPING_CENTS);
+  const waived = [...rows].find(([label, values]) => /shipping/i.test(label) && /voucher/i.test(label) && values.length > 0);
+  expect(waived?.[1][0], "what free shipping waived").toBe(SHIPPING_CENTS);
+  // The rows add up as printed: goods - voucher + fee - waived = total.
+  expect(first(rows, /^Estimated total/)).toBe(4 * UNIT_CENTS - 249 + SHIPPING_CENTS - SHIPPING_CENTS);
+});

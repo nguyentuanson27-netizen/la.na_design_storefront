@@ -53,6 +53,12 @@ export type VoucherPickerGroup = Readonly<{
 export type VoucherPickerModel = Readonly<{
   /** Always a preview: nothing is held and no countdown exists. */
   previewNotHeld: true;
+  /**
+   * English display only: the goods total, in cents, that the page's dollar bill measures the vouchers
+   * from (src/i18n/usd-bill.ts). Set by the page, kept by the picker across its server actions so a
+   * choice made in it is shown against the same subtotal as the bill. Never sent to the server.
+   */
+  usdBasisCents?: number;
   /** Merchandise groups in application order (type priority), then shipping last. */
   groups: readonly VoucherPickerGroup[];
   summary: Readonly<{

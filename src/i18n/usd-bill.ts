@@ -63,19 +63,32 @@ function shippingCents(feeVnd: number, waivedVnd: number): { net: number; waived
 /**
  * The money block (order value, discounts, shipping, total) over a subtotal that has already been
  * worked out from the lines. `valueCents` is what the lines come to before the cart-level discounts.
+ * `pinned` fixes the amount of some discount rows by id (the vouchers, whose amount the picker has
+ * already shown); the other rows share what is left of the difference.
+ *
+ * With a shipping voucher the shipping row shows the whole fee and the voucher row the part it
+ * waived, so the rows add up as printed: value - discounts + fee - waived = total.
  */
 export function usdOrderSummary(
   summary: OrderSummaryView,
-  bill: Readonly<{ valueCents: number; payableCents: number }>,
+  bill: Readonly<{ valueCents: number; payableCents: number; pinned?: Readonly<Record<string, number>> }>,
 ): OrderSummaryView {
-  const discountTotal = summary.discounts.length === 0 ? 0 : Math.max(0, bill.valueCents - bill.payableCents);
-  const discounts = shareAmount(discountTotal, summary.discounts.map((row) => row.amountVnd));
+  const pinned = bill.pinned ?? {};
+  const free = summary.discounts.filter((row) => pinned[row.id] === undefined);
+  const pinnedTotal = summary.discounts.reduce((sum, row) => sum + (pinned[row.id] ?? 0), 0);
+  const difference = summary.discounts.length === 0 ? 0 : Math.max(0, bill.valueCents - bill.payableCents);
+  const shared = shareAmount(free.length === 0 ? 0 : Math.max(0, difference - pinnedTotal), free.map((row) => row.amountVnd));
+  const discountTotal = pinnedTotal + shared.reduce((sum, cents) => sum + cents, 0);
   const shipping = shippingCents(summary.facts.shippingFeeVnd, summary.facts.shippingWaivedVnd);
+  let nextFree = 0;
   return Object.freeze({
     ...summary,
     valueText: formatCents(bill.payableCents + discountTotal),
-    discounts: Object.freeze(summary.discounts.map((row, index) => Object.freeze({ ...row, amountText: `${MINUS}${formatCents(discounts[index] ?? 0)}` }))),
-    shippingText: shipping.net === 0 ? FREE : formatCents(shipping.net),
+    discounts: Object.freeze(summary.discounts.map((row) => {
+      const cents = pinned[row.id] ?? shared[nextFree++] ?? 0;
+      return Object.freeze({ ...row, amountText: `${MINUS}${formatCents(cents)}` });
+    })),
+    shippingText: shipping.waived > 0 ? formatCents(shipping.net + shipping.waived) : shipping.net === 0 ? FREE : formatCents(shipping.net),
     shippingVoucher: summary.shippingVoucher === null
       ? null
       : Object.freeze({ ...summary.shippingVoucher, amountText: `${MINUS}${formatCents(shipping.waived)}` }),
@@ -95,7 +108,8 @@ export function usdVoucherSummary(
   const { facts } = summary;
   const merchandiseTotal = Math.min(payableCents, facts.merchandiseDiscountVnd > 0 ? price(facts.merchandiseDiscountVnd) : 0);
   const lineAmounts = shareAmount(merchandiseTotal, summary.discountLines.map((line) => line.amountVnd));
-  // The quote's fee is what is left to pay after the shipping voucher; the voucher's part is shown beside it.
+  // The quote's fee is what is left to pay after the shipping voucher. The panel prints the whole fee and
+  // then what the voucher waived, so the rows add up as printed.
   const shipping = shippingCents(facts.shippingFeeVnd, facts.shippingDiscountVnd);
   const total = payableCents - merchandiseTotal + shipping.net;
   const lineText = (cents: number) => `-${formatCents(cents)}`;
@@ -107,11 +121,29 @@ export function usdVoucherSummary(
       ? summary.merchandiseLines.map((line, index) => Object.freeze({ ...line, amountText: lineText(shareAmount(merchandiseTotal, summary.merchandiseLines.map((row) => row.amountVnd))[index] ?? 0) }))
       : []),
     discountLines: Object.freeze(summary.discountLines.map((line, index) => Object.freeze({ ...line, amountText: lineText(lineAmounts[index] ?? 0) }))),
-    shippingFeeText: formatCents(shipping.net),
+    shippingFeeText: formatCents(shipping.net + shipping.waived),
     shippingDiscountText: facts.shippingDiscountVnd > 0 ? lineText(shipping.waived) : null,
     totalText: formatCents(total),
     totalVnd: summary.totalVnd,
     savingText: merchandiseTotal + shipping.waived > 0 ? formatCents(merchandiseTotal + shipping.waived) : null,
+  });
+}
+
+/**
+ * A voucher picker model in dollars, measured from `basisCents` (the goods total the page's bill
+ * shows). Idempotent: it only reads the model's dong figures, so the picker can apply it to every
+ * answer its server actions give and the figures never move while the cart does not.
+ */
+export function usdVoucherPicker(picker: VoucherPickerModel, basisCents: number): VoucherPickerModel {
+  const summary = usdVoucherSummary(picker.summary, basisCents);
+  const saving = summary.savingText;
+  return Object.freeze({
+    ...picker,
+    usdBasisCents: basisCents,
+    summary,
+    footer: picker.footer.count > 0 && saving !== null && picker.summary.savingVnd > 0
+      ? Object.freeze({ ...picker.footer, label: `Áp dụng · Giảm ${saving}` })
+      : picker.footer,
   });
 }
 
@@ -184,7 +216,7 @@ export function usdCart<T extends CartViewModel>(model: T): T {
   if (next.listPriceSavingsText === undefined && "listPriceSavingsText" in next) delete (result as { listPriceSavingsText?: unknown }).listPriceSavingsText;
   const vouchers = (model as unknown as Partial<CartVouchers>).vouchers;
   if (priced && vouchers) {
-    (result as unknown as { vouchers: VoucherPickerModel }).vouchers = Object.freeze({ ...vouchers, summary: usdVoucherSummary(vouchers.summary, payable) });
+    (result as unknown as { vouchers: VoucherPickerModel }).vouchers = usdVoucherPicker(vouchers, payable);
   }
   return Object.freeze(result);
 }
@@ -193,20 +225,30 @@ export function usdCart<T extends CartViewModel>(model: T): T {
  * Checkout in dollars, by the same rules as the cart: each paid line is its quantity times the unit
  * price shown, the subtotal is their sum, and the total is that plus the displayed shipping. A quote
  * that is not ready, or a line with no unit price, is left as it is.
+ *
+ * A merchandise voucher is shared out in dong over the units it touched, so each unit price in the
+ * quote is already lowered by its share. Priced one by one in dollars those shares would add up to a
+ * different amount than the picker showed for the voucher ($4.00 against $2.49 for 50.000 dong over
+ * four units). So the lines are shown at their price *before* the voucher, and the voucher is a
+ * discount row of its own whose amount is the dollar price of what it took off, the same figure the
+ * picker uses. The subtotal ("Tạm tính") is then the lines less that amount, as it is in dong.
  */
 export function usdCheckout<T extends CheckoutViewModel>(model: T): T {
   if (model.state !== "ready" || model.totals === null) return model;
   if (model.lines.some((line) => line.unitPriceVnd === undefined)) return model;
 
-  let payable = 0;
+  let goods = 0;
   let value = 0;
   let listReference = 0;
+  let voucherVnd = 0;
   const lines = model.lines.map((line) => {
-    const unit = price(line.unitPriceVnd!);
+    const beforeVoucher = line.preVoucherUnitVnd ?? line.unitPriceVnd!;
+    const unit = price(beforeVoucher);
     const total = line.quantity * unit;
-    payable += total;
-    value += line.quantity * price(line.listedUnitVnd ?? line.unitPriceVnd!);
-    listReference += line.quantity * price(line.listReferenceUnitVnd ?? line.listedUnitVnd ?? line.unitPriceVnd!);
+    goods += total;
+    value += line.quantity * price(line.listedUnitVnd ?? beforeVoucher);
+    listReference += line.quantity * price(line.listReferenceUnitVnd ?? line.listedUnitVnd ?? beforeVoucher);
+    voucherVnd += line.quantity * Math.max(0, beforeVoucher - line.unitPriceVnd!);
     return Object.freeze({
       ...line,
       unitPriceText: formatCents(unit),
@@ -216,10 +258,18 @@ export function usdCheckout<T extends CheckoutViewModel>(model: T): T {
     });
   });
 
+  const voucher = voucherVnd > 0 ? Math.min(goods, price(voucherVnd)) : 0;
+  const payable = goods - voucher;
+  const voucherRows = (model.summary?.discounts ?? []).filter((row) => row.id.startsWith("voucher:"));
+  const voucherShares = shareAmount(voucher, voucherRows.map((row) => row.amountVnd));
+  const pinned: Record<string, number> = {};
+  voucherRows.forEach((row, index) => { pinned[row.id] = voucherShares[index] ?? 0; });
+
   const shipping = shippingCents(model.totals.shippingFeeVnd, model.totals.shippingWaivedVnd);
   const totals = Object.freeze({
     ...model.totals,
     subtotalText: formatCents(payable),
+    // This block has no voucher row under it, so it shows the fee that is left to pay.
     shippingText: shipping.net === 0 ? FREE : formatCents(shipping.net),
     totalText: formatCents(payable + shipping.net),
   });
@@ -227,12 +277,33 @@ export function usdCheckout<T extends CheckoutViewModel>(model: T): T {
     ...model,
     lines: Object.freeze(lines),
     totals,
-    ...(model.summary ? { summary: usdOrderSummary(model.summary, { valueCents: value, payableCents: payable }) } : {}),
+    ...(model.summary ? { summary: usdOrderSummary(model.summary, { valueCents: value, payableCents: payable, pinned }) } : {}),
   } as { -readonly [K in keyof CheckoutViewModel]: CheckoutViewModel[K] };
+
   if (model.listPriceSavingsText !== undefined) {
     const saving = listReference - payable;
     if (saving > 0) next.listPriceSavingsText = formatCents(saving);
     else delete next.listPriceSavingsText;
+  }
+  // The checkout's own voucher panel and the picker behind its "change" link say the same amounts.
+  if (model.vouchers?.state === "HELD") {
+    const held = model.vouchers;
+    next.vouchers = Object.freeze({
+      ...held,
+      lines: Object.freeze(held.lines.map((line) => Object.freeze({
+        ...line,
+        amountText: line.kind === "SHIPPING_FREE"
+          ? `${MINUS}${formatCents(shipping.waived)}`
+          : `${MINUS}${formatCents(pinned[`voucher:${line.id}`] ?? 0)}`,
+      }))),
+      ...(held.savingText === undefined ? {} : { savingText: formatCents(voucher + shipping.waived) }),
+    });
+  }
+  if (model.voucherPicker) {
+    const picker = usdVoucherPicker(model.voucherPicker, goods);
+    next.voucherPicker = picker;
+    // An offer not yet held says what the total would be; that is the picker's own estimate.
+    if (model.vouchers?.state === "OFFERED") next.vouchers = Object.freeze({ ...model.vouchers, totalText: picker.summary.totalText });
   }
   return Object.freeze(next) as T;
 }

@@ -163,15 +163,103 @@ test("a quantity tier: the line total is the sum of its segments, the discount r
   assert.equal(cents(summary.valueText), 5 * priceCentsFromVnd(689_000));
 });
 
-test("a shipping voucher shows the waived part and a total built from the net fee", () => {
+test("a shipping voucher: the fee is printed whole and the waived part under it, so the rows add up as printed", () => {
   const state = tierState();
   const base = buildCartViewModel({ lines: state.quote.lines as StorefrontCartLine[], giftState: state, benefitCheckoutOpen: true, commerceTrackingEnabled: false, shippingPolicy: { feeVnd: 30_000 } });
   assert.ok(base.summary);
   // The quote's net fee is 0 and the voucher waived 30.000 dong.
   const facts = { ...base.summary.facts, shippingFeeVnd: 0, shippingWaivedVnd: 30_000 };
   const withVoucher = { ...base, summary: { ...base.summary, shippingText: "Miễn phí", shippingVoucher: { label: "Freeship", amountText: "−30.000 ₫" }, facts } };
-  const summary = usdCart(withVoucher as typeof base).summary!;
-  assert.equal(summary.shippingText, "Miễn phí");
+  const shown = usdCart(withVoucher as typeof base);
+  const summary = shown.summary!;
+  assert.equal(summary.shippingText, usd(30_000), "the whole fee, $1.49");
   assert.equal(summary.shippingVoucher!.amountText, `−${usd(30_000)}`);
-  assert.equal(summary.totalText, usdCart(withVoucher as typeof base).subtotalText);
+  const discounts = summary.discounts.reduce((sum, row) => sum + cents(row.amountText.replace("−", "")), 0);
+  assert.equal(cents(summary.valueText) - discounts + cents(summary.shippingText) - cents(summary.shippingVoucher!.amountText.replace("−", "")), cents(summary.totalText), "printed rows add up");
+  assert.equal(summary.totalText, shown.subtotalText, "nothing left to pay for shipping");
+});
+
+import { buildOrderSummary } from "../../src/routes/order-summary-model.ts";
+import { usdVoucherPicker } from "../../src/i18n/usd-bill.ts";
+import type { VoucherPickerModel } from "../../src/routes/voucher-picker-model.ts";
+
+/** 4 x 205.000 dong with a 50.000 dong voucher the quote has shared over the units: 192.500 each. */
+function heldVoucherCheckout() {
+  const plain = buildCheckoutViewModel({
+    lines: [line(4, 205_000)],
+    totals: { items: [], merchandiseSubtotalVnd: 770_000, shippingFeeVnd: 30_000, totalVnd: 800_000, totalQuantity: 4 } as never,
+    quoteProof: "proof",
+  });
+  const summary = buildOrderSummary({
+    goodsAfterDiscountsVnd: 770_000,
+    discounts: [{ id: "voucher:m", label: "Giảm 50K", amountVnd: 50_000, amountText: "50.000 ₫" }],
+    shippingFeeVnd: 30_000,
+    expectedTotalVnd: 800_000,
+    expectedValueVnd: 820_000,
+  })!;
+  return {
+    ...plain,
+    lines: plain.lines.map((item) => ({ ...item, unitPriceVnd: 192_500, preVoucherUnitVnd: 205_000, listedUnitVnd: 205_000, unitPriceText: "192.500 ₫", lineTotalText: "770.000 ₫" })),
+    summary,
+    vouchers: { state: "HELD" as const, heldUntilMs: null, savingText: "50.000đ", lines: [{ id: "m", title: "Giảm 50K", amountText: "−50.000đ", kind: "MERCHANDISE" as const }] },
+  };
+}
+
+test("checkout with a held merchandise voucher: lines before the voucher, one voucher row, the amount the picker shows", () => {
+  const model = usdCheckout(heldVoucherCheckout());
+  // 4 x $10.49 = $41.96, then the voucher: the dollar price of 50.000 dong, $2.49 (not $4.00).
+  assert.equal(model.lines[0]!.unitPriceText, "$10.49");
+  assert.equal(model.lines[0]!.lineTotalText, "$41.96");
+  const summary = model.summary!;
+  assert.deepEqual(summary.discounts.map((row) => row.amountText), ["−$2.49"]);
+  assert.equal(summary.valueText, "$41.96");
+  assert.equal(model.totals!.subtotalText, "$39.47");
+  assert.equal(summary.shippingText, "$1.49");
+  assert.equal(summary.totalText, "$40.96");
+  assert.equal(model.totals!.totalText, "$40.96");
+  // The checkout's own voucher panel says the same amount.
+  const held = model.vouchers!;
+  assert.equal(held.state, "HELD");
+  if (held.state === "HELD") {
+    assert.equal(held.lines[0]!.amountText, "−$2.49");
+    assert.equal(held.savingText, "$2.49");
+  }
+  // And the dong the order is charged is untouched.
+  assert.equal(model.totals!.totalVnd, 800_000);
+});
+
+function pickerOf(overrides: Partial<VoucherPickerModel["summary"]> = {}): VoucherPickerModel {
+  return {
+    previewNotHeld: true,
+    groups: [],
+    summary: {
+      paidBeforeText: "820.000đ", merchandiseDiscountText: "-50.000đ", merchandiseLines: [], shippingFeeText: "30.000đ", shippingDiscountText: null,
+      totalText: "800.000đ", totalVnd: 800_000, facts: { paidBeforeVnd: 820_000, merchandiseDiscountVnd: 50_000, shippingFeeVnd: 30_000, shippingDiscountVnd: 0 },
+      discountLines: [{ id: "m", label: "Giảm 50K", amountText: "-50.000đ", amountVnd: 50_000, tone: "clay" }], savingText: "50.000đ", savingVnd: 50_000,
+      ...overrides,
+    },
+    footer: { label: "Áp dụng · Giảm 50.000đ", count: 1 },
+    quoteDigest: null, selectionVersion: null,
+    warnings: { giftLoss: null, totalIncrease: null, notices: [] },
+  } as unknown as VoucherPickerModel;
+}
+
+test("the voucher picker is measured from the bill's subtotal, and answers to every choice keep it there", () => {
+  const basis = 4 * 1049;
+  const picked = usdVoucherPicker(pickerOf(), basis);
+  assert.equal(picked.summary.paidBeforeText, "$41.96");
+  assert.equal(picked.summary.merchandiseDiscountText, "-$2.49");
+  assert.equal(picked.summary.totalText, "$40.96");
+  assert.equal(picked.footer.label, "Áp dụng · Giảm $2.49");
+  // Another answer of the server (no voucher, then a shipping voucher): the goods total never moves.
+  const none = usdVoucherPicker(pickerOf({ merchandiseDiscountText: null, totalText: "850.000đ", facts: { paidBeforeVnd: 820_000, merchandiseDiscountVnd: 0, shippingFeeVnd: 30_000, shippingDiscountVnd: 0 }, discountLines: [], savingVnd: 0, savingText: null }), basis);
+  assert.equal(none.summary.paidBeforeText, "$41.96");
+  assert.equal(none.summary.merchandiseDiscountText, null);
+  const freeship = usdVoucherPicker(pickerOf({ shippingFeeText: "0đ", shippingDiscountText: "-30.000đ", facts: { paidBeforeVnd: 820_000, merchandiseDiscountVnd: 50_000, shippingFeeVnd: 0, shippingDiscountVnd: 30_000 } }), basis);
+  assert.equal(freeship.summary.paidBeforeText, "$41.96");
+  assert.equal(freeship.summary.shippingFeeText, "$1.49", "the whole fee, then the waived part");
+  assert.equal(freeship.summary.shippingDiscountText, "-$1.49");
+  assert.equal(freeship.summary.totalText, "$39.47");
+  // Applying it twice changes nothing.
+  assert.deepEqual(usdVoucherPicker(picked, basis).summary, picked.summary);
 });
