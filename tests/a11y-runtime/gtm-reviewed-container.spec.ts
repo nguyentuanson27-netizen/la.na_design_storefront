@@ -142,7 +142,9 @@ test.describe("reviewed container, tracking mode preview", () => {
     page,
   }) => {
     const vendorRequests = await recordVendorRequests(page);
-    const response = await page.goto(`${server!.baseUrl}/about`, { waitUntil: "networkidle" });
+    // `load`, not `networkidle`: the fallback timer starts at the load event, and network idle can
+    // arrive seconds later on a slow runner, after the timer has already released the container.
+    const response = await page.goto(`${server!.baseUrl}/about`, { waitUntil: "load" });
 
     const csp = response?.headers()["content-security-policy"] ?? "";
     expect(csp).toMatch(/script-src[^;]*https:\/\/www\.googletagmanager\.com/);
@@ -178,7 +180,8 @@ test.describe("reviewed container, tracking mode preview", () => {
     page,
   }) => {
     const vendorRequests = await recordVendorRequests(page);
-    await page.goto(`${server!.baseUrl}/about`, { waitUntil: "networkidle" });
+    // `load`, not `networkidle`, for the same reason as above: the fallback timer starts at `load`.
+    await page.goto(`${server!.baseUrl}/about`, { waitUntil: "load" });
     expect(vendorRequests, "waiting on a page that is not a conversion page").toEqual([]);
 
     // The root layout, and with it the loader, stays mounted across client navigation. Next syncs

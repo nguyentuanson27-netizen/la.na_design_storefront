@@ -15,8 +15,16 @@ import { GTM_EAGER_CHECK_GLOBAL } from "./eager-check.ts";
 
 export { GTM_EAGER_CHECK_GLOBAL };
 
-/** Fallback delay after `load` for a visit with no interaction at all. */
-export const GTM_LOAD_FALLBACK_MS = 5_000;
+/**
+ * Fallback delay after `load` for a visit with no interaction at all.
+ *
+ * Three seconds, chosen by the owner over a first value of five: the shorter it is, the fewer
+ * visits end before any container request is made, and the smaller the share of Total Blocking Time
+ * that is kept out of the first seconds. The gain from waiting at all has not been measured in
+ * production yet, so this is the one number to move first if event counts fall after release:
+ * `0` loads the container right after `load`, which is close to the behaviour before this change.
+ */
+export const GTM_LOAD_FALLBACK_MS = 3_000;
 
 /**
  * Events that count as the shopper's first interaction. Listened for in the capture phase.
