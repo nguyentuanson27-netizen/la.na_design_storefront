@@ -23,7 +23,8 @@ export const CHROME_EN: Readonly<Record<string, string>> = {
   // Footer
   "Mạng xã hội": "Social media",
   // Attribution the IP2Location LITE licence requires (ADR 0025).
-  "Dữ liệu IP2Location LITE tại": "This site includes IP2Location LITE data available from",
+  "sử dụng cơ sở dữ liệu IP2Location LITE cho": "uses the IP2Location LITE database for",
+  "định vị địa lý theo IP": "IP geolocation",
   "Hotline/Zalo:": "Hotline/Zalo:",
   "Email hỗ trợ:": "Support email:",
   "Địa chỉ kinh doanh/đổi trả:": "Business / returns address:",

@@ -50,13 +50,17 @@ leaves the visitor on the Vietnamese page.
 
 ## Attribution
 
-The `ip3country` table is compacted from IP2Location LITE (DB1), whose licence requires a public, end-user-visible
-credit; the package's own ISC licence does not remove it. The footer of every page therefore carries *"This site
-includes IP2Location LITE data available from lite.ip2location.com"* (Vietnamese: *"Dữ liệu IP2Location LITE tại ..."*),
-linked to <https://lite.ip2location.com>, next to the copyright line (`src/components/brand/site-footer.tsx`). The
-licence text that applies to the bundled snapshot is the one shipped in the `ip3country` package and at
-<https://lite.ip2location.com>; the owner should confirm it before launch and, if the licence is ever replaced
-(a paid IP2Location database, a CDN country header), remove the line with it.
+The `ip3country` table is compacted from IP2Location LITE (DB1), and the package's own ISC licence does not remove the
+data licence's attribution duty. Section 3 of the LITE licence agreement
+(<https://www.ip2location.com/lite-terms>, "Version 1.0", no effective date; read 2026-11-18) prescribes, for the LITE
+database used on a website: *"[Product Name] uses the IP2Location LITE database for
+<a href="https://www.ip2location.com">IP geolocation</a>."*, placed in the site footer, an About page, a credits page or
+technical documentation, in a standard body font of at least 10px, not hidden, and as a plain crawlable link (no
+`nofollow`/`sponsored`/`ugc`, no redirect). The footer of every page carries exactly that statement, with the product
+name from Brand Config, in English on `/en/*` and translated on the Vietnamese pages (`src/components/brand/site-footer.tsx`,
+`.footer-meta` is 0.7rem, about 11px). The licence text on the vendor's site is the authority; it is not dated, so whether
+a newer version binds the snapshot bundled in `ip3country@5.0.0` is a question the owner can settle with the vendor.
+If the data source is ever replaced (a paid IP2Location database, a CDN country header) this line goes with it.
 
 ## Tests
 
@@ -66,7 +70,7 @@ licence text that applies to the bundled snapshot is the one shipped in the `ip3
 - `scripts/geo-redirect-http-smoke.ts` (run by `tests/integrations/geo-redirect-http.test.ts`): a Next dev server with
   `BETTER_AUTH_IP_HEADER=x-la-client-ip`, asserting over HTTP the `307`, the server-owned `/en` Location with the query,
   the cookie attributes, `Cache-Control: private, no-store`, the `la_utm` ad-attribution cookie on the redirect itself,
-  that `/en` and `/en/shop` do not bounce and render `lang="en"`, and that none of these are redirected: returning
+  that `/en` and `/en/shop` answer 200, do not bounce and render `lang="en"` with English interface text, and that none of these are redirected: returning
   visitors, a click from this site, Vietnamese/IPv6/unknown/malformed IPs, `X-Forwarded-For`/`CF-IPCountry` spoofing,
   other pages, preview and crawler agents (WhatsApp, Facebook, Telegram, Slack, Viber, Google, Bing), prefetch, script
   fetches, HEAD and POST.

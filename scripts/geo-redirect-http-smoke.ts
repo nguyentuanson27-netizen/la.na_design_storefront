@@ -78,6 +78,7 @@ function setCookies(reply: Reply): string[] {
   return Array.isArray(value) ? value : value === undefined ? [] : [value];
 }
 
+/** The one thing every "not redirected" case shares: no 307, no Location, no remembered-visit cookie. */
 function assertNotRedirected(reply: Reply, label: string) {
   assert.notEqual(reply.status, 307, `${label}: must not be redirected`);
   assert.equal(reply.headers.location, undefined, `${label}: must not carry a Location`);
@@ -86,6 +87,13 @@ function assertNotRedirected(reply: Reply, label: string) {
     false,
     `${label}: must not set the redirect cookie`,
   );
+}
+
+/** A visitor who stays on the Vietnamese page gets that page: 200 and `lang="vi"`, not just "no 307". */
+function assertServedInVietnamese(reply: Reply, label: string) {
+  assertNotRedirected(reply, label);
+  assert.equal(reply.status, 200, `${label}: must be served, got ${reply.status}`);
+  assert.match(reply.body, /<html[^>]*\blang="vi"/, `${label}: must stay on the Vietnamese page`);
 }
 
 async function waitForServer(): Promise<void> {
@@ -162,34 +170,41 @@ try {
   );
 
   // --- The page it lands on renders in English and does not bounce. -----------------------------
+  const assertEnglishPage = (reply: Reply, label: string) => {
+    assert.equal(reply.status, 200, `${label}: must answer 200, got ${reply.status}`);
+    assert.equal(reply.headers.location, undefined, `${label}: must not redirect`);
+    assert.match(reply.body, /<html[^>]*\blang="en"/, `${label}: must render in English`);
+    // The footer's licence statement is English only on an English page: Vietnamese pages say it in Vietnamese.
+    assert.ok(
+      reply.body.includes("uses the IP2Location LITE database for"),
+      `${label}: must render English interface text`,
+    );
+  };
   const english = await request(`${location.pathname}${location.search}`, browser(US_IP, { cookie: "la_geo_redirected=1" }));
-  assertNotRedirected(english, "/en after the redirect");
-  const englishShop = await request("/en/shop", browser(US_IP, { cookie: "la_geo_redirected=1" }));
-  assert.equal(englishShop.status, 200);
-  assert.match(englishShop.body, /<html[^>]*\blang="en"/, "/en/* renders in English");
-  const englishWithoutCookie = await request("/en", browser(US_IP));
-  assertNotRedirected(englishWithoutCookie, "/en is never redirected, cookie or not");
+  assertEnglishPage(english, "/en after the redirect");
+  assertEnglishPage(await request("/en/shop", browser(US_IP, { cookie: "la_geo_redirected=1" })), "/en/shop");
+  assertEnglishPage(await request("/en", browser(US_IP)), "/en without the cookie (never redirected)");
 
   // --- Everything that must stay on the Vietnamese page. ----------------------------------------
-  assertNotRedirected(await request("/", browser(US_IP, { cookie: "la_geo_redirected=1" })), "returning visitor (cookie)");
-  assertNotRedirected(
+  assertServedInVietnamese(await request("/", browser(US_IP, { cookie: "la_geo_redirected=1" })), "returning visitor (cookie)");
+  assertServedInVietnamese(
     await request("/", browser(US_IP, { referer: `http://${HOST}:${PORT}/en` })),
     "visitor who clicked VI on this site",
   );
-  assertNotRedirected(await request("/", browser(VN_IP)), "Vietnamese IPv4");
-  assertNotRedirected(await request("/", browser("2001:4860:4860::8888")), "IPv6 (country unknown)");
-  assertNotRedirected(await request("/", browser("not-an-ip")), "malformed trusted header");
-  assertNotRedirected(await request("/", browser(`${US_IP}, 1.1.1.1`)), "multi-value trusted header");
-  assertNotRedirected(await request("/", browser(null)), "no trusted header at all");
-  assertNotRedirected(
+  assertServedInVietnamese(await request("/", browser(VN_IP)), "Vietnamese IPv4");
+  assertServedInVietnamese(await request("/", browser("2001:4860:4860::8888")), "IPv6 (country unknown)");
+  assertServedInVietnamese(await request("/", browser("not-an-ip")), "malformed trusted header");
+  assertServedInVietnamese(await request("/", browser(`${US_IP}, 1.1.1.1`)), "multi-value trusted header");
+  assertServedInVietnamese(await request("/", browser(null)), "no trusted header at all");
+  assertServedInVietnamese(
     await request("/", browser(null, { "x-forwarded-for": US_IP })),
     "X-Forwarded-For alone cannot choose the country",
   );
-  assertNotRedirected(
+  assertServedInVietnamese(
     await request("/", browser(VN_IP, { "x-forwarded-for": US_IP, "x-real-ip": US_IP, "cf-ipcountry": "US" })),
     "spoofed forwarding headers cannot override a Vietnamese client IP",
   );
-  assertNotRedirected(await request("/shop", browser(US_IP)), "other pages are never redirected");
+  assertServedInVietnamese(await request("/shop", browser(US_IP)), "other pages are never redirected");
   assertNotRedirected(await request("/shop/ao-dai-1", browser(US_IP)), "product pages are never redirected");
 
   const previewHeaders = (agent: string) => ({
@@ -209,14 +224,14 @@ try {
     "SkypeUriPreview Preview/0.5",
     "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
   ]) {
-    assertNotRedirected(await request("/", previewHeaders(agent)), `preview/crawler agent ${agent}`);
+    assertServedInVietnamese(await request("/", previewHeaders(agent)), `preview/crawler agent ${agent}`);
   }
-  assertNotRedirected(await request("/", { [TRUSTED_IP_HEADER]: US_IP, accept: "text/html" }), "request with no User-Agent");
-  assertNotRedirected(
+  assertServedInVietnamese(await request("/", { [TRUSTED_IP_HEADER]: US_IP, accept: "text/html" }), "request with no User-Agent");
+  assertServedInVietnamese(
     await request("/", browser(US_IP, { "sec-purpose": "prefetch" })),
     "browser prefetch",
   );
-  assertNotRedirected(
+  assertServedInVietnamese(
     await request("/", browser(US_IP, { "sec-fetch-dest": "empty", accept: "application/json" })),
     "script fetch",
   );
