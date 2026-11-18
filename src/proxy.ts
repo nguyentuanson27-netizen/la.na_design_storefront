@@ -22,7 +22,11 @@ import {
   localizeHref,
   parseLocale,
   splitLocalePath,
+  type Locale,
 } from "@/i18n/locale";
+import { readOptionalTrustedClientIp } from "@/commerce/guest-checkout-client-identity";
+import { lookupCountry } from "@/i18n/geo-country";
+import { GEO_REDIRECT_COOKIE, planGeoRedirect } from "@/i18n/geo-redirect";
 import { readSearchExposure, shouldNoIndexRequest } from "@/seo/search-exposure";
 import {
   readStrictScriptPolicyMode,
@@ -130,6 +134,44 @@ function planListingView(request: NextRequest, requestHeaders: Headers): string 
   }
 }
 
+/**
+ * A first-time visitor from outside Vietnam who opens the Vietnamese home page is sent to `/en`
+ * (src/i18n/geo-redirect.ts). The country comes from the proxy-owned client-IP header the rest of
+ * the app trusts, never from `X-Forwarded-For`. Any failure leaves the page as it was.
+ */
+function planGeoLocaleRedirect(request: NextRequest, routePath: string, locale: Locale): Response | null {
+  if (routePath !== "/" || locale !== DEFAULT_LOCALE) return null;
+  try {
+    const ip = readOptionalTrustedClientIp(request.headers, {
+      ipAddressHeader: process.env.BETTER_AUTH_IP_HEADER?.trim().toLowerCase() || undefined,
+    });
+    const plan = planGeoRedirect({
+      method: request.method,
+      routePath,
+      locale,
+      search: request.nextUrl.search,
+      headers: request.headers,
+      host: request.headers.get("host"),
+      cookie: request.cookies.get(GEO_REDIRECT_COOKIE)?.value,
+      country: ip === null ? null : lookupCountry(ip),
+      secure: request.nextUrl.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https",
+    });
+    if (plan === null) return null;
+    // Next rejects a relative Location from a proxy, and behind the edge this process only sees its
+    // own plain-HTTP origin, so the target is built on the server-owned storefront origin.
+    return new Response(null, {
+      status: 307,
+      headers: {
+        Location: new URL(plan.location, readStorefrontOrigin()).href,
+        "Set-Cookie": plan.setCookie,
+        "Cache-Control": "private, no-store",
+      },
+    });
+  } catch {
+    return null;
+  }
+}
+
 function applyResponseHeaders(
   request: NextRequest,
   response: Response,
@@ -185,6 +227,9 @@ export async function proxy(request: NextRequest) {
     for (const [name, value] of Object.entries(VOUCHER_REDIRECT_HEADERS)) redirect.headers.set(name, value);
     return redirect;
   }
+
+  const geoRedirect = planGeoLocaleRedirect(request, routePath, locale);
+  if (geoRedirect !== null) return geoRedirect;
 
   const scriptPolicy = readStrictScriptPolicy(request);
   const listingViewCookie = planListingView(request, scriptPolicy.request);

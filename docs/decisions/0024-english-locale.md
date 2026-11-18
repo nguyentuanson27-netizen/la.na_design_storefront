@@ -22,7 +22,8 @@ URLs to be linked, shared and indexed.
 - The sitemap lists every page once per language, each naming its twins; past the 50,000-URL document limit it
   lists Vietnamese only, with alternates, rather than becoming a 500.
 - No automatic redirect from `Accept-Language`: a URL always means one language, which keeps caching and indexing
-  predictable. The switcher in the header, mobile menu and footer links to the same page in the other language.
+  predictable. The one exception is a first-visit redirect of the bare home page for visitors outside Vietnam
+  (ADR 0025). The switcher in the header, mobile menu and footer links to the same page in the other language.
 - `/api`, `/admin`, `/feeds`, `/voucher-link` and files never get a prefix (`localizeHref`). Admin stays Vietnamese.
 
 **Text.** A gettext-style translator **keyed by the Vietnamese source text** (`src/i18n/translate.ts`):
