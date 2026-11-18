@@ -63,8 +63,22 @@ export function snapToPriceEnding(cents: number): number {
   return best;
 }
 
+/** A dong amount as cents of a displayed price: converted at the display rate, then moved to its ending. */
+export function priceCentsFromVnd(vnd: number): number {
+  return snapToPriceEnding((vnd * 100) / ENGLISH_DISPLAY_CURRENCY.vndPerUsd);
+}
+
+/** A dong amount as cents, converted at the display rate and rounded to the cent, with no price ending. */
+export function exactCentsFromVnd(vnd: number): number {
+  return Math.round((vnd * 100) / ENGLISH_DISPLAY_CURRENCY.vndPerUsd);
+}
+
+export function formatCents(cents: number): string {
+  return usd.format(cents / 100);
+}
+
 export function formatUsdFromVnd(vnd: number): string {
-  return usd.format(snapToPriceEnding((vnd * 100) / ENGLISH_DISPLAY_CURRENCY.vndPerUsd) / 100);
+  return formatCents(priceCentsFromVnd(vnd));
 }
 
 const UNIT: Readonly<Record<string, number>> = { k: 1_000, tr: 1_000_000, "triệu": 1_000_000 };

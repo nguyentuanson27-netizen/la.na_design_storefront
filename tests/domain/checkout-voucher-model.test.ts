@@ -121,7 +121,7 @@ const picker = (overrides: Partial<VoucherPickerModel> = {}): VoucherPickerModel
     { slot: "MERCHANDISE", kind: "MERCHANDISE", heading: "", hint: "", tone: "clay", mode: "AUTO", items: [{ id: MERCH, name: "Giảm 50K", title: "Giảm 50.000đ", valueLabel: "50K", valueSub: "Giảm", condition: "", selected: true, selectable: true, disabledReason: null, shortfallVnd: null, progressPercent: null, savingText: "Dự kiến giảm 50.000đ", publicCode: null, endsAtIso: null }] },
     { slot: "SHIPPING_FREE", kind: "SHIPPING_FREE", heading: "", hint: "", tone: "teal", mode: "AUTO", items: [] },
   ],
-  summary: { paidBeforeText: "900.000đ", merchandiseDiscountText: "-50.000đ", merchandiseLines: [], shippingFeeText: "30.000đ", shippingDiscountText: null, totalText: "880.000đ", totalVnd: 880_000, discountLines: [], savingText: "50.000đ", savingVnd: 50_000 },
+  summary: { paidBeforeText: "900.000đ", merchandiseDiscountText: "-50.000đ", merchandiseLines: [], shippingFeeText: "30.000đ", shippingDiscountText: null, totalText: "880.000đ", totalVnd: 880_000, facts: { paidBeforeVnd: 900_000, merchandiseDiscountVnd: 50_000, shippingFeeVnd: 30_000, shippingDiscountVnd: 0 }, discountLines: [], savingText: "50.000đ", savingVnd: 50_000 },
   footer: { label: "Áp dụng · Giảm 50.000đ", count: 1 },
   quoteDigest: "a".repeat(64),
   selectionVersion: "b".repeat(64),

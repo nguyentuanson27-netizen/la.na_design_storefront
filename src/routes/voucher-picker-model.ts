@@ -59,13 +59,15 @@ export type VoucherPickerModel = Readonly<{
     paidBeforeText: string;
     merchandiseDiscountText: string | null;
     /** One line per chosen merchandise voucher, in application order, when more than one applies. */
-    merchandiseLines: readonly Readonly<{ id: string; label: string; amountText: string }>[];
+    merchandiseLines: readonly Readonly<{ id: string; label: string; amountText: string; amountVnd: number }>[];
     /** One line per applied merchandise voucher, always (also when there is one): its type's name, what it takes off, and its type's colour. */
-    discountLines: readonly Readonly<{ id: string; label: string; amountText: string; tone: VoucherTone }>[];
+    discountLines: readonly Readonly<{ id: string; label: string; amountText: string; amountVnd: number; tone: VoucherTone }>[];
     shippingFeeText: string;
     shippingDiscountText: string | null;
     totalText: string;
     totalVnd: number;
+    /** The quote's figures as whole VND, for the English display (src/i18n/usd-bill.ts). */
+    facts: Readonly<{ paidBeforeVnd: number; merchandiseDiscountVnd: number; shippingFeeVnd: number; shippingDiscountVnd: number }>;
     /** Everything the chosen vouchers take off (merchandise + shipping), unsigned: "250.000đ". Null when nothing is chosen. */
     savingText: string | null;
     savingVnd: number;
@@ -208,7 +210,7 @@ export function buildVoucherPickerModel(input: Readonly<{
   const shippingGroup = slotGroup("SHIPPING_FREE", "SHIPPING_FREE", "Voucher vận chuyển", "Chọn 1", "teal", entries.filter((entry) => entry.card.kind === "SHIPPING_FREE"));
   const merchandiseLines = quote.merchandise.map((line) => {
     const card = entries.find((entry) => entry.card.id === line.campaignId)?.card;
-    return Object.freeze({ id: line.campaignId, label: card?.type?.name ?? "Voucher giảm tiền hàng", amountText: `-${formatVoucherVnd(line.discountVnd)}` });
+    return Object.freeze({ id: line.campaignId, label: card?.type?.name ?? "Voucher giảm tiền hàng", amountText: `-${formatVoucherVnd(line.discountVnd)}`, amountVnd: line.discountVnd });
   });
 
   const toneOf = new Map<string, VoucherTone>(merchandiseGroups.flatMap((group) => group.items.map((item): [string, VoucherTone] => [item.id, group.tone])));
@@ -233,6 +235,7 @@ export function buildVoucherPickerModel(input: Readonly<{
       shippingDiscountText: quote.shippingDiscountVnd > 0 ? `-${formatVoucherVnd(quote.shippingDiscountVnd)}` : null,
       totalText: formatVoucherVnd(quote.totalPayableVnd),
       totalVnd: quote.totalPayableVnd,
+      facts: Object.freeze({ paidBeforeVnd: quote.paidBeforeVnd, merchandiseDiscountVnd: quote.merchandiseDiscountVnd, shippingFeeVnd: quote.shippingFeeVnd, shippingDiscountVnd: quote.shippingDiscountVnd }),
       savingText: savingVnd > 0 ? formatVoucherVnd(savingVnd) : null,
       savingVnd,
     }),

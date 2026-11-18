@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "@/i18n/link";
@@ -28,7 +28,8 @@ import {
 } from "@/components/headless/cart-drawer-model";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import { useCartDrawer } from "@/components/headless/use-cart-drawer";
-import { useT } from "@/i18n/client";
+import { useLocale, useT } from "@/i18n/client";
+import { usdCart } from "@/i18n/usd-bill";
 
 export type CartDrawerProps = Readonly<{
   isOpen: boolean;
@@ -42,8 +43,11 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const previouslyFocusedElement = useRef<HTMLElement | null>(null);
 
-  const { cart, isLoading, isPending, error, lineNotice, giftNotice, loadCart, updateQuantity, removeItem } =
+  const { cart: loadedCart, isLoading, isPending, error, lineNotice, giftNotice, loadCart, updateQuantity, removeItem } =
     useCartDrawer(isOpen);
+  // English shows the bill recomputed from the dollar prices it displays (src/i18n/usd-bill.ts).
+  const locale = useLocale();
+  const cart = useMemo(() => (loadedCart && locale === "en" ? usdCart(loadedCart) : loadedCart), [loadedCart, locale]);
 
   const wasOpenRef = useRef(false);
 

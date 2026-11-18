@@ -60,9 +60,18 @@ login, track-order, eligible offers). A const cannot know the request's language
 (`src/brand/currency.config.ts`; change the number there when it drifts), and then show the nearest price ending in
 .49 or .99 (`priceEndingsInCents`): 500,000 ₫ is $24.99, 1,290,000 ₫ is $64.49, 200K is $9.99. Zero stays $0.00 and
 anything under a quarter of a dollar is not rounded up to .49; a tie goes to the lower price. The rate was 26,000 ₫ with
-plain two-decimal rounding until the change of 2026-11-18. Because every amount is rounded on its own, a displayed
-sum can differ by a few cents from its displayed parts (2 × $19.99 shows $39.99 for a 800,000 ₫ total, and a total of
-three lines may not equal the three lines added up). It is a display rate only: the cart, the
+plain two-decimal rounding until the change of 2026-11-18. The ending belongs to *prices* (a unit price, a struck-through list price, a shipping fee, a voucher's amount), and whatever is
+built from prices is calculated from the prices shown, in cents (`src/i18n/usd-bill.ts`, applied by `usdCart` and `usdCheckout`
+when the page is English): a line total is the quantity times the unit price shown (summed over a benefit quote's price
+segments), the subtotal is the sum of the lines, "order value" is the subtotal plus the cart-level discounts, the discount rows
+share that difference (every row but the last is its own amount to the cent, the last takes the remainder), and the total is the
+subtotal plus the displayed shipping. So 4 x $10.49 reads $41.96, never $40.99, and a total is generally not itself a .49/.99
+figure. The cart page, the cart drawer and checkout (lines, subtotal, shipping, total, the bill and the list-price savings) follow
+this; the numbers they need travel beside the Vietnamese texts in the view models (`CartLineView.bill`, `OrderSummaryView.facts`,
+`CheckoutLineView.unitPriceVnd`, ...). Not recomputed that way, and so converted one by one like any other text: the voucher
+picker's own cards and footer, the checkout's voucher panel, the "buy N more" nudges and promotion banners, and product
+listings and pages (single prices, nothing to add up). The cart's voucher preview under the bill is recomputed from the cart's
+subtotal. It is a display rate only: the cart, the
 order, the bank transfer, structured data (`priceCurrency: VND`), analytics and every server-side figure stay in
 dong. The view models keep formatting dong, so the conversion is done on the text, in the English translator
 (`src/i18n/money.ts`): any amount written with `₫` that passes through `t()` becomes a dollar price. Components that print a

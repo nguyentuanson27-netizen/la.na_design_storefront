@@ -67,6 +67,7 @@ test("display toggle leaves payable facts alone; representative and selected tri
   assert.deepEqual(describeLineDiscount(590000, 590000), {
     isListReference: true,
     originalPriceText: vnd("749.000"),
+    originalPriceVnd: 749_000,
     percent: 21,
   });
   const availableB = buildProductCardModel({

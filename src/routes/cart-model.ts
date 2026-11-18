@@ -32,6 +32,22 @@ const currency = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
 
+/**
+ * The numbers behind a priced line's texts, for the English display (src/i18n/usd-bill.ts), which
+ * recomputes line totals, subtotal and bill from the prices it shows. Absent on a line that is not bought.
+ */
+export type CartLineBill = Readonly<{
+  unitVnd: number;
+  /** The struck-through catalog or list price, when `originalPriceText` is shown. */
+  originalUnitVnd?: number;
+  /** What the "Tổng"/"Tổng theo giá niêm yết" savings measure this line against (per unit). */
+  referenceUnitVnd: number;
+  /** What "Tiết kiệm so với giá niêm yết" measures this line against (per unit). */
+  listReferenceUnitVnd: number;
+  /** Benefit quotes only: each paid price segment of the line. */
+  segments?: readonly Readonly<{ quantity: number; unitVnd: number; originalUnitVnd?: number }>[];
+}>;
+
 export type CartLineView = Readonly<{
   variantId: string;
   productName: string;
@@ -71,6 +87,7 @@ export type CartLineView = Readonly<{
   paidSegmentPrices?: readonly Readonly<{ quantity: number; priceText: string; originalPriceText?: string; discountPercent?: number; isListReference?: boolean }>[];
   /** What this line costs in total (benefit-tier prices included); absent when it is not bought. */
   lineTotalText?: string;
+  bill?: CartLineBill;
   /**
    * Server-relative time left on the Flash Sale that prices this line, for its countdown. Present only
    * on a buyable line the Flash Sale actually discounts (a struck price on screen), as on the PDP.
@@ -112,6 +129,8 @@ export type CartViewModel = Readonly<{
    * is a summary to show instead.
    */
   shippingBaseFeeText?: string;
+  /** `shippingBaseFeeText` as whole VND, for the English display. */
+  shippingBaseFeeVnd?: number;
   benefitsNotice?: string;
   /**
    * The list-price total struck through beside what the buyer saves, when something is saved
@@ -242,13 +261,13 @@ function withShippingEstimate(
   benefitsUnavailable: boolean,
   entry: { summary?: OrderSummaryView },
   shippingQuote?: ShippingQuote,
-): { summary?: OrderSummaryView; shippingBaseFeeText?: string } {
+): { summary?: OrderSummaryView; shippingBaseFeeText?: string; shippingBaseFeeVnd?: number } {
   if (entry.summary || policy === undefined || goodsSubtotalVnd === null || benefitsUnavailable) return entry;
   const quantity = lines.reduce((sum, line) => sum + (line.available ? line.quantity : 0), 0);
   if (!Number.isSafeInteger(quantity) || quantity < 1) return entry;
   try {
     const feeVnd = shippingFeeFromQuote(shippingQuote, policy);
-    return { shippingBaseFeeText: feeVnd === 0 ? "Miễn phí" : currency.format(feeVnd) };
+    return { shippingBaseFeeText: feeVnd === 0 ? "Miễn phí" : currency.format(feeVnd), shippingBaseFeeVnd: feeVnd };
   } catch {
     return entry;
   }
@@ -264,6 +283,27 @@ function lineTotalEntry(
     ? own.reduce((sum, group) => sum + group.quantity * group.unitPriceVnd, 0)
     : line.price * line.quantity;
   return Number.isSafeInteger(total) ? { lineTotalText: currency.format(total) } : {};
+}
+
+function lineBillEntry(
+  line: StorefrontCartLine,
+  groups: readonly { lineKey: string; quantity: number; unitPriceVnd: number }[] | undefined,
+): { bill?: CartLineBill } {
+  if (!line.available || line.price === null) return {};
+  const own = groups?.filter((group) => group.lineKey === line.variantId) ?? [];
+  const original = line.available ? describeLineDiscount(line.basePrice, line.price, undefined, line.variantId) : null;
+  const listReference = computeListPriceVnd(line.basePrice ?? line.price) ?? line.basePrice ?? line.price;
+  const reference = Math.max((readListPriceConfig().display ? computeListPriceVnd(line.basePrice ?? line.price) : null) ?? line.basePrice ?? line.price, line.price);
+  return { bill: Object.freeze({
+    unitVnd: line.price,
+    ...(original ? { originalUnitVnd: original.originalPriceVnd } : {}),
+    referenceUnitVnd: reference,
+    listReferenceUnitVnd: listReference,
+    ...(own.length > 0 ? { segments: Object.freeze(own.map((group) => {
+      const discount = describeLineDiscount(line.basePrice ?? line.price, group.unitPriceVnd, true, line.variantId);
+      return Object.freeze({ quantity: group.quantity, unitVnd: group.unitPriceVnd, ...(discount ? { originalUnitVnd: discount.originalPriceVnd } : {}) });
+    })) } : {}),
+  }) };
 }
 
 function savingsEntry(
@@ -382,6 +422,7 @@ export function buildCartViewModel(
           ...(paidBenefits && paidBenefits.groups.some((group) => group.lineKey === line.variantId && group.unitPriceVnd !== line.price)
             ? { paidSegments: paidBenefits.groups.filter((group) => group.lineKey === line.variantId).map((group) => `${group.quantity} × ${currency.format(group.unitPriceVnd)}`) } : {}),
           ...lineTotalEntry(line, paidBenefits?.groups),
+          ...lineBillEntry(line, paidBenefits?.groups),
           ...lineUrgencyEntry(line, input.lineUrgency?.[line.variantId]),
         }),
       ),

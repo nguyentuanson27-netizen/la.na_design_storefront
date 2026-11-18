@@ -16,7 +16,7 @@ import type { PromotionSavingRow } from "./cart-promotion-model.ts";
 
 const currency = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 
-export type OrderSummaryRow = Readonly<{ id: string; label: string; amountText: string }>;
+export type OrderSummaryRow = Readonly<{ id: string; label: string; amountText: string; /** Whole VND, for the English display (src/i18n/usd-bill.ts). */ amountVnd: number }>;
 
 export type OrderSummaryView = Readonly<{
   /** Tổng giá trị đơn hàng. */
@@ -31,6 +31,11 @@ export type OrderSummaryView = Readonly<{
   shippingVoucher: Readonly<{ label: string; amountText: string }> | null;
   /** Tổng thanh toán. */
   totalText: string;
+  /**
+   * The same figures as whole VND. The English display recomputes the bill from displayed prices
+   * (src/i18n/usd-bill.ts) and needs the numbers, not the Vietnamese text.
+   */
+  facts: Readonly<{ valueVnd: number; shippingFeeVnd: number; shippingWaivedVnd: number; totalVnd: number }>;
 }>;
 
 export function buildOrderSummary(input: Readonly<{
@@ -57,10 +62,11 @@ export function buildOrderSummary(input: Readonly<{
   if (input.shippingVoucher !== undefined && !(Number.isSafeInteger(input.shippingVoucher.waivedVnd) && input.shippingVoucher.waivedVnd >= 1)) return null;
   return Object.freeze({
     valueText: currency.format(valueVnd),
-    discounts: Object.freeze(discounts.map((row) => Object.freeze({ id: row.id, label: row.label, amountText: `−${row.amountText}` }))),
+    discounts: Object.freeze(discounts.map((row) => Object.freeze({ id: row.id, label: row.label, amountText: `−${row.amountText}`, amountVnd: row.amountVnd }))),
     giftQuantity: input.giftQuantity ?? 0,
     shippingText: shippingFeeVnd === 0 ? "Miễn phí" : currency.format(shippingFeeVnd),
     shippingVoucher: input.shippingVoucher === undefined ? null : Object.freeze({ label: input.shippingVoucher.label, amountText: `−${currency.format(input.shippingVoucher.waivedVnd)}` }),
     totalText: currency.format(totalVnd),
+    facts: Object.freeze({ valueVnd, shippingFeeVnd, shippingWaivedVnd: input.shippingVoucher?.waivedVnd ?? 0, totalVnd }),
   });
 }

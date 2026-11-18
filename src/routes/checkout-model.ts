@@ -1,3 +1,4 @@
+import { computeListPriceVnd } from "../commerce/list-price.ts";
 import { describeListPriceSavings } from "./list-price-savings.ts";
 import { readListPriceConfig } from "../commerce/list-price-config.ts";
 import type { CartGiftPickerModel } from "./cart-gift-model.ts";
@@ -65,6 +66,17 @@ export type CheckoutLineView = Readonly<{
   promotionPriceText?: string;
   lineTotalText: string;
   /**
+   * The numbers behind this line's texts, for the English display (src/i18n/usd-bill.ts), which recomputes line
+   * totals and the bill from the dollar prices it shows. Whole VND per unit.
+   */
+  unitPriceVnd?: number;
+  originalPriceVnd?: number;
+  promotionPriceVnd?: number;
+  /** The unit price the line is listed at (what "Tổng giá trị đơn hàng" counts), before tiers and vouchers. */
+  listedUnitVnd?: number;
+  /** What "Tiết kiệm so với giá niêm yết" measures this line against, per unit. */
+  listReferenceUnitVnd?: number;
+  /**
    * F8b / §30 — the same `Đặt trước` marker the cart showed for this line, or `null`.
    *
    * Recomputed from the same canonical line fact rather than carried over from the cart render, so
@@ -78,6 +90,9 @@ export type CheckoutTotalsView = Readonly<{
   /** "Miễn phí" where shipping costs nothing, so the page never re-decides that. */
   shippingText: string;
   totalText: string;
+  /** The shipping fee as a number (net of a shipping voucher), and the part a voucher waived: for the English display. */
+  shippingFeeVnd: number;
+  shippingWaivedVnd: number;
   /**
    * The same total as a number, so a price-change notice can name the total the buyer submitted against
    * beside the server's new one. Display only: the server never reads it back.
@@ -233,9 +248,9 @@ export function benefitCheckoutPixelParameters(
   });
 }
 
-function checkoutDiscountEntry(discount: ReturnType<typeof describeLineDiscount>): { originalPriceText?: string; isListReference?: boolean; discountPercent?: number } {
+function checkoutDiscountEntry(discount: ReturnType<typeof describeLineDiscount>): { originalPriceText?: string; originalPriceVnd?: number; isListReference?: boolean; discountPercent?: number } {
   if (!discount) return {};
-  return { ...(discount.isListReference ? { isListReference: true } : {}), originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
+  return { ...(discount.isListReference ? { isListReference: true } : {}), originalPriceText: discount.originalPriceText, originalPriceVnd: discount.originalPriceVnd, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
 }
 
 /** The per-product (legacy) step on a quote line: catalog price in, price after the promotion out. */
@@ -254,7 +269,7 @@ function legacyStepDiscount(steps: readonly Readonly<{ source: string; inputPric
 function paidLineDiscount(
   cartLine: StorefrontCartLine | undefined,
   fact: Pick<QuoteLine, "unitPriceVnd" | "discountSteps">,
-): { originalPriceText?: string; isListReference?: boolean; discountPercent?: number; promotionPriceText?: string } {
+): { originalPriceText?: string; originalPriceVnd?: number; isListReference?: boolean; discountPercent?: number; promotionPriceText?: string; promotionPriceVnd?: number } {
   if (readListPriceConfig().display && cartLine?.price != null) {
     const discount = describeLineDiscount(cartLine.basePrice ?? cartLine.price, fact.unitPriceVnd, true, cartLine.variantId);
     if (discount?.isListReference) return checkoutDiscountEntry(discount);
@@ -270,7 +285,7 @@ function paidLineDiscount(
   if (!discount) return {};
   return {
     ...checkoutDiscountEntry(discount),
-    ...(cartLine.price !== null && fact.unitPriceVnd < cartLine.price ? { promotionPriceText: currency.format(cartLine.price) } : {}),
+    ...(cartLine.price !== null && fact.unitPriceVnd < cartLine.price ? { promotionPriceText: currency.format(cartLine.price), promotionPriceVnd: cartLine.price } : {}),
   };
 }
 
@@ -356,6 +371,8 @@ export function buildCheckoutViewModel(
           quantity: line.quantity,
           // `ready` means every line priced, so the fallback is unreachable rather than lenient.
           lineTotalText: currency.format((line.price ?? 0) * line.quantity),
+          ...(line.price === null ? {} : { unitPriceVnd: line.price, listedUnitVnd: line.price }),
+          ...(line.available && line.price !== null ? { listReferenceUnitVnd: computeListPriceVnd(line.basePrice ?? line.price) ?? line.basePrice ?? line.price } : {}),
           preorderLabel: line.available && line.isPreorderSale ? PREORDER_LABEL : null,
         }),
       ),
@@ -365,6 +382,8 @@ export function buildCheckoutViewModel(
       shippingText:
         totals.shippingFeeVnd === 0 ? "Miễn phí" : currency.format(totals.shippingFeeVnd),
       totalText: currency.format(totals.totalVnd),
+      shippingFeeVnd: totals.shippingFeeVnd,
+      shippingWaivedVnd: 0,
       totalVnd: totals.totalVnd,
     }),
     quoteProof: input.quoteProof,
@@ -457,6 +476,8 @@ export function buildBenefitCheckoutViewModel(
         unitPriceText: currency.format(fact.unitPriceVnd),
         ...paidLineDiscount(cartLine, fact),
         lineTotalText: currency.format(fact.lineTotalVnd),
+        unitPriceVnd: fact.unitPriceVnd,
+        ...(cartLine?.available && cartLine.price != null ? { listedUnitVnd: cartLine.price, listReferenceUnitVnd: computeListPriceVnd(cartLine.basePrice ?? cartLine.price) ?? cartLine.basePrice ?? cartLine.price } : {}),
         preorderLabel: fact.fulfillmentState === "PREORDER" ? PREORDER_LABEL : null,
       }),
     );
@@ -539,6 +560,8 @@ export function buildBenefitCheckoutViewModel(
       subtotalText: currency.format(facts.paidSubtotalVnd),
       shippingText: facts.shippingFeeVnd === 0 ? "Miễn phí" : currency.format(facts.shippingFeeVnd),
       totalText: currency.format(facts.totalVnd),
+      shippingFeeVnd: facts.shippingFeeVnd,
+      shippingWaivedVnd: shippingVoucher?.waivedVnd ?? 0,
       totalVnd: facts.totalVnd,
     }),
     giftPicker: render.giftPicker,
