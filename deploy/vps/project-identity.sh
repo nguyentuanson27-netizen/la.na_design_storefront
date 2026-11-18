@@ -27,9 +27,14 @@ temporary_domain="$(jq -er '.temporaryDomain' "$PROJECT_CONFIG_FILE")"
 case "${DEPLOY_TARGET:-}" in
   production)
     APP_DOMAIN="$production_domain"
+    # ADR 0010: the bare apex is not a storefront host; Caddy redirects it to APP_DOMAIN.
+    APEX_REDIRECT_DOMAIN="${production_domain#www.}"
     ;;
   temporary)
     APP_DOMAIN="$temporary_domain"
+    # No apex is routed to the temporary host. A reserved .invalid name keeps the Caddy matcher inert
+    # (an empty value would match an absent X-Forwarded-Host and redirect every request).
+    APEX_REDIRECT_DOMAIN="apex-redirect-disabled.invalid"
     ;;
   *)
     echo "DEPLOY_TARGET must be exactly 'production' or 'temporary'" >&2
@@ -41,4 +46,4 @@ esac
 # origin before any migration runs; temporary is also forced noindex by the search-exposure gate.
 BETTER_AUTH_URL="https://$APP_DOMAIN"
 
-export DEPLOY_TARGET PROJECT_SLUG POSTGRES_DB COMPOSE_PROJECT_NAME APP_DOMAIN BETTER_AUTH_URL
+export DEPLOY_TARGET PROJECT_SLUG POSTGRES_DB COMPOSE_PROJECT_NAME APP_DOMAIN APEX_REDIRECT_DOMAIN BETTER_AUTH_URL

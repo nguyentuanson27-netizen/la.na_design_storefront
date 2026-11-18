@@ -61,6 +61,8 @@ Forward port: 80
 TLS/certificate: managed by the public edge
 ```
 
+For the production cutover, also add the apex `lanadesign.vn` to the same NPM proxy host (or a redirect host) so its traffic reaches Caddy with the original `Host`. Caddy 308-redirects the apex to `APP_DOMAIN` (ADR 0010: the apex is not a storefront host). This matters beyond SEO: a browser on the apex would submit Server Actions with an apex `Origin` while `X-Forwarded-Host` says `www`, and Next.js rejects that as `Invalid Server Actions request` (add-to-bag fails). Observe the redirect (`curl -sI https://lanadesign.vn/shop`) before claiming it works.
+
 Do not assume the inherited LA Clothing proxy host, network or certificate is reusable. `EDGE_NETWORK_NAME` and `EDGE_TRUSTED_PROXY_CIDR` are required with no production fallback; scope the CIDR to the observed proxy hop.
 
 ADR 0010 selects the repository hostname but does not prove external DNS/TLS/edge cutover. Record observed evidence before calling the host live.

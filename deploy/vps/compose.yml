@@ -207,6 +207,7 @@ services:
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
+      APEX_REDIRECT_DOMAIN: ${APEX_REDIRECT_DOMAIN:?set APEX_REDIRECT_DOMAIN}
       EDGE_TRUSTED_PROXY_CIDR: ${EDGE_TRUSTED_PROXY_CIDR:?set EDGE_TRUSTED_PROXY_CIDR}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

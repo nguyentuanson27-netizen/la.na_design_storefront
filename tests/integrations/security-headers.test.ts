@@ -203,22 +203,12 @@ test("the Zalo quarantine policy is the header's img-src and connect-src minus Z
   }
 });
 
-test("Next.js configures safe serverActions.allowedOrigins for storefront domains", async () => {
+test("Server Actions CSRF allowlist is not widened to the non-canonical apex", async () => {
+  // The apex is redirected to APP_DOMAIN at the edge (deploy/vps/Caddyfile, ADR 0010); trusting it as
+  // a Server Actions origin would paper over a missing redirect and contradict "apex is not a storefront host".
   const configUrl = pathToFileURL(resolve("next.config.mjs")).href + "?server-actions-allowed-origins";
   const { default: nextConfig } = (await import(configUrl)) as {
     default: { experimental?: { serverActions?: { allowedOrigins?: string[] } } };
   };
-
-  const allowedOrigins = nextConfig.experimental?.serverActions?.allowedOrigins;
-  assert.ok(Array.isArray(allowedOrigins));
-  // Exact list: widening the CSRF allowlist must be a deliberate change to this test.
-  assert.deepEqual([...allowedOrigins].sort(), [
-    "la.lanadesign.vn",
-    "lanadesign.vn",
-    "www.lanadesign.vn",
-  ]);
-  // Hosts only: no wildcards, schemes, paths, or ports.
-  for (const origin of allowedOrigins) {
-    assert.match(origin, /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, origin);
-  }
+  assert.equal(nextConfig.experimental?.serverActions?.allowedOrigins, undefined);
 });

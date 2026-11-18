@@ -121,6 +121,7 @@ test("compose interpolates project identity and requires the real edge boundary"
     "${PROJECT_SLUG:?set PROJECT_SLUG}",
     "APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}",
     "EDGE_TRUSTED_PROXY_CIDR: ${EDGE_TRUSTED_PROXY_CIDR:?set EDGE_TRUSTED_PROXY_CIDR}",
+    "APEX_REDIRECT_DOMAIN: ${APEX_REDIRECT_DOMAIN:?set APEX_REDIRECT_DOMAIN}",
     "name: ${EDGE_NETWORK_NAME:?set EDGE_NETWORK_NAME}",
   ]) {
     assert.ok(compose.includes(required), `compose.yml must contain ${required}`);
@@ -191,6 +192,23 @@ test("Caddy trusts only the explicitly supplied edge proxy range", () => {
   const caddy = readFileSync(path.join(REPO_ROOT, "deploy", "vps", "Caddyfile"), "utf8");
   assert.match(caddy, /trusted_proxies static \{\$EDGE_TRUSTED_PROXY_CIDR\}/);
   assert.equal(caddy.includes("192.0.2.1/32"), false);
+});
+
+test("Caddy redirects the non-canonical apex to the server-owned APP_DOMAIN", () => {
+  const caddy = readFileSync(path.join(REPO_ROOT, "deploy", "vps", "Caddyfile"), "utf8");
+  assert.match(caddy, /\{http\.request\.host\} == "\{\$APEX_REDIRECT_DOMAIN\}"/);
+  assert.match(caddy, /redir @apex https:\/\/\{\$APP_DOMAIN\}\{uri\} 308/);
+
+  const script = () =>
+    `source deploy/vps/project-identity.sh; printf "%s" "$APEX_REDIRECT_DOMAIN"`;
+  const run = (target: string) =>
+    execFileSync("bash", ["-c", script()], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, DEPLOY_TARGET: target },
+      encoding: "utf8",
+    });
+  assert.equal(run("production"), CONFIG.productionDomain.replace(/^www\./, ""));
+  assert.equal(run("temporary"), "apex-redirect-disabled.invalid");
 });
 
 test("the storefront origin constants mirror the committed public deployment domains", () => {

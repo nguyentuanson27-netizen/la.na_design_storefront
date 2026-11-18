@@ -213,23 +213,6 @@ const securityHeaders = [
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
-  // Next.js Server Actions CSRF protection compares Origin against Host/X-Forwarded-Host.
-  // Behind reverse proxies (NPM/Caddy), shoppers arriving at the apex lanadesign.vn submit
-  // Server Actions with Origin: https://lanadesign.vn while the proxy passes
-  // X-Forwarded-Host: www.lanadesign.vn. Without allowedOrigins, Next.js aborts the action
-  // ("Invalid Server Actions request") and shoppers cannot add items to bag or checkout.
-  // Entries are exact hosts only (the Origin header's host, no scheme/port): the apex, the
-  // official www host, and the legacy temporary production host. Never add wildcards -- every
-  // entry is an origin trusted to invoke Server Actions.
-  experimental: {
-    serverActions: {
-      allowedOrigins: [
-        "lanadesign.vn",
-        "www.lanadesign.vn",
-        "la.lanadesign.vn",
-      ],
-    },
-  },
   // Next 16 dev allows exactly one dev server per build directory, and enforces it with a lock file
   // under that directory. The browser suite spawns a dev server per spec file against this one
   // project, so without a per-spec directory they contend for a single lock -- and a server that
