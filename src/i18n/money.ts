@@ -37,8 +37,34 @@ const usd = new Intl.NumberFormat("en-US", {
   currency: ENGLISH_DISPLAY_CURRENCY.code,
 });
 
+/** Below this many cents the nearest ending (.49) would be further than half the gap between endings. */
+const MIN_SNAPPED_CENTS = 25;
+
+/**
+ * The displayed price nearest to `cents` among those ending in `priceEndingsInCents`: 6.450 cents
+ * (64,50 dollars) becomes 6.449, 1.000 becomes 999. A tie goes to the lower price. Zero and anything
+ * under a quarter of a dollar are returned as they are.
+ */
+export function snapToPriceEnding(cents: number): number {
+  if (!(cents >= MIN_SNAPPED_CENTS)) return Math.max(0, cents);
+  const dollars = Math.floor(cents / 100);
+  let best = Number.NaN;
+  for (const base of [dollars - 1, dollars]) {
+    for (const ending of ENGLISH_DISPLAY_CURRENCY.priceEndingsInCents) {
+      const candidate = base * 100 + ending;
+      if (candidate <= 0) continue;
+      if (
+        Number.isNaN(best)
+        || Math.abs(candidate - cents) < Math.abs(best - cents)
+        || (Math.abs(candidate - cents) === Math.abs(best - cents) && candidate < best)
+      ) best = candidate;
+    }
+  }
+  return best;
+}
+
 export function formatUsdFromVnd(vnd: number): string {
-  return usd.format(vnd / ENGLISH_DISPLAY_CURRENCY.vndPerUsd);
+  return usd.format(snapToPriceEnding((vnd * 100) / ENGLISH_DISPLAY_CURRENCY.vndPerUsd) / 100);
 }
 
 const UNIT: Readonly<Record<string, number>> = { k: 1_000, tr: 1_000_000, "triệu": 1_000_000 };

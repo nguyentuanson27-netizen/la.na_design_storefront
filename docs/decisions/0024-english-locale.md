@@ -56,11 +56,16 @@ name. Admins edit it at `/admin/products/[id]/translations`.
 login, track-order, eligible offers). A const cannot know the request's language, so they now use the page-level
 `generateMetadata` like the content pages, and the route manifest says so.
 
-**Prices in dollars.** The English pages *display* US dollars at one fixed rate, 26,000 ₫ to the dollar
-(`src/brand/currency.config.ts`; change the number there when it drifts). It is a display rate only: the cart, the
+**Prices in dollars.** The English pages *display* US dollars at one fixed rate, 20,000 ₫ to the dollar
+(`src/brand/currency.config.ts`; change the number there when it drifts), and then show the nearest price ending in
+.49 or .99 (`priceEndingsInCents`): 500,000 ₫ is $24.99, 1,290,000 ₫ is $64.49, 200K is $9.99. Zero stays $0.00 and
+anything under a quarter of a dollar is not rounded up to .49; a tie goes to the lower price. The rate was 26,000 ₫ with
+plain two-decimal rounding until the change of 2026-11-18. Because every amount is rounded on its own, a displayed
+sum can differ by a few cents from its displayed parts (2 × $19.99 shows $39.99 for a 800,000 ₫ total, and a total of
+three lines may not equal the three lines added up). It is a display rate only: the cart, the
 order, the bank transfer, structured data (`priceCurrency: VND`), analytics and every server-side figure stay in
 dong. The view models keep formatting dong, so the conversion is done on the text, in the English translator
-(`src/i18n/money.ts`): any amount written with `₫` that passes through `t()` becomes `$49.62`. Components that print a
+(`src/i18n/money.ts`): any amount written with `₫` that passes through `t()` becomes a dollar price. Components that print a
 price must therefore pass it through `t()`. Text that has to stay in dong writes `VND` instead (the price-range
 limits, the "charged in VND" line under the checkout and order-tracking totals, `DongNote`).
 
