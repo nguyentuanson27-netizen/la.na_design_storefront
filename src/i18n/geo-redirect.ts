@@ -5,8 +5,9 @@
  * is ever redirected, and only when every one of these holds:
  *
  * - an ordinary browser is loading the document (`GET`, not a prefetch, not a crawler or link
- *   preview: Googlebot and the Meta/TikTok ad reviewers fetch from the US and must see the
- *   Vietnamese page, and an empty User-Agent is treated as a bot);
+ *   preview: Googlebot, the Meta/TikTok ad reviewers and the WhatsApp/Viber/Facebook preview
+ *   fetchers fetch from anywhere and must see the Vietnamese page, and an empty User-Agent is
+ *   treated as a bot);
  * - the request has not carried a language already (`/en`, or a rewrite onto it);
  * - the visitor has not been through this decision before (cookie `la_geo_redirected`). The cookie is
  *   written when the redirect happens, so a visitor who then switches back to Vietnamese with the
@@ -28,7 +29,7 @@ const HOME_COUNTRY = "VN";
 const TARGET_LOCALE: Locale = "en";
 
 const NON_BROWSER_AGENT =
-  /bot|crawl|spider|slurp|facebookexternalhit|facebot|meta-external|preview|lighthouse|headless|pagespeed|gtmetrix|zalo(?:bot|url)|curl\/|wget\/|python-requests|go-http-client|okhttp|axios\/|node-fetch|undici/i;
+  /bot|crawl|spider|slurp|facebookexternalhit|facebot|meta-external|whatsapp|viber|pinterest|google-|preview|lighthouse|headless|pagespeed|gtmetrix|zalo(?:bot|url)|curl\/|wget\/|python-requests|go-http-client|okhttp|axios\/|node-fetch|undici/i;
 
 type HeaderReader = Readonly<{ get(name: string): string | null }>;
 

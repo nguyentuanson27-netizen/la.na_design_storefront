@@ -230,7 +230,14 @@ export async function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>
       </div>
 
       <div className="footer-meta-row">
-        <p className="footer-meta">© 2026 {BRAND.identity.name}</p>
+        <p className="footer-meta">
+          © 2026 {BRAND.identity.name}
+          {" · "}
+          {t("Dữ liệu IP2Location LITE tại")}{" "}
+          <a href="https://lite.ip2location.com" rel="noopener noreferrer" target="_blank">
+            lite.ip2location.com
+          </a>
+        </p>
         <LanguageSwitcher placement="footer" className="language-switcher language-switcher--footer" />
       </div>
     </footer>

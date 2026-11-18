@@ -159,14 +159,17 @@ function planGeoLocaleRedirect(request: NextRequest, routePath: string, locale: 
     if (plan === null) return null;
     // Next rejects a relative Location from a proxy, and behind the edge this process only sees its
     // own plain-HTTP origin, so the target is built on the server-owned storefront origin.
-    return new Response(null, {
+    const redirect = new Response(null, {
       status: 307,
       headers: {
         Location: new URL(plan.location, readStorefrontOrigin()).href,
-        "Set-Cookie": plan.setCookie,
         "Cache-Control": "private, no-store",
       },
     });
+    redirect.headers.append("Set-Cookie", plan.setCookie);
+    // Like every other exit: the search-exposure header, and the ad-attribution and Meta cookies of
+    // the landing the visitor actually made (the query rides along, so `/en` would set them too).
+    return applyResponseHeaders(request, redirect, routePath);
   } catch {
     return null;
   }

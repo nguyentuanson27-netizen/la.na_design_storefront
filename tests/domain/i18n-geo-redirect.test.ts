@@ -77,10 +77,20 @@ test("crawlers, link previews, prefetches, scripts and non-GET requests are neve
     "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
     "Mozilla/5.0 (Linux; Android 11) Chrome/120 Mobile Safari/537.36 Chrome-Lighthouse",
     "curl/8.5.0",
+    "WhatsApp/2.23.18.78 i",
+    "Viber",
+    "Pinterest/0.2 (+http://www.pinterest.com/bot.html)",
+    "Google-InspectionTool/1.0",
+    "SkypeUriPreview Preview/0.5",
     "",
   ]) {
     assert.equal(plan({ headers: headers({ "user-agent": agent, "sec-fetch-dest": "document" }) }), null, agent);
   }
+  // A preview fetcher that sends no Sec-Fetch-Dest and asks for HTML is told apart by its agent alone.
+  assert.equal(
+    plan({ headers: headers({ "user-agent": "WhatsApp/2.23.18.78 i", accept: "text/html" }), country: "US" }),
+    null,
+  );
   assert.equal(plan({ headers: headers({ "user-agent": CHROME, "sec-purpose": "prefetch" }) }), null);
   assert.equal(plan({ headers: headers({ "user-agent": CHROME, "sec-fetch-dest": "empty" }) }), null);
   assert.equal(plan({ headers: headers({ "user-agent": CHROME, accept: "application/json" }) }), null);

@@ -50,13 +50,27 @@ leaves the visitor on the Vietnamese page.
 
 ## Attribution
 
-The `ip3country` table is compacted from IP2Location LITE (DB1, CC BY 4.0), which requires this notice wherever the
-product is described: *This site or product includes IP2Location LITE data available from
-<https://lite.ip2location.com>.* Add it to a public page (for example the footer or a credits line in the policies)
-before launch if the owner wants to stay inside the licence.
+The `ip3country` table is compacted from IP2Location LITE (DB1), whose licence requires a public, end-user-visible
+credit; the package's own ISC licence does not remove it. The footer of every page therefore carries *"This site
+includes IP2Location LITE data available from lite.ip2location.com"* (Vietnamese: *"Dữ liệu IP2Location LITE tại ..."*),
+linked to <https://lite.ip2location.com>, next to the copyright line (`src/components/brand/site-footer.tsx`). The
+licence text that applies to the bundled snapshot is the one shipped in the `ip3country` package and at
+<https://lite.ip2location.com>; the owner should confirm it before launch and, if the licence is ever replaced
+(a paid IP2Location database, a CDN country header), remove the line with it.
 
 ## Tests
 
-`tests/domain/i18n-geo-redirect.test.ts`: the redirect conditions (country, path, locale, cookie, referer, crawlers,
-prefetch, methods, query preservation) and the lookup (IPv4, IPv4-mapped IPv6, IPv6, private and malformed input).
-Verified by hand on `next dev` and on a production build with `X-LA-Client-IP` set to a US, a JP and a VN address.
+- `tests/domain/i18n-geo-redirect.test.ts`: the redirect conditions (country, path, locale, cookie, referer, crawlers
+  and link previews including WhatsApp, prefetch, methods, query preservation) and the lookup (IPv4, IPv4-mapped IPv6,
+  IPv6, private and malformed input).
+- `scripts/geo-redirect-http-smoke.ts` (run by `tests/integrations/geo-redirect-http.test.ts`): a Next dev server with
+  `BETTER_AUTH_IP_HEADER=x-la-client-ip`, asserting over HTTP the `307`, the server-owned `/en` Location with the query,
+  the cookie attributes, `Cache-Control: private, no-store`, the `la_utm` ad-attribution cookie on the redirect itself,
+  that `/en` and `/en/shop` do not bounce and render `lang="en"`, and that none of these are redirected: returning
+  visitors, a click from this site, Vietnamese/IPv6/unknown/malformed IPs, `X-Forwarded-For`/`CF-IPCountry` spoofing,
+  other pages, preview and crawler agents (WhatsApp, Facebook, Telegram, Slack, Viber, Google, Bing), prefetch, script
+  fetches, HEAD and POST.
+
+The redirect response goes through the same `applyResponseHeaders` as every other exit, so it carries the search-exposure
+header and the ad-attribution and Meta first-party cookies of the landing the visitor made; `/en` then finds them
+already set.
