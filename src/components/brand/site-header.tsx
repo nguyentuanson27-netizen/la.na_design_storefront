@@ -23,7 +23,7 @@ import { useT } from "@/i18n/client";
  * asset the footer renders; the header simply draws it smaller. Replacing the wordmark is a swap of
  * this one file, not an edit spread across two chrome surfaces.
  */
-const BRAND_MASTER_LOGO_SRC = "/brand/la-na-design-master-logo.png";
+const BRAND_MASTER_LOGO_SRC = "/brand/la-na-design-logo.svg";
 /**
  * The rendered width, in CSS pixels: `.brand-mark-logo` is 2.75rem (44px) tall and the lockup is
  * 4185x2148, so it draws about 86px wide. The browser multiplies this by the device pixel ratio
@@ -253,6 +253,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
             width={4185}
             height={2148}
             sizes={BRAND_MASTER_LOGO_SIZES}
+            unoptimized
             // Eager, so it never waits on layout, but without a preload: on the pages with a
             // full-bleed hero the hero photograph is the LCP and keeps the early bandwidth.
             loading="eager"
@@ -466,6 +467,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
               width={4185}
               height={2148}
               sizes={BRAND_MASTER_LOGO_SIZES}
+              unoptimized
             />
             <button
               ref={mobileNavCloseRef}

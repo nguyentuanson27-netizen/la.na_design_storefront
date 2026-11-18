@@ -261,6 +261,9 @@ const nextConfig = {
     // AVIF first: about a fifth smaller than WebP for the same photograph, which is most of what a
     // phone on 4G spends loading a listing. Browsers that do not advertise AVIF keep WebP. The
     // first request for each size encodes more slowly; the optimizer caches the result.
+    dangerouslyAllowSVG: true,
+    contentDispositionType: "attachment",
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
     formats: ["image/avif", "image/webp"],
     remotePatterns: pancakeImageRemotePatterns,
   },

@@ -132,11 +132,12 @@ export async function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>
             <Link className="footer-brand-mark" href="/">
               <Image
                 className="footer-brand-logo"
-                src="/brand/la-na-design-master-logo.png"
+                src="/brand/la-na-design-logo.svg"
                 alt={BRAND.identity.name}
                 width={4185}
                 height={2148}
                 sizes="176px"
+                unoptimized
                 loading="lazy"
               />
             </Link>
