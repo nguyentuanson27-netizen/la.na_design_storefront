@@ -335,8 +335,20 @@ export function usdCheckout<T extends CheckoutViewModel>(model: T): T {
   if (model.voucherPicker) {
     const picker = usdVoucherPicker(model.voucherPicker, goods);
     next.voucherPicker = picker;
-    // An offer not yet held says what the total would be; that is the picker's own estimate.
-    if (model.vouchers?.state === "OFFERED") next.vouchers = Object.freeze({ ...model.vouchers, totalText: picker.summary.totalText });
+    // An offer not yet held says what the total would be and what each voucher would take off: the picker's own figures,
+    // by voucher, so nothing changes when the offer is held (and the lines add up to the amount the total used).
+    if (model.vouchers?.state === "OFFERED") {
+      const offered = model.vouchers;
+      const merchandise = new Map(picker.summary.discountLines.map((entry) => [entry.id, entry.amountText]));
+      next.vouchers = Object.freeze({
+        ...offered,
+        totalText: picker.summary.totalText,
+        lines: Object.freeze(offered.lines.map((entry) => {
+          const amountText = entry.kind === "SHIPPING_FREE" ? picker.summary.shippingDiscountText : merchandise.get(entry.id);
+          return amountText === null || amountText === undefined ? entry : Object.freeze({ ...entry, amountText });
+        })),
+      });
+    }
   }
   return Object.freeze(next) as T;
 }

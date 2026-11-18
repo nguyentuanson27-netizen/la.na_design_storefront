@@ -298,6 +298,11 @@ test("two merchandise vouchers of two types on one line: cart picker -> hold -> 
   await page.goto(`${BASE}/en/checkout`, { waitUntil: "networkidle" });
   const offered = page.locator('[data-checkout-vouchers="offered"]');
   await expect(offered).toBeVisible();
+  // Before the hold: each voucher's amount is the picker's figure, and they add up to the $3.49 the total takes off.
+  const offeredAmounts = amounts((await offered.innerText()).replace(/\s+/g, " "));
+  expect(offeredAmounts.filter((cents) => cents === 250 || cents === 99).sort()).toEqual([250, 99].sort());
+  expect(offeredAmounts, "no independently converted $2.49").not.toContain(249);
+  expect(offeredAmounts).toContain(previewTotal);
   await offered.getByRole("button", { name: /Apply and hold/ }).click();
   const held = page.locator('[data-checkout-vouchers="held"]');
   await expect(held).toBeVisible({ timeout: 30_000 });

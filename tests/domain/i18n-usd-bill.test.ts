@@ -367,3 +367,38 @@ test("the cart's badge follows the displayed pair too, and goes when the pair sh
   const tiny = cart([line(1, 999_999, { basePrice: 1_000_000 } as Partial<StorefrontCartLine>)]).lines[0]!;
   assert.equal(tiny.discountPercent, undefined);
 });
+
+test("an offer not yet held shows the same voucher amounts as the picker, and as the held panel after it", () => {
+  const { model } = stackedCheckout();
+  const picker = {
+    ...pickerOf({
+      paidBeforeText: "820.000đ", merchandiseDiscountText: "-70.000đ", shippingFeeText: "30.000đ", shippingDiscountText: null, totalText: "780.000đ", totalVnd: 780_000,
+      facts: { paidBeforeVnd: 820_000, merchandiseDiscountVnd: 70_000, shippingFeeVnd: 30_000, shippingDiscountVnd: 0 },
+      discountLines: [
+        { id: VOUCHER_A, label: "Voucher A", amountText: "-50.000đ", amountVnd: 50_000, tone: "clay" },
+        { id: VOUCHER_B, label: "Voucher B", amountText: "-20.000đ", amountVnd: 20_000, tone: "teal" },
+      ],
+      savingText: "70.000đ", savingVnd: 70_000,
+    }),
+  };
+  const offered = {
+    ...model,
+    voucherPicker: picker,
+    vouchers: {
+      state: "OFFERED" as const, digest: "d".repeat(64), totalText: "780.000đ", giftLossText: null, totalIncreaseText: null, afterStale: false,
+      lines: [
+        { id: VOUCHER_A, title: "Voucher A", amountText: "-50.000đ", kind: "MERCHANDISE" as const },
+        { id: VOUCHER_B, title: "Voucher B", amountText: "-20.000đ", kind: "MERCHANDISE" as const },
+      ],
+    },
+  };
+  const shown = usdCheckout(offered);
+  const lines = shown.vouchers!.state === "OFFERED" ? shown.vouchers!.lines.map((entry) => entry.amountText) : [];
+  // Independently converted these would be -$2.49 and -$0.99 ($3.48), against the $3.49 the total takes off.
+  assert.deepEqual(lines, ["-$2.50", "-$0.99"]);
+  assert.deepEqual(lines, shown.voucherPicker!.summary.discountLines.map((entry) => entry.amountText), "as the picker");
+  const held = usdCheckout(model).vouchers!;
+  assert.equal(held.state, "HELD");
+  if (held.state === "HELD") assert.deepEqual(held.lines.map((entry) => entry.amountText.replace("−", "-")), lines, "and as the held panel");
+  assert.equal(shown.vouchers!.state === "OFFERED" ? shown.vouchers!.totalText : "", "$39.96");
+});
