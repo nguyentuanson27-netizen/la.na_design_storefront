@@ -5,6 +5,7 @@ import {
 } from "../integrations/pancake/catalog-video.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { toOptionIdentityKey } from "./storefront-product.ts";
+import { hasSizeEvidence, normalizedFieldDimension } from "./variant-size-evidence.ts";
 import type {
   PancakeCatalogField,
   PancakeParsedCatalogVariation,
@@ -438,28 +439,6 @@ export async function writeObservedWarehouseStocks(
   return true;
 }
 
-function normalizedFieldDimension(name: string): "color" | "size" | null {
-  const normalized = name.trim().toLowerCase();
-  if (normalized === "size" || normalized === "kích thước" || normalized === "kich thuoc") {
-    return "size";
-  }
-  if (
-    normalized === "color" ||
-    normalized === "màu" ||
-    normalized === "màu sắc" ||
-    normalized === "mau sac" ||
-    normalized === "màu quần" ||
-    normalized === "mau quan" ||
-    normalized === "phân loại" ||
-    normalized === "phan loai" ||
-    normalized === "mẫu mã" ||
-    normalized === "mau ma"
-  ) {
-    return "color";
-  }
-  return null;
-}
-
 function mappedFieldValue(fields: readonly PancakeCatalogField[], key: "color" | "size"): string | null {
   const values = new Set<string>();
 
@@ -470,19 +449,6 @@ function mappedFieldValue(fields: readonly PancakeCatalogField[], key: "color" |
   }
 
   return values.size === 1 ? [...values][0]! : null;
-}
-
-/**
- * True when a variation's fields could describe a size: a size-named field (even with a blank or
- * conflicting value) or any field whose name this mapping does not recognise (for example "Cỡ").
- * Field names are presentation data, so an unrecognised one is not evidence that no size exists.
- */
-function hasSizeEvidence(fields: readonly PancakeCatalogField[]): boolean {
-  return fields.some((field) => {
-    const dimension = normalizedFieldDimension(field.name);
-    if (dimension === "size") return true;
-    return dimension === null && (field.name.trim().length > 0 || field.value.trim().length > 0);
-  });
 }
 
 /**

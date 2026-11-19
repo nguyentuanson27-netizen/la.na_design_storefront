@@ -17,6 +17,12 @@ export type StorefrontVariantFacts = {
   pancakeVariationId: string;
   color: string | null;
   size: string | null;
+  /**
+   * True when `size` is the freesize "F" the catalog sync inferred because Pancake sent no size
+   * attribute, as opposed to an "F" Pancake sent. Only read where variants of several products are
+   * shown as one choice, to keep an inferred size from displacing an explicit one.
+   */
+  sizeInferred?: boolean;
   sellableStock: number;
   compositeCapacity?: CompositeCapacitySnapshot;
   retailPrice: number | null;

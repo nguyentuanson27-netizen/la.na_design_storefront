@@ -23,6 +23,7 @@ import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-b
 import { vietnamCalendarDate } from "./availability-cycle.ts";
 import { readVariantAvailabilityDates } from "./availability-cycle-repository.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
+import { isInferredFreesize } from "./variant-size-evidence.ts";
 import {
   deriveCompositeCapacitySnapshot,
   deriveCompositeSellableStock,
@@ -100,6 +101,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient | P
                 sku: true,
                 color: true,
                 size: true,
+                pancakeFields: true,
                 isPresent: true,
                 isActive: true,
                 pancakeRetailPrice: true,
@@ -224,6 +226,9 @@ export function createStorefrontProductDetailRepository(client: PrismaClient | P
             pancakeVariationId: component.pancakeVariationId,
             color: component.color,
             size: component.size,
+            ...(isInferredFreesize(component.size, component.pancakeFields)
+              ? { sizeInferred: true }
+              : {}),
             sellableStock:
               sumWarehouseStocks(component.warehouseStocks) -
               (heldByVariantId.get(component.id) ?? 0),
