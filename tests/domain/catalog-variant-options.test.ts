@@ -65,3 +65,16 @@ test("mapVariantOptions respects explicitly defined size even for phuKien produc
   });
   assert.equal(result.size, "L");
 });
+
+test("mapVariantOptions does not mask conflicting size values as 'F' for phuKien products", () => {
+  const fields: PancakeCatalogField[] = [
+    { id: "1", name: "Size", value: "S", keyValue: "S" },
+    { id: "2", name: "Kích thước", value: "L", keyValue: "L" },
+  ];
+
+  const result = mapVariantOptions(fields, {
+    isPhuKien: true,
+    hasProductSizeOnPancake: true,
+  });
+  assert.equal(result.size, null);
+});

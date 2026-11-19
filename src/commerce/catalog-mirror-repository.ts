@@ -471,13 +471,25 @@ function mappedFieldValue(fields: readonly PancakeCatalogField[], key: "color" |
   return values.size === 1 ? [...values][0]! : null;
 }
 
+function hasSizeFieldValue(fields: readonly PancakeCatalogField[]): boolean {
+  return fields.some(
+    (field) => normalizedFieldDimension(field.name) === "size" && field.value.trim().length > 0,
+  );
+}
+
+/**
+ * Freesize policy: a variant with no size attribute on Pancake gets size "F" when its product is an
+ * accessory (`phuKien`) or no variant of the product carries a size. A size field that is present but
+ * conflicting stays null so it still surfaces as MAPPING_REQUIRED instead of being masked as "F".
+ */
 export function mapVariantOptions(
   fields: readonly PancakeCatalogField[],
   options?: { isPhuKien?: boolean; hasProductSizeOnPancake?: boolean },
 ): VariantOptionMapping {
   const rawSize = mappedFieldValue(fields, "size");
   const defaultToF =
-    options?.isPhuKien === true || options?.hasProductSizeOnPancake === false;
+    !hasSizeFieldValue(fields) &&
+    (options?.isPhuKien === true || options?.hasProductSizeOnPancake === false);
 
   return {
     color: mappedFieldValue(fields, "color"),
@@ -866,7 +878,7 @@ export function createCatalogMirrorRepository(
 
         const productsWithPancakeSize = new Set<string>();
         for (const variation of variations) {
-          if (mappedFieldValue(variation.fields, "size") !== null) {
+          if (hasSizeFieldValue(variation.fields)) {
             productsWithPancakeSize.add(variation.productId);
           }
         }

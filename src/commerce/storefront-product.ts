@@ -316,7 +316,6 @@ export function buildStorefrontVariantOptions(
   // A merged presentation kind can span products. Keep collision detection over the entire kind
   // while applying the policy of each variant's owning product.
   capacityByVariantId?: ReadonlyMap<string, StorefrontProductCapacity>,
-  options?: { isPhuKien?: boolean },
 ): StorefrontVariantOption[] {
   const normalized = variants.map((variant) => ({
     ...variant,
@@ -324,21 +323,15 @@ export function buildStorefrontVariantOptions(
     size: normalizeOptionValue(variant.size),
   }));
   const hasColorDimension = normalized.some((variant) => variant.color !== null);
-  const hasSizeDimension = normalized.some((variant) => variant.size !== null);
-  const defaultToF = options?.isPhuKien === true || !hasSizeDimension;
-  const effective = normalized.map((variant) => ({
-    ...variant,
-    size: variant.size ?? (defaultToF ? "F" : null),
-  }));
   const optionCounts = new Map<string, number>();
 
-  for (const variant of effective) {
+  for (const variant of normalized) {
     if (!variant.size || (hasColorDimension && !variant.color)) continue;
     const key = optionKey(variant.color, variant.size, hasColorDimension);
     optionCounts.set(key, (optionCounts.get(key) ?? 0) + 1);
   }
 
-  return effective.map((variant) => {
+  return normalized.map((variant) => {
     const variantCapacity = capacityByVariantId?.get(variant.id) ?? productCapacity;
     const resolvedPrice = pricingRule(variant);
     const { price, basePriceVnd, isDiscounted } = resolvedPrice;
