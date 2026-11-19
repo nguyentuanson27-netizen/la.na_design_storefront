@@ -20,6 +20,7 @@ import { VoucherDiscountRows } from "@/components/brand/voucher-summary-lines";
 import type { CartLineView, CartViewModel } from "@/routes/cart-model";
 import { createStorefrontRoute, type RequestI18n } from "@/routes/factory";
 import { buildCartMetadata } from "@/routes/metadata/cart";
+import { usdCart } from "@/routes/usd-display";
 
 /** Markup only. The lines, the subtotal and the `view_cart` event live in `@/routes/cart`. */
 
@@ -51,7 +52,9 @@ function LineVisual({ line, priority }: Readonly<{ line: CartLineView; priority:
   );
 }
 
-function render(data: CartRouteViewModel, { t }: RequestI18n) {
+function render(rawData: CartRouteViewModel, { t, locale }: RequestI18n) {
+  // English shows the bill recomputed from the dollar prices it displays (src/i18n/usd-bill.ts).
+  const data = locale === "en" ? usdCart(rawData) : rawData;
   if (data.isEmpty) {
     return (
       <PageShell>

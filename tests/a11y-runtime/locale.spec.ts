@@ -179,7 +179,7 @@ test("page_view reports the URL that was seen: /shop and /en/shop apart, once ea
 });
 
 test("English pages show dollars at the fixed rate; Vietnamese pages and structured data stay in dong", async ({ page }) => {
-  // 500.000 dong at 26,000 dong to the dollar.
+  // 500.000 dong at 20,000 dong to the dollar is 25, shown at the nearest .99.
   await page.goto(`${BASE_URL}/shop/${product.slug}`, { waitUntil: "networkidle" });
   const vietnamese = page.locator("#main-content");
   await expect(vietnamese).toContainText("500.000");
@@ -188,7 +188,7 @@ test("English pages show dollars at the fixed rate; Vietnamese pages and structu
   for (const path of [`/en/shop/${product.slug}`, "/en/shop"]) {
     await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
     const main = page.locator("#main-content");
-    await expect(main, path).toContainText("$19.23");
+    await expect(main, path).toContainText("$24.99");
     await expect(main, path).not.toContainText("₫");
   }
 

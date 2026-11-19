@@ -92,7 +92,7 @@ test("the selected card follows the server's choice; the footer says what the vo
 test("the summary reconciles and words every line: subtotal, discounts, fee, total", () => {
   const { view } = model([fixed("m", 30_000, 100_000), freeship("s", null)], [line("a", 1, 620_000)]);
   assert.deepEqual(view.summary, {
-    paidBeforeText: "620.000đ", merchandiseDiscountText: "-30.000đ", merchandiseLines: [], discountLines: [{ id: "m", label: "Voucher giảm tiền hàng", amountText: "-30.000đ", tone: "clay" }], shippingFeeText: "0đ", shippingDiscountText: "-30.000đ", totalText: "590.000đ", totalVnd: 590_000, savingText: "60.000đ", savingVnd: 60_000,
+    paidBeforeText: "620.000đ", merchandiseDiscountText: "-30.000đ", merchandiseLines: [], discountLines: [{ id: "m", label: "Voucher giảm tiền hàng", amountText: "-30.000đ", amountVnd: 30_000, tone: "clay" }], shippingFeeText: "0đ", shippingDiscountText: "-30.000đ", totalText: "590.000đ", totalVnd: 590_000, facts: { paidBeforeVnd: 620_000, merchandiseDiscountVnd: 30_000, shippingFeeVnd: 0, shippingDiscountVnd: 30_000 }, savingText: "60.000đ", savingVnd: 60_000,
   });
 });
 

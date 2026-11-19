@@ -1,3 +1,4 @@
+import { computeListPriceVnd } from "../commerce/list-price.ts";
 import { describeListPriceSavings } from "./list-price-savings.ts";
 import { readListPriceConfig } from "../commerce/list-price-config.ts";
 import type { CartGiftPickerModel } from "./cart-gift-model.ts";
@@ -65,6 +66,19 @@ export type CheckoutLineView = Readonly<{
   promotionPriceText?: string;
   lineTotalText: string;
   /**
+   * The numbers behind this line's texts, for the English display (src/i18n/usd-bill.ts), which recomputes line
+   * totals and the bill from the dollar prices it shows. Whole VND per unit.
+   */
+  unitPriceVnd?: number;
+  originalPriceVnd?: number;
+  promotionPriceVnd?: number;
+  /** The unit price before a merchandise voucher took its share of it (equal to `unitPriceVnd` when none did). */
+  preVoucherUnitVnd?: number;
+  /** The unit price the line is listed at (what "Tổng giá trị đơn hàng" counts), before tiers and vouchers. */
+  listedUnitVnd?: number;
+  /** What "Tiết kiệm so với giá niêm yết" measures this line against, per unit. */
+  listReferenceUnitVnd?: number;
+  /**
    * F8b / §30 — the same `Đặt trước` marker the cart showed for this line, or `null`.
    *
    * Recomputed from the same canonical line fact rather than carried over from the cart render, so
@@ -78,6 +92,9 @@ export type CheckoutTotalsView = Readonly<{
   /** "Miễn phí" where shipping costs nothing, so the page never re-decides that. */
   shippingText: string;
   totalText: string;
+  /** The shipping fee as a number (net of a shipping voucher), and the part a voucher waived: for the English display. */
+  shippingFeeVnd: number;
+  shippingWaivedVnd: number;
   /**
    * The same total as a number, so a price-change notice can name the total the buyer submitted against
    * beside the server's new one. Display only: the server never reads it back.
@@ -128,6 +145,8 @@ export type CheckoutVoucherLine = Readonly<{
   id: string;
   title: string;
   amountText: string;
+  /** What the voucher takes off, whole VND, for the English display (src/i18n/usd-bill.ts). Absent on an offered voucher. */
+  amountVnd?: number;
   kind: "MERCHANDISE" | "SHIPPING_FREE";
   /** The voucher's type as the picker names it ("Theo đơn", "Voucher vận chuyển"): the small line under its name. Absent when the picker could not be read. */
   group?: string;
@@ -233,9 +252,9 @@ export function benefitCheckoutPixelParameters(
   });
 }
 
-function checkoutDiscountEntry(discount: ReturnType<typeof describeLineDiscount>): { originalPriceText?: string; isListReference?: boolean; discountPercent?: number } {
+function checkoutDiscountEntry(discount: ReturnType<typeof describeLineDiscount>): { originalPriceText?: string; originalPriceVnd?: number; isListReference?: boolean; discountPercent?: number } {
   if (!discount) return {};
-  return { ...(discount.isListReference ? { isListReference: true } : {}), originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
+  return { ...(discount.isListReference ? { isListReference: true } : {}), originalPriceText: discount.originalPriceText, originalPriceVnd: discount.originalPriceVnd, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
 }
 
 /** The per-product (legacy) step on a quote line: catalog price in, price after the promotion out. */
@@ -254,7 +273,7 @@ function legacyStepDiscount(steps: readonly Readonly<{ source: string; inputPric
 function paidLineDiscount(
   cartLine: StorefrontCartLine | undefined,
   fact: Pick<QuoteLine, "unitPriceVnd" | "discountSteps">,
-): { originalPriceText?: string; isListReference?: boolean; discountPercent?: number; promotionPriceText?: string } {
+): { originalPriceText?: string; originalPriceVnd?: number; isListReference?: boolean; discountPercent?: number; promotionPriceText?: string; promotionPriceVnd?: number } {
   if (readListPriceConfig().display && cartLine?.price != null) {
     const discount = describeLineDiscount(cartLine.basePrice ?? cartLine.price, fact.unitPriceVnd, true, cartLine.variantId);
     if (discount?.isListReference) return checkoutDiscountEntry(discount);
@@ -270,30 +289,33 @@ function paidLineDiscount(
   if (!discount) return {};
   return {
     ...checkoutDiscountEntry(discount),
-    ...(cartLine.price !== null && fact.unitPriceVnd < cartLine.price ? { promotionPriceText: currency.format(cartLine.price) } : {}),
+    ...(cartLine.price !== null && fact.unitPriceVnd < cartLine.price ? { promotionPriceText: currency.format(cartLine.price), promotionPriceVnd: cartLine.price } : {}),
   };
 }
 
 type QuoteLine = BenefitCheckoutFacts["lines"][number];
 type BenefitCheckoutFacts = Extract<BenefitCheckoutRender, { kind: "BENEFIT" }>["facts"];
 
-/** The line as it stood before the voucher: price and ledger without the final VOUCHER step. */
+/**
+ * The line as it stood before any merchandise voucher: price and ledger without the VOUCHER steps. More than one voucher
+ * can lower a line (one step each, last in the ledger), so the price before them is the input of the first.
+ */
 function stripVoucherStep<L extends Pick<QuoteLine, "unitPriceVnd" | "discountSteps">>(line: L): L {
-  const last = line.discountSteps.at(-1);
-  if (last === undefined || last.source !== "VOUCHER") return line;
-  return { ...line, unitPriceVnd: last.inputPriceVnd, discountSteps: line.discountSteps.slice(0, -1) };
+  const first = line.discountSteps.find((step) => step.source === "VOUCHER");
+  if (first === undefined) return line;
+  return { ...line, unitPriceVnd: first.inputPriceVnd, discountSteps: line.discountSteps.filter((step) => step.source !== "VOUCHER") };
 }
 
 function stripVoucherSteps(facts: BenefitCheckoutFacts): BenefitCheckoutFacts {
   return { ...facts, lines: facts.lines.map(stripVoucherStep) };
 }
 
-/** What the merchandise voucher took off the paid lines, whole VND. */
+/** What the merchandise vouchers took off the paid lines, whole VND: every VOUCHER step of every line. */
 function voucherSavingVnd(facts: BenefitCheckoutFacts): number {
-  return facts.lines.reduce((sum, line) => {
-    const last = line.discountSteps.at(-1);
-    return last !== undefined && last.source === "VOUCHER" ? sum + (last.inputPriceVnd - last.outputPriceVnd) * line.quantity : sum;
-  }, 0);
+  return facts.lines.reduce(
+    (sum, line) => sum + line.discountSteps.reduce((inner, step) => (step.source === "VOUCHER" ? inner + (step.inputPriceVnd - step.outputPriceVnd) * line.quantity : inner), 0),
+    0,
+  );
 }
 
 export function buildCheckoutViewModel(
@@ -356,6 +378,8 @@ export function buildCheckoutViewModel(
           quantity: line.quantity,
           // `ready` means every line priced, so the fallback is unreachable rather than lenient.
           lineTotalText: currency.format((line.price ?? 0) * line.quantity),
+          ...(line.price === null ? {} : { unitPriceVnd: line.price, listedUnitVnd: line.price }),
+          ...(line.available && line.price !== null ? { listReferenceUnitVnd: computeListPriceVnd(line.basePrice ?? line.price) ?? line.basePrice ?? line.price } : {}),
           preorderLabel: line.available && line.isPreorderSale ? PREORDER_LABEL : null,
         }),
       ),
@@ -365,6 +389,8 @@ export function buildCheckoutViewModel(
       shippingText:
         totals.shippingFeeVnd === 0 ? "Miễn phí" : currency.format(totals.shippingFeeVnd),
       totalText: currency.format(totals.totalVnd),
+      shippingFeeVnd: totals.shippingFeeVnd,
+      shippingWaivedVnd: 0,
       totalVnd: totals.totalVnd,
     }),
     quoteProof: input.quoteProof,
@@ -457,6 +483,9 @@ export function buildBenefitCheckoutViewModel(
         unitPriceText: currency.format(fact.unitPriceVnd),
         ...paidLineDiscount(cartLine, fact),
         lineTotalText: currency.format(fact.lineTotalVnd),
+        unitPriceVnd: fact.unitPriceVnd,
+        preVoucherUnitVnd: stripVoucherStep(fact).unitPriceVnd,
+        ...(cartLine?.available && cartLine.price != null ? { listedUnitVnd: cartLine.price, listReferenceUnitVnd: computeListPriceVnd(cartLine.basePrice ?? cartLine.price) ?? cartLine.basePrice ?? cartLine.price } : {}),
         preorderLabel: fact.fulfillmentState === "PREORDER" ? PREORDER_LABEL : null,
       }),
     );
@@ -539,6 +568,8 @@ export function buildBenefitCheckoutViewModel(
       subtotalText: currency.format(facts.paidSubtotalVnd),
       shippingText: facts.shippingFeeVnd === 0 ? "Miễn phí" : currency.format(facts.shippingFeeVnd),
       totalText: currency.format(facts.totalVnd),
+      shippingFeeVnd: facts.shippingFeeVnd,
+      shippingWaivedVnd: shippingVoucher?.waivedVnd ?? 0,
       totalVnd: facts.totalVnd,
     }),
     giftPicker: render.giftPicker,
@@ -588,8 +619,8 @@ export function buildCheckoutVoucherView(input: Readonly<{
     // The held quote knows campaign names and amounts, not types; the picker (read in the same request) knows which colour each one wears.
     const groupOf = new Map<string, { tone: VoucherTone; heading: string }>(picker?.groups.flatMap((group) => group.items.map((item): [string, { tone: VoucherTone; heading: string }] => [item.id, { tone: group.tone, heading: group.heading }])) ?? []);
     const withTone = (id: string): { tone?: VoucherTone; group?: string } => { const found = groupOf.get(id); return found === undefined ? {} : { tone: found.tone, group: found.heading }; };
-    for (const entry of v.merchandise) lines.push({ id: entry.campaignId, title: v.names.get(entry.campaignId) ?? "Voucher giảm giá", amountText: `−${formatVoucherVnd(entry.amountVnd)}`, kind: "MERCHANDISE", ...withTone(entry.campaignId) });
-    if (v.shippingCampaignId !== null) lines.push({ id: v.shippingCampaignId, title: v.names.get(v.shippingCampaignId) ?? "Voucher vận chuyển", amountText: `−${formatVoucherVnd(v.shippingWaivedVnd)}`, kind: "SHIPPING_FREE", ...withTone(v.shippingCampaignId) });
+    for (const entry of v.merchandise) lines.push({ id: entry.campaignId, title: v.names.get(entry.campaignId) ?? "Voucher giảm giá", amountText: `−${formatVoucherVnd(entry.amountVnd)}`, amountVnd: entry.amountVnd, kind: "MERCHANDISE", ...withTone(entry.campaignId) });
+    if (v.shippingCampaignId !== null) lines.push({ id: v.shippingCampaignId, title: v.names.get(v.shippingCampaignId) ?? "Voucher vận chuyển", amountText: `−${formatVoucherVnd(v.shippingWaivedVnd)}`, amountVnd: v.shippingWaivedVnd, kind: "SHIPPING_FREE", ...withTone(v.shippingCampaignId) });
     return Object.freeze({ state: "HELD", lines: Object.freeze(lines), heldUntilMs: input.heldUntilMs, ...(picker?.summary.savingText ? { savingText: picker.summary.savingText } : {}) });
   }
   const stale = (render.kind === "LEGACY" || render.kind === "BENEFIT") && render.voucherStale === true;

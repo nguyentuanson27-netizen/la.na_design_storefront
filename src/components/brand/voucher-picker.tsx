@@ -8,7 +8,8 @@ import { formatVoucherVnd, voucherEntryCopy, type VoucherPickerGroup, type Vouch
 import { VoucherCard } from "./voucher-card";
 import { VoucherIcon } from "./voucher-icons";
 import { VoucherDiscountRows } from "./voucher-summary-lines";
-import { useCampaignName, useRich, useT } from "@/i18n/client";
+import { useCampaignName, useLocale, useRich, useT } from "@/i18n/client";
+import { usdVoucherPicker } from "@/i18n/usd-bill";
 
 /**
  * Voucher v1 (V16): the Grab-inspired picker (spec §7). Mobile is a full-screen sheet with a sticky footer, desktop a
@@ -75,6 +76,11 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
   triggerLabel?: string;
 }>) {
   const t = useT();
+  // English: every answer of the server actions arrives in dong; it is shown in dollars measured from the same
+  // goods total as the bill the page shows, so a choice made here never moves the subtotal (src/i18n/usd-bill.ts).
+  const locale = useLocale();
+  const usdBasis = initial.usdBasisCents;
+  const priced = (next: VoucherPickerModel): VoucherPickerModel => (locale === "en" && usdBasis !== undefined ? usdVoucherPicker(next, usdBasis) : next);
   const campaignName = useCampaignName();
   const rich = useRich();
   const { previewDraft, commitDraft, applyCode, applyLinkedCode, dismissLinkedOffer } = useVoucherPickerActions();
@@ -243,8 +249,8 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
     startTransition(async () => {
       const result = await previewDraft(next);
       if (result.ok) {
-        setModel(result.picker);
-        setMessage(t("Tổng thanh toán dự kiến {totalText}", { totalText: result.picker.summary.totalText }));
+        setModel(priced(result.picker));
+        setMessage(t("Tổng thanh toán dự kiến {totalText}", { totalText: priced(result.picker).summary.totalText }));
       } else setError(GENERIC_ERROR);
     });
   };
@@ -269,9 +275,9 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
     saveWith(async () => {
       const result = await applyCode({ code });
       if (result.ok && result.picker) {
-        setSaved(result.picker);
+        setSaved(priced(result.picker));
         setBaseVersion(result.picker.selectionVersion);
-        setModel(result.picker);
+        setModel(priced(result.picker));
         setDraft(draftOf(result.picker));
         setCode("");
         setPendingCode(null);
@@ -293,7 +299,7 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
       } else if (!result.ok && (result.reason === "CONFIRMATION_REQUIRED" || result.reason === "QUOTE_CHANGED")) {
         // The code is valid but nothing is saved yet: show what the server derives for it and ask for the shopper's yes.
         if (result.picker) {
-          setModel(result.picker);
+          setModel(priced(result.picker));
           setDraft(draftOf(result.picker));
         }
         // The typed code is now the one waiting for the yes; a linked step that was waiting no longer is.
@@ -325,9 +331,9 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
     saveWith(async () => {
       const result = await applyLinkedCode({ offerToken: linkOffer });
       if (result.ok && result.picker) {
-        setSaved(result.picker);
+        setSaved(priced(result.picker));
         setBaseVersion(result.picker.selectionVersion);
-        setModel(result.picker);
+        setModel(priced(result.picker));
         setDraft(draftOf(result.picker));
         // What is shown is the linked code's result, so a typed code that was waiting for its yes no longer is: its confirmation
         // (and the footer button that carries it) must not outlive the quote it was given for.
@@ -348,7 +354,7 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
         settleIfClosed();
       } else if (!result.ok && (result.reason === "CONFIRMATION_REQUIRED" || result.reason === "QUOTE_CHANGED")) {
         if (result.picker) {
-          setModel(result.picker);
+          setModel(priced(result.picker));
           setDraft(draftOf(result.picker));
         }
         // The linked code is now the one waiting for the yes; a typed code that was waiting no longer is.
@@ -386,9 +392,9 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
           setCode("");
           codeApplied.current = true;
         }
-        setSaved(result.picker);
+        setSaved(priced(result.picker));
         setBaseVersion(result.picker.selectionVersion);
-        setModel(result.picker);
+        setModel(priced(result.picker));
         setDraft(draftOf(result.picker));
         setOpen(false);
         setConfirming(false);
@@ -416,9 +422,9 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
         setPendingLink(false);
         setConfirming(false);
         if (fresh) {
-          setSaved(fresh);
+          setSaved(priced(fresh));
           setBaseVersion(fresh.selectionVersion);
-          setModel(fresh);
+          setModel(priced(fresh));
           setDraft(draftOf(fresh));
           setError("Ưu đãi vừa được thay đổi ở một trang khác. Nàng xem lại lựa chọn bên dưới rồi bấm Áp dụng nhé.");
         } else setError(GENERIC_ERROR);
@@ -428,11 +434,11 @@ export function VoucherPicker({ initial, linkOffer = null, trigger = "entry", tr
         setError("Giá hoặc ưu đãi vừa thay đổi. Nàng xem lại số tiền và quà bên dưới rồi xác nhận lại nhé.");
         const refused = (result as { picker?: VoucherPickerModel | null }).picker;
         if ((pendingCode !== null || pendingLink) && refused) {
-          setModel(refused);
+          setModel(priced(refused));
           setDraft(draftOf(refused));
         } else {
           const again = await previewDraft(draft);
-          if (again.ok) setModel(again.picker);
+          if (again.ok) setModel(priced(again.picker));
         }
       } else setError(!result.ok && result.reason === "QUOTE_UNAVAILABLE" ? CODE_ERROR.QUOTE_UNAVAILABLE! : GENERIC_ERROR);
     });

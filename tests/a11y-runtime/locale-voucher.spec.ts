@@ -127,17 +127,17 @@ test("the voucher picker, its nudge and the cart show dollars on /en and dong on
 
   // The nudge builds its sentence from a slot: 200K needs 2,000,000 dong, the cart holds 900,000.
   const nudge = await expectNoDong(page, ".voucher-nudge", "nudge");
-  expect(nudge).toContain("$42.31");
+  expect(nudge).toContain("$54.99");
 
   await trigger(page).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   const picker = await expectNoDong(page, "dialog[open]", "picker");
-  expect(picker).toContain("$1.92"); // the 50K ticket
-  expect(picker).toContain("$7.69"); // the 200K ticket
-  expect(picker).toContain("$42.31"); // its shortfall
+  expect(picker).toContain("$2.49"); // the 50K ticket
+  expect(picker).toContain("$9.99"); // the 200K ticket
+  expect(picker).toContain("$54.99"); // its shortfall
   // The picker's own bar and the tickets' accessible names.
-  await expect(dialog.getByRole("button", { name: /\$1\.92/ }).first()).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /\$2\.49/ }).first()).toBeVisible();
   const names = await dialog.locator("button[aria-pressed]").evaluateAll((tickets) => tickets.map((t) => t.getAttribute("aria-label") ?? ""));
   for (const name of names) expect(name).not.toMatch(DONG);
 });

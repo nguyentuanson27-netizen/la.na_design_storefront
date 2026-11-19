@@ -1,0 +1,354 @@
+import type { CartViewModel } from "../routes/cart-model.ts";
+import type { CheckoutViewModel } from "../routes/checkout-model.ts";
+import type { OrderSummaryView } from "../routes/order-summary-model.ts";
+import type { VoucherPickerModel } from "../routes/voucher-picker-model.ts";
+import { exactCentsFromVnd, formatCents, priceCentsFromVnd } from "./money.ts";
+
+/**
+ * The English bill, recomputed from the prices it shows.
+ *
+ * Every dong amount the English pages show is moved to a price ending (.49 or .99, `money.ts`). Done
+ * to each figure on its own, that breaks the arithmetic of a bill: 2 x $10.49 beside a line total of
+ * $20.49. So the English display works the way a dollar storefront does: only *prices* take an ending
+ * (a unit price, a struck-through list price, a shipping fee), and everything built from them is
+ * calculated from what is displayed, in cents:
+ *
+ *   line total   = quantity x displayed unit price (summed over a benefit quote's price segments)
+ *   subtotal     = the sum of the line totals
+ *   order value  = the subtotal plus the discounts taken off it
+ *   discounts    = the difference between the two, shared out over the discount rows
+ *   total        = subtotal + displayed shipping
+ *
+ * Display only. The Vietnamese pages, the order, the payment and every server-side figure are in dong.
+ * The functions are pure and take the view models the cart already builds (plus the numbers they now
+ * carry beside their texts); they return the same shape with the money texts replaced by dollar text,
+ * which the translator leaves alone because it contains no dong sign.
+ */
+
+const MINUS = "−";
+const FREE = "Miễn phí";
+
+/** The cents of the displayed price of `vnd`. */
+function price(vnd: number): number {
+  return priceCentsFromVnd(vnd);
+}
+
+/**
+ * Shares `totalCents` over rows whose dong amounts are `rowsVnd`: every row but the last is its own
+ * amount converted to the cent, and the last takes what is left, so the rows always add up to the
+ * total. When the earlier rows already exceed the total they are cut back from the end.
+ */
+export function shareAmount(totalCents: number, rowsVnd: readonly number[]): number[] {
+  if (rowsVnd.length === 0) return [];
+  const amounts = rowsVnd.map((vnd) => Math.max(0, exactCentsFromVnd(vnd)));
+  const target = Math.max(0, totalCents);
+  const earlier = amounts.slice(0, -1).reduce((sum, cents) => sum + cents, 0);
+  amounts[amounts.length - 1] = target - earlier;
+  for (let index = amounts.length - 1; amounts[index]! < 0 && index > 0; index -= 1) {
+    amounts[index - 1] = amounts[index - 1]! + amounts[index]!;
+    amounts[index] = 0;
+  }
+  return amounts.map((cents) => Math.max(0, cents));
+}
+
+/** The shipping line as dollars: the displayed fee, net of a shipping voucher that waived part of it. */
+function shippingCents(feeVnd: number, waivedVnd: number): { net: number; waived: number } {
+  if (waivedVnd > 0) {
+    const waived = price(waivedVnd);
+    return { net: Math.max(0, price(feeVnd + waivedVnd) - waived), waived };
+  }
+  return { net: feeVnd === 0 ? 0 : price(feeVnd), waived: 0 };
+}
+
+/**
+ * The "-NN%" badge for a struck-through price and the price shown beside it, measured on the dollar
+ * prices actually displayed. Absent when the pair shows no reduction or it rounds under 1%.
+ */
+function badgePercent(shownCents: number, originalCents: number): number | undefined {
+  if (originalCents <= shownCents) return undefined;
+  const percent = Math.round((1 - shownCents / originalCents) * 100);
+  return percent >= 1 ? percent : undefined;
+}
+
+/** `entry` without its percent, and with the recomputed one when there is one. */
+function withBadge<T extends { discountPercent?: number }>(entry: T, percent: number | undefined): T {
+  const { discountPercent: _old, ...rest } = entry;
+  return (percent === undefined ? rest : { ...rest, discountPercent: percent }) as T;
+}
+
+/**
+ * The money block (order value, discounts, shipping, total) over a subtotal that has already been
+ * worked out from the lines. `valueCents` is what the lines come to before the cart-level discounts.
+ * `pinned` fixes the amount of some discount rows by id (the vouchers, whose amount the picker has
+ * already shown); the other rows share what is left of the difference.
+ *
+ * With a shipping voucher the shipping row shows the whole fee and the voucher row the part it
+ * waived, so the rows add up as printed: value - discounts + fee - waived = total.
+ */
+export function usdOrderSummary(
+  summary: OrderSummaryView,
+  bill: Readonly<{ valueCents: number; payableCents: number; pinned?: Readonly<Record<string, number>> }>,
+): OrderSummaryView {
+  const pinned = bill.pinned ?? {};
+  const free = summary.discounts.filter((row) => pinned[row.id] === undefined);
+  const pinnedTotal = summary.discounts.reduce((sum, row) => sum + (pinned[row.id] ?? 0), 0);
+  const difference = summary.discounts.length === 0 ? 0 : Math.max(0, bill.valueCents - bill.payableCents);
+  const shared = shareAmount(free.length === 0 ? 0 : Math.max(0, difference - pinnedTotal), free.map((row) => row.amountVnd));
+  const discountTotal = pinnedTotal + shared.reduce((sum, cents) => sum + cents, 0);
+  const shipping = shippingCents(summary.facts.shippingFeeVnd, summary.facts.shippingWaivedVnd);
+  let nextFree = 0;
+  return Object.freeze({
+    ...summary,
+    valueText: formatCents(bill.payableCents + discountTotal),
+    discounts: Object.freeze(summary.discounts.map((row) => {
+      const cents = pinned[row.id] ?? shared[nextFree++] ?? 0;
+      return Object.freeze({ ...row, amountText: `${MINUS}${formatCents(cents)}` });
+    })),
+    shippingText: shipping.waived > 0 ? formatCents(shipping.net + shipping.waived) : shipping.net === 0 ? FREE : formatCents(shipping.net),
+    shippingVoucher: summary.shippingVoucher === null
+      ? null
+      : Object.freeze({ ...summary.shippingVoucher, amountText: `${MINUS}${formatCents(shipping.waived)}` }),
+    totalText: formatCents(bill.payableCents + shipping.net),
+  });
+}
+
+/**
+ * The cart's voucher preview over the same subtotal: what the chosen vouchers take off the goods and
+ * the shipping, and what is left to pay. Its figures are measured from the displayed subtotal, not
+ * from the preview's own dong conversion.
+ */
+export function usdVoucherSummary(
+  summary: VoucherPickerModel["summary"],
+  payableCents: number,
+): VoucherPickerModel["summary"] {
+  const { facts } = summary;
+  const merchandiseTotal = Math.min(payableCents, facts.merchandiseDiscountVnd > 0 ? price(facts.merchandiseDiscountVnd) : 0);
+  const lineAmounts = shareAmount(merchandiseTotal, summary.discountLines.map((line) => line.amountVnd));
+  // The quote's fee is what is left to pay after the shipping voucher. The panel prints the whole fee and
+  // then what the voucher waived, so the rows add up as printed.
+  const shipping = shippingCents(facts.shippingFeeVnd, facts.shippingDiscountVnd);
+  const total = payableCents - merchandiseTotal + shipping.net;
+  const lineText = (cents: number) => `-${formatCents(cents)}`;
+  return Object.freeze({
+    ...summary,
+    paidBeforeText: formatCents(payableCents),
+    merchandiseDiscountText: facts.merchandiseDiscountVnd > 0 ? lineText(merchandiseTotal) : null,
+    merchandiseLines: Object.freeze(summary.merchandiseLines.length > 1
+      ? summary.merchandiseLines.map((line, index) => Object.freeze({ ...line, amountText: lineText(shareAmount(merchandiseTotal, summary.merchandiseLines.map((row) => row.amountVnd))[index] ?? 0) }))
+      : []),
+    discountLines: Object.freeze(summary.discountLines.map((line, index) => Object.freeze({ ...line, amountText: lineText(lineAmounts[index] ?? 0) }))),
+    shippingFeeText: formatCents(shipping.net + shipping.waived),
+    shippingDiscountText: facts.shippingDiscountVnd > 0 ? lineText(shipping.waived) : null,
+    totalText: formatCents(total),
+    totalVnd: summary.totalVnd,
+    savingText: merchandiseTotal + shipping.waived > 0 ? formatCents(merchandiseTotal + shipping.waived) : null,
+  });
+}
+
+/**
+ * A voucher picker model in dollars, measured from `basisCents` (the goods total the page's bill
+ * shows). Idempotent: it only reads the model's dong figures, so the picker can apply it to every
+ * answer its server actions give and the figures never move while the cart does not.
+ */
+export function usdVoucherPicker(picker: VoucherPickerModel, basisCents: number): VoucherPickerModel {
+  const summary = usdVoucherSummary(picker.summary, basisCents);
+  const saving = summary.savingText;
+  return Object.freeze({
+    ...picker,
+    usdBasisCents: basisCents,
+    summary,
+    footer: picker.footer.count > 0 && saving !== null && picker.summary.savingVnd > 0
+      ? Object.freeze({ ...picker.footer, label: `Áp dụng · Giảm ${saving}` })
+      : picker.footer,
+  });
+}
+
+type CartVouchers = Readonly<{ vouchers: VoucherPickerModel | null }>;
+
+/**
+ * The cart, drawer and badge in dollars, recomputed from the prices they show. The cart page passes
+ * its `vouchers` along (the preview under the bill); the drawer has none.
+ */
+export function usdCart<T extends CartViewModel>(model: T): T {
+  let payable = 0;
+  let value = 0;
+  let reference = 0;
+  let listReference = 0;
+  const lines = model.lines.map((line) => {
+    const bill = line.bill;
+    if (bill === undefined || line.lineTotalText === undefined) return line;
+    const unit = price(bill.unitVnd);
+    const segments = bill.segments;
+    const total = segments === undefined
+      ? line.quantity * unit
+      : segments.reduce((sum, segment) => sum + segment.quantity * price(segment.unitVnd), 0);
+    payable += total;
+    value += line.quantity * unit;
+    reference += line.quantity * price(bill.referenceUnitVnd);
+    listReference += line.quantity * price(bill.listReferenceUnitVnd);
+    const paidSegmentPrices = line.paidSegmentPrices && segments
+      ? line.paidSegmentPrices.map((entry, index) => {
+          const segment = segments[index];
+          if (segment === undefined) return entry;
+          const shown = price(segment.unitVnd);
+          const original = entry.originalPriceText !== undefined && segment.originalUnitVnd !== undefined ? price(segment.originalUnitVnd) : undefined;
+          const next = {
+            ...entry,
+            priceText: formatCents(shown),
+            ...(original !== undefined ? { originalPriceText: formatCents(original) } : {}),
+          };
+          return original === undefined ? next : withBadge(next, badgePercent(shown, original));
+        })
+      : undefined;
+    const original = line.originalPriceText !== undefined && bill.originalUnitVnd !== undefined ? price(bill.originalUnitVnd) : undefined;
+    const priced = {
+      ...line,
+      priceText: formatCents(unit),
+      ...(original !== undefined ? { originalPriceText: formatCents(original) } : {}),
+    };
+    return Object.freeze({
+      ...(original === undefined ? priced : withBadge(priced, badgePercent(unit, original))),
+      ...(paidSegmentPrices ? { paidSegmentPrices } : {}),
+      ...(line.paidSegments && segments ? { paidSegments: segments.map((segment) => `${segment.quantity} × ${formatCents(price(segment.unitVnd))}`) } : {}),
+      lineTotalText: formatCents(total),
+    });
+  });
+
+  // The subtotal is only a figure when the cart could work one out.
+  const priced = model.subtotalText !== "Chưa thể tính";
+  const next: { -readonly [K in keyof CartViewModel]?: CartViewModel[K] } = { lines };
+  if (priced) {
+    next.subtotalText = formatCents(payable);
+    if (model.summary) next.summary = usdOrderSummary(model.summary, { valueCents: value, payableCents: payable });
+    if (model.savings) {
+      const saving = reference - payable;
+      next.savings = saving > 0
+        ? Object.freeze({ ...model.savings, originalTotalText: formatCents(reference), savingText: formatCents(saving) })
+        : undefined;
+    }
+    if (model.listPriceSavingsText !== undefined) {
+      const saving = listReference - payable;
+      next.listPriceSavingsText = saving > 0 ? formatCents(saving) : undefined;
+    }
+  }
+  if (model.shippingBaseFeeText !== undefined && model.shippingBaseFeeVnd !== undefined && model.shippingBaseFeeVnd > 0) {
+    next.shippingBaseFeeText = formatCents(price(model.shippingBaseFeeVnd));
+  }
+  const result = { ...model, ...next } as T;
+  if (next.savings === undefined && "savings" in next) delete (result as { savings?: unknown }).savings;
+  if (next.listPriceSavingsText === undefined && "listPriceSavingsText" in next) delete (result as { listPriceSavingsText?: unknown }).listPriceSavingsText;
+  const vouchers = (model as unknown as Partial<CartVouchers>).vouchers;
+  if (priced && vouchers) {
+    (result as unknown as { vouchers: VoucherPickerModel }).vouchers = usdVoucherPicker(vouchers, payable);
+  }
+  return Object.freeze(result);
+}
+
+/**
+ * Checkout in dollars, by the same rules as the cart: each paid line is its quantity times the unit
+ * price shown, the subtotal is their sum, and the total is that plus the displayed shipping. A quote
+ * that is not ready, or a line with no unit price, is left as it is.
+ *
+ * A merchandise voucher is shared out in dong over the units it touched, so each unit price in the
+ * quote is already lowered by its share. Priced one by one in dollars those shares would add up to a
+ * different amount than the picker showed for the voucher ($4.00 against $2.49 for 50.000 dong over
+ * four units). So the lines are shown at their price *before* the voucher, and the voucher is a
+ * discount row of its own whose amount is the dollar price of what it took off, the same figure the
+ * picker uses. The subtotal ("Tạm tính") is then the lines less that amount, as it is in dong.
+ */
+export function usdCheckout<T extends CheckoutViewModel>(model: T): T {
+  if (model.state !== "ready" || model.totals === null) return model;
+  if (model.lines.some((line) => line.unitPriceVnd === undefined)) return model;
+
+  let goods = 0;
+  let value = 0;
+  let listReference = 0;
+  let voucherVnd = 0;
+  const lines = model.lines.map((line) => {
+    const beforeVoucher = line.preVoucherUnitVnd ?? line.unitPriceVnd!;
+    const unit = price(beforeVoucher);
+    const total = line.quantity * unit;
+    goods += total;
+    value += line.quantity * price(line.listedUnitVnd ?? beforeVoucher);
+    listReference += line.quantity * price(line.listReferenceUnitVnd ?? line.listedUnitVnd ?? beforeVoucher);
+    voucherVnd += line.quantity * Math.max(0, beforeVoucher - line.unitPriceVnd!);
+    const struck = line.originalPriceText !== undefined && line.originalPriceVnd !== undefined ? price(line.originalPriceVnd) : undefined;
+    const promotion = line.promotionPriceText !== undefined && line.promotionPriceVnd !== undefined ? price(line.promotionPriceVnd) : undefined;
+    const priced = {
+      ...line,
+      unitPriceText: formatCents(unit),
+      lineTotalText: formatCents(total),
+      ...(struck !== undefined ? { originalPriceText: formatCents(struck) } : {}),
+      ...(promotion !== undefined ? { promotionPriceText: formatCents(promotion) } : {}),
+    };
+    // The badge measures the struck price against the price it sits beside: the promotion price when the line has one,
+    // otherwise the unit price shown (which is the price before any voucher, not the quote's post-voucher price).
+    return Object.freeze(struck === undefined ? priced : withBadge(priced, badgePercent(promotion ?? unit, struck)));
+  });
+
+  const voucher = voucherVnd > 0 ? Math.min(goods, price(voucherVnd)) : 0;
+  const payable = goods - voucher;
+  // The vouchers' amounts, shared out of the dollar price of what they took off in all (every VOUCHER step of every line):
+  // from the held vouchers when the page lists them, otherwise from the bill's voucher rows.
+  const heldMerchandise = model.vouchers?.state === "HELD" ? model.vouchers.lines.filter((line) => line.kind === "MERCHANDISE") : [];
+  const voucherRows: ReadonlyArray<Readonly<{ id: string; amountVnd: number }>> = heldMerchandise.length > 0 && heldMerchandise.every((line) => line.amountVnd !== undefined)
+    ? heldMerchandise.map((line) => ({ id: `voucher:${line.id}`, amountVnd: line.amountVnd! }))
+    : (model.summary?.discounts ?? []).filter((row) => row.id.startsWith("voucher:"));
+  const voucherShares = shareAmount(voucher, voucherRows.map((row) => row.amountVnd));
+  const pinned: Record<string, number> = {};
+  voucherRows.forEach((row, index) => { pinned[row.id] = voucherShares[index] ?? 0; });
+
+  const shipping = shippingCents(model.totals.shippingFeeVnd, model.totals.shippingWaivedVnd);
+  const totals = Object.freeze({
+    ...model.totals,
+    subtotalText: formatCents(payable),
+    // This block has no voucher row under it, so it shows the fee that is left to pay.
+    shippingText: shipping.net === 0 ? FREE : formatCents(shipping.net),
+    totalText: formatCents(payable + shipping.net),
+  });
+  const next = {
+    ...model,
+    lines: Object.freeze(lines),
+    totals,
+    ...(model.summary ? { summary: usdOrderSummary(model.summary, { valueCents: value, payableCents: payable, pinned }) } : {}),
+  } as { -readonly [K in keyof CheckoutViewModel]: CheckoutViewModel[K] };
+
+  if (model.listPriceSavingsText !== undefined) {
+    const saving = listReference - payable;
+    if (saving > 0) next.listPriceSavingsText = formatCents(saving);
+    else delete next.listPriceSavingsText;
+  }
+  // The checkout's own voucher panel and the picker behind its "change" link say the same amounts.
+  if (model.vouchers?.state === "HELD") {
+    const held = model.vouchers;
+    next.vouchers = Object.freeze({
+      ...held,
+      lines: Object.freeze(held.lines.map((line) => Object.freeze({
+        ...line,
+        amountText: line.kind === "SHIPPING_FREE"
+          ? `${MINUS}${formatCents(shipping.waived)}`
+          : `${MINUS}${formatCents(pinned[`voucher:${line.id}`] ?? 0)}`,
+      }))),
+      ...(held.savingText === undefined ? {} : { savingText: formatCents(voucher + shipping.waived) }),
+    });
+  }
+  if (model.voucherPicker) {
+    const picker = usdVoucherPicker(model.voucherPicker, goods);
+    next.voucherPicker = picker;
+    // An offer not yet held says what the total would be and what each voucher would take off: the picker's own figures,
+    // by voucher, so nothing changes when the offer is held (and the lines add up to the amount the total used).
+    if (model.vouchers?.state === "OFFERED") {
+      const offered = model.vouchers;
+      const merchandise = new Map(picker.summary.discountLines.map((entry) => [entry.id, entry.amountText]));
+      next.vouchers = Object.freeze({
+        ...offered,
+        totalText: picker.summary.totalText,
+        lines: Object.freeze(offered.lines.map((entry) => {
+          const amountText = entry.kind === "SHIPPING_FREE" ? picker.summary.shippingDiscountText : merchandise.get(entry.id);
+          return amountText === null || amountText === undefined ? entry : Object.freeze({ ...entry, amountText });
+        })),
+      });
+    }
+  }
+  return Object.freeze(next) as T;
+}

@@ -8,6 +8,7 @@ import { voucherPickerKey } from "@/routes/voucher-picker-model";
 import { PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { DongNote } from "@/components/brand/dong-note";
 import { LinePrice } from "@/components/brand/line-price";
+import { usdCheckout } from "@/routes/usd-display";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { PromotionBanner } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
@@ -19,7 +20,9 @@ import { buildCheckoutMetadata } from "@/routes/metadata/checkout";
 /** Checkout's markup. Every decision behind it is in `@/routes/checkout` and its model. */
 
 // No breadcrumb or eyebrow: checkout keeps the buyer on the form, not on the way out.
-function render(data: CheckoutViewModel, { t }: RequestI18n) {
+function render(rawData: CheckoutViewModel, { t, locale }: RequestI18n) {
+  // English shows the bill recomputed from the dollar prices it displays (src/i18n/usd-bill.ts).
+  const data = locale === "en" ? usdCheckout(rawData) : rawData;
   const bankTransferEnabled = data.bankTransferEnabled === true;
   if (data.state === "empty") {
     return (

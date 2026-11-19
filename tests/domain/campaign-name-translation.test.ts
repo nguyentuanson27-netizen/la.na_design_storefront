@@ -88,9 +88,9 @@ test("sentences are translated one by one, whatever the loose patterns say, and 
 
 test("the voucher teaser's sentences read in English with dollar figures", () => {
   const en = createTranslator("en", EN_MESSAGES);
-  assert.equal(en("Giảm 200.000đ cho đơn từ 2.000.000đ"), "$7.69 off orders from $76.92");
-  assert.equal(en("Miễn phí vận chuyển cho đơn từ 600.000đ"), "Free shipping on orders from $23.08");
-  assert.equal(en("Giảm 10% (tối đa 200.000đ) cho đơn từ 1.000.000đ"), "10% off (up to $7.69) on orders from $38.46");
-  assert.equal(en("Giảm 10% cho đơn từ 1.000.000đ"), "10% off orders from $38.46");
-  assert.equal(en("Đơn từ 1,5 triệu · tối đa 200K"), "Orders from $57.69 · up to $7.69");
+  assert.equal(en("Giảm 200.000đ cho đơn từ 2.000.000đ"), "$9.99 off orders from $99.99");
+  assert.equal(en("Miễn phí vận chuyển cho đơn từ 600.000đ"), "Free shipping on orders from $29.99");
+  assert.equal(en("Giảm 10% (tối đa 200.000đ) cho đơn từ 1.000.000đ"), "10% off (up to $9.99) on orders from $49.99");
+  assert.equal(en("Giảm 10% cho đơn từ 1.000.000đ"), "10% off orders from $49.99");
+  assert.equal(en("Đơn từ 1,5 triệu · tối đa 200K"), "Orders from $74.99 · up to $9.99");
 });
