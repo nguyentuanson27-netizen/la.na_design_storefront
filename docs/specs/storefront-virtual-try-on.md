@@ -744,5 +744,28 @@ travel. The commerce events (`add_to_cart`, `purchase`) are deliberately **not**
 "used try-on" flag: their boundary is closed on purpose. Compare conversion by joining
 `try_on_to_cart` with the shopper's later `add_to_cart` in the tag manager.
 
+**Leaving while a picture is being made (amendment 2026-11-19).** A generation lives in the tab's
+memory. It survives the dialog closing and moving between pages of the app (the dock carries it), but
+not the page being *unloaded*: closing the tab, reloading, a link to another site, or a plain reloading
+anchor such as the language switcher. The attempt is already spent by then, so the picture is lost.
+While a job is `loading` (`try-on-leave-guard.tsx`, rules in `try-on-leave.ts`):
+
+1. `beforeunload` asks for the browser's own confirmation. Its wording is the browser's, not ours.
+2. A click on a link that would unload the page is held back and answered with a dialog: *stay*
+   (focused, the safe choice), *open the link in a new tab* (this tab keeps the picture), *leave
+   anyway*, plus two in-app alternatives that leave the job running behind the dock (*choose a size &
+   add to bag*, *browse other products*). In-app links are never held back, and neither are links that
+   open elsewhere by themselves (`target="_blank"`, a modifier key, a middle click, `download`,
+   `mailto:`/`tel:`).
+3. On a desktop (`(hover: hover) and (pointer: fine)`), the pointer leaving through the top edge of
+   the window raises the same dialog once per job, without the choices that need a link. It is a hint,
+   not a gate: it is skipped while another modal is open.
+
+Nothing is raised once the job has settled (the picture is on the dock). Deliberately **not** done:
+no history/back-button trap, and nothing on touch screens beyond (1) and (2), because there is no
+leaving gesture to read there and a trap is what makes shoppers distrust a shop. The funnel gains
+four closed events, `leave_prompt`, `leave_stay`, `leave_alt`, `leave_exit`, with the product slug
+only; compare `leave_stay` + `leave_alt` against `leave_exit` to see how many shoppers it keeps.
+
 **Not changed, still open.** Trying on the *selected* colour (the garment image is still the first
 trusted product photo — §5, §23), and the provider choice for production traffic.

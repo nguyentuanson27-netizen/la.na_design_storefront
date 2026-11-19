@@ -3830,3 +3830,18 @@ body:has(.admin-shell) .zalo-fab {
     0 0 0 1px rgba(42, 24, 16, 0.3),
     0 6px 18px rgba(42, 24, 16, 0.34);
 }
+
+/*
+ * The leave guard's dialog (src/components/brand/try-on-leave-guard.tsx): keep a scroll gesture over
+ * the dialog or its backdrop from moving the page behind it. `::backdrop` is not a scroll container
+ * until it has an overflow, and `overscroll-behavior` only applies to scroll containers; this is a
+ * progressive enhancement (where it is not enforced the modal still makes the page inert).
+ */
+.tryon-leave:modal {
+  overscroll-behavior: contain;
+}
+
+.tryon-leave::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}

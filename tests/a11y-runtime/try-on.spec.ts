@@ -981,6 +981,163 @@ test("closing while the picture is being made keeps it going: the dock shows the
   expect(unexpectedConsoleErrors(watched)).toEqual([]);
 });
 
+test("leaving while the picture is being made: the browser is asked, a link out and the pointer leaving offer to stay, and a settled job is left alone", async ({
+  page,
+  context,
+}) => {
+  const watched = await watch(page);
+  // The new tab and the "leave anyway" navigation must not need a network.
+  await context.route("https://leave-guard.example/**", (route) =>
+    route.fulfill({ status: 200, contentType: "text/html", body: "<title>elsewhere</title>left" }),
+  );
+  // Every leave step the page reports, in order: each choice must be reported exactly once.
+  const leaveEvents: string[] = [];
+  page.on("request", (request) => {
+    if (!request.url().endsWith("/api/try-on/events") || request.method() !== "POST") return;
+    const name = (JSON.parse(request.postData() ?? "{}") as { event?: string }).event;
+    if (name?.startsWith("leave_")) leaveEvents.push(name);
+  });
+  const dialog = await openTryOn(page);
+  const guard = page.getByRole("dialog", { name: "Ảnh của nàng sắp xong rồi" });
+  const leavePrompt = () => page.evaluate(() => document.querySelectorAll("dialog.tryon-leave[open]").length);
+
+  // Nothing is held back before a picture is on its way.
+  expect(
+    await page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(false);
+
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("linger") });
+  await parts(dialog).generate.click();
+  await dialog.getByRole("button", { name: "Xem tiếp sản phẩm trong lúc chờ", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByTestId("try-on-dock").getByRole("button", { name: /Đang tạo ảnh thử đồ/ })).toBeVisible();
+
+  // (1) The browser's own confirmation is requested for a close, a reload or a typed address.
+  expect(
+    await page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(true);
+
+  // (2) A link to another site is held back and answered with the offer; the page does not move.
+  await page.evaluate(() => {
+    const link = document.createElement("a");
+    link.id = "leave-guard-link";
+    link.href = "https://leave-guard.example/out";
+    link.textContent = "Ra ngoài";
+    // Above the fixed purchase bar and the dock, wherever the page is scrolled.
+    link.style.cssText = "position:fixed;top:0;left:0;z-index:2147483000;background:#fff;padding:8px";
+    document.body.append(link);
+  });
+  const outside = page.locator("#leave-guard-link");
+  const startUrl = page.url();
+  await outside.click();
+  await expect(guard).toBeVisible();
+  expect(page.url()).toBe(startUrl);
+  await expect(guard.getByText(/sẽ mất và nàng phải dùng thêm một lượt thử/)).toBeVisible();
+  // The safe choice has focus, so a stray Enter keeps the picture.
+  await expect(guard.getByRole("button", { name: "Tiếp tục xem", exact: true })).toBeFocused();
+  await expect(guard.getByRole("link", { name: "Chọn size & thêm vào giỏ" })).toBeVisible();
+  await expect(guard.getByRole("link", { name: "Xem sản phẩm khác" })).toBeVisible();
+  const scan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(scan.violations).toEqual([]);
+
+  // Escape is "stay".
+  await page.keyboard.press("Escape");
+  await expect(guard).toBeHidden();
+  expect(page.url()).toBe(startUrl);
+  await expect.poll(() => leaveEvents).toEqual(["leave_prompt", "leave_stay"]);
+
+  // "Open in a new tab" keeps this tab, and its picture, where it is.
+  await outside.click();
+  await expect(guard).toBeVisible();
+  const [opened] = await Promise.all([
+    context.waitForEvent("page"),
+    guard.getByRole("button", { name: "Mở liên kết ở tab mới", exact: true }).click(),
+  ]);
+  await expect(guard).toBeHidden();
+  await expect.poll(() => leaveEvents).toEqual(["leave_prompt", "leave_stay", "leave_prompt", "leave_alt"]);
+  expect(opened.url()).toContain("leave-guard.example");
+  await opened.close();
+  expect(page.url()).toBe(startUrl);
+
+  // (3) A pointer leaving through the top of the window gets the offer once, without the link choices.
+  const leaveTop = () =>
+    page.evaluate(() =>
+      document.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, clientX: 200, clientY: -1, relatedTarget: null })),
+    );
+  await leaveTop();
+  await expect(guard).toBeVisible();
+  await expect(guard.getByRole("button", { name: "Mở liên kết ở tab mới" })).toHaveCount(0);
+  await expect(guard.getByRole("button", { name: "Vẫn rời trang" })).toHaveCount(0);
+  await guard.getByRole("link", { name: "Chọn size & thêm vào giỏ" }).click();
+  await expect(guard).toBeHidden();
+  await expect(page).toHaveURL(/#mua-hang$/);
+  await leaveTop();
+  expect(await leavePrompt()).toBe(0);
+
+  // A shopper who really means to go can: the picture is given up and the browser does not ask twice.
+  // "Tiếp tục xem" by button is one stay, the same as Escape was.
+  await outside.click();
+  await expect(guard).toBeVisible();
+  await guard.getByRole("button", { name: "Tiếp tục xem", exact: true }).click();
+  await expect(guard).toBeHidden();
+  await expect
+    .poll(() => leaveEvents)
+    .toEqual([
+      "leave_prompt",
+      "leave_stay",
+      "leave_prompt",
+      "leave_alt",
+      "leave_prompt",
+      "leave_alt",
+      "leave_prompt",
+      "leave_stay",
+    ]);
+
+  await outside.click();
+  await expect(guard).toBeVisible();
+  await guard.getByRole("button", { name: "Vẫn rời trang", exact: true }).click();
+  await expect(page).toHaveURL(/leave-guard\.example\/out/);
+
+  expect(watched.pageErrors).toEqual([]);
+});
+
+test("a settled try-on is never held back: the picture is on the dock and a link out just goes", async ({ page }) => {
+  await page.route("https://leave-guard.example/**", (route) =>
+    route.fulfill({ status: 200, contentType: "text/html", body: "<title>elsewhere</title>left" }),
+  );
+  const dialog = await openTryOn(page);
+  await fillThroughConfirmation(dialog);
+  await parts(dialog).generate.click();
+  await expect(parts(dialog).result).toBeVisible({ timeout: 20_000 });
+  expect(
+    await page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(false);
+  await page.evaluate(() => {
+    const link = document.createElement("a");
+    link.id = "leave-guard-link";
+    link.href = "https://leave-guard.example/out";
+    link.textContent = "Ra ngoài";
+    // Above the fixed purchase bar and the dock, wherever the page is scrolled.
+    link.style.cssText = "position:fixed;top:0;left:0;z-index:2147483000;background:#fff;padding:8px";
+    document.body.append(link);
+  });
+  await page.keyboard.press("Escape");
+  await page.locator("#leave-guard-link").click();
+  await expect(page).toHaveURL(/leave-guard\.example\/out/);
+});
+
 test("a WebP garment with a WebP photo also generates in the background and comes back through the dock", async ({
   page,
 }) => {

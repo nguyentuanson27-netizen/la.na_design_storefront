@@ -14,6 +14,7 @@ import { SiteDocument } from "@/components/brand/site-document";
 import { SiteFooter } from "@/components/brand/site-footer";
 import { SiteMasthead } from "@/components/brand/site-masthead";
 import { BrandTryOnDock } from "@/components/brand/try-on-dock";
+import { BrandTryOnLeaveGuard } from "@/components/brand/try-on-leave-guard";
 import {
   buildSiteChromeContent,
   type SiteChromeContent,
@@ -137,6 +138,7 @@ export function SiteChrome({
         </ListingViewProvider>
         <SiteFooter model={model.content.footer} />
         <BrandTryOnDock />
+        <BrandTryOnLeaveGuard />
       </TryOnSessionProvider>
       <SiteChat />
       <TrackingPageView />
