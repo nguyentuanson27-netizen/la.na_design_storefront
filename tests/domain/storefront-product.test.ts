@@ -368,3 +368,21 @@ test("composite options use component-aware reservable and ready quantities", ()
   assert.equal(ready.purchasable, true);
   assert.equal(ready.isPreorderSale, false);
 });
+
+test("storefront does not invent a size: a variant without one stays MAPPING_REQUIRED", () => {
+  const [option] = buildStorefrontVariantOptions([
+    {
+      id: "bag-1",
+      pancakeVariationId: "pancake-bag-1",
+      color: null,
+      size: null,
+      sellableStock: 10,
+      retailPrice: 149_000,
+      retailPriceAfterDiscount: 149_000,
+    },
+  ]);
+
+  assert.equal(option?.size, null);
+  assert.equal(option?.purchasable, false);
+  assert.equal(option?.unavailableReason, "MAPPING_REQUIRED");
+});

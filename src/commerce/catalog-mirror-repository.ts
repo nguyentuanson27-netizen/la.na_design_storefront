@@ -4,6 +4,8 @@ import {
   type PancakeVariationVideo,
 } from "../integrations/pancake/catalog-video.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
+import { toOptionIdentityKey } from "./storefront-product.ts";
+import { hasSizeEvidence, normalizedFieldDimension } from "./variant-size-evidence.ts";
 import type {
   PancakeCatalogField,
   PancakeParsedCatalogVariation,
@@ -437,28 +439,6 @@ export async function writeObservedWarehouseStocks(
   return true;
 }
 
-function normalizedFieldDimension(name: string): "color" | "size" | null {
-  const normalized = name.trim().toLowerCase();
-  if (normalized === "size" || normalized === "kích thước" || normalized === "kich thuoc") {
-    return "size";
-  }
-  if (
-    normalized === "color" ||
-    normalized === "màu" ||
-    normalized === "màu sắc" ||
-    normalized === "mau sac" ||
-    normalized === "màu quần" ||
-    normalized === "mau quan" ||
-    normalized === "phân loại" ||
-    normalized === "phan loai" ||
-    normalized === "mẫu mã" ||
-    normalized === "mau ma"
-  ) {
-    return "color";
-  }
-  return null;
-}
-
 function mappedFieldValue(fields: readonly PancakeCatalogField[], key: "color" | "size"): string | null {
   const values = new Set<string>();
 
@@ -471,12 +451,73 @@ function mappedFieldValue(fields: readonly PancakeCatalogField[], key: "color" |
   return values.size === 1 ? [...values][0]! : null;
 }
 
-function mapVariantOptions(fields: readonly PancakeCatalogField[]): VariantOptionMapping {
+/**
+ * Freesize policy: a variant gets size "F" only when it carries no size evidence at all and its
+ * product is an accessory (`phuKien`) or no variant of the product carries any. Anything ambiguous
+ * (conflicting, blank or unrecognised size fields) stays null so it surfaces as MAPPING_REQUIRED.
+ */
+export function mapVariantOptions(
+  fields: readonly PancakeCatalogField[],
+  options?: { isPhuKien?: boolean; hasProductSizeOnPancake?: boolean },
+): VariantOptionMapping {
   const rawSize = mappedFieldValue(fields, "size");
+  const defaultToF =
+    !hasSizeEvidence(fields) &&
+    (options?.isPhuKien === true || options?.hasProductSizeOnPancake === false);
+
   return {
     color: mappedFieldValue(fields, "color"),
-    size: rawSize !== null ? canonicalizeClothingSize(rawSize) : null,
+    size: rawSize !== null ? canonicalizeClothingSize(rawSize) : defaultToF ? "F" : null,
   };
+}
+
+/**
+ * Maps every variation of a snapshot, applying the freesize default per product. A defaulted "F"
+ * is withheld when it would collide with another variant of the same product on (color, size), so a
+ * variant that was purchasable before is never turned into AMBIGUOUS_OPTION by the fallback.
+ */
+export function resolveVariantOptionMappings(
+  variations: readonly Pick<PancakeParsedCatalogVariation, "id" | "productId" | "fields">[],
+  phuKienProductIds: ReadonlySet<string>,
+): Map<string, VariantOptionMapping> {
+  const productsWithSizeEvidence = new Set<string>();
+  for (const variation of variations) {
+    if (hasSizeEvidence(variation.fields)) productsWithSizeEvidence.add(variation.productId);
+  }
+
+  const resolved = new Map<string, VariantOptionMapping>();
+  const defaulted = new Set<string>();
+  const keyCounts = new Map<string, number>();
+  // Same identity the storefront uses to detect AMBIGUOUS_OPTION (case-insensitive), so a collision
+  // is withheld here exactly when the storefront would otherwise mark both options unpurchasable.
+  const keyOf = (productId: string, mapping: VariantOptionMapping) =>
+    [productId, mapping.color ?? "", mapping.size ?? ""]
+      .map((part, index) => (index === 0 ? part : toOptionIdentityKey(part)))
+      .join("\u0000");
+
+  for (const variation of variations) {
+    const base = mapVariantOptions(variation.fields);
+    const mapping = mapVariantOptions(variation.fields, {
+      isPhuKien: phuKienProductIds.has(variation.productId),
+      hasProductSizeOnPancake: productsWithSizeEvidence.has(variation.productId),
+    });
+    resolved.set(variation.id, mapping);
+    if (base.size === null && mapping.size !== null) defaulted.add(variation.id);
+    if (mapping.size !== null) {
+      const key = keyOf(variation.productId, mapping);
+      keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+    }
+  }
+
+  for (const variation of variations) {
+    if (!defaulted.has(variation.id)) continue;
+    const mapping = resolved.get(variation.id)!;
+    if ((keyCounts.get(keyOf(variation.productId, mapping)) ?? 0) > 1) {
+      resolved.set(variation.id, { ...mapping, size: null });
+    }
+  }
+
+  return resolved;
 }
 
 /**
@@ -718,6 +759,7 @@ export function createCatalogMirrorRepository(
         }
 
         const internalProductIds = new Map<string, string>();
+        const isPhuKienByPancakeProductId = new Map<string, boolean>();
 
         for (const product of productByExternalId.values()) {
           const video = videoByProductId.get(product.pancakeProductId)!;
@@ -741,6 +783,9 @@ export function createCatalogMirrorRepository(
           }
 
           const categoryKeys = existing?.categoryMemberships.map((m) => m.categoryKey) ?? [];
+          if (categoryKeys.includes("phuKien")) {
+            isPhuKienByPancakeProductId.set(product.pancakeProductId, true);
+          }
           const resolvedName = normalizeCategoryProductDisplayName(product.name, categoryKeys);
 
           const mirrored = existing
@@ -854,6 +899,13 @@ export function createCatalogMirrorRepository(
           internalProductIds.set(product.pancakeProductId, mirrored.id);
         }
 
+        const optionMappings = resolveVariantOptionMappings(
+          variations,
+          new Set(
+            [...isPhuKienByPancakeProductId].filter(([, isPhuKien]) => isPhuKien).map(([id]) => id),
+          ),
+        );
+
         const internalVariantIds = new Map<string, string>();
         // Variants whose stock a later targeted read already wrote; this snapshot's older numbers
         // for them are not observations of the current state (see `writeObservedWarehouseStocks`).
@@ -863,7 +915,7 @@ export function createCatalogMirrorRepository(
           if (!internalProductId) {
             throw new Error("Catalog mirror product identity could not be resolved");
           }
-          const optionMapping = mapVariantOptions(variation.fields);
+          const optionMapping = optionMappings.get(variation.id)!;
 
           const mirrored = await tx.variantMirror.upsert({
             where: { pancakeVariationId: variation.id },

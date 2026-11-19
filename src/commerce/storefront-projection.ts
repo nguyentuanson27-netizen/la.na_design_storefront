@@ -4,6 +4,7 @@ import {
   buildStorefrontVariantOptions,
   defaultStorefrontPricingRule,
   selectedAvailabilityDateOf,
+  toOptionIdentityKey,
   toStorefrontSelectableOptions,
   NO_AVAILABILITY_DATES,
   STANDARD_STANDALONE_CAPACITY,
@@ -159,6 +160,41 @@ function projectOptions(
   );
 }
 
+/**
+ * Variants of several source products merged into one kind are compared by the storefront on
+ * (colour, size) alone. A size the catalog sync inferred ("F" because Pancake sent none) must not
+ * displace one Pancake did send: where an inferred size would duplicate another option of the kind,
+ * the inferred one is withheld (it surfaces as MAPPING_REQUIRED, as it did before the default
+ * existed) and every explicit option stays purchasable. The flag never leaves this function.
+ */
+function withholdCollidingInferredSizes(
+  variants: readonly StorefrontVariantFacts[],
+): StorefrontVariantFacts[] {
+  const identity = (value: string | null) =>
+    value === null || value.trim().length === 0 ? null : toOptionIdentityKey(value.trim());
+  const hasColorDimension = variants.some((variant) => identity(variant.color) !== null);
+  const keyOf = (variant: StorefrontVariantFacts): string | null => {
+    const size = identity(variant.size);
+    if (size === null) return null;
+    if (!hasColorDimension) return size;
+    const color = identity(variant.color);
+    return color === null ? null : `${color}\u0000${size}`;
+  };
+
+  const counts = new Map<string, number>();
+  for (const variant of variants) {
+    const key = keyOf(variant);
+    if (key !== null) counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return variants.map(({ sizeInferred, ...variant }) => {
+    const key = keyOf({ ...variant, sizeInferred });
+    return sizeInferred === true && key !== null && (counts.get(key) ?? 0) > 1
+      ? { ...variant, size: null }
+      : variant;
+  });
+}
+
 export function buildStorefrontProductProjection({
   parentVariants,
   subSetGroups = [],
@@ -295,7 +331,7 @@ export function buildStorefrontProductProjection({
   [...mergedComponentGroups.values()].forEach((group, index) => {
     options.push(
       ...projectOptions(
-        [...group.variants.values()],
+        withholdCollidingInferredSizes([...group.variants.values()]),
         `component-${index + 1}`,
         group.label,
         group.label.length === 0 ? "AMBIGUOUS_OPTION" : null,

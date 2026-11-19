@@ -73,7 +73,7 @@ The adapter preserves `is_hidden`, `is_locked`, `retail_price`, `retail_price_af
 For the storefront, the product owner explicitly approved this website-owned option policy:
 
 - catalog sync maps only normalized `fields[].keyValue` values equal to `size` or `color`; `fields[].name` is presentation data and is not used as an authority signal;
-- `size` is required for every purchasable variant;
+- `size` is required for every purchasable variant; for accessories (`phuKien`) or products without size attributes on Pancake, `size` defaults to `"F"` (Freesize) so variants remain purchasable online;
 - `color` is optional at the product level;
 - when no active/present variant for a product has a mapped color, the storefront hides the Color selector and an exact Size selection is sufficient;
 - when a product has a color dimension, every purchasable variant must have both Color and Size;
