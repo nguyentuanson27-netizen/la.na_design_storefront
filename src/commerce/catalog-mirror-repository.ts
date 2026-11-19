@@ -471,16 +471,23 @@ function mappedFieldValue(fields: readonly PancakeCatalogField[], key: "color" |
   return values.size === 1 ? [...values][0]! : null;
 }
 
-function hasSizeFieldValue(fields: readonly PancakeCatalogField[]): boolean {
-  return fields.some(
-    (field) => normalizedFieldDimension(field.name) === "size" && field.value.trim().length > 0,
-  );
+/**
+ * True when a variation's fields could describe a size: a size-named field (even with a blank or
+ * conflicting value) or any field whose name this mapping does not recognise (for example "Cỡ").
+ * Field names are presentation data, so an unrecognised one is not evidence that no size exists.
+ */
+function hasSizeEvidence(fields: readonly PancakeCatalogField[]): boolean {
+  return fields.some((field) => {
+    const dimension = normalizedFieldDimension(field.name);
+    if (dimension === "size") return true;
+    return dimension === null && (field.name.trim().length > 0 || field.value.trim().length > 0);
+  });
 }
 
 /**
- * Freesize policy: a variant with no size attribute on Pancake gets size "F" when its product is an
- * accessory (`phuKien`) or no variant of the product carries a size. A size field that is present but
- * conflicting stays null so it still surfaces as MAPPING_REQUIRED instead of being masked as "F".
+ * Freesize policy: a variant gets size "F" only when it carries no size evidence at all and its
+ * product is an accessory (`phuKien`) or no variant of the product carries any. Anything ambiguous
+ * (conflicting, blank or unrecognised size fields) stays null so it surfaces as MAPPING_REQUIRED.
  */
 export function mapVariantOptions(
   fields: readonly PancakeCatalogField[],
@@ -488,13 +495,58 @@ export function mapVariantOptions(
 ): VariantOptionMapping {
   const rawSize = mappedFieldValue(fields, "size");
   const defaultToF =
-    !hasSizeFieldValue(fields) &&
+    !hasSizeEvidence(fields) &&
     (options?.isPhuKien === true || options?.hasProductSizeOnPancake === false);
 
   return {
     color: mappedFieldValue(fields, "color"),
     size: rawSize !== null ? canonicalizeClothingSize(rawSize) : defaultToF ? "F" : null,
   };
+}
+
+/**
+ * Maps every variation of a snapshot, applying the freesize default per product. A defaulted "F"
+ * is withheld when it would collide with another variant of the same product on (color, size), so a
+ * variant that was purchasable before is never turned into AMBIGUOUS_OPTION by the fallback.
+ */
+export function resolveVariantOptionMappings(
+  variations: readonly Pick<PancakeParsedCatalogVariation, "id" | "productId" | "fields">[],
+  phuKienProductIds: ReadonlySet<string>,
+): Map<string, VariantOptionMapping> {
+  const productsWithSizeEvidence = new Set<string>();
+  for (const variation of variations) {
+    if (hasSizeEvidence(variation.fields)) productsWithSizeEvidence.add(variation.productId);
+  }
+
+  const resolved = new Map<string, VariantOptionMapping>();
+  const defaulted = new Set<string>();
+  const keyCounts = new Map<string, number>();
+  const keyOf = (productId: string, mapping: VariantOptionMapping) =>
+    `${productId}\u0000${mapping.color ?? ""}\u0000${mapping.size ?? ""}`;
+
+  for (const variation of variations) {
+    const base = mapVariantOptions(variation.fields);
+    const mapping = mapVariantOptions(variation.fields, {
+      isPhuKien: phuKienProductIds.has(variation.productId),
+      hasProductSizeOnPancake: productsWithSizeEvidence.has(variation.productId),
+    });
+    resolved.set(variation.id, mapping);
+    if (base.size === null && mapping.size !== null) defaulted.add(variation.id);
+    if (mapping.size !== null) {
+      const key = keyOf(variation.productId, mapping);
+      keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+    }
+  }
+
+  for (const variation of variations) {
+    if (!defaulted.has(variation.id)) continue;
+    const mapping = resolved.get(variation.id)!;
+    if ((keyCounts.get(keyOf(variation.productId, mapping)) ?? 0) > 1) {
+      resolved.set(variation.id, { ...mapping, size: null });
+    }
+  }
+
+  return resolved;
 }
 
 /**
@@ -876,12 +928,12 @@ export function createCatalogMirrorRepository(
           internalProductIds.set(product.pancakeProductId, mirrored.id);
         }
 
-        const productsWithPancakeSize = new Set<string>();
-        for (const variation of variations) {
-          if (hasSizeFieldValue(variation.fields)) {
-            productsWithPancakeSize.add(variation.productId);
-          }
-        }
+        const optionMappings = resolveVariantOptionMappings(
+          variations,
+          new Set(
+            [...isPhuKienByPancakeProductId].filter(([, isPhuKien]) => isPhuKien).map(([id]) => id),
+          ),
+        );
 
         const internalVariantIds = new Map<string, string>();
         // Variants whose stock a later targeted read already wrote; this snapshot's older numbers
@@ -892,12 +944,7 @@ export function createCatalogMirrorRepository(
           if (!internalProductId) {
             throw new Error("Catalog mirror product identity could not be resolved");
           }
-          const isPhuKien = isPhuKienByPancakeProductId.get(variation.productId) === true;
-          const hasProductSizeOnPancake = productsWithPancakeSize.has(variation.productId);
-          const optionMapping = mapVariantOptions(variation.fields, {
-            isPhuKien,
-            hasProductSizeOnPancake,
-          });
+          const optionMapping = optionMappings.get(variation.id)!;
 
           const mirrored = await tx.variantMirror.upsert({
             where: { pancakeVariationId: variation.id },
