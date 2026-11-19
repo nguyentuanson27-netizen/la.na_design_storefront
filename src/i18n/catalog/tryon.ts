@@ -157,7 +157,7 @@ export const TRYON_EN: Readonly<Record<string, string>> = {
   // Leave guard: shown when a shopper is about to leave while a picture is being made
   "Ảnh của nàng sắp xong rồi": "Your photo is almost ready",
   "Nếu rời trang lúc này, ảnh đang tạo sẽ mất và nàng phải dùng thêm một lượt thử để tạo lại.": "If you leave now, the photo being made will be lost and you'll need another try-on to create it again.",
-  "Ở lại chờ ảnh": "Stay and wait for the photo",
+  "Tiếp tục xem": "Keep browsing",
   "Trong lúc chờ, nàng có thể:": "While you wait, you can:",
   "Mở liên kết ở tab mới": "Open the link in a new tab",
   "Xem sản phẩm khác": "Browse other products",

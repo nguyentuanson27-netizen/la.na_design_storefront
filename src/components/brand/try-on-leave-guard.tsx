@@ -209,7 +209,7 @@ export function BrandTryOnLeaveGuard() {
             className={`btn btn--primary mt-5 w-full px-4 ${FOCUS_RING}`}
             onClick={() => choose("stay")}
           >
-            {t("Ở lại chờ ảnh")}
+            {t("Tiếp tục xem")}
           </button>
 
           <p className="mb-1 mt-6 text-[11px] font-medium uppercase tracking-[0.14em] text-black/60">

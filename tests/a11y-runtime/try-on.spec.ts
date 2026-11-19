@@ -1035,7 +1035,7 @@ test("leaving while the picture is being made: the browser is asked, a link out 
   expect(page.url()).toBe(startUrl);
   await expect(guard.getByText(/sẽ mất và nàng phải dùng thêm một lượt thử/)).toBeVisible();
   // The safe choice has focus, so a stray Enter keeps the picture.
-  await expect(guard.getByRole("button", { name: "Ở lại chờ ảnh", exact: true })).toBeFocused();
+  await expect(guard.getByRole("button", { name: "Tiếp tục xem", exact: true })).toBeFocused();
   await expect(guard.getByRole("link", { name: "Chọn size & thêm vào giỏ" })).toBeVisible();
   await expect(guard.getByRole("link", { name: "Xem sản phẩm khác" })).toBeVisible();
   const scan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
