@@ -990,6 +990,13 @@ test("leaving while the picture is being made: the browser is asked, a link out 
   await context.route("https://leave-guard.example/**", (route) =>
     route.fulfill({ status: 200, contentType: "text/html", body: "<title>elsewhere</title>left" }),
   );
+  // Every leave step the page reports, in order: each choice must be reported exactly once.
+  const leaveEvents: string[] = [];
+  page.on("request", (request) => {
+    if (!request.url().endsWith("/api/try-on/events") || request.method() !== "POST") return;
+    const name = (JSON.parse(request.postData() ?? "{}") as { event?: string }).event;
+    if (name?.startsWith("leave_")) leaveEvents.push(name);
+  });
   const dialog = await openTryOn(page);
   const guard = page.getByRole("dialog", { name: "Ảnh của nàng sắp xong rồi" });
   const leavePrompt = () => page.evaluate(() => document.querySelectorAll("dialog.tryon-leave[open]").length);
@@ -1045,6 +1052,7 @@ test("leaving while the picture is being made: the browser is asked, a link out 
   await page.keyboard.press("Escape");
   await expect(guard).toBeHidden();
   expect(page.url()).toBe(startUrl);
+  await expect.poll(() => leaveEvents).toEqual(["leave_prompt", "leave_stay"]);
 
   // "Open in a new tab" keeps this tab, and its picture, where it is.
   await outside.click();
@@ -1054,6 +1062,7 @@ test("leaving while the picture is being made: the browser is asked, a link out 
     guard.getByRole("button", { name: "Mở liên kết ở tab mới", exact: true }).click(),
   ]);
   await expect(guard).toBeHidden();
+  await expect.poll(() => leaveEvents).toEqual(["leave_prompt", "leave_stay", "leave_prompt", "leave_alt"]);
   expect(opened.url()).toContain("leave-guard.example");
   await opened.close();
   expect(page.url()).toBe(startUrl);
@@ -1074,6 +1083,24 @@ test("leaving while the picture is being made: the browser is asked, a link out 
   expect(await leavePrompt()).toBe(0);
 
   // A shopper who really means to go can: the picture is given up and the browser does not ask twice.
+  // "Tiếp tục xem" by button is one stay, the same as Escape was.
+  await outside.click();
+  await expect(guard).toBeVisible();
+  await guard.getByRole("button", { name: "Tiếp tục xem", exact: true }).click();
+  await expect(guard).toBeHidden();
+  await expect
+    .poll(() => leaveEvents)
+    .toEqual([
+      "leave_prompt",
+      "leave_stay",
+      "leave_prompt",
+      "leave_alt",
+      "leave_prompt",
+      "leave_alt",
+      "leave_prompt",
+      "leave_stay",
+    ]);
+
   await outside.click();
   await expect(guard).toBeVisible();
   await guard.getByRole("button", { name: "Vẫn rời trang", exact: true }).click();

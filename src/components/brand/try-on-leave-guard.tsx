@@ -55,14 +55,18 @@ const QUIET_TEXT = `min-h-11 px-2 text-[13px] text-black/60 underline decoration
 const BROWSE_HREF = NAVIGATION.primary[0]?.href ?? "/";
 
 type LeavePrompt = Readonly<{ href: string | null }>;
-type Action = "stay" | "alt" | "exit";
+/**
+ * How the dialog was closed. `settled` is the picture finishing while it was open: the dialog goes
+ * away by itself, which is neither the shopper staying nor leaving, so it is not reported.
+ */
+type Action = "stay" | "alt" | "exit" | "settled";
 
 export function BrandTryOnLeaveGuard() {
   const t = useT();
   const { job } = useTryOnSession();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const [prompt, setPrompt] = useState<LeavePrompt | null>(null);
-  // What the shopper chose in the dialog; empty when it was dismissed (Esc), which means "stay".
+  // What closed the dialog; empty when it was dismissed (Esc), which means "stay".
   const actionRef = useRef<Action | null>(null);
   // The job the exit-intent offer was already made for: one offer per job.
   const offeredForRef = useRef<number | null>(null);
@@ -142,9 +146,15 @@ export function BrandTryOnLeaveGuard() {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (!open && dialog.open) {
+      actionRef.current = "settled";
+      dialog.close();
+    }
   }, [open]);
 
+  // Each outcome is reported exactly once, in exactly one place: staying (the button and Escape both
+  // end here) when the dialog closes, an alternative or leaving when it is chosen. Reporting the stay
+  // in both places counted a click twice and an Escape once, which skews the funnel it exists for.
   function handleClosed() {
     const action = actionRef.current ?? "stay";
     actionRef.current = null;
@@ -154,10 +164,9 @@ export function BrandTryOnLeaveGuard() {
 
   function choose(action: Action) {
     actionRef.current = action;
-    trackTryOn({
-      event: action === "stay" ? "leave_stay" : action === "alt" ? "leave_alt" : "leave_exit",
-      productSlug: productSlug ?? undefined,
-    });
+    if (action === "alt" || action === "exit") {
+      trackTryOn({ event: action === "alt" ? "leave_alt" : "leave_exit", productSlug: productSlug ?? undefined });
+    }
     dialogRef.current?.close();
   }
 
