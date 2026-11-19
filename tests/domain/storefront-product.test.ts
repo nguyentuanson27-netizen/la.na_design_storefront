@@ -368,3 +368,77 @@ test("composite options use component-aware reservable and ready quantities", ()
   assert.equal(ready.purchasable, true);
   assert.equal(ready.isPreorderSale, false);
 });
+
+test("storefront variants default size to 'F' when no variant has a size dimension (accessories / sizeless products)", () => {
+  // Case A: Product with no color and no size (e.g. single-variant bag TUISV244)
+  const singleBag = buildStorefrontVariantOptions([
+    {
+      id: "bag-1",
+      pancakeVariationId: "pancake-bag-1",
+      color: null,
+      size: null,
+      sellableStock: 10,
+      retailPrice: 149_000,
+      retailPriceAfterDiscount: 149_000,
+    },
+  ]);
+
+  assert.equal(singleBag.length, 1);
+  assert.equal(singleBag[0]?.size, "F");
+  assert.equal(singleBag[0]?.color, null);
+  assert.equal(singleBag[0]?.purchasable, true);
+  assert.equal(singleBag[0]?.unavailableReason, null);
+
+  // Case B: Product with color dimension but no sizes (e.g. hat NONLA with red/white)
+  const colorHat = buildStorefrontVariantOptions([
+    {
+      id: "hat-red",
+      pancakeVariationId: "pancake-hat-red",
+      color: "Đỏ",
+      size: null,
+      sellableStock: 5,
+      retailPrice: 149_000,
+      retailPriceAfterDiscount: 149_000,
+    },
+    {
+      id: "hat-white",
+      pancakeVariationId: "pancake-hat-white",
+      color: "Trắng",
+      size: null,
+      sellableStock: 3,
+      retailPrice: 149_000,
+      retailPriceAfterDiscount: 149_000,
+    },
+  ]);
+
+  assert.equal(colorHat.length, 2);
+  assert.equal(colorHat[0]?.size, "F");
+  assert.equal(colorHat[0]?.color, "Đỏ");
+  assert.equal(colorHat[0]?.purchasable, true);
+  assert.equal(colorHat[1]?.size, "F");
+  assert.equal(colorHat[1]?.color, "Trắng");
+  assert.equal(colorHat[1]?.purchasable, true);
+
+  // Case C: Explicit isPhuKien option defaults missing size to 'F'
+  const phuKienItem = buildStorefrontVariantOptions(
+    [
+      {
+        id: "pk-1",
+        pancakeVariationId: "pancake-pk-1",
+        color: "Nâu",
+        size: null,
+        sellableStock: 4,
+        retailPrice: 200_000,
+        retailPriceAfterDiscount: 200_000,
+      },
+    ],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { isPhuKien: true },
+  );
+
+  assert.equal(phuKienItem[0]?.size, "F");
+  assert.equal(phuKienItem[0]?.purchasable, true);
+});

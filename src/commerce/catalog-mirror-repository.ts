@@ -471,11 +471,17 @@ function mappedFieldValue(fields: readonly PancakeCatalogField[], key: "color" |
   return values.size === 1 ? [...values][0]! : null;
 }
 
-function mapVariantOptions(fields: readonly PancakeCatalogField[]): VariantOptionMapping {
+export function mapVariantOptions(
+  fields: readonly PancakeCatalogField[],
+  options?: { isPhuKien?: boolean; hasProductSizeOnPancake?: boolean },
+): VariantOptionMapping {
   const rawSize = mappedFieldValue(fields, "size");
+  const defaultToF =
+    options?.isPhuKien === true || options?.hasProductSizeOnPancake === false;
+
   return {
     color: mappedFieldValue(fields, "color"),
-    size: rawSize !== null ? canonicalizeClothingSize(rawSize) : null,
+    size: rawSize !== null ? canonicalizeClothingSize(rawSize) : defaultToF ? "F" : null,
   };
 }
 
@@ -718,6 +724,7 @@ export function createCatalogMirrorRepository(
         }
 
         const internalProductIds = new Map<string, string>();
+        const isPhuKienByPancakeProductId = new Map<string, boolean>();
 
         for (const product of productByExternalId.values()) {
           const video = videoByProductId.get(product.pancakeProductId)!;
@@ -741,6 +748,9 @@ export function createCatalogMirrorRepository(
           }
 
           const categoryKeys = existing?.categoryMemberships.map((m) => m.categoryKey) ?? [];
+          if (categoryKeys.includes("phuKien")) {
+            isPhuKienByPancakeProductId.set(product.pancakeProductId, true);
+          }
           const resolvedName = normalizeCategoryProductDisplayName(product.name, categoryKeys);
 
           const mirrored = existing
@@ -854,6 +864,13 @@ export function createCatalogMirrorRepository(
           internalProductIds.set(product.pancakeProductId, mirrored.id);
         }
 
+        const productsWithPancakeSize = new Set<string>();
+        for (const variation of variations) {
+          if (mappedFieldValue(variation.fields, "size") !== null) {
+            productsWithPancakeSize.add(variation.productId);
+          }
+        }
+
         const internalVariantIds = new Map<string, string>();
         // Variants whose stock a later targeted read already wrote; this snapshot's older numbers
         // for them are not observations of the current state (see `writeObservedWarehouseStocks`).
@@ -863,7 +880,12 @@ export function createCatalogMirrorRepository(
           if (!internalProductId) {
             throw new Error("Catalog mirror product identity could not be resolved");
           }
-          const optionMapping = mapVariantOptions(variation.fields);
+          const isPhuKien = isPhuKienByPancakeProductId.get(variation.productId) === true;
+          const hasProductSizeOnPancake = productsWithPancakeSize.has(variation.productId);
+          const optionMapping = mapVariantOptions(variation.fields, {
+            isPhuKien,
+            hasProductSizeOnPancake,
+          });
 
           const mirrored = await tx.variantMirror.upsert({
             where: { pancakeVariationId: variation.id },
