@@ -4,6 +4,7 @@ import {
   type PancakeVariationVideo,
 } from "../integrations/pancake/catalog-video.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
+import { toOptionIdentityKey } from "./storefront-product.ts";
 import type {
   PancakeCatalogField,
   PancakeParsedCatalogVariation,
@@ -521,8 +522,12 @@ export function resolveVariantOptionMappings(
   const resolved = new Map<string, VariantOptionMapping>();
   const defaulted = new Set<string>();
   const keyCounts = new Map<string, number>();
+  // Same identity the storefront uses to detect AMBIGUOUS_OPTION (case-insensitive), so a collision
+  // is withheld here exactly when the storefront would otherwise mark both options unpurchasable.
   const keyOf = (productId: string, mapping: VariantOptionMapping) =>
-    `${productId}\u0000${mapping.color ?? ""}\u0000${mapping.size ?? ""}`;
+    [productId, mapping.color ?? "", mapping.size ?? ""]
+      .map((part, index) => (index === 0 ? part : toOptionIdentityKey(part)))
+      .join("\u0000");
 
   for (const variation of variations) {
     const base = mapVariantOptions(variation.fields);

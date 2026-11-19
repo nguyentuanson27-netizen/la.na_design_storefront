@@ -132,6 +132,39 @@ test("the F default is withheld when it would collide with an explicit F of the 
   assert.equal(options[1]?.unavailableReason, "MAPPING_REQUIRED");
 });
 
+test("the F default is withheld on a case-insensitive color collision, matching storefront identity", () => {
+  const mappings = resolveVariantOptionMappings(
+    [
+      {
+        id: "explicit",
+        productId: "p",
+        fields: [
+          { id: "1", name: "Màu", value: "Đỏ", keyValue: "DO" },
+          { id: "2", name: "Size", value: "F", keyValue: "F" },
+        ],
+      },
+      { id: "missing", productId: "p", fields: [{ id: "3", name: "Màu", value: "đỏ", keyValue: "do" }] },
+    ],
+    new Set(["p"]),
+  );
+  assert.equal(mappings.get("explicit")?.size, "F");
+  assert.equal(mappings.get("missing")?.size, null);
+
+  const options = buildStorefrontVariantOptions(
+    ["explicit", "missing"].map((id) => ({
+      id,
+      pancakeVariationId: `pancake-${id}`,
+      color: mappings.get(id)!.color,
+      size: mappings.get(id)!.size,
+      sellableStock: 3,
+      retailPrice: 100_000,
+      retailPriceAfterDiscount: 100_000,
+    })),
+  );
+  assert.equal(options[0]?.purchasable, true);
+  assert.equal(options[1]?.unavailableReason, "MAPPING_REQUIRED");
+});
+
 test("accessory variants of different colors all default to F without colliding", () => {
   const mappings = resolveVariantOptionMappings(
     ["Đỏ", "Trắng"].map((value, i) => ({
