@@ -153,4 +153,14 @@ export const TRYON_EN: Readonly<Record<string, string>> = {
   "Mở thử đồ AI": "Open AI try-on",
   "Xem ảnh đang tạo": "View the picture being made",
   "Ảnh do AI tạo, chỉ mang tính tham khảo — không đảm bảo kích cỡ, độ vừa vặn, chất liệu hay màu sắc thật.": "AI-generated image, for reference only — it doesn't guarantee the real size, fit, material or colour.",
+
+  // Leave guard: shown when a shopper is about to leave while a picture is being made
+  "Ảnh của nàng sắp xong rồi": "Your photo is almost ready",
+  "Nếu rời trang lúc này, ảnh đang tạo sẽ mất và nàng phải dùng thêm một lượt thử để tạo lại.": "If you leave now, the photo being made will be lost and you'll need another try-on to create it again.",
+  "Ở lại chờ ảnh": "Stay and wait for the photo",
+  "Trong lúc chờ, nàng có thể:": "While you wait, you can:",
+  "Mở liên kết ở tab mới": "Open the link in a new tab",
+  "Xem sản phẩm khác": "Browse other products",
+  "Ảnh vẫn được tạo tiếp ở góc màn hình.": "The photo keeps being made in the corner of the screen.",
+  "Vẫn rời trang": "Leave anyway",
 };

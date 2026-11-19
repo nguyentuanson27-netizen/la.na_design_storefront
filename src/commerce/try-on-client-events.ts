@@ -24,6 +24,12 @@ export const TRY_ON_CLIENT_EVENTS = [
   "zoom",
   "to_cart",
   "feedback",
+  // The shopper was about to leave while a picture was still being made (spec §15, leave guard):
+  // the offer was shown, they stayed, they took one of its alternatives, or they left anyway.
+  "leave_prompt",
+  "leave_stay",
+  "leave_alt",
+  "leave_exit",
 ] as const;
 export type TryOnClientEventName = (typeof TRY_ON_CLIENT_EVENTS)[number];
 
