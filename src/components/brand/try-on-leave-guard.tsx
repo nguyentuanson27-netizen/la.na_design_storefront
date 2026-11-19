@@ -38,8 +38,15 @@ import { useTryOnElapsedSeconds } from "./try-on-waiting";
 
 const FOCUS_RING =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]";
-const TEXT_BUTTON = `min-h-11 px-2 text-sm font-semibold underline underline-offset-4 ${FOCUS_RING}`;
-const LINK_BUTTON = `btn btn--outline w-full justify-center px-4 ${FOCUS_RING}`;
+/**
+ * The ways out are quiet on purpose: one solid button says "stay", and everything else is a line of
+ * text between hairlines, so the dialog reads as an offer rather than a row of competing buttons.
+ * The arrow only nudges on hover, and not at all for a shopper who asks for less motion.
+ */
+const ROW = `group flex min-h-12 w-full items-center justify-between gap-3 border-t border-[#3B2219]/12 py-2 text-left text-[15px] text-[#3B2219] transition-colors hover:text-black ${FOCUS_RING}`;
+const ROW_ARROW =
+  "text-base leading-none text-[#3B2219]/45 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-[#3B2219] motion-reduce:transition-none motion-reduce:group-hover:translate-x-0";
+const QUIET_TEXT = `min-h-11 px-2 text-[13px] text-black/60 underline decoration-black/25 underline-offset-4 transition-colors hover:text-black/80 ${FOCUS_RING}`;
 
 /**
  * Where "browse other products" leads: the first entry of the main navigation, which is the shop's
@@ -199,37 +206,46 @@ export function BrandTryOnLeaveGuard() {
             type="button"
             // The safe choice takes focus, so a stray Enter keeps the picture.
             autoFocus
-            className={`btn btn--primary mt-4 w-full px-4 ${FOCUS_RING}`}
+            className={`btn btn--primary mt-5 w-full px-4 ${FOCUS_RING}`}
             onClick={() => choose("stay")}
           >
             {t("Ở lại chờ ảnh")}
           </button>
 
-          <p className="mb-2 mt-5 text-xs font-semibold uppercase tracking-[0.08em] text-black/60">
+          <p className="mb-1 mt-6 text-[11px] font-medium uppercase tracking-[0.14em] text-black/60">
             {t("Trong lúc chờ, nàng có thể:")}
           </p>
-          <div className="grid gap-2">
+          <div className="border-b border-[#3B2219]/12">
             {offer.newTab && href !== null ? (
-              <button type="button" className={LINK_BUTTON} onClick={() => openInNewTab(href)}>
+              <button type="button" className={ROW} onClick={() => openInNewTab(href)}>
                 {t("Mở liên kết ở tab mới")}
+                <span aria-hidden="true" className={ROW_ARROW}>
+                  ↗
+                </span>
               </button>
             ) : null}
             <Link
               href={`/shop/${encodeURIComponent(slug)}#${STOREFRONT_PURCHASE_ANCHOR}`}
-              className={LINK_BUTTON}
+              className={ROW}
               onClick={() => choose("alt")}
             >
               {t("Chọn size & thêm vào giỏ")}
+              <span aria-hidden="true" className={ROW_ARROW}>
+                →
+              </span>
             </Link>
-            <Link href={BROWSE_HREF} className={LINK_BUTTON} onClick={() => choose("alt")}>
+            <Link href={BROWSE_HREF} className={ROW} onClick={() => choose("alt")}>
               {t("Xem sản phẩm khác")}
+              <span aria-hidden="true" className={ROW_ARROW}>
+                →
+              </span>
             </Link>
           </div>
-          <p className="mt-2 text-xs leading-5 text-black/60">{t("Ảnh vẫn được tạo tiếp ở góc màn hình.")}</p>
+          <p className="mt-3 text-xs leading-5 text-black/60">{t("Ảnh vẫn được tạo tiếp ở góc màn hình.")}</p>
 
           {offer.leave && href !== null ? (
-            <div className="mt-3 flex justify-end">
-              <button type="button" className={TEXT_BUTTON} onClick={() => leaveAnyway(href)}>
+            <div className="mt-1 flex justify-center">
+              <button type="button" className={QUIET_TEXT} onClick={() => leaveAnyway(href)}>
                 {t("Vẫn rời trang")}
               </button>
             </div>
