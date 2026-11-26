@@ -185,6 +185,45 @@ try {
   assertEnglishPage(await request("/en/shop", browser(US_IP, { cookie: "la_geo_redirected=1" })), "/en/shop");
   assertEnglishPage(await request("/en", browser(US_IP)), "/en without the cookie (never redirected)");
 
+  // --- A first visit from Vietnam to /en or /en/... goes to the Vietnamese page, query kept. ----
+  const vnEnHome = await request(
+    "/en?utm_source=google&fbclid=vn123",
+    browser(VN_IP, { "x-forwarded-proto": "https" }),
+  );
+  assert.equal(vnEnHome.status, 307, "a VN first visit to /en is redirected to /");
+  const vnHomeLocation = new URL(vnEnHome.headers.location ?? "", STOREFRONT_ORIGIN);
+  assert.equal(vnHomeLocation.pathname, "/");
+  assert.equal(vnHomeLocation.search, "?utm_source=google&fbclid=vn123");
+  const vnCookie = setCookies(vnEnHome).find((cookie) => cookie.startsWith("la_geo_redirected=1;"));
+  assert.ok(vnCookie, `VN /en redirect remembers the decision: ${setCookies(vnEnHome).join(" | ")}`);
+  assert.ok(
+    setCookies(vnEnHome).some((cookie) => cookie.startsWith("la_utm=")),
+    "the ad landing's UTM cookie rides along on VN /en redirect too",
+  );
+
+  const vnEnSub = await request("/en/shop?page=2", browser(VN_IP, { "x-forwarded-proto": "https" }));
+  assert.equal(vnEnSub.status, 307, "a VN first visit to /en/shop drops /en prefix");
+  const vnSubLocation = new URL(vnEnSub.headers.location ?? "", STOREFRONT_ORIGIN);
+  assert.equal(vnSubLocation.pathname, "/shop");
+  assert.equal(vnSubLocation.search, "?page=2");
+
+  assertEnglishPage(
+    await request("/en", browser(VN_IP, { cookie: "la_geo_redirected=1" })),
+    "VN visitor with cookie stays on /en",
+  );
+  assertEnglishPage(
+    await request("/en/shop", browser(VN_IP, { referer: `http://${HOST}:${PORT}/shop` })),
+    "VN visitor who clicked EN on this site stays on /en/shop",
+  );
+  assertEnglishPage(
+    await request("/en", browser("2001:4860:4860::8888")),
+    "IPv6 visitor on /en is left on /en",
+  );
+  assertEnglishPage(
+    await request("/en", { "user-agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", accept: "text/html", [TRUSTED_IP_HEADER]: VN_IP }),
+    "Googlebot from VN IP on /en is not redirected",
+  );
+
   // --- Everything that must stay on the Vietnamese page. ----------------------------------------
   assertServedInVietnamese(await request("/", browser(US_IP, { cookie: "la_geo_redirected=1" })), "returning visitor (cookie)");
   assertServedInVietnamese(

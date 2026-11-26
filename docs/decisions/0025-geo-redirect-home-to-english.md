@@ -1,34 +1,39 @@
-# ADR 0025 — First-visit redirect from the Vietnamese home page to `/en` for visitors outside Vietnam
+# ADR 0025 — First-visit geo-redirect between `/` and `/en`
 
 Status: implemented. One runtime dependency (`ip3country`); no flag, no migration, no edge change.
 
 ## Why
 
-Customers abroad (mostly arriving from ads) land on `/`, which is Vietnamese. The owner asked that a visitor whose IP
-is not in Vietnam be sent to `/en` when they open the main page.
+Customers abroad (mostly arriving from ads) land on `/`, which is Vietnamese. Conversely, customers in Vietnam who
+open an `/en` link from ads or search would otherwise see English text and USD pricing. The owner asked that a first-time
+visitor whose IP is outside Vietnam be sent from `/` to `/en`, and a first-time visitor whose IP is in Vietnam who opens
+`/en` or `/en/...` be sent to the matching Vietnamese page (`/` or `/...`).
 
 This refines ADR 0024, which rejected redirecting from `Accept-Language` so that a URL always means one language. That
-still holds for every page except the bare home page, and the redirect below is a one-time, remembered, per-visitor
-choice rather than a rule about the URL.
+still holds for Vietnamese deep links, and the redirect below is a one-time, remembered, per-visitor choice rather than a
+permanent block: switching language with **VI** or **EN** on the site still works and sticks.
 
 ## Decision
 
 `src/proxy.ts` calls `planGeoRedirect` (`src/i18n/geo-redirect.ts`) after the voucher-link rule and before anything
-renders. It answers `307` with `Location: /en` (query string kept, so `utm_*`/`fbclid` still reach the English page) and
-sets `la_geo_redirected=1` (1 year, `HttpOnly`, `SameSite=Lax`, `Secure` on HTTPS) only when **all** of these hold:
+renders (skipping internal rewrite passes where `carriedLocale !== null`). It answers `307` with `Location` (query
+string kept, so `utm_*`/`fbclid` still reach the destination page) and sets `la_geo_redirected=1` (1 year, `HttpOnly`,
+`SameSite=Lax`, `Secure` on HTTPS) only when **all** of these hold:
 
-- the path is exactly `/` and the request's language is Vietnamese (so `/en`, `/shop`, and the internal rewrite pass of
-  `/en` are never touched);
+- one of the two geo rules matches:
+  - the path is exactly `/` in Vietnamese and the country is known and is not `VN` -> `Location: /en` (with query);
+  - the request is on an English URL (`/en` or `/en/...`, `locale === "en"`) and the country is `VN` -> `Location` drops
+    the `/en` prefix to the corresponding Vietnamese path (`/` or `/...`, with query);
 - it is a browser loading a document: `GET`, not a prefetch, `Sec-Fetch-Dest: document` (or `Accept: text/html`), with a
   User-Agent that is not a crawler, link previewer, ad reviewer or HTTP library (an empty UA counts as a bot);
 - the visitor has no `la_geo_redirected` cookie, and the `Referer` is not a page of this site. The cookie makes the
-  decision once per visitor, so choosing **VI** in the switcher afterwards sticks; the Referer rule covers the same click
-  for visitors who refuse cookies;
-- the country is known and is not `VN`. Unknown never redirects.
+  decision once per visitor, so choosing **VI** or **EN** in the switcher afterwards sticks; the Referer rule covers the
+  same click for visitors who refuse cookies;
+- the country is known. Unknown never redirects.
 
-Everything else is unchanged: no other page redirects, and a deep link (`/shop/...`, an ad landing on a product) is
-served in Vietnamese as before. Googlebot and Meta/TikTok/Zalo review and preview crawlers always get the Vietnamese
-home page, so indexing, `hreflang` and link previews are unaffected.
+Vietnamese deep links (`/shop/...`, `/ao-dai/...`) for foreign visitors are still served in Vietnamese as before.
+Googlebot and Meta/TikTok/Zalo review and preview crawlers always receive the requested page directly without redirect,
+so indexing, `hreflang` and link previews on both `/` and `/en/...` are unaffected.
 
 **Where the country comes from.** The edge (nginx-proxy-manager -> Caddy, Cloudflare DNS-only) adds no country header.
 The client IP is the proxy-owned `X-LA-Client-IP` header Caddy already overwrites (`BETTER_AUTH_IP_HEADER`), read with
@@ -68,12 +73,13 @@ If the data source is ever replaced (a paid IP2Location database, a CDN country 
   and link previews including WhatsApp, prefetch, methods, query preservation) and the lookup (IPv4, IPv4-mapped IPv6,
   IPv6, private and malformed input).
 - `scripts/geo-redirect-http-smoke.ts` (run by `tests/integrations/geo-redirect-http.test.ts`): a Next dev server with
-  `BETTER_AUTH_IP_HEADER=x-la-client-ip`, asserting over HTTP the `307`, the server-owned `/en` Location with the query,
-  the cookie attributes, `Cache-Control: private, no-store`, the `la_utm` ad-attribution cookie on the redirect itself,
-  that `/en` and `/en/shop` answer 200, do not bounce and render `lang="en"` with English interface text, and that none of these are redirected: returning
-  visitors, a click from this site, Vietnamese/IPv6/unknown/malformed IPs, `X-Forwarded-For`/`CF-IPCountry` spoofing,
-  other pages, preview and crawler agents (WhatsApp, Facebook, Telegram, Slack, Viber, Google, Bing), prefetch, script
-  fetches, HEAD and POST.
+  `BETTER_AUTH_IP_HEADER=x-la-client-ip`, asserting over HTTP the `307`, the server-owned Location with the query (both
+  `/` -> `/en` for foreign visitors and `/en` or `/en/...` -> `/` or `/...` for Vietnamese visitors), the cookie
+  attributes, `Cache-Control: private, no-store`, the `la_utm` ad-attribution cookie on the redirect itself, that `/en`
+  and `/en/shop` answer 200 for foreign visitors and for Vietnamese visitors with the cookie or a same-site Referer,
+  and that none of these are redirected: returning visitors, a click from this site, Vietnamese IPs on `/`, foreign IPs
+  on `/en`, IPv6/unknown/malformed IPs, `X-Forwarded-For`/`CF-IPCountry` spoofing, Vietnamese deep links, preview and
+  crawler agents (WhatsApp, Facebook, Telegram, Slack, Viber, Google, Bing), prefetch, script fetches, HEAD and POST.
 
 The redirect response goes through the same `applyResponseHeaders` as every other exit, so it carries the search-exposure
 header and the ad-attribution and Meta first-party cookies of the landing the visitor made; `/en` then finds them
