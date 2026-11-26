@@ -135,12 +135,22 @@ function planListingView(request: NextRequest, requestHeaders: Headers): string 
 }
 
 /**
- * A first-time visitor from outside Vietnam who opens the Vietnamese home page is sent to `/en`
- * (src/i18n/geo-redirect.ts). The country comes from the proxy-owned client-IP header the rest of
- * the app trusts, never from `X-Forwarded-For`. Any failure leaves the page as it was.
+ * A first-time visitor from outside Vietnam who opens the Vietnamese home page is sent to `/en`,
+ * and a first-time visitor from Vietnam who opens any `/en` page is sent to the matching
+ * Vietnamese page (src/i18n/geo-redirect.ts). The country comes from the proxy-owned client-IP
+ * header the rest of the app trusts, never from `X-Forwarded-For`. Internal rewrite passes
+ * (`carriedLocale !== null`) and any lookup failure leave the page as it was.
  */
-function planGeoLocaleRedirect(request: NextRequest, routePath: string, locale: Locale): Response | null {
-  if (routePath !== "/" || locale !== DEFAULT_LOCALE) return null;
+function planGeoLocaleRedirect(
+  request: NextRequest,
+  routePath: string,
+  locale: Locale,
+  carriedLocale: Locale | null,
+): Response | null {
+  if (carriedLocale !== null) return null;
+  if (locale === DEFAULT_LOCALE && routePath !== "/") return null;
+  const cookie = request.cookies.get(GEO_REDIRECT_COOKIE)?.value;
+  if (cookie !== undefined) return null;
   try {
     const ip = readOptionalTrustedClientIp(request.headers, {
       ipAddressHeader: process.env.BETTER_AUTH_IP_HEADER?.trim().toLowerCase() || undefined,
@@ -152,7 +162,7 @@ function planGeoLocaleRedirect(request: NextRequest, routePath: string, locale: 
       search: request.nextUrl.search,
       headers: request.headers,
       host: request.headers.get("host"),
-      cookie: request.cookies.get(GEO_REDIRECT_COOKIE)?.value,
+      cookie,
       country: ip === null ? null : lookupCountry(ip),
       secure: request.nextUrl.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https",
     });
@@ -168,7 +178,7 @@ function planGeoLocaleRedirect(request: NextRequest, routePath: string, locale: 
     });
     redirect.headers.append("Set-Cookie", plan.setCookie);
     // Like every other exit: the search-exposure header, and the ad-attribution and Meta cookies of
-    // the landing the visitor actually made (the query rides along, so `/en` would set them too).
+    // the landing the visitor actually made (the query rides along, so `/en` or `/` would set them too).
     return applyResponseHeaders(request, redirect, routePath);
   } catch {
     return null;
@@ -231,7 +241,7 @@ export async function proxy(request: NextRequest) {
     return redirect;
   }
 
-  const geoRedirect = planGeoLocaleRedirect(request, routePath, locale);
+  const geoRedirect = planGeoLocaleRedirect(request, routePath, locale, carriedLocale);
   if (geoRedirect !== null) return geoRedirect;
 
   const scriptPolicy = readStrictScriptPolicy(request);

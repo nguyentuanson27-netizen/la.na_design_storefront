@@ -42,32 +42,63 @@ test("the query (ad tags, click ids) travels with the redirect", () => {
   assert.equal(plan({ search: "?utm_source=fb&fbclid=abc" })?.location, "/en?utm_source=fb&fbclid=abc");
 });
 
-test("Vietnam, and an unknown country, stay on the Vietnamese page", () => {
+test("Vietnam stays on Vietnamese pages, and an unknown country never redirects either way", () => {
   assert.equal(plan({ country: "VN" }), null);
   assert.equal(plan({ country: "vn" }), null);
   assert.equal(plan({ country: null }), null);
+  assert.equal(plan({ locale: "en", country: null }), null);
+  assert.equal(plan({ routePath: "/ao-dai", locale: "en", country: null }), null);
 });
 
-test("only the bare home page in Vietnamese is eligible", () => {
+test("only the bare home page redirects abroad, while English pages stay English abroad", () => {
   assert.equal(plan({ routePath: "/shop" }), null);
   assert.equal(plan({ routePath: "/shop/ao-dai-1" }), null);
-  assert.equal(plan({ locale: "en" }), null);
+  assert.equal(plan({ locale: "en", country: "US" }), null);
+  assert.equal(plan({ routePath: "/ao-dai", locale: "en", country: "US" }), null);
 });
 
-test("a visitor who was already redirected, or chose Vietnamese from the switcher, is left alone", () => {
+test("a first visit to /en or /en/... from Vietnam goes to the Vietnamese equivalent and is remembered", () => {
+  const home = plan({ routePath: "/", locale: "en", country: "VN" });
+  assert.ok(home);
+  assert.equal(home.location, "/");
+  assert.ok(home.setCookie.startsWith(`${GEO_REDIRECT_COOKIE}=1;`));
+
+  const subpage = plan({
+    routePath: "/ao-dai",
+    locale: "en",
+    country: "vn",
+    search: "?utm_source=fb&fbclid=xyz",
+  });
+  assert.ok(subpage);
+  assert.equal(subpage.location, "/ao-dai?utm_source=fb&fbclid=xyz");
+
+  const product = plan({ routePath: "/shop/ao-dai-1", locale: "en", country: "VN" });
+  assert.ok(product);
+  assert.equal(product.location, "/shop/ao-dai-1");
+});
+
+test("a visitor who was already redirected, or chose a language from the switcher, is left alone", () => {
   assert.equal(plan({ cookie: "1" }), null);
-  const fromSite = headers({
+  assert.equal(plan({ locale: "en", country: "VN", cookie: "1" }), null);
+  const fromSiteToVi = headers({
     "user-agent": CHROME,
     "sec-fetch-dest": "document",
     referer: "https://www.lanadesign.vn/en",
   });
-  assert.equal(plan({ headers: fromSite }), null);
+  assert.equal(plan({ headers: fromSiteToVi }), null);
+  const fromSiteToEn = headers({
+    "user-agent": CHROME,
+    "sec-fetch-dest": "document",
+    referer: "https://www.lanadesign.vn/",
+  });
+  assert.equal(plan({ locale: "en", country: "VN", headers: fromSiteToEn }), null);
   const fromElsewhere = headers({
     "user-agent": CHROME,
     "sec-fetch-dest": "document",
     referer: "https://www.facebook.com/",
   });
   assert.ok(plan({ headers: fromElsewhere }));
+  assert.ok(plan({ locale: "en", country: "VN", headers: fromElsewhere }));
 });
 
 test("crawlers, link previews, prefetches, scripts and non-GET requests are never redirected", () => {
@@ -85,6 +116,11 @@ test("crawlers, link previews, prefetches, scripts and non-GET requests are neve
     "",
   ]) {
     assert.equal(plan({ headers: headers({ "user-agent": agent, "sec-fetch-dest": "document" }) }), null, agent);
+    assert.equal(
+      plan({ locale: "en", country: "VN", headers: headers({ "user-agent": agent, "sec-fetch-dest": "document" }) }),
+      null,
+      `en-vn-${agent}`,
+    );
   }
   // A preview fetcher that sends no Sec-Fetch-Dest and asks for HTML is told apart by its agent alone.
   assert.equal(
